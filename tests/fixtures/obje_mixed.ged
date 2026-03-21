@@ -1,0 +1,48 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Alice /Smith/
+1 BIRT
+2 DATE 1 APR 1900
+1 OBJE @O1@
+1 OBJE @O2@
+1 OBJE @O3@
+1 OBJE
+2 FILE inline_exists.jpg
+2 FORM JPG
+2 TITL Inline photo — file exists
+1 OBJE
+2 FILE inline_missing.jpg
+2 FORM JPG
+2 TITL Inline photo — file is missing
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 OBJE @O4@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 5 JUN 1925
+1 OBJE
+2 FILE family_photo_exists.jpg
+2 FORM JPG
+2 TITL Family photo — file exists
+0 @O1@ OBJE
+1 FILE exists_portrait.jpg
+2 FORM JPG
+2 TITL Portrait — file exists on disk
+0 @O2@ OBJE
+1 FILE missing_document.pdf
+2 FORM PDF
+2 TITL Document — file is NOT on disk
+0 @O3@ OBJE
+1 FILE https://example.com/remote_photo.jpg
+2 FORM JPG
+2 TITL Remote URL — never removed
+0 @O4@ OBJE
+1 FILE also_missing.png
+2 FORM PNG
+2 TITL Another missing file
+0 TRLR

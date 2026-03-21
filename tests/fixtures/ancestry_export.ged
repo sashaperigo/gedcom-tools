@@ -1,0 +1,121 @@
+0 HEAD
+1 SOUR Ancestry.com Family Trees
+2 VERS 1.0
+2 NAME Ancestry.com Family Trees
+2 CORP Ancestry.com
+3 ADDR 360 W 4800 N
+4 CITY Provo
+4 STAE UT
+4 POST 84604
+4 CTRY USA
+1 DEST GEDitCOM
+1 DATE 12 MAR 2024
+1 FILE ancestry_export.ged
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+1 LANG English
+1 SUBM @SUBM1@
+0 @SUBM1@ SUBM
+1 NAME John Researcher
+1 _MSER 12345678
+1 _USER jresearcher
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SEX M
+1 BIRT
+2 DATE 15 MAR 1842
+2 PLAC Boston, Suffolk, Massachusetts, USA
+1 DEAT
+2 DATE 4 JUL 1905
+2 PLAC Chicago, Cook, Illinois, USA
+1 _APID 1,60238::12345678
+1 _OID a1b2c3d4-e5f6-7890-abcd-ef1234567890
+1 _CREA
+2 DATE 1 JAN 2022
+2 _USER jresearcher
+1 FAMS @F1@
+1 SOUR @S1@
+2 PAGE Census record, line 14
+2 DATA
+3 DATE 1 JUN 1880
+3 TEXT John Smith, age 38, farmer
+2 QUAI 2
+0 @I2@ INDI
+1 NAME Mary /Jones/
+1 SEX F
+1 BIRT
+2 DATE ABT 1848
+2 PLAC Salem, Essex, Massachusetts, USA
+1 DEAT
+2 DATE BEF 1910
+2 PLAC Chicago, Cook, Illinois, USA
+1 _APID 1,60238::87654321
+1 _ORIG ANCESTRY
+1 _TID 98765
+1 _PID 11223344
+1 _CREA
+2 DATE 1 JAN 2022
+2 _USER jresearcher
+1 FAMS @F1@
+1 SOUR @S1@
+2 PAGE Census record, line 15
+2 QUAI 2
+0 @I3@ INDI
+1 NAME James /Smith/
+1 SEX M
+1 BIRT
+2 DATE 20 DEC 1870
+2 PLAC Boston, Suffolk, Massachusetts, USA
+1 _APID 1,60238::55667788
+1 _LKID 99887766
+1 _CLON Y
+1 _ATL https://www.ancestry.com/family-tree/person/tree/123/person/456
+1 _CREA
+2 DATE 5 MAR 2022
+2 _USER jresearcher
+1 FAMC @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I3@
+1 MARR
+2 DATE 12 JUN 1869
+2 PLAC Boston, Suffolk, Massachusetts, USA
+1 SOUR @S1@
+2 PAGE Marriage record
+2 QUAI 2
+1 _ENCR N
+1 _ENV ANCESTRY
+0 @S1@ SOUR
+1 TITL 1880 United States Federal Census
+1 AUTH Ancestry.com
+1 PUBL Ancestry.com Operations, Inc.
+2 DATE 2010
+2 PLAC Provo, Utah, USA
+1 _APID 1,6742::0
+1 _ATL https://www.ancestry.com/search/collections/6742/
+0 @O1@ OBJE
+1 FILE photos/smith_family_1880.jpg
+2 FORM JPG
+2 TITL Smith Family Portrait circa 1880
+1 _PRIM Y
+1 _CROP
+2 _LEFT 120
+2 _TOP 45
+2 _WDTH 320
+2 _HGHT 280
+1 _WPID 12345
+1 _HPID 67890
+1 _TYPE PHOTO
+0 @O2@ OBJE
+1 FILE documents/birth_cert_john.pdf
+2 FORM PDF
+2 TITL Birth Certificate - John Smith 1842
+1 _PRIM N
+1 _WPID 11111
+1 _TYPE DOCUMENT
+1 _TREE 999
+1 _ENV ANCESTRY
+0 TRLR
