@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "gedcom-tools"
+version = "0.1.0"
+description = "GEDCOM 5.5.1 linter and test suite"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["gedcom", "genealogy", "linter", "family-tree"]
+
+[project.scripts]
+gedcom-lint = "gedcom_linter:main"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
