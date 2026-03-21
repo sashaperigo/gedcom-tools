@@ -34,10 +34,10 @@ gedcom-lint --fix-whitespace yourfile.ged
 
 # Normalize DATE values to GEDCOM 5.5.1 format
 # (e.g. "about 1835" → "ABT 1835", "January 5, 1900" → "5 JAN 1900")
-gedcom-lint --fix yourfile.ged
+gedcom-lint --fix-dates yourfile.ged
 
 # Normalize PLAC comma spacing
-gedcom-lint --fix-plac yourfile.ged
+gedcom-lint --fix-places yourfile.ged
 
 # Collapse double spaces in NAME values
 gedcom-lint --fix-names yourfile.ged
@@ -49,10 +49,10 @@ gedcom-lint --fix-long-lines yourfile.ged
 gedcom-lint --fix-duplicate-sources yourfile.ged
 
 # Preview any fix without writing
-gedcom-lint --fix --dry-run yourfile.ged
+gedcom-lint --fix-dates --dry-run yourfile.ged
 
-# Run all fixes
-gedcom-lint --fix-whitespace --fix --fix-plac --fix-names --fix-long-lines --fix-duplicate-sources yourfile.ged
+# Run all fixes at once
+gedcom-lint --fix-all yourfile.ged
 ```
 
 ### What the linter fixes
@@ -60,11 +60,12 @@ gedcom-lint --fix-whitespace --fix --fix-plac --fix-names --fix-long-lines --fix
 | Flag | What it fixes |
 |------|--------------|
 | `--fix-whitespace` | Trailing spaces/tabs on any line |
-| `--fix` | Non-standard DATE formats (about→ABT, before→BEF, full month names→JAN etc.) |
-| `--fix-plac` | Comma spacing in PLAC values (e.g. `City,County` → `City, County`) |
+| `--fix-dates` | Non-standard DATE formats (about→ABT, before→BEF, full month names→JAN etc.) |
+| `--fix-places` | Comma spacing in PLAC values (e.g. `City,County` → `City, County`) |
 | `--fix-names` | Double spaces in NAME values (e.g. `John  /Smith/` → `John /Smith/`) |
 | `--fix-long-lines` | Lines >255 chars, wrapped with CONC continuations |
 | `--fix-duplicate-sources` | Identical SOUR citation blocks appearing more than once under the same event |
+| `--fix-all` | Run all of the above fixes in sequence |
 
 ---
 

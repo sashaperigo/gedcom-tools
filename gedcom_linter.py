@@ -1,30 +1,43 @@
 #!/usr/bin/env python3
 """
-gedcom_linter.py — GEDCOM 5.5.1 linter and date normalizer.
+gedcom_linter.py — GEDCOM 5.5.1 linter and fixer.
 
 Usage:
   # Check only (report violations, make no changes):
   python gedcom_linter.py yourfile.ged
 
-  # Fix in-place (normalizes non-standard DATE values):
-  python gedcom_linter.py --fix yourfile.ged
+  # Fix specific issues in-place:
+  python gedcom_linter.py --fix-dates yourfile.ged
+  python gedcom_linter.py --fix-places yourfile.ged
+  python gedcom_linter.py --fix-whitespace yourfile.ged
+  python gedcom_linter.py --fix-names yourfile.ged
+  python gedcom_linter.py --fix-long-lines yourfile.ged
+  python gedcom_linter.py --fix-duplicate-sources yourfile.ged
+
+  # Run all fixes at once:
+  python gedcom_linter.py --fix-all yourfile.ged
 
   # Preview changes without writing (dry run):
-  python gedcom_linter.py --fix --dry-run yourfile.ged
+  python gedcom_linter.py --fix-dates --dry-run yourfile.ged
 
 Checks performed:
   1. DATE format — every event DATE conforms to GEDCOM 5.5.1 grammar.
-     --fix normalizes common variants (e.g. "about 1835" → "ABT 1835",
+     --fix-dates normalizes common variants (e.g. "about 1835" → "ABT 1835",
      "January 5, 1900" → "5 JAN 1900", "1900-1905" → "BET 1900 AND 1905").
   2. DATE has year — every DATE value contains an extractable 3-or-4-digit year.
      (No auto-fix; these require manual review.)
+  3. Trailing whitespace — no line ends with spaces or tabs.
+  4. PLAC formatting — place values use consistent comma spacing.
+  5. NAME double spaces — name values have no collapsed double spaces.
+  6. Long lines — no line exceeds 255 characters.
+  7. Duplicate SOUR citations — no exact-duplicate source blocks per event.
 
 Notes:
   - Only level-2 DATE lines (event dates on INDI/FAM records) are touched by
-    --fix. Level-3/4 DATE lines inside DATA citation blocks (e.g. "Accessed:"
-    web-access dates) are reported but never rewritten.
+    --fix-dates. Level-3/4 DATE lines inside DATA citation blocks are reported
+    but never rewritten.
   - Lines that cannot be automatically normalized are reported as remaining
-    violations after --fix.
+    violations after --fix-dates.
 """
 
 import argparse
@@ -642,7 +655,7 @@ def main():
     )
     parser.add_argument('gedfile', help='Path to .ged file')
     parser.add_argument(
-        '--fix', action='store_true',
+        '--fix-dates', action='store_true',
         help='Normalize non-standard DATE values in-place',
     )
     parser.add_argument(
@@ -650,7 +663,7 @@ def main():
         help='Strip trailing whitespace from every line in-place',
     )
     parser.add_argument(
-        '--fix-plac', action='store_true',
+        '--fix-places', action='store_true',
         help='Normalize PLAC comma-spacing in-place',
     )
     parser.add_argument(
@@ -666,10 +679,22 @@ def main():
         help='Wrap lines > 255 chars using CONC continuations in-place',
     )
     parser.add_argument(
+        '--fix-all', action='store_true',
+        help='Run all fix operations in sequence',
+    )
+    parser.add_argument(
         '--dry-run', action='store_true',
-        help='With --fix/--fix-whitespace: print changes but do not write the file',
+        help='With any --fix-* flag: print changes but do not write the file',
     )
     args = parser.parse_args()
+
+    if args.fix_all:
+        args.fix_dates = True
+        args.fix_whitespace = True
+        args.fix_places = True
+        args.fix_duplicate_sources = True
+        args.fix_names = True
+        args.fix_long_lines = True
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
@@ -710,7 +735,7 @@ def main():
         else:
             print(f'{changed} line(s) wrapped.')
 
-    if args.fix_plac:
+    if args.fix_places:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing PLAC values in: {args.gedfile}')
         changed = fix_plac(args.gedfile, dry_run=args.dry_run)
@@ -719,7 +744,7 @@ def main():
         else:
             print(f'{changed} PLAC line(s) normalized.')
 
-    if args.fix:
+    if args.fix_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing DATE values in: {args.gedfile}')
         changed, remaining = fix_file(args.gedfile, dry_run=args.dry_run)
@@ -734,7 +759,7 @@ def main():
                 print(f'  line {ln}: {val!r}')
         else:
             print('No remaining violations.')
-    if not any([args.fix, args.fix_whitespace, args.fix_plac,
+    if not any([args.fix_dates, args.fix_whitespace, args.fix_places,
                 args.fix_names, args.fix_long_lines, args.fix_duplicate_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
@@ -787,7 +812,7 @@ def main():
         if plac_issues:
             errors = True
             print(f'\n{len(plac_issues)} PLAC value(s) with spacing/comma issues '
-                  '(run --fix-plac to normalize):')
+                  '(run --fix-places to normalize):')
             for ln, orig, fixed in plac_issues:
                 print(f'  line {ln}: {orig!r}  →  {fixed!r}')
         else:
@@ -807,7 +832,7 @@ def main():
         if bad_format:
             errors = True
             print(f'\n{len(bad_format)} level-2 DATE value(s) not in GEDCOM 5.5.1 format '
-                  '(run --fix to auto-normalize):')
+                  '(run --fix-dates to auto-normalize):')
             for ln, val in bad_format[:40]:
                 print(f'  line {ln}: {val!r}')
             if len(bad_format) > 40:
