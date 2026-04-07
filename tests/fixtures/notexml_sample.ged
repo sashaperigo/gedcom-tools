@@ -1,0 +1,38 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Cosima /D'Andria/
+1 SEX F
+1 NOTE <notexml><line>fille de Pietro d'Andréa dit Lari</line><line>et sur l'acte de baptême de Stefano D'Andria</line><line></line><line>Translation:</line><line>daughter of Pietro d'Andréa known as Lari</line><line></line><line>Full name may be Cosima?</line></notexml>
+1 BIRT
+2 DATE ABT 1740
+0 @I2@ INDI
+1 NAME Gianmarco /Pastore/
+1 SEX M
+1 NOTE &lt;notexml&gt;<line>https://www.tributearchive.com/obituaries/16758107/gianmarco-pastore</line>&lt;/notexml&gt;
+1 DEAT
+2 DATE 2022
+0 @I3@ INDI
+1 NAME Paul /Capponi/
+1 SEX M
+1 NOTE &lt;notexml&gt;<line>https://www.facebook.com/paul.capponi?mibextid=foo&amp;mibextid=bar</line>&lt;/notexml&gt;
+0 @I4@ INDI
+1 NAME Elisabeth /Maraspini/
+1 SEX F
+1 NOTE &lt;notexml&gt;<line>https://www.levantineheritage.com/pdf/lista.pdf</line>&lt;/notexml&gt;
+1 NOTE A second regular note that should not be touched.
+0 @I5@ INDI
+1 NAME Normal /Person/
+1 SEX M
+1 NOTE This is a regular note with no XML content whatsoever.
+2 CONT It has a continuation line too.
+1 BIRT
+2 DATE 1 JAN 1900
+0 @I6@ INDI
+1 NAME Multi /Conc/
+1 SEX F
+1 NOTE <notexml><line>First line of a multi-segment note, split mid-sentence acr
+2 CONC oss a CONC boundary</line><line>Second line</line><line></line><line>Third line</line></notexml>
+0 TRLR
