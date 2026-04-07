@@ -1359,7 +1359,7 @@ function render() {
 
 function init() {
   // Show generations 0-2 initially
-  for (let g = 0; g <= 4; g++) {
+  for (let g = 0; g <= 2; g++) {
     const start = Math.pow(2, g);
     const end   = Math.pow(2, g + 1);
     for (let k = start; k < end; k++) {
