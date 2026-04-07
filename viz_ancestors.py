@@ -232,6 +232,26 @@ header { padding: 12px 20px; background: #1e293b;
          display: flex; align-items: center; gap: 16px; }
 header h1 { font-size: 16px; font-weight: 600; }
 .hint { font-size: 12px; color: #94a3b8; }
+#search-container { margin-left: auto; position: relative; }
+#search-input {
+  background: #0f172a; border: 1px solid #334155; border-radius: 20px;
+  color: #f1f5f9; font-size: 13px; padding: 6px 14px; width: 220px;
+  outline: none; transition: border-color 0.15s; }
+#search-input:focus { border-color: #3b82f6; }
+#search-input::placeholder { color: #475569; }
+#search-results {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+  list-style: none; min-width: 280px; max-height: 320px; overflow-y: auto;
+  z-index: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: none; }
+#search-results.open { display: block; }
+#search-results li {
+  padding: 8px 14px; font-size: 13px; color: #cbd5e1; cursor: pointer;
+  border-bottom: 1px solid #1e293b; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+#search-results li:last-child { border-bottom: none; }
+#search-results li:hover, #search-results li.active {
+  background: #334155; color: #f1f5f9; }
 #viewport { overflow: hidden; cursor: grab; user-select: none; }
 #viewport.dragging { cursor: grabbing; }
 #tree { display: block; width: 100%; height: 100%; }
@@ -327,6 +347,10 @@ header h1 { font-size: 16px; font-weight: 600; }
 <header>
   <h1>Ancestors of __ROOT_NAME__</h1>
   <span class="hint">Pinch to zoom · Two-finger drag to pan · Click ▲ to expand ancestors</span>
+  <div id="search-container">
+    <input id="search-input" type="text" placeholder="Search people…" autocomplete="off" />
+    <ul id="search-results"></ul>
+  </div>
 </header>
 <div id="viewport">
 <svg id="tree" xmlns="http://www.w3.org/2000/svg">
@@ -356,6 +380,56 @@ header h1 { font-size: 16px; font-weight: 600; }
 </div>
 <script>
 const ANCESTORS = __ANCESTORS_JSON__;
+const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
+
+(function() {
+  const input = document.getElementById('search-input');
+  const list  = document.getElementById('search-results');
+  let activeIdx = -1;
+
+  function normName(n) { return (n || '').replace(/\//g, '').replace(/\s+/g, ' ').trim(); }
+  function displayName(n) { const s = normName(n); return s.replace(/\b\w/g, c => c.toUpperCase()); }
+
+  function renderResults(hits) {
+    list.innerHTML = '';
+    activeIdx = -1;
+    hits.forEach(p => {
+      const li = document.createElement('li');
+      const dates = [p.birth_year && `b.\u2009${p.birth_year}`, p.death_year && `d.\u2009${p.death_year}`].filter(Boolean).join(' – ');
+      li.textContent = displayName(p.name) + (dates ? `  (${dates})` : '');
+      li.dataset.id = p.id;
+      li.addEventListener('click', () => navigate(p.id));
+      list.appendChild(li);
+    });
+    list.classList.toggle('open', hits.length > 0);
+  }
+
+  input.addEventListener('input', () => {
+    const q = normName(input.value).toLowerCase();
+    if (!q) { list.classList.remove('open'); list.innerHTML = ''; return; }
+    const hits = ALL_PEOPLE.filter(p => normName(p.name).toLowerCase().includes(q)).slice(0, 20);
+    renderResults(hits);
+  });
+
+  input.addEventListener('keydown', e => {
+    const items = list.querySelectorAll('li');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); }
+    else if (e.key === 'Enter') { if (activeIdx >= 0) navigate(items[activeIdx].dataset.id); return; }
+    else if (e.key === 'Escape') { list.classList.remove('open'); list.innerHTML = ''; input.blur(); return; }
+    items.forEach((li, i) => li.classList.toggle('active', i === activeIdx));
+    if (activeIdx >= 0) items[activeIdx].scrollIntoView({ block: 'nearest' });
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#search-container')) { list.classList.remove('open'); list.innerHTML = ''; }
+  });
+
+  function navigate(personId) {
+    window.location.href = '/?person=' + encodeURIComponent(personId);
+  }
+})();
 
 const EVENT_LABELS = {
   BIRT:'Birth', DEAT:'Death', BURI:'Burial', RESI:'Residence',
@@ -1019,14 +1093,23 @@ window.addEventListener('resize', () => {
 """
 
 
-def render_html(ancestor_data: dict, root_name: str) -> str:
+def render_html(ancestor_data: dict, root_name: str, indis: dict) -> str:
     """Return a complete self-contained HTML string."""
     safe_name = html_mod.escape(root_name)
     json_str  = json.dumps(ancestor_data)
+    all_people = sorted(
+        [{"id": xref, "name": info["name"] or "",
+          "birth_year": info.get("birth_year") or "",
+          "death_year": info.get("death_year") or ""}
+         for xref, info in indis.items()],
+        key=lambda p: p["name"].lower()
+    )
+    all_people_json = json.dumps(all_people)
     return (
         _HTML_TEMPLATE
         .replace('__ROOT_NAME__', safe_name)
         .replace('__ANCESTORS_JSON__', json_str)
+        .replace('__ALL_PEOPLE_JSON__', all_people_json)
     )
 
 
@@ -1062,7 +1145,7 @@ def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
     ancestor_data = build_ancestor_json(root_xref, indis, fams, sources)
     root_name     = ancestor_data.get(1, {}).get('name', '?')
 
-    html = render_html(ancestor_data, root_name)
+    html = render_html(ancestor_data, root_name, indis)
     with open(path_out, 'w', encoding='utf-8') as f:
         f.write(html)
 
