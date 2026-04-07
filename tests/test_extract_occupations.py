@@ -97,9 +97,25 @@ class TestExtractOccupationFromNote:
             'Occupation: Student; Marital Status: Single'
         ) is None
 
+    def test_none_is_ignored(self):
+        assert extract_occupation_from_note('Occupation: None') is None
+
+    def test_no_occupation_label_is_ignored(self):
+        assert extract_occupation_from_note('Occupation: (No Occupation)') is None
+
+    def test_university_name_is_ignored(self):
+        assert extract_occupation_from_note('Occupation: Ohio State University') is None
+
+    def test_college_name_is_ignored(self):
+        assert extract_occupation_from_note('Occupation: Boston College') is None
+
+    def test_institution_check_is_case_insensitive(self):
+        assert extract_occupation_from_note('Occupation: MIT UNIVERSITY') is None
+
     def test_ignored_occupations_set_contains_expected_values(self):
         for val in ('student', 'scholar', 'school', 'home duties',
-                    'unpaid domestic duties', 'private means'):
+                    'unpaid domestic duties', 'private means', 'none',
+                    '(no occupation)'):
             assert val in IGNORED_OCCUPATIONS
 
 
