@@ -5,14 +5,15 @@ normalize_ancestry.py — Comprehensive normalization pipeline for Ancestry GEDC
 Runs the following steps in order:
 
   1. strip_ancestry_artifacts   Remove proprietary Ancestry tags (_APID, _OID, etc.)
-  2. convert_nonstandard_events Convert _MILT, _SEPR, _DCAUSE to standard GEDCOM
-  3. convert_wlnk               Convert _WLNK web links to ASSO/NOTE records
-  4. clean_notexml              Strip <notexml> wrappers from NOTE fields
-  5. extract_occupations        Pull "Occupation: X" from notes into OCCU events
-  6. purge_blocked_occupations  Remove trivial OCCU entries (Student, Scholar, etc.)
-  7. purge_duplicate_events     Merge duplicate BIRT/DEAT blocks
-  8. purge_broken_obje          Remove OBJE references with missing files
-  9. linter                     Fix dates, whitespace, PLAC, names, long lines, dupes
+  2. convert_physical_attrs     Convert _HEIG/_WEIG to standard GEDCOM DSCR
+  3. convert_nonstandard_events Convert _MILT, _SEPR, _DCAUSE to standard GEDCOM
+  4. convert_wlnk               Convert _WLNK web links to ASSO/NOTE records
+  5. clean_notexml              Strip <notexml> wrappers from NOTE fields
+  6. extract_occupations        Pull "Occupation: X" from notes into OCCU events
+  7. purge_blocked_occupations  Remove trivial OCCU entries (Student, Scholar, etc.)
+  8. purge_duplicate_events     Merge duplicate BIRT/DEAT blocks
+  9. purge_broken_obje          Remove OBJE references with missing files
+ 10. linter                     Fix dates, whitespace, PLAC, names, long lines, dupes
 
 Usage:
   # Normalize in-place:
@@ -35,6 +36,7 @@ import sys
 import tempfile
 
 from strip_ancestry_artifacts import strip_ancestry_artifacts
+from convert_physical_attrs import convert_physical_attrs
 from convert_nonstandard_events import convert_nonstandard_events
 from convert_wlnk import convert_wlnk
 from clean_notexml import clean_notexml
@@ -57,6 +59,13 @@ def _run_strip(path: str) -> tuple[str, str]:
     tags_total = sum(r['tags_removed'].values())
     detail = f'{tags_total} tags removed'
     return _fmt_delta(-r['lines_removed']), detail
+
+
+def _run_convert_physical_attrs(path: str) -> tuple[str, str]:
+    r = convert_physical_attrs(path)
+    detail = (f'{r["heig_converted"]} _HEIG, '
+              f'{r["weig_converted"]} _WEIG converted')
+    return _fmt_delta(r['lines_delta']), detail
 
 
 def _run_convert_events(path: str) -> tuple[str, str]:
@@ -112,15 +121,16 @@ def _run_linter(path: str) -> tuple[str, str]:
 
 
 STEPS: list[tuple[str, str, callable]] = [
-    ('strip',          'strip_ancestry_artifacts  ', _run_strip),
-    ('convert_events', 'convert_nonstandard_events', _run_convert_events),
-    ('convert_wlnk',   'convert_wlnk              ', _run_convert_wlnk),
-    ('clean_notes',    'clean_notexml             ', _run_clean_notexml),
-    ('extract_occu',   'extract_occupations       ', _run_extract_occupations),
-    ('purge_occu',     'purge_blocked_occupations ', _run_purge_blocked_occupations),
-    ('purge_dupes',    'purge_duplicate_events    ', _run_purge_duplicate_events),
-    ('purge_obje',     'purge_broken_obje         ', _run_purge_broken_obje),
-    ('linter',         'gedcom_linter             ', _run_linter),
+    ('strip',            'strip_ancestry_artifacts  ', _run_strip),
+    ('convert_physical', 'convert_physical_attrs    ', _run_convert_physical_attrs),
+    ('convert_events',   'convert_nonstandard_events', _run_convert_events),
+    ('convert_wlnk',     'convert_wlnk              ', _run_convert_wlnk),
+    ('clean_notes',      'clean_notexml             ', _run_clean_notexml),
+    ('extract_occu',     'extract_occupations       ', _run_extract_occupations),
+    ('purge_occu',       'purge_blocked_occupations ', _run_purge_blocked_occupations),
+    ('purge_dupes',      'purge_duplicate_events    ', _run_purge_duplicate_events),
+    ('purge_obje',       'purge_broken_obje         ', _run_purge_broken_obje),
+    ('linter',           'gedcom_linter             ', _run_linter),
 ]
 
 STEP_NAMES = [name for name, _, _ in STEPS]
