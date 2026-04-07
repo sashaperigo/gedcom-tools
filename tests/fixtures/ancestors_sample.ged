@@ -10,8 +10,14 @@
 1 FAMC @F1@
 1 BIRT
 2 DATE 14 MAR 1990
+2 PLAC Greenwich, Connecticut, USA
 1 DEAT
 2 DATE 2080
+1 NOTE Rose was an avid gardener.
+2 CONT She grew prize-winning roses every summer.
+1 FACT
+2 TYPE AKA
+2 NOTE Rosie Smith
 0 @I2@ INDI
 1 NAME James /Smith/
 2 GIVN James
@@ -21,8 +27,12 @@
 1 FAMS @F1@
 1 BIRT
 2 DATE 1960
+2 PLAC Ann Arbor, Michigan, USA
 1 DEAT
 2 DATE 2030
+1 OCCU
+2 DATE 1985
+2 TYPE Engineer
 0 @I3@ INDI
 1 NAME Clara /Jones/
 2 GIVN Clara

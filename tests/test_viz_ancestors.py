@@ -2,10 +2,10 @@
 Tests for viz_ancestors.py
 
 Covers:
-  - GEDCOM parsing: names, birth/death years, FAMC links
+  - GEDCOM parsing: names, birth/death years, sex, events, notes, FAMC links
   - Parent lookup via FAM records
   - Ahnentafel ancestor tree building
-  - HTML output generation
+  - HTML output generation including detail panel
 """
 
 from pathlib import Path
@@ -97,6 +97,60 @@ class TestParsing:
         assert fams['@F6@']['husb'] == '@I10@'
         assert fams['@F6@']['wife'] is None
 
+    def test_parse_sex(self, indis):
+        assert indis['@I1@']['sex'] == 'F'
+        assert indis['@I2@']['sex'] == 'M'
+
+    def test_parse_sex_none_when_absent(self, indis):
+        """Any INDI without a SEX tag should have sex None."""
+        # All fixture indis have SEX — confirm @I3@ has it too
+        assert indis['@I3@']['sex'] == 'F'
+
+    def test_parse_events_list(self, indis):
+        assert isinstance(indis['@I1@']['events'], list)
+        assert len(indis['@I1@']['events']) > 0
+
+    def test_parse_birt_event_has_date_and_place(self, indis):
+        birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
+        assert birt['date'] == '14 MAR 1990'
+        assert birt['place'] == 'Greenwich, Connecticut, USA'
+
+    def test_parse_birt_event_date_only(self, indis):
+        """@I2@ BIRT has date and place."""
+        birt = next(e for e in indis['@I2@']['events'] if e['tag'] == 'BIRT')
+        assert birt['date'] == '1960'
+        assert birt['place'] == 'Ann Arbor, Michigan, USA'
+
+    def test_parse_occu_event(self, indis):
+        """@I2@ has an OCCU event with a TYPE."""
+        occu = next((e for e in indis['@I2@']['events'] if e['tag'] == 'OCCU'), None)
+        assert occu is not None
+        assert occu['type'] == 'Engineer'
+
+    def test_parse_notes_list(self, indis):
+        assert isinstance(indis['@I1@']['notes'], list)
+        assert len(indis['@I1@']['notes']) == 1
+
+    def test_parse_note_text(self, indis):
+        assert 'Rose was an avid gardener' in indis['@I1@']['notes'][0]
+
+    def test_parse_note_cont_assembled(self, indis):
+        """CONT line must be joined onto the note with a newline."""
+        note = indis['@I1@']['notes'][0]
+        assert '\n' in note
+        assert 'prize-winning roses' in note
+
+    def test_parse_no_notes(self, indis):
+        """@I2@ has no NOTE tag."""
+        assert indis['@I2@']['notes'] == []
+
+    def test_parse_fact_aka_note(self, indis):
+        """FACT with TYPE AKA and 2 NOTE child captures the alias in evt.note."""
+        aka = next((e for e in indis['@I1@']['events'] if e['tag'] == 'FACT'), None)
+        assert aka is not None
+        assert aka['type'] == 'AKA'
+        assert aka['note'] == 'Rosie Smith'
+
 
 # ---------------------------------------------------------------------------
 # TestParentLookup
@@ -185,8 +239,20 @@ class TestAncestorTree:
 
     def test_tree_node_has_required_keys(self, tree):
         node = tree[1]
-        for key in ('name', 'birth_year', 'death_year'):
+        for key in ('name', 'birth_year', 'death_year', 'sex', 'events', 'notes'):
             assert key in node
+
+    def test_sex_in_tree(self, tree):
+        assert tree[1]['sex'] == 'F'
+        assert tree[2]['sex'] == 'M'
+
+    def test_events_in_tree(self, tree):
+        assert isinstance(tree[1]['events'], list)
+        assert any(e['tag'] == 'BIRT' for e in tree[1]['events'])
+
+    def test_notes_in_tree(self, tree):
+        assert isinstance(tree[1]['notes'], list)
+        assert len(tree[1]['notes']) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -251,3 +317,40 @@ class TestOutput:
         out = str(tmp_path / 'out.html')
         result = viz_ancestors(str(FIXTURE), '@I1@', out)
         assert result['generations'] == 4  # gens 0-3
+
+    def test_html_contains_detail_panel(self, tmp_path):
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert 'id="detail-panel"' in content
+
+    def test_html_contains_event_labels(self, tmp_path):
+        """EVENT_LABELS dict must be present in the JS for the panel to work."""
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert 'Birth' in content
+        assert 'Death' in content
+        assert 'Residence' in content
+
+    def test_html_contains_sex_data(self, tmp_path):
+        """Sex field must be embedded in the ANCESTORS JSON."""
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert '"sex": "F"' in content or '"sex":"F"' in content
+
+    def test_html_contains_events_data(self, tmp_path):
+        """Events list must be embedded in the ANCESTORS JSON."""
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert '"events"' in content
+        assert 'Greenwich, Connecticut, USA' in content
+
+    def test_html_contains_aka_note(self, tmp_path):
+        """AKA alias stored as 2 NOTE must appear in the embedded JSON."""
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert 'Rosie Smith' in content

@@ -9,6 +9,7 @@ Covers:
   5. No marriage date precedes either spouse's birth date.
   6. No marriage date follows either spouse's death date.
   7. No individual has two BIRT or DEAT events with an identical date and place.
+  8. No FACT or EVEN record is completely empty (no inline value, no DATE, no PLAC, no TYPE).
 """
 import os
 import re
@@ -27,6 +28,8 @@ NAME_RE  = re.compile(r"^1 NAME (.*)$")
 SEX_RE   = re.compile(r"^1 SEX (.+)$")
 PLAC_RE  = re.compile(r"^\d+ PLAC (.*)$")
 
+_EMPTY_EVT_TAGS = {"FACT", "EVEN"}
+
 VALID_SEX = {"M", "F", "U"}
 
 
@@ -42,12 +45,22 @@ def parse_ged(path: str) -> dict:
     name_issues = []
     sex_issues = []
     blank_plac = []
+    empty_events = []
+    # Track a pending FACT/EVEN: (lineno, xref, tag) — flushed when we see content or next level-1
+    _pending_evt = None   # (lineno, xref, tag) waiting to see if it gets any children
+
+    def _flush_pending(had_content: bool):
+        nonlocal _pending_evt
+        if _pending_evt and not had_content:
+            empty_events.append(_pending_evt)
+        _pending_evt = None
 
     with open(path, encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
             line = line.rstrip("\n")
 
             if L0_RE.match(line):
+                _flush_pending(False)
                 current = None
                 current_event = None
 
@@ -95,7 +108,16 @@ def parse_ged(path: str) -> dict:
 
             ml1 = L1_RE.match(line)
             if ml1:
+                # Flush any pending empty-event check before moving to the next level-1 tag
+                _flush_pending(False)
                 current_event = ml1.group(1)
+                inline_val = (ml1.group(2) or "").strip()
+                if current_event in _EMPTY_EVT_TAGS and records[current]["type"] == "INDI":
+                    # Register as pending; mark content=True if inline value exists
+                    if inline_val:
+                        _pending_evt = None  # has inline value → not empty
+                    else:
+                        _pending_evt = (lineno, current, current_event)
                 continue
 
             md = L2_DATE.match(line)
@@ -106,11 +128,18 @@ def parse_ged(path: str) -> dict:
                     if records[current][field] is None:
                         records[current][field] = yr
 
+            # DATE, PLAC, or NOTE children count as real content (TYPE alone is just a label)
+            if line.startswith("2 DATE ") or line.startswith("2 PLAC ") or line.startswith("2 NOTE "):
+                _flush_pending(True)
+
+    _flush_pending(False)
+
     return {
         "records": records,
         "name_issues": name_issues,
         "sex_issues": sex_issues,
         "blank_plac": blank_plac,
+        "empty_events": empty_events,
     }
 
 
@@ -262,4 +291,13 @@ def test_no_duplicate_identical_events(event_blocks):
     assert bad == [], (
         f"{len(bad)} individual(s) have duplicate BIRT/DEAT events with identical date+place:\n"
         + "\n".join(f"  {x} {t}: {d}" for x, t, d in bad[:10])
+    )
+
+
+def test_no_empty_fact_or_even(ged):
+    """Every FACT and EVEN on an INDI must have at least one of: inline value, DATE, PLAC, or TYPE."""
+    bad = ged["empty_events"]
+    assert bad == [], (
+        f"{len(bad)} completely empty FACT/EVEN record(s) found:\n"
+        + "\n".join(f"  line {ln} {xref}: 1 {tag}" for ln, xref, tag in bad)
     )
