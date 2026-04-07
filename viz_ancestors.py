@@ -21,6 +21,7 @@ import sys
 
 _INDI_RE = re.compile(r'^0 (@[^@]+@) INDI\b')
 _FAM_RE  = re.compile(r'^0 (@[^@]+@) FAM\b')
+_SOUR_RE = re.compile(r'^0 (@[^@]+@) SOUR\b')
 _TAG_RE  = re.compile(r'^(\d+) (\w+)(?: (.*))?$')
 _YEAR_RE = re.compile(r'\b(\d{4})\b')
 
@@ -35,7 +36,7 @@ _EVENT_TAGS = frozenset({
 # GEDCOM parsing
 # ---------------------------------------------------------------------------
 
-def parse_gedcom(path: str) -> tuple[dict, dict]:
+def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     """
     Returns (indis, fams).
       indis: {xref: {name, birth_year, death_year, famc, sex, events, notes}}
@@ -46,11 +47,12 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
     with open(path, encoding='utf-8') as f:
         lines = [ln.rstrip('\n') for ln in f]
 
-    indis: dict = {}
-    fams: dict  = {}
-    ctx          = None   # ('indi', xref) or ('fam', xref)
-    current_evt  = None   # current event dict being built
-    current_note = None   # index into notes[] for CONT assembly
+    indis: dict  = {}
+    fams: dict   = {}
+    sources: dict = {}   # xref -> title
+    ctx           = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
+    current_evt   = None   # current event dict being built
+    current_note  = None   # index into notes[] for CONT assembly
 
     for line in lines:
         m = _INDI_RE.match(line)
@@ -58,7 +60,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
             xref = m.group(1)
             indis[xref] = {
                 'name': None, 'birth_year': None, 'death_year': None,
-                'famc': None, 'sex': None, 'events': [], 'notes': [],
+                'famc': None, 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [],
             }
             ctx          = ('indi', xref)
             current_evt  = None
@@ -70,6 +72,15 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
             xref = m.group(1)
             fams[xref] = {'husb': None, 'wife': None}
             ctx          = ('fam', xref)
+            current_evt  = None
+            current_note = None
+            continue
+
+        m = _SOUR_RE.match(line)
+        if m:
+            xref = m.group(1)
+            sources[xref] = None
+            ctx          = ('sour', xref)
             current_evt  = None
             current_note = None
             continue
@@ -131,6 +142,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
             elif lvl == 1 and tag == 'FAMC' and indis[xref]['famc'] is None:
                 indis[xref]['famc'] = val
                 current_evt = current_note = None
+            elif lvl == 1 and tag == 'SOUR' and val.startswith('@'):
+                if val not in indis[xref]['source_xrefs']:
+                    indis[xref]['source_xrefs'].append(val)
+                current_evt = current_note = None
             elif lvl == 1:
                 current_evt = current_note = None
 
@@ -141,7 +156,12 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
             elif lvl == 1 and tag == 'WIFE':
                 fams[xref]['wife'] = val
 
-    return indis, fams
+        elif ctx[0] == 'sour':
+            xref = ctx[1]
+            if lvl == 1 and tag == 'TITL':
+                sources[xref] = val
+
+    return indis, fams, sources
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +177,7 @@ def get_parents(xref: str, indis: dict, fams: dict) -> tuple[str | None, str | N
     return fam['husb'], fam['wife']
 
 
-def build_ancestor_json(root_xref: str, indis: dict, fams: dict) -> dict:
+def build_ancestor_json(root_xref: str, indis: dict, fams: dict, sources: dict | None = None) -> dict:
     """
     Walk all ancestors recursively.
     Returns dict keyed by Ahnentafel number (int):
@@ -171,6 +191,12 @@ def build_ancestor_json(root_xref: str, indis: dict, fams: dict) -> dict:
         if not xref or xref not in indis:
             continue
         info = indis[xref]
+        src_titles = []
+        if sources:
+            for sxref in info.get('source_xrefs', []):
+                title = sources.get(sxref)
+                if title and title not in src_titles:
+                    src_titles.append(title)
         result[key] = {
             'name':       info['name'] or '?',
             'birth_year': info['birth_year'],
@@ -178,6 +204,7 @@ def build_ancestor_json(root_xref: str, indis: dict, fams: dict) -> dict:
             'sex':        info['sex'],
             'events':     info['events'],
             'notes':      info['notes'],
+            'sources':    src_titles,
         }
         father, mother = get_parents(xref, indis, fams)
         stack.append((father, 2 * key))
@@ -250,10 +277,19 @@ header h1 { font-size: 16px; font-weight: 600; }
 #detail-body { padding: 18px 20px 28px 20px; flex: 1; }
 /* ── Notes (shown first) ────────────────────────────────── */
 #detail-notes { margin-bottom: 20px; }
-.note-card { font-size: 13px; color: #cbd5e1; line-height: 1.75;
-             white-space: pre-wrap; padding: 12px 14px;
-             background: rgba(255,255,255,0.04); border-radius: 8px;
-             border-left: 3px solid #475569; margin-bottom: 10px; }
+.notes-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none;
+  cursor: pointer; color: #64748b; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; padding: 0 0 10px 0; }
+.notes-toggle:hover { color: #94a3b8; }
+.notes-toggle-arrow { font-size: 8px; transition: transform 0.2s; }
+.notes-toggle.open .notes-toggle-arrow { transform: rotate(90deg); }
+.note-card { font-size: 13px; color: #f1f5f9; line-height: 1.75;
+             white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word;
+             padding: 10px 14px;
+             background: rgba(254, 249, 195, 0.1); border-radius: 6px;
+             border-left: 3px solid rgba(254, 243, 160, 0.35);
+             margin-bottom: 10px; }
+.note-card a { color: #fde68a; text-underline-offset: 2px; }
 /* ── Timeline ───────────────────────────────────────────── */
 #detail-timeline { position: relative; padding-left: 28px; }
 .timeline-spine { position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
@@ -268,13 +304,17 @@ header h1 { font-size: 16px; font-weight: 600; }
 .evt-meta  { font-size: 11px; color: #64748b; margin-top: 2px; line-height: 1.4; padding-left: 0; }
 .evt-note-inline { font-size: 11px; color: #94a3b8; margin-top: 3px; font-style: italic; }
 /* ── Also lived in ──────────────────────────────────────── */
-#detail-also-lived { margin-top: 20px; }
+#detail-also-lived { position: relative; padding-left: 28px; }
+#detail-also-lived.has-content { margin-top: 16px; border-top: 1px solid #334155; padding-top: 16px; }
+#detail-sources { margin-top: 16px; border-top: 1px solid #334155; padding-top: 14px; }
+.sources-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #475569; margin-bottom: 8px; display: block; }
+.source-item { font-size: 11px; color: #64748b; line-height: 1.5; padding: 2px 0; }
+.source-list { margin: 4px 0 0 0; padding-left: 18px; }
+.source-list .source-item { padding: 1px 0; }
 .also-lived-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: #475569; margin-bottom: 10px; display: block;
-  border-top: 1px solid #1e3a52; padding-top: 14px; }
-.also-lived-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.also-lived-tag { font-size: 12px; color: #94a3b8; background: rgba(255,255,255,0.05);
-  border: 1px solid #334155; border-radius: 4px; padding: 3px 8px; }
+  color: #475569; margin-bottom: 10px; margin-top: 16px; display: block; }
+.also-lived-heading:first-child { margin-top: 0; }
 /* ── Section divider ────────────────────────────────────── */
 .timeline-section-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -311,6 +351,7 @@ header h1 { font-size: 16px; font-weight: 600; }
       <div id="detail-events"></div>
     </div>
     <div id="detail-also-lived"></div>
+    <div id="detail-sources"></div>
   </div>
 </div>
 <script>
@@ -327,6 +368,20 @@ const EVENT_LABELS = {
 
 function escHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function linkify(s) {
+  // Match URLs in the raw string before HTML-escaping, so & in query strings isn't truncated
+  const URL_RE = /https?:\/\/\S+/g;
+  let result = '', last = 0, m;
+  while ((m = URL_RE.exec(s)) !== null) {
+    result += escHtml(s.slice(last, m.index));
+    const rawUrl = m[0].replace(/[.,;:!?)]+$/, ''); // strip trailing punctuation
+    const href   = rawUrl.replace(/&amp;/g, '&');   // decode any HTML entities in URL
+    result += `<a href="${escHtml(href)}" target="_blank" rel="noopener">${escHtml(rawUrl)}</a>`;
+    last = m.index + rawUrl.length;
+  }
+  result += escHtml(s.slice(last));
+  return result;
 }
 
 // ── Date / place formatting ──────────────────────────────────────────────────
@@ -444,7 +499,10 @@ function sortEvents(events) {
 }
 
 // ── Detail panel ─────────────────────────────────────────────────────────────
+let _openDetailKey = null;
+
 function showDetail(k) {
+  if (_openDetailKey === k) { closeDetail(); return; }
   const data  = ANCESTORS[k];
   const panel = document.getElementById('detail-panel');
 
@@ -482,11 +540,23 @@ function showDetail(k) {
     .map(e => escHtml(e.note));
   akaDiv.innerHTML = akaNames.length ? akaNames.join(' \xb7 ') : '';
 
-  // Notes first
+  // Notes — collapsible
   const notesDiv = document.getElementById('detail-notes');
-  notesDiv.innerHTML = (data.notes || []).map(n =>
-    `<div class="note-card" style="border-left-color:${accent}">${escHtml(n)}</div>`
-  ).join('');
+  const notes = data.notes || [];
+  if (notes.length) {
+    const count = notes.length;
+    const label = count === 1 ? '1 Note' : `${count} Notes`;
+    const cards = notes.map(n =>
+      `<div class="note-card" style="border-left-color:${accent}">${linkify(n)}</div>`
+    ).join('');
+    notesDiv.innerHTML =
+      `<button class="notes-toggle open" onclick="this.classList.toggle('open');` +
+      `this.nextElementSibling.style.display=this.classList.contains('open')?'block':'none'">` +
+      `<span class="notes-toggle-arrow">&#9658;</span>${escHtml(label)}</button>` +
+      `<div class="notes-body">${cards}</div>`;
+  } else {
+    notesDiv.innerHTML = '';
+  }
 
   // Timeline events (AKA excluded — shown above; undated RESI shown below)
   const evtDiv  = document.getElementById('detail-events');
@@ -496,7 +566,13 @@ function showDetail(k) {
     !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
   );
   const undatedResi = allVisible.filter(e => e.tag === 'RESI' && !e.date);
-  const visible = allVisible.filter(e => !(e.tag === 'RESI' && !e.date));
+  const undatedOccu = allVisible.filter(e => e.tag === 'OCCU' && !e.date);
+  const undatedNati = allVisible.filter(e => e.tag === 'NATI' && !e.date);
+  const visible = allVisible.filter(e =>
+    !(e.tag === 'RESI' && !e.date) &&
+    !(e.tag === 'OCCU' && !e.date) &&
+    !(e.tag === 'NATI' && !e.date)
+  );
   const sorted  = sortEvents(visible);
 
   if (!sorted.length) { evtDiv.innerHTML = ''; }
@@ -531,32 +607,52 @@ function showDetail(k) {
     evtDiv.innerHTML = html;
   }
 
-  // Undated residences — "Also lived in"
-  if (undatedResi.length) {
-    const tags = undatedResi.map(e => {
-      const loc = e.place ? escHtml(fmtPlace(e.place)) : '';
-      return loc ? `<span class="also-lived-tag">${loc}</span>` : '';
-    }).filter(Boolean).join('');
-    alsoLivedDiv.innerHTML = tags
-      ? `<span class="also-lived-heading">Also lived in</span>` +
-        `<div class="also-lived-list">${tags}</div>`
-      : '';
-  } else {
-    alsoLivedDiv.innerHTML = '';
+  // Undated bottom sections — rendered as timeline-style rows, no spine
+  function undatedRows(evts) {
+    return evts.map(evt => {
+      const { prose, meta } = buildProse(evt);
+      const color   = dotColor(evt.tag);
+      const noteInl = evt.note ? `<div class="evt-note-inline">${escHtml(evt.note)}</div>` : '';
+      return `<div class="evt-entry">` +
+        `<div class="evt-dot" style="background:${color}"></div>` +
+        `<div class="evt-prose">${escHtml(prose)}</div>` +
+        (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
+        noteInl +
+        `</div>`;
+    }).join('');
   }
 
+  let bottomHtml = '';
+  if (undatedResi.length) bottomHtml += `<span class="also-lived-heading">Also lived in</span>` + undatedRows(undatedResi);
+  if (undatedOccu.length) bottomHtml += `<span class="also-lived-heading">Occupation</span>`    + undatedRows(undatedOccu);
+  if (undatedNati.length) bottomHtml += `<span class="also-lived-heading">Nationality</span>`   + undatedRows(undatedNati);
+
+  alsoLivedDiv.innerHTML = bottomHtml;
+  alsoLivedDiv.className = bottomHtml ? 'has-content' : '';
+
+  const sourcesDiv = document.getElementById('detail-sources');
+  const srcs = data.sources || [];
+  sourcesDiv.innerHTML = srcs.length
+    ? `<span class="sources-heading">Sources</span>` +
+      (srcs.length === 1
+        ? `<div class="source-item">${escHtml(srcs[0])}</div>`
+        : `<ul class="source-list">${srcs.map(s => `<li class="source-item">${escHtml(s)}</li>`).join('')}</ul>`)
+    : '';
+
   panel.classList.add('panel-open');
+  _openDetailKey = k;
 }
 
 function closeDetail() {
   document.getElementById('detail-panel').classList.remove('panel-open');
+  _openDetailKey = null;
 }
 
 document.getElementById('detail-close').addEventListener('click', closeDetail);
 document.getElementById('home-btn').addEventListener('click', () => {
   closeDetail();
   visibleKeys.clear();
-  for (let g = 0; g <= 2; g++) {
+  for (let g = 0; g <= 4; g++) {
     const start = Math.pow(2, g), end = Math.pow(2, g + 1);
     for (let k = start; k < end; k++) { if (k in ANCESTORS) visibleKeys.add(k); }
   }
@@ -639,6 +735,22 @@ function nodePos(k) {
 function hasHiddenParents(k) {
   return ((2 * k) in ANCESTORS || (2 * k + 1) in ANCESTORS) &&
          !visibleKeys.has(2 * k) && !visibleKeys.has(2 * k + 1);
+}
+
+function hasVisibleParents(k) {
+  return visibleKeys.has(2 * k) || visibleKeys.has(2 * k + 1);
+}
+
+function collapseNode(k) {
+  function removeSubtree(n) {
+    visibleKeys.delete(n);
+    if (visibleKeys.has(2 * n)) removeSubtree(2 * n);
+    if (visibleKeys.has(2 * n + 1)) removeSubtree(2 * n + 1);
+  }
+  if (visibleKeys.has(2 * k))     removeSubtree(2 * k);
+  if (visibleKeys.has(2 * k + 1)) removeSubtree(2 * k + 1);
+  render();
+  fitAndCenter();
 }
 
 function fitAndCenter() {
@@ -793,7 +905,7 @@ function render() {
     }
     canvas.appendChild(nodeG);
 
-    // Expand button
+    // Expand / collapse buttons
     if (hasHiddenParents(k)) {
       const bx = x + NODE_W / 2 - 14;
       const by = y - BTN_ZONE + 2;
@@ -803,15 +915,28 @@ function render() {
       });
       btn.addEventListener('click', (e) => { e.stopPropagation(); expandNode(k); });
       canvas.appendChild(btn);
-
       const btxt = svgEl('text', {
         x: x + NODE_W / 2, y: by + 14,
-        'text-anchor': 'middle', fill: 'white',
-        'font-size': 12,
-        'font-family': 'system-ui, sans-serif',
-        'pointer-events': 'none'
+        'text-anchor': 'middle', fill: 'white', 'font-size': 12,
+        'font-family': 'system-ui, sans-serif', 'pointer-events': 'none'
       });
       btxt.textContent = '\\u25b2';
+      canvas.appendChild(btxt);
+    } else if (hasVisibleParents(k)) {
+      const bx = x + NODE_W / 2 - 14;
+      const by = y - BTN_ZONE + 2;
+      const btn = svgEl('rect', {
+        x: bx, y: by, width: 28, height: 22,
+        rx: 5, fill: '#475569', cursor: 'pointer'
+      });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); collapseNode(k); });
+      canvas.appendChild(btn);
+      const btxt = svgEl('text', {
+        x: x + NODE_W / 2, y: by + 14,
+        'text-anchor': 'middle', fill: 'white', 'font-size': 12,
+        'font-family': 'system-ui, sans-serif', 'pointer-events': 'none'
+      });
+      btxt.textContent = '\\u25bc';
       canvas.appendChild(btxt);
     }
   }
@@ -821,7 +946,7 @@ function render() {
 
 function init() {
   // Show generations 0-2 initially
-  for (let g = 0; g <= 2; g++) {
+  for (let g = 0; g <= 4; g++) {
     const start = Math.pow(2, g);
     const end   = Math.pow(2, g + 1);
     for (let k = start; k < end; k++) {
@@ -929,12 +1054,12 @@ def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
       'ancestor_count' : total number of individuals in the chart
       'generations'    : depth of the deepest known ancestor (gen 0 = root)
     """
-    indis, fams = parse_gedcom(path_in)
+    indis, fams, sources = parse_gedcom(path_in)
     root_xref   = _find_person(person, indis)
     if not root_xref:
         raise ValueError(f'Person not found: {person!r}')
 
-    ancestor_data = build_ancestor_json(root_xref, indis, fams)
+    ancestor_data = build_ancestor_json(root_xref, indis, fams, sources)
     root_name     = ancestor_data.get(1, {}).get('name', '?')
 
     html = render_html(ancestor_data, root_name)
