@@ -1049,23 +1049,23 @@ function render() {
     const childCx = cx + NODE_W / 2;
 
     if (hasFather && hasMother) {
-      // Horizontal line between the two parents at mid-node height,
-      // with a vertical drop from the child's center up to that line.
+      // Horizontal line between the two parents at mid-node height.
       const { x: fx, y: fy } = nodePos(fk);
       const { x: mx }        = nodePos(mk);
       const coupleY = fy + NODE_H / 2;
-      // Clamp child drop-point to the span of the couple line
-      const joinX = Math.max(fx + NODE_W, Math.min(mx, childCx));
       canvas.appendChild(svgEl('line', {
         x1: fx + NODE_W, y1: coupleY, x2: mx, y2: coupleY,
         stroke: '#475569', 'stroke-width': 1.5
       }));
-      // If siblings expanded, stop at the sibling bar (midY); sibling connector drops to child.
-      const dropY = expandedRelatives.has(k) ? cy - V_GAP / 2 : cy;
-      canvas.appendChild(svgEl('line', {
-        x1: joinX, y1: coupleY, x2: childCx, y2: dropY,
-        stroke: '#475569', 'stroke-width': 1.5
-      }));
+      // When siblings are expanded the sibling connector draws the vertical + bar.
+      // Otherwise drop straight down from the couple midpoint to the child.
+      if (!expandedRelatives.has(k)) {
+        const dropX = (fx + NODE_W + mx) / 2;  // midpoint of couple gap
+        canvas.appendChild(svgEl('line', {
+          x1: dropX, y1: coupleY, x2: childCx, y2: cy,
+          stroke: '#475569', 'stroke-width': 1.5
+        }));
+      }
     } else if (hasFather) {
       const { x: fx, y: fy } = nodePos(fk);
       canvas.appendChild(svgEl('line', {
@@ -1278,9 +1278,24 @@ function render() {
       const [barX1, barX2] = male ? [outerCx, ancCx] : [ancCx, outerCx];
       if (hasFather || hasMother) {
         const midY = ay - V_GAP / 2;
-        // Single horizontal bar spanning anchor center to outermost sibling
+        // When both parents visible, draw the vertical from the couple line
+        // down to the children bar and extend the bar to include that drop point.
+        let extBarX1 = barX1, extBarX2 = barX2;
+        if (hasFather && hasMother) {
+          const fp = _posCache.get(2*k), mp = _posCache.get(2*k+1);
+          const coupleY    = fp.y + NODE_H / 2;
+          const dropX      = (fp.x + NODE_W + mp.x) / 2;  // midpoint of couple gap
+          // Pure vertical — never diagonal
+          canvas.appendChild(svgEl('line', {
+            x1: dropX, y1: coupleY, x2: dropX, y2: midY,
+            stroke: '#475569', 'stroke-width': 1.5
+          }));
+          extBarX1 = Math.min(barX1, dropX);
+          extBarX2 = Math.max(barX2, dropX);
+        }
+        // Horizontal children bar (extended to include couple drop point)
         canvas.appendChild(svgEl('line', {
-          x1: barX1, y1: midY, x2: barX2, y2: midY,
+          x1: extBarX1, y1: midY, x2: extBarX2, y2: midY,
           stroke: '#475569', 'stroke-width': 1.5
         }));
         // Anchor's own drop from bar down to anchor node top
