@@ -48,13 +48,6 @@ IGNORED_OCCUPATIONS: frozenset[str] = frozenset({
     '(no occupation)',
 })
 
-# Substrings that indicate an institution name rather than an occupation role.
-_INSTITUTION_MARKERS: tuple[str, ...] = (
-    'university',
-    'college',
-    'institute',
-    'academy',
-)
 
 
 def extract_occupation_from_note(note_val: str) -> str | None:
@@ -77,8 +70,6 @@ def extract_occupation_from_note(note_val: str) -> str | None:
     occ = m.group(1).strip()
     occ_lower = occ.lower()
     if occ_lower in IGNORED_OCCUPATIONS:
-        return None
-    if any(marker in occ_lower for marker in _INSTITUTION_MARKERS):
         return None
     return occ
 
