@@ -101,7 +101,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
                 indis[xref]['sex'] = val
                 current_evt = current_note = None
             elif lvl == 1 and tag in _EVENT_TAGS:
-                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'note': None}
+                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'note': val if val else None}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
@@ -233,6 +233,12 @@ header h1 { font-size: 16px; font-weight: 600; }
                 font-size: 20px; cursor: pointer; padding: 14px 14px 14px 4px;
                 line-height: 1; flex-shrink: 0; align-self: flex-start; }
 #detail-close:hover { color: #f1f5f9; }
+#home-btn { position: fixed; bottom: 24px; right: 24px; z-index: 200;
+            background: #1e293b; border: 1px solid #334155; border-radius: 50%;
+            width: 44px; height: 44px; display: flex; align-items: center;
+            justify-content: center; cursor: pointer; color: #94a3b8;
+            font-size: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+#home-btn:hover { background: #334155; color: #f1f5f9; }
 /* ── Lifespan bar ───────────────────────────────────────── */
 #detail-lifespan-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .lifespan-year { color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
@@ -287,6 +293,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   <g id="canvas"></g>
 </svg>
 </div>
+<button id="home-btn" title="Return to root">&#x2302;</button>
 <div id="detail-panel">
   <div id="detail-header">
     <div id="detail-accent-bar"></div>
@@ -337,8 +344,8 @@ function fmtDate(raw) {
   else if (s.startsWith('BEF ')) { prefix = 'before ';  rest = s.slice(4); }
   else if (s.startsWith('AFT ')) { prefix = 'after ';   rest = s.slice(4); }
   else if (s.startsWith('CAL ') || s.startsWith('EST ')) { prefix = 'around '; rest = s.slice(4); }
-  const bet = rest.match(/^BET\\s+(\\S+)\\s+AND\\s+(.+)$/);
-  if (bet) return 'between ' + fmtDate(bet[1]) + ' and ' + fmtDate(bet[2]);
+  const bet = rest.match(/^BET\\s+(.+?)\\s+AND\\s+(.+)$/);
+  if (bet) return fmtDate(bet[1]) + ' – ' + fmtDate(bet[2]);
   const dmy = rest.match(/^(\\d{1,2})\\s+([A-Z]{3})\\s+(\\d{4})$/);
   if (dmy) return prefix + (_MONTH_ABBR[dmy[2]] || dmy[2]) + ' ' + dmy[1] + ', ' + dmy[3];
   const my = rest.match(/^([A-Z]{3})\\s+(\\d{4})$/);
@@ -380,8 +387,7 @@ function buildProse(evt) {
     case 'BURI': return { prose: short ? `Buried in ${short}` : (date ? `Buried ${date}` : 'Burial'),    meta: meta() };
     case 'RESI': return { prose: short ? `Lived in ${short}` : (date ? `Lived ${date}` : 'Residence'),   meta: meta() };
     case 'OCCU': {
-      const job = type || evt.note || 'Occupation';
-      return { prose: `Worked as ${job}`, meta: [short, date].filter(Boolean).join(' \\u00b7 ') };
+      return { prose: type ? `Worked as ${type}` : 'Occupation', meta: meta() };
     }
     case 'IMMI': return { prose: short ? `Immigrated to ${short}` : (date ? `Immigrated ${date}` : 'Immigration'), meta: meta() };
     case 'NATU': return { prose: short ? `Naturalized in ${short}` : (date ? `Naturalized ${date}` : 'Naturalization'), meta: meta() };
@@ -547,8 +553,19 @@ function closeDetail() {
 }
 
 document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('home-btn').addEventListener('click', () => {
+  closeDetail();
+  visibleKeys.clear();
+  for (let g = 0; g <= 2; g++) {
+    const start = Math.pow(2, g), end = Math.pow(2, g + 1);
+    for (let k = start; k < end; k++) { if (k in ANCESTORS) visibleKeys.add(k); }
+  }
+  scale = 1;
+  render();
+  fitAndCenter();
+});
 
-const NODE_W = 220, NODE_H = 60, H_GAP = 28, V_GAP = 80;
+const NODE_W = 175, NODE_H = 60, H_GAP = 10, V_GAP = 80;
 const MARGIN_X = 90, MARGIN_TOP = 50, BTN_ZONE = 28;
 
 const visibleKeys = new Set();
@@ -572,14 +589,51 @@ function maxVisibleGen() {
   return mx;
 }
 
-function nodePos(k, maxGen) {
-  const g    = genOf(k);
-  const slot = slotOf(k);
-  const slotW = NODE_W + H_GAP;
-  const slotsPerNode = Math.pow(2, maxGen - g);
-  const x = MARGIN_X + slot * slotsPerNode * slotW + (slotsPerNode * slotW - NODE_W) / 2;
-  const y = MARGIN_TOP + BTN_ZONE + (maxGen - g) * (NODE_H + V_GAP);
-  return { x, y };
+// Compact layout: each node gets only as much horizontal space as its visible subtree needs.
+let _posCache = new Map();
+
+function _subtreeWidth(k, cache) {
+  if (cache.has(k)) return cache.get(k);
+  const fk = 2*k, mk = 2*k+1;
+  const hasFather = visibleKeys.has(fk);
+  const hasMother = visibleKeys.has(mk);
+  let w;
+  if (!hasFather && !hasMother) {
+    w = 1;
+  } else {
+    const fw = hasFather ? _subtreeWidth(fk, cache) : 0;
+    const mw = hasMother ? _subtreeWidth(mk, cache) : 0;
+    w = Math.max(1, fw + mw);
+  }
+  cache.set(k, w);
+  return w;
+}
+
+function computePositions() {
+  _posCache = new Map();
+  const maxGen = maxVisibleGen();
+  const slotW  = NODE_W + H_GAP;
+  const wCache = new Map();
+  _subtreeWidth(1, wCache);
+
+  function layout(k, xStart) {
+    const w  = wCache.get(k) || 1;
+    const fk = 2*k, mk = 2*k+1;
+    const hasFather = visibleKeys.has(fk);
+    const hasMother = visibleKeys.has(mk);
+    const g  = genOf(k);
+    const x  = xStart + (w * slotW - NODE_W) / 2;
+    const y  = MARGIN_TOP + BTN_ZONE + (maxGen - g) * (NODE_H + V_GAP);
+    _posCache.set(k, {x, y});
+    let offset = xStart;
+    if (hasFather) { const fw = wCache.get(fk) || 1; layout(fk, offset); offset += fw * slotW; }
+    if (hasMother) { layout(mk, offset); }
+  }
+  layout(1, MARGIN_X);
+}
+
+function nodePos(k) {
+  return _posCache.get(k) || {x: 0, y: 0};
 }
 
 function hasHiddenParents(k) {
@@ -587,18 +641,30 @@ function hasHiddenParents(k) {
          !visibleKeys.has(2 * k) && !visibleKeys.has(2 * k + 1);
 }
 
+function fitAndCenter() {
+  computePositions();
+  const vp = document.getElementById('viewport');
+  let maxX = 0, maxY = 0;
+  for (const {x, y} of _posCache.values()) {
+    maxX = Math.max(maxX, x + NODE_W);
+    maxY = Math.max(maxY, y + NODE_H);
+  }
+  const treeW = maxX + MARGIN_X;
+  const treeH = maxY + 20;
+  const scaleX = (vp.clientWidth  * 0.96) / treeW;
+  const scaleY = (vp.clientHeight * 0.92) / treeH;
+  scale = Math.min(1, scaleX, scaleY);
+  const { x: rootX, y: rootY } = nodePos(1);
+  tx = vp.clientWidth  / 2 - (rootX + NODE_W / 2) * scale;
+  ty = vp.clientHeight - (rootY + NODE_H) * scale - 30;
+  applyTransform();
+}
+
 function expandNode(k) {
   if ((2 * k) in ANCESTORS)     visibleKeys.add(2 * k);
   if ((2 * k + 1) in ANCESTORS) visibleKeys.add(2 * k + 1);
   render();
-  // Pan up so the newly added generation is just visible at the top
-  const maxGen = maxVisibleGen();
-  const { y: newGenY } = nodePos(Math.pow(2, maxGen), maxGen);
-  const screenY = ty + newGenY * scale;
-  if (screenY < BTN_ZONE * scale + 20) {
-    ty = BTN_ZONE * scale + 20 - newGenY * scale;
-    applyTransform();
-  }
+  fitAndCenter();
 }
 
 function svgEl(tag, attrs) {
@@ -614,13 +680,14 @@ function genLabel(g) {
 }
 
 function render() {
+  computePositions();
   const maxGen = maxVisibleGen();
   const canvas = document.getElementById('canvas');
   canvas.innerHTML = '';
 
   // Connector lines (drawn below nodes)
   for (const k of visibleKeys) {
-    const { x: cx, y: cy } = nodePos(k, maxGen);
+    const { x: cx, y: cy } = nodePos(k);
     const fk = 2 * k, mk = 2 * k + 1;
     const hasFather = visibleKeys.has(fk);
     const hasMother = visibleKeys.has(mk);
@@ -635,7 +702,7 @@ function render() {
     }));
 
     if (hasFather) {
-      const { x: fx, y: fy } = nodePos(fk, maxGen);
+      const { x: fx, y: fy } = nodePos(fk);
       canvas.appendChild(svgEl('line', {
         x1: fx + NODE_W / 2, y1: fy + NODE_H,
         x2: fx + NODE_W / 2, y2: midY,
@@ -643,7 +710,7 @@ function render() {
       }));
     }
     if (hasMother) {
-      const { x: mx, y: my } = nodePos(mk, maxGen);
+      const { x: mx, y: my } = nodePos(mk);
       canvas.appendChild(svgEl('line', {
         x1: mx + NODE_W / 2, y1: my + NODE_H,
         x2: mx + NODE_W / 2, y2: midY,
@@ -651,8 +718,8 @@ function render() {
       }));
     }
     if (hasFather && hasMother) {
-      const { x: fx } = nodePos(fk, maxGen);
-      const { x: mx } = nodePos(mk, maxGen);
+      const { x: fx } = nodePos(fk);
+      const { x: mx } = nodePos(mk);
       canvas.appendChild(svgEl('line', {
         x1: fx + NODE_W / 2, y1: midY,
         x2: mx + NODE_W / 2, y2: midY,
@@ -664,7 +731,8 @@ function render() {
   // Generation labels (left side)
   const gensSeen = new Set([...visibleKeys].map(genOf));
   for (const g of gensSeen) {
-    const { y } = nodePos(Math.pow(2, g), maxGen);
+    const firstK = [...visibleKeys].find(k => genOf(k) === g);
+    const { y } = nodePos(firstK);
     const lbl = svgEl('text', {
       x: 4, y: y + NODE_H / 2,
       fill: '#64748b', 'font-size': 11,
@@ -677,7 +745,7 @@ function render() {
 
   // Person nodes
   for (const k of visibleKeys) {
-    const { x, y } = nodePos(k, maxGen);
+    const { x, y } = nodePos(k);
     const data   = ANCESTORS[k];
     const isRoot = (k === 1);
     const isMale = (k % 2 === 0 && k > 1);
@@ -695,8 +763,8 @@ function render() {
     });
     nodeG.appendChild(nodeRect);
 
-    const displayName = data.name.length > 27
-      ? data.name.slice(0, 25) + '\\u2026'
+    const displayName = data.name.length > 21
+      ? data.name.slice(0, 19) + '\\u2026'
       : data.name;
     const nameEl = svgEl('text', {
       x: x + NODE_W / 2, y: y + 22,
@@ -768,13 +836,7 @@ function init() {
   document.documentElement.style.setProperty('--header-h', hdrH + 'px');
 
   render();
-
-  // Center root node horizontally; place it near the bottom of the viewport
-  const maxGen = maxVisibleGen();
-  const { x, y } = nodePos(1, maxGen);
-  tx = vp.clientWidth  / 2 - (x + NODE_W / 2) * scale;
-  ty = vp.clientHeight - (y + NODE_H)          * scale - 30;
-  applyTransform();
+  fitAndCenter();
 }
 
 // ---- Pinch-to-zoom + two-finger pan (trackpad wheel events) ----
