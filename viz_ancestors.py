@@ -1060,8 +1060,10 @@ function render() {
         x1: fx + NODE_W, y1: coupleY, x2: mx, y2: coupleY,
         stroke: '#475569', 'stroke-width': 1.5
       }));
+      // If siblings expanded, stop at the sibling bar (midY); sibling connector drops to child.
+      const dropY = expandedRelatives.has(k) ? cy - V_GAP / 2 : cy;
       canvas.appendChild(svgEl('line', {
-        x1: joinX, y1: coupleY, x2: childCx, y2: cy,
+        x1: joinX, y1: coupleY, x2: childCx, y2: dropY,
         stroke: '#475569', 'stroke-width': 1.5
       }));
     } else if (hasFather) {
@@ -1279,6 +1281,11 @@ function render() {
         // Single horizontal bar spanning anchor center to outermost sibling
         canvas.appendChild(svgEl('line', {
           x1: barX1, y1: midY, x2: barX2, y2: midY,
+          stroke: '#475569', 'stroke-width': 1.5
+        }));
+        // Anchor's own drop from bar down to anchor node top
+        canvas.appendChild(svgEl('line', {
+          x1: ancCx, y1: midY, x2: ancCx, y2: ay,
           stroke: '#475569', 'stroke-width': 1.5
         }));
         // Individual vertical drops from bar down to each sibling top
