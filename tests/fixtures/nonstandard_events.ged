@@ -1,0 +1,111 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SEX M
+1 BIRT
+2 DATE 15 MAR 1905
+2 PLAC London, England
+1 _MILT
+2 DATE ABT 1943
+2 PLAC Bhopal, Madhya Pradesh, India
+2 NOTE Served as Interpreter Sergeant at a camp for Italian POWs
+1 RESI
+2 DATE AFT 1945
+2 PLAC London, England
+0 @I2@ INDI
+1 NAME Marie /Dupont/
+1 SEX F
+1 BIRT
+2 DATE 10 JUN 1920
+1 _MILT
+2 DATE BET 1914 AND 1920
+2 PLAC England, Wales, Scotland, Ireland
+2 SOUR @S1@
+3 PAGE War Office records, ref 1234
+3 DATA
+4 DATE 1915
+1 DEAT
+2 DATE 5 MAY 1985
+0 @I3@ INDI
+1 NAME Philip /Caraman/
+1 SEX M
+1 _MILT
+1 BIRT
+2 DATE 1 JAN 1911
+0 @I4@ INDI
+1 NAME Antoine /Artaud/
+1 SEX M
+1 BIRT
+2 DATE 4 SEP 1896
+2 PLAC Marseille, France
+1 _DCAUSE
+2 NOTE overdose, potential suicide
+1 DEAT
+2 DATE 4 MAR 1948
+2 PLAC Ivry-sur-Seine, France
+0 @I5@ INDI
+1 NAME Yvette /Bonheur/
+1 SEX F
+1 BIRT
+2 DATE 13 JAN 1905
+2 PLAC Marseille, France
+1 _DCAUSE
+2 NOTE blunt force trauma
+3 CONT According to a biography, the baby died from an injury.
+1 DEAT
+2 DATE 21 AUG 1905
+2 PLAC Marseille, France
+2 SOUR @S1@
+3 PAGE Death register entry
+0 @I6@ INDI
+1 NAME René /Moreau/
+1 SEX M
+1 BIRT
+2 DATE 1 APR 1880
+1 IMMI
+2 DATE 1921
+2 NOTE Left France for Paris
+1 _DCAUSE
+2 NOTE drowning
+1 OCCU Sailor
+1 DEAT
+2 DATE 12 SEP 1932
+2 PLAC Marseille, France
+0 @I7@ INDI
+1 NAME Edith /Laurent/
+1 SEX F
+1 BIRT
+2 DATE 22 FEB 1900
+1 _DCAUSE
+2 NOTE natural causes
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 10 JUN 1935
+1 _SEPR
+2 DATE 1986
+1 DIV
+2 DATE 1987
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I4@
+1 MARR
+2 DATE 20 MAY 1950
+1 _SEPR
+2 DATE ABT 1960
+2 PLAC Paris, France
+2 NOTE Separated after years of conflict.
+1 DIV
+2 DATE 1962
+0 @F3@ FAM
+1 HUSB @I5@
+1 WIFE @I6@
+1 _SEPR
+0 @S1@ SOUR
+1 TITL French National Archives
+0 TRLR
