@@ -777,6 +777,50 @@ function closeDetail() {
   _animateFitAndCenter(220);
 }
 
+function showDetailForStub(stubData) {
+  const panel = document.getElementById('detail-panel');
+  const accent = {'M':'#3b82f6','F':'#a855f7'}[stubData.sex] || '#475569';
+  document.getElementById('detail-accent-bar').style.background = accent;
+
+  const sexSym = {'M':'\\u2642','F':'\\u2640'}[stubData.sex] || '';
+  document.getElementById('detail-name').innerHTML =
+    escHtml(stubData.name || '?') + (sexSym ? `<span class="sex-sym">${sexSym}</span>` : '');
+
+  const by = stubData.birth_year ? parseInt(stubData.birth_year) : null;
+  const dy = stubData.death_year ? parseInt(stubData.death_year) : null;
+  const lifespanRow = document.getElementById('detail-lifespan-row');
+  if (by) {
+    const span = (dy && dy > by) ? dy - by : null;
+    const fillStyle = dy
+      ? `background: linear-gradient(90deg, ${accent}, #6366f1); width: 100%;`
+      : `background: linear-gradient(90deg, ${accent}, transparent); width: 100%;`;
+    lifespanRow.innerHTML =
+      `<span class="lifespan-year">${by}</span>` +
+      `<div class="lifespan-bar-track"><div class="lifespan-bar-fill" style="${fillStyle}"></div></div>` +
+      `<span class="lifespan-year">${dy || '\\u2014'}</span>` +
+      (span ? `<span class="lifespan-age">~${span} years</span>` : '');
+  } else {
+    lifespanRow.innerHTML = '';
+  }
+
+  document.getElementById('detail-aka').innerHTML = '';
+  document.getElementById('detail-notes').innerHTML = '';
+  document.getElementById('detail-also-lived').innerHTML = '';
+  document.getElementById('detail-sources').innerHTML = '';
+  document.getElementById('detail-events').innerHTML =
+    `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #334155">` +
+    `<button onclick="window.location.href='/?person='+encodeURIComponent('${stubData.id}')"` +
+    ` style="background:${accent};border:none;color:white;padding:8px 16px;border-radius:6px;` +
+    `cursor:pointer;font-size:13px;font-weight:600">Set as root person</button></div>`;
+
+  _openDetailKey = null;
+  panel.classList.add('panel-open');
+  const vp = document.getElementById('viewport');
+  vp.style.marginRight = '480px';
+  document.getElementById('home-btn').style.right = (480 + 24) + 'px';
+  _animateFitAndCenter(220);
+}
+
 function _animateFitAndCenter(duration) {
   const start = performance.now();
   function frame(now) {
@@ -1218,7 +1262,7 @@ function render() {
     const rg = svgEl('g', { cursor: 'pointer' });
     rg.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!didDrag) window.location.href = '/?person=' + encodeURIComponent(nodeData.id) + '&open=1';
+      if (!didDrag) showDetailForStub(nodeData);
     });
     rg.appendChild(svgEl('rect', { x: rx, y: ry, width: NODE_W, height: NODE_H, rx: 8, fill, opacity: 0.85 }));
     const dname = (nodeData.name || '?');
