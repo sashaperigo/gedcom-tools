@@ -211,10 +211,9 @@ def scan_duplicate_sources(path: str):
 
     violations = []
     defn_re = re.compile(r'^0 ')
-    l1_re = re.compile(r'^1 ([A-Z]+)')
     current_rec = None
-    current_event = None
-    seen: dict = {}  # (rec, event, xref) -> set of children tuples
+    current_event = None  # line index of current event start (unique per block)
+    seen: dict = {}  # (rec, event_start_lineno, xref) -> set of children tuples
 
     for i, raw in enumerate(lines):
         line = raw.rstrip('\n')
@@ -224,9 +223,7 @@ def scan_duplicate_sources(path: str):
             seen = {}
             continue
         if line.startswith('1 '):
-            m = l1_re.match(line)
-            if m:
-                current_event = m.group(1)
+            current_event = i  # use line index so each event block is unique
             continue
         m = SOUR_CITE_LINE_RE.match(line)
         if m and current_rec:
@@ -262,9 +259,8 @@ def fix_duplicate_sources(path: str, dry_run: bool = False):
         lines = f.readlines()
 
     defn_re = re.compile(r'^0 ')
-    l1_re = re.compile(r'^1 ([A-Z]+)')
     current_rec = None
-    current_event = None
+    current_event = None  # line index of current event start (unique per block)
     seen: dict = {}
     remove_ranges = []  # list of (start_idx, end_idx) to drop
 
@@ -278,9 +274,7 @@ def fix_duplicate_sources(path: str, dry_run: bool = False):
             i += 1
             continue
         if line.startswith('1 '):
-            m = l1_re.match(line)
-            if m:
-                current_event = m.group(1)
+            current_event = i  # use line index so each event block is unique
             i += 1
             continue
         m = SOUR_CITE_LINE_RE.match(line)
