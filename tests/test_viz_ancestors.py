@@ -474,6 +474,13 @@ class TestOutput:
         content = Path(out).read_text(encoding='utf-8')
         assert 'Rosie Smith' in content
 
+    def test_html_uses_midY_routing(self, tmp_path):
+        """Connector routes through midY waypoint — no direct diagonal to child."""
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert 'cy - V_GAP / 2' in content   # midY L-shaped routing present
+
     def test_html_contains_relatives_json(self, tmp_path):
         """RELATIVES_JSON must be embedded and contain sibling/spouse data."""
         out = str(tmp_path / 'out.html')

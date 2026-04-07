@@ -1058,26 +1058,28 @@ function render() {
         stroke: '#475569', 'stroke-width': 1.5
       }));
       // When siblings are expanded the sibling connector draws the vertical + bar.
-      // Otherwise drop straight down from the couple midpoint to the child.
+      // Otherwise route through midY to avoid diagonal lines.
       if (!expandedRelatives.has(k)) {
         const dropX = (fx + NODE_W + mx) / 2;  // midpoint of couple gap
-        canvas.appendChild(svgEl('line', {
-          x1: dropX, y1: coupleY, x2: childCx, y2: cy,
-          stroke: '#475569', 'stroke-width': 1.5
-        }));
+        const midY  = cy - V_GAP / 2;
+        canvas.appendChild(svgEl('line', {x1: dropX,   y1: coupleY, x2: dropX,   y2: midY,  stroke: '#475569', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: dropX,   y1: midY,   x2: childCx, y2: midY,   stroke: '#475569', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: childCx, y1: midY,   x2: childCx, y2: cy,     stroke: '#475569', 'stroke-width': 1.5}));
       }
     } else if (hasFather) {
       const { x: fx, y: fy } = nodePos(fk);
-      canvas.appendChild(svgEl('line', {
-        x1: fx + NODE_W / 2, y1: fy + NODE_H, x2: childCx, y2: cy,
-        stroke: '#475569', 'stroke-width': 1.5
-      }));
+      const px   = fx + NODE_W / 2;
+      const midY = cy - V_GAP / 2;
+      canvas.appendChild(svgEl('line', {x1: px,      y1: fy + NODE_H, x2: px,      y2: midY, stroke: '#475569', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1: px,      y1: midY,        x2: childCx, y2: midY,  stroke: '#475569', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1: childCx, y1: midY,        x2: childCx, y2: cy,    stroke: '#475569', 'stroke-width': 1.5}));
     } else {
       const { x: mx, y: my } = nodePos(mk);
-      canvas.appendChild(svgEl('line', {
-        x1: mx + NODE_W / 2, y1: my + NODE_H, x2: childCx, y2: cy,
-        stroke: '#475569', 'stroke-width': 1.5
-      }));
+      const px   = mx + NODE_W / 2;
+      const midY = cy - V_GAP / 2;
+      canvas.appendChild(svgEl('line', {x1: px,      y1: my + NODE_H, x2: px,      y2: midY, stroke: '#475569', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1: px,      y1: midY,        x2: childCx, y2: midY,  stroke: '#475569', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1: childCx, y1: midY,        x2: childCx, y2: cy,    stroke: '#475569', 'stroke-width': 1.5}));
     }
   }
 
