@@ -1,0 +1,68 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Alice /Tailor/
+1 RESI
+2 PLAC London, England
+2 NOTE Occupation: Tailor
+1 BIRT
+2 DATE 1 JAN 1880
+0 @I2@ INDI
+1 NAME Bob /Constable/
+1 RESI
+2 DATE 1921
+2 PLAC Lincoln, Lincolnshire, England
+2 NOTE Occupation: Police Constable; Marital Status: Married; Relation to Head of House: Head
+1 BIRT
+2 DATE 1 JAN 1870
+0 @I3@ INDI
+1 NAME Carol /Merchant/
+1 RESI
+2 DATE 1939
+2 PLAC Yorkshire, England
+2 NOTE Marital Status: Married; Occupation: Mohair Merchant
+1 BIRT
+2 DATE 1 JAN 1900
+0 @I4@ INDI
+1 NAME David /Nooccu/
+1 RESI
+2 DATE 1911
+2 PLAC Bristol, England
+2 NOTE Marital Status: Married; Relation to Head of House: Head
+1 BIRT
+2 DATE 1 JAN 1890
+0 @I5@ INDI
+1 NAME Eve /Director/
+1 EVEN
+2 TYPE Arrival
+2 DATE 15 Nov 1955
+2 PLAC Southampton, England
+2 NOTE Occupation: Director
+1 BIRT
+2 DATE 1 JAN 1920
+0 @I6@ INDI
+1 NAME Fred /Engineer/
+1 OCCU Engineer
+2 DATE 1985
+1 BIRT
+2 DATE 1 JAN 1950
+0 @I7@ INDI
+1 NAME Grace /Student/
+1 RESI
+2 DATE 1921
+2 PLAC Bristol, England
+2 NOTE Occupation: Student; Marital Status: Single
+1 BIRT
+2 DATE 1 JAN 1905
+0 @I8@ INDI
+1 NAME Henry /Scholar/
+1 RESI
+2 DATE 1911
+2 PLAC Manchester, England
+2 NOTE Occupation: Scholar
+1 BIRT
+2 DATE 1 JAN 1900
+0 TRLR
