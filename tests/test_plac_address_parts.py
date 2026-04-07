@@ -90,6 +90,23 @@ class TestClassifyPlacPart:
     def test_suffix_case_insensitive(self):
         assert classify_plac_part('Oak BOULEVARD') == 'addr'
 
+    def test_st_without_dot_is_not_street_suffix(self):
+        """'St' removed from street suffixes — 'St Marks' should not be addr."""
+        assert classify_plac_part('St Marks') == 'ambiguous'
+
+    def test_st_marylebone_not_flagged(self):
+        assert classify_plac_part('St Marylebone') == 'ambiguous'
+
+    def test_st_peter_not_flagged(self):
+        assert classify_plac_part('St Peter') == 'ambiguous'
+
+    def test_st_with_church_keyword_still_note(self):
+        """Even without 'St' in street suffixes, Church keyword still → note."""
+        assert classify_plac_part('St Matthews Church') == 'note'
+
+    def test_st_with_cathedral_keyword_still_note(self):
+        assert classify_plac_part("St John's Cathedral") == 'note'
+
     # ── Named-place descriptor cases (→ 'note') ──────────────────────────────
 
     def test_cemetery(self):
@@ -107,11 +124,25 @@ class TestClassifyPlacPart:
     def test_university(self):
         assert classify_plac_part('University of Oxford') == 'note'
 
-    def test_college(self):
-        assert classify_plac_part('King College') == 'note'
+    def test_college_ambiguous(self):
+        """'College' removed from place keywords — 'College Park' city false positive."""
+        assert classify_plac_part('King College') == 'ambiguous'
 
-    def test_fort(self):
-        assert classify_plac_part('Fort Hamilton') == 'note'
+    def test_college_park_not_flagged(self):
+        assert classify_plac_part('College Park') == 'ambiguous'
+
+    def test_fort_ambiguous(self):
+        """'Fort' removed from place keywords — too many city-name false positives."""
+        assert classify_plac_part('Fort Hamilton') == 'ambiguous'
+
+    def test_fort_lauderdale_not_flagged(self):
+        assert classify_plac_part('Fort Lauderdale') == 'ambiguous'
+
+    def test_fort_worth_not_flagged(self):
+        assert classify_plac_part('Fort Worth') == 'ambiguous'
+
+    def test_fort_de_france_not_flagged(self):
+        assert classify_plac_part('Fort-de-France') == 'ambiguous'
 
     def test_camp(self):
         assert classify_plac_part('Camp David') == 'note'

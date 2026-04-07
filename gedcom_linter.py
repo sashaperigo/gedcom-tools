@@ -510,16 +510,23 @@ def fix_trailing_whitespace(path: str, dry_run: bool = False):
 PLAC_RE = re.compile(r'^(\d+ PLAC )(.+)$')
 
 _STREET_SUFFIXES = re.compile(
-    r'\b(Avenue|Ave|Boulevard|Blvd|Road|Rd|Street|St|Lane|Ln|Drive|Dr'
+    # "St" intentionally omitted — it matches saint-name prefixes in parish
+    # and church names (e.g. "St Marks, Kensington") causing false positives.
+    # Addresses using "St" as a Street abbreviation almost always have a
+    # leading house number, which the digit heuristic already catches.
+    r'\b(Avenue|Ave|Boulevard|Blvd|Road|Rd|Street|Lane|Ln|Drive|Dr'
     r'|Way|Court|Ct|Place|Pl|Terrace|Ter|Circle|Cir|Highway|Hwy'
     r'|Route|Rte|Alley|Aly|Parkway|Pkwy)\b', re.IGNORECASE)
 
 _PLACE_KEYWORDS = re.compile(
+    # "Fort" and "College" intentionally omitted — they appear frequently in
+    # legitimate city names (Fort Worth, Fort Lauderdale, College Park) and
+    # generate more false positives than true detections.
     r'\b(Cemetery|Cemetary|Graveyard|Churchyard|Church|Chapel|Cathedral'
-    r'|Hospital|Clinic|Sanitarium|Sanatorium|School|College|University'
+    r'|Hospital|Clinic|Sanitarium|Sanatorium|School|University'
     r'|Synagogue|Mosque|Temple|Crematorium|Crematory|Mortuary|Funeral'
     r'|Convent|Monastery|Asylum|Prison|Jail|Workhouse|Poorhouse'
-    r'|Infirmary|Barracks|Fort|Camp|Plantation)\b', re.IGNORECASE)
+    r'|Infirmary|Barracks|Camp|Plantation)\b', re.IGNORECASE)
 
 # Title abbreviations that prefix named places (e.g. "St. Mary's Church",
 # "Mt. Auburn Cemetery") — stripped before street-suffix detection so the
