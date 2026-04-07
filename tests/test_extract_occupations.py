@@ -103,10 +103,13 @@ class TestExtractOccupationFromNote:
     def test_no_occupation_label_is_ignored(self):
         assert extract_occupation_from_note('Occupation: (No Occupation)') is None
 
+    def test_keeping_house_is_ignored(self):
+        assert extract_occupation_from_note('Occupation: Keeping House') is None
+
     def test_ignored_occupations_set_contains_expected_values(self):
         for val in ('student', 'scholar', 'school', 'home duties',
                     'unpaid domestic duties', 'private means', 'none',
-                    '(no occupation)'):
+                    '(no occupation)', 'keeping house'):
             assert val in IGNORED_OCCUPATIONS
 
 

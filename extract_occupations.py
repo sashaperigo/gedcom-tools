@@ -46,6 +46,7 @@ IGNORED_OCCUPATIONS: frozenset[str] = frozenset({
     'private means',
     'none',
     '(no occupation)',
+    'keeping house',
 })
 
 
