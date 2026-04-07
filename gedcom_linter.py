@@ -802,6 +802,49 @@ def fix_file(path: str, dry_run: bool = False):
 
 
 # ---------------------------------------------------------------------------
+# Programmatic all-fixes API
+# ---------------------------------------------------------------------------
+
+def lint_and_fix(path: str, dry_run: bool = False) -> dict:
+    """
+    Run all fix operations (equivalent to --fix-all) on *path*.
+
+    Parameters
+    ----------
+    path    : path to the GEDCOM file (modified in-place unless dry_run)
+    dry_run : if True, compute what would change but do not write
+
+    Returns
+    -------
+    dict with keys:
+      'lines_read'     : total lines in the file before any fixes
+      'lines_delta'    : net line change (negative = file shrank)
+      'fixes_applied'  : total number of individual fixes made across all passes
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_before = sum(1 for _ in f)
+
+    fixes_applied = 0
+    fixes_applied += fix_trailing_whitespace(path, dry_run=dry_run)
+    fixes_applied += fix_duplicate_sources(path, dry_run=dry_run)
+    fixes_applied += fix_name_double_spaces(path, dry_run=dry_run)
+    fixes_applied += fix_long_lines(path, dry_run=dry_run)
+    fixes_applied += fix_plac(path, dry_run=dry_run)
+    fixes_applied += fix_plac_address_parts(path, dry_run=dry_run)
+    dates_fixed, _ = fix_file(path, dry_run=dry_run)
+    fixes_applied += dates_fixed
+
+    with open(path, encoding='utf-8') as f:
+        lines_after = sum(1 for _ in f)
+
+    return {
+        'lines_read': lines_before,
+        'lines_delta': lines_after - lines_before,
+        'fixes_applied': fixes_applied,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
