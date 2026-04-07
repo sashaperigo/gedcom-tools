@@ -56,9 +56,12 @@ ANCESTRY_TAGS: frozenset[str] = frozenset({
     # Tree / environment
     '_TREE',   # Tree identifier
     '_ENV',    # Environment ("ANCESTRY" etc.)
+    # Media tag labels
+    '_MTTAG',  # Ancestry media tag / label (reference and definition records)
 })
 
 _LEVEL_RE = re.compile(r'^(\d+) ([A-Z_][A-Z0-9_]*)( |$)')
+_L0_XREF_RE = re.compile(r'^0 @[^@]+@ ([A-Z_][A-Z0-9_]*)')
 
 
 def _tag_of(line: str) -> tuple[int, str] | None:
@@ -102,6 +105,17 @@ def strip_ancestry_artifacts(
         parsed = _tag_of(line)
 
         if parsed is None:
+            # Check for xref-prefixed level-0 records: `0 @T1@ _MTTAG`
+            # These never match _LEVEL_RE so we handle the skip-block boundary here.
+            xref_m = _L0_XREF_RE.match(line)
+            if xref_m:
+                # Any level-0 record ends an active skip block
+                skip_until_level = None
+                if xref_m.group(1) in ANCESTRY_TAGS:
+                    tags_removed[xref_m.group(1)] += 1
+                    skip_until_level = 0  # skip all child lines (level > 0)
+                    continue
+                # Not an ancestry tag — fall through to keep this line
             # Continuation or malformed line — keep unless we're inside a skip block
             if skip_until_level is not None:
                 continue

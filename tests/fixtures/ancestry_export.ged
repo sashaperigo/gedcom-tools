@@ -21,6 +21,11 @@
 1 NAME John Researcher
 1 _MSER 12345678
 1 _USER jresearcher
+0 @T1@ _MTTAG
+1 LABL Migration Story
+1 _COLOR #FF5733
+0 @T2@ _MTTAG
+1 LABL Military Service
 0 @I1@ INDI
 1 NAME John /Smith/
 1 SEX M
@@ -35,6 +40,8 @@
 1 _CREA
 2 DATE 1 JAN 2022
 2 _USER jresearcher
+1 _MTTAG @T1@
+1 _MTTAG @T2@
 1 FAMS @F1@
 1 SOUR @S1@
 2 PAGE Census record, line 14
@@ -58,6 +65,7 @@
 1 _CREA
 2 DATE 1 JAN 2022
 2 _USER jresearcher
+1 _MTTAG @T1@
 1 FAMS @F1@
 1 SOUR @S1@
 2 PAGE Census record, line 15

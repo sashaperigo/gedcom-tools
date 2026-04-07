@@ -73,6 +73,7 @@ class TestFixtureContents:
         '_TREE', '_ENV',
         '_PRIM', '_CROP', '_LEFT', '_TOP', '_WDTH', '_HGHT',
         '_TYPE', '_WPID', '_HPID',
+        '_MTTAG',
     ])
     def test_fixture_contains_tag(self, tag):
         """Fixture must contain each Ancestry tag so our removal tests are meaningful."""
@@ -192,6 +193,64 @@ class TestReturnValues:
         assert tr.get('_CREA', 0) == 3, (
             f"Expected 3 _CREA tags, got {tr.get('_CREA', 0)}"
         )
+        # _MTTAG reference lines: @I1@ has 2, @I2@ has 1 = 3 occurrences
+        # _MTTAG definition records: @T1@, @T2@ = 2 occurrences
+        assert tr.get('_MTTAG', 0) == 5, (
+            f"Expected 5 _MTTAG tags, got {tr.get('_MTTAG', 0)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _MTTAG handling
+# ---------------------------------------------------------------------------
+
+class TestMttagHandling:
+    """_MTTAG reference lines and definition records must both be removed."""
+
+    def test_mttag_reference_lines_removed(self, tmp_copy):
+        """1 _MTTAG @T...@ reference lines on INDI records must be removed."""
+        strip_ancestry_artifacts(tmp_copy)
+        assert ancestry_tag_lines(tmp_copy, '_MTTAG') == []
+
+    def test_mttag_definition_records_removed(self, tmp_copy):
+        """0 @T...@ _MTTAG definition records must be removed."""
+        strip_ancestry_artifacts(tmp_copy)
+        with open(tmp_copy, encoding='utf-8') as f:
+            content = f.read()
+        assert '@T1@ _MTTAG' not in content
+        assert '@T2@ _MTTAG' not in content
+
+    def test_mttag_children_removed(self, tmp_copy):
+        """Child lines of _MTTAG definition records (LABL, _COLOR) must be removed."""
+        strip_ancestry_artifacts(tmp_copy)
+        with open(tmp_copy, encoding='utf-8') as f:
+            content = f.read()
+        assert 'Migration Story' not in content
+        assert 'Military Service' not in content
+        assert '_COLOR' not in content
+
+    def test_mttag_orphaned_reference_removed(self, tmp_path):
+        """Orphaned _MTTAG reference lines (no matching definition) must still be removed."""
+        ged = tmp_path / 'orphan.ged'
+        ged.write_text(
+            '0 HEAD\n'
+            '1 GEDC\n'
+            '2 VERS 5.5.1\n'
+            '0 @I1@ INDI\n'
+            '1 NAME Alice /Wonder/\n'
+            '1 _MTTAG @T99@\n'
+            '1 _MTTAG @T100@\n'
+            '1 SEX F\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        result = strip_ancestry_artifacts(str(ged))
+        content = ged.read_text(encoding='utf-8')
+        assert '_MTTAG' not in content
+        assert result['tags_removed'].get('_MTTAG', 0) == 2
+        # Standard tags must survive
+        assert 'Alice /Wonder/' in content
+        assert 'SEX F' in content
 
 
 # ---------------------------------------------------------------------------
