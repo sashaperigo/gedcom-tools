@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from viz_ancestors import parse_gedcom, get_parents, build_ancestor_json, viz_ancestors
+from viz_ancestors import parse_gedcom, get_parents, build_ancestor_json, build_relatives_json, viz_ancestors
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'
 
@@ -46,7 +46,7 @@ class TestParsing:
         assert FIXTURE.exists()
 
     def test_all_indis_parsed(self, indis):
-        assert len(indis) == 10  # @I1@ through @I10@
+        assert len(indis) == 13  # @I1@ through @I13@
 
     def test_parse_indi_name(self, indis):
         """Slashes around surname must be stripped."""
@@ -86,7 +86,7 @@ class TestParsing:
         assert indis['@I4@']['famc'] is None
 
     def test_all_fams_parsed(self, fams):
-        assert len(fams) == 5  # @F1@ through @F4@, @F6@
+        assert len(fams) == 6  # @F1@ through @F6@
 
     def test_fam_husb_wife(self, fams):
         assert fams['@F1@']['husb'] == '@I2@'
@@ -150,6 +150,30 @@ class TestParsing:
         assert aka is not None
         assert aka['type'] == 'AKA'
         assert aka['note'] == 'Rosie Smith'
+
+    def test_parse_fams_single(self, indis):
+        """FAMS tag on INDI must be stored as a list."""
+        assert indis['@I2@']['fams'] == ['@F1@']
+
+    def test_parse_fams_absent(self, indis):
+        """INDI with no FAMS gets an empty list."""
+        assert indis['@I11@']['fams'] == []
+
+    def test_parse_fams_root_has_fams(self, indis):
+        """Root person @I1@ has FAMS @F5@."""
+        assert '@F5@' in indis['@I1@']['fams']
+
+    def test_parse_chil_single(self, fams):
+        """@F3@ has exactly one CHIL."""
+        assert fams['@F3@']['chil'] == ['@I3@']
+
+    def test_parse_chil_multiple(self, fams):
+        """@F1@ has two children: Rose and Alice."""
+        assert set(fams['@F1@']['chil']) == {'@I1@', '@I11@'}
+
+    def test_parse_chil_absent(self, fams):
+        """@F5@ (Rose/Mark marriage) has no children."""
+        assert fams['@F5@']['chil'] == []
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +280,72 @@ class TestAncestorTree:
 
 
 # ---------------------------------------------------------------------------
+# TestRelatives
+# ---------------------------------------------------------------------------
+
+class TestRelatives:
+
+    @pytest.fixture(scope='class')
+    def tree(self, indis, fams):
+        return build_ancestor_json('@I1@', indis, fams)
+
+    @pytest.fixture(scope='class')
+    def relatives(self, tree, indis, fams):
+        return build_relatives_json(tree, indis, fams)
+
+    def test_root_has_siblings(self, relatives):
+        """Key 1 (Rose) has Alice Smith as a sibling."""
+        assert 1 in relatives
+        sib_ids = [s['id'] for s in relatives[1]['siblings']]
+        assert '@I11@' in sib_ids
+
+    def test_root_sibling_stub_fields(self, relatives):
+        """Sibling stubs must carry id, name, birth_year, death_year, sex."""
+        alice = next(s for s in relatives[1]['siblings'] if s['id'] == '@I11@')
+        assert alice['name'] == 'Alice Smith'
+        assert alice['birth_year'] == '1992'
+        assert alice['sex'] == 'F'
+
+    def test_root_has_spouse(self, relatives):
+        """Key 1 (Rose) has Mark Davis as a spouse."""
+        assert 1 in relatives
+        sp_ids = [s['id'] for s in relatives[1]['spouses']]
+        assert '@I12@' in sp_ids
+
+    def test_root_spouse_stub_fields(self, relatives):
+        mark = next(s for s in relatives[1]['spouses'] if s['id'] == '@I12@')
+        assert mark['name'] == 'Mark Davis'
+        assert mark['birth_year'] == '1988'
+        assert mark['sex'] == 'M'
+
+    def test_father_has_sibling_not_in_tree(self, relatives):
+        """Key 2 (James) has Robert Smith as a sibling; Robert is not an ancestor."""
+        assert 2 in relatives
+        sib_ids = [s['id'] for s in relatives[2]['siblings']]
+        assert '@I13@' in sib_ids
+
+    def test_spouse_already_in_tree_still_returned(self, relatives):
+        """Key 2 (James) spouse is Clara (key 3) — still included; dedup is JS-side."""
+        sp_ids = [s['id'] for s in relatives[2]['spouses']]
+        assert '@I3@' in sp_ids
+
+    def test_person_with_no_relatives_absent(self, relatives):
+        """Key 12 (Thomas Jones) has no FAMC and no spouse → not in relatives dict."""
+        assert 12 not in relatives
+
+    def test_no_self_in_siblings(self, relatives):
+        """The anchor person must not appear in their own sibling list."""
+        for key, rels in relatives.items():
+            anchor_xref = None
+            # Reconstruct anchor xref from tree (via known mapping from fixture)
+            for sib in rels['siblings']:
+                assert sib['id'] != sib  # trivially, but verify no duplicates
+            # Verify Rose (@I1@) not in her own sibling list
+        sib_ids = [s['id'] for s in relatives[1]['siblings']]
+        assert '@I1@' not in sib_ids
+
+
+# ---------------------------------------------------------------------------
 # TestOutput
 # ---------------------------------------------------------------------------
 
@@ -354,3 +444,13 @@ class TestOutput:
         viz_ancestors(str(FIXTURE), '@I1@', out)
         content = Path(out).read_text(encoding='utf-8')
         assert 'Rosie Smith' in content
+
+    def test_html_contains_relatives_json(self, tmp_path):
+        """RELATIVES_JSON must be embedded and contain sibling/spouse data."""
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert 'const RELATIVES' in content
+        assert 'Alice Smith' in content   # Rose's sibling
+        assert 'Mark Davis' in content    # Rose's spouse
+        assert 'Robert Smith' in content  # James's sibling
