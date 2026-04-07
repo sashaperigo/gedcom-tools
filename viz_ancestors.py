@@ -182,11 +182,10 @@ def get_parents(xref: str, indis: dict, fams: dict) -> tuple[str | None, str | N
     return fam['husb'], fam['wife']
 
 
-def build_ancestor_json(root_xref: str, indis: dict, fams: dict, sources: dict | None = None) -> dict:
+def build_tree_json(root_xref: str, indis: dict, fams: dict) -> dict:
     """
     Walk all ancestors recursively.
-    Returns dict keyed by Ahnentafel number (int):
-      {1: {name, birth_year, death_year}, 2: {...}, ...}
+    Returns {ahnentafel_key (int): xref (str)}.
     Missing ancestors have no entry.
     """
     result: dict = {}
@@ -195,15 +194,30 @@ def build_ancestor_json(root_xref: str, indis: dict, fams: dict, sources: dict |
         xref, key = stack.pop()
         if not xref or xref not in indis:
             continue
-        info = indis[xref]
+        result[key] = xref
+        father, mother = get_parents(xref, indis, fams)
+        stack.append((father, 2 * key))
+        stack.append((mother, 2 * key + 1))
+    return result
+
+
+def build_people_json(xrefs: set, indis: dict, sources: dict | None = None) -> dict:
+    """
+    Build full person data for a set of xrefs.
+    Returns {xref: {name, birth_year, death_year, sex, events, notes, sources}}.
+    """
+    result = {}
+    for xref in xrefs:
+        info = indis.get(xref)
+        if not info:
+            continue
         src_titles = []
         if sources:
             for sxref in info.get('source_xrefs', []):
                 title = sources.get(sxref)
                 if title and title not in src_titles:
                     src_titles.append(title)
-        result[key] = {
-            'xref':       xref,
+        result[xref] = {
             'name':       info['name'] or '?',
             'birth_year': info['birth_year'],
             'death_year': info['death_year'],
@@ -212,31 +226,16 @@ def build_ancestor_json(root_xref: str, indis: dict, fams: dict, sources: dict |
             'notes':      info['notes'],
             'sources':    src_titles,
         }
-        father, mother = get_parents(xref, indis, fams)
-        stack.append((father, 2 * key))
-        stack.append((mother, 2 * key + 1))
     return result
 
 
-def build_relatives_json(ancestor_data: dict, indis: dict, fams: dict) -> dict:
+def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
     """
-    Return {ahnentafel_key: {siblings: [...], spouses: [...]}} for all ancestors.
-    Each sibling/spouse entry: {id, name, birth_year, death_year, sex}
+    Return {ahnentafel_key: {siblings: [xref,...], spouses: [xref,...]}} for all ancestors.
     """
-    def person_stub(xref):
-        p = indis.get(xref, {})
-        return {
-            'id':         xref,
-            'name':       p.get('name') or '?',
-            'birth_year': p.get('birth_year') or '',
-            'death_year': p.get('death_year') or '',
-            'sex':        p.get('sex') or '',
-        }
-
     result = {}
-    for key, entry in ancestor_data.items():
-        xref = entry.get('xref')
-        p    = indis.get(xref) if xref else None
+    for key, xref in tree.items():
+        p = indis.get(xref)
         if not p:
             continue
         siblings = []
@@ -244,13 +243,13 @@ def build_relatives_json(ancestor_data: dict, indis: dict, fams: dict) -> dict:
         if famc and famc in fams:
             for child_xref in fams[famc].get('chil', []):
                 if child_xref != xref:
-                    siblings.append(person_stub(child_xref))
+                    siblings.append(child_xref)
         spouses = []
         for fam_xref in p.get('fams', []):
             fam = fams.get(fam_xref, {})
             spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
             if spouse_xref and spouse_xref in indis:
-                spouses.append(person_stub(spouse_xref))
+                spouses.append(spouse_xref)
         if siblings or spouses:
             result[key] = {'siblings': siblings, 'spouses': spouses}
     return result
@@ -423,7 +422,8 @@ header h1 { font-size: 16px; font-weight: 600; }
   </div>
 </div>
 <script>
-const ANCESTORS = __ANCESTORS_JSON__;
+const TREE = __TREE_JSON__;
+const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const RELATIVES = __RELATIVES_JSON__;
 const expandedRelatives = new Set([1]);
@@ -622,9 +622,9 @@ function sortEvents(events) {
 // ── Detail panel ─────────────────────────────────────────────────────────────
 let _openDetailKey = null;
 
-function showDetail(k) {
-  if (_openDetailKey === k) { closeDetail(); return; }
-  const data  = ANCESTORS[k];
+function showDetail(xref) {
+  if (_openDetailKey === xref) { closeDetail(); return; }
+  const data  = PEOPLE[xref];
   const panel = document.getElementById('detail-panel');
 
   // Accent color by sex
@@ -761,7 +761,7 @@ function showDetail(k) {
     : '';
 
   panel.classList.add('panel-open');
-  _openDetailKey = k;
+  _openDetailKey = xref;
   const vp = document.getElementById('viewport');
   vp.style.marginRight = '480px';
   document.getElementById('home-btn').style.right = (480 + 24) + 'px';
@@ -777,49 +777,6 @@ function closeDetail() {
   _animateFitAndCenter(220);
 }
 
-function showDetailForStub(stubData) {
-  const panel = document.getElementById('detail-panel');
-  const accent = {'M':'#3b82f6','F':'#a855f7'}[stubData.sex] || '#475569';
-  document.getElementById('detail-accent-bar').style.background = accent;
-
-  const sexSym = {'M':'\\u2642','F':'\\u2640'}[stubData.sex] || '';
-  document.getElementById('detail-name').innerHTML =
-    escHtml(stubData.name || '?') + (sexSym ? `<span class="sex-sym">${sexSym}</span>` : '');
-
-  const by = stubData.birth_year ? parseInt(stubData.birth_year) : null;
-  const dy = stubData.death_year ? parseInt(stubData.death_year) : null;
-  const lifespanRow = document.getElementById('detail-lifespan-row');
-  if (by) {
-    const span = (dy && dy > by) ? dy - by : null;
-    const fillStyle = dy
-      ? `background: linear-gradient(90deg, ${accent}, #6366f1); width: 100%;`
-      : `background: linear-gradient(90deg, ${accent}, transparent); width: 100%;`;
-    lifespanRow.innerHTML =
-      `<span class="lifespan-year">${by}</span>` +
-      `<div class="lifespan-bar-track"><div class="lifespan-bar-fill" style="${fillStyle}"></div></div>` +
-      `<span class="lifespan-year">${dy || '\\u2014'}</span>` +
-      (span ? `<span class="lifespan-age">~${span} years</span>` : '');
-  } else {
-    lifespanRow.innerHTML = '';
-  }
-
-  document.getElementById('detail-aka').innerHTML = '';
-  document.getElementById('detail-notes').innerHTML = '';
-  document.getElementById('detail-also-lived').innerHTML = '';
-  document.getElementById('detail-sources').innerHTML = '';
-  document.getElementById('detail-events').innerHTML =
-    `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #334155">` +
-    `<button onclick="window.location.href='/?person='+encodeURIComponent('${stubData.id}')"` +
-    ` style="background:${accent};border:none;color:white;padding:8px 16px;border-radius:6px;` +
-    `cursor:pointer;font-size:13px;font-weight:600">Set as root person</button></div>`;
-
-  _openDetailKey = null;
-  panel.classList.add('panel-open');
-  const vp = document.getElementById('viewport');
-  vp.style.marginRight = '480px';
-  document.getElementById('home-btn').style.right = (480 + 24) + 'px';
-  _animateFitAndCenter(220);
-}
 
 function _animateFitAndCenter(duration) {
   const start = performance.now();
@@ -864,7 +821,7 @@ let _posCache = new Map();
 
 // True if key k represents a male: even keys (fathers) are male; key 1 uses GEDCOM sex field.
 function isMaleKey(k) {
-  if (k === 1) return ANCESTORS[1]?.sex === 'M';
+  if (k === 1) return PEOPLE[TREE[1]]?.sex === 'M';
   return k % 2 === 0;
 }
 
@@ -873,12 +830,12 @@ function isMaleKey(k) {
 const _sibSlots = new Map();
 function _buildSibSlots() {
   _sibSlots.clear();
-  const visXrefs = new Set([...visibleKeys].map(k => ANCESTORS[k]?.xref).filter(Boolean));
+  const visXrefs = new Set([...visibleKeys].map(k => TREE[k]).filter(Boolean));
   for (const k of expandedRelatives) {
     if (k === 1) continue;  // root handled separately; no layout slot needed
     const rels = RELATIVES[String(k)];
     if (!rels) continue;
-    const n = rels.siblings.filter(s => !visXrefs.has(s.id)).length;
+    const n = rels.siblings.filter(xref => !visXrefs.has(xref)).length;
     if (n > 0) _sibSlots.set(k, n);
   }
 }
@@ -946,7 +903,7 @@ function computeRelativePositions() {
   // Build xref → Ahnentafel key map for all visible ancestors
   const xrefToKey = new Map();
   for (const k of visibleKeys) {
-    const xref = ANCESTORS[k]?.xref;
+    const xref = TREE[k];
     if (xref) xrefToKey.set(xref, k);
   }
 
@@ -959,29 +916,29 @@ function computeRelativePositions() {
 
     // Spouses always go to the RIGHT of the anchor
     let newSpIdx = 0;
-    rels.spouses.forEach((sp, j) => {
-      const existingKey = xrefToKey.get(sp.id);
+    rels.spouses.forEach((xref, j) => {
+      const existingKey = xrefToKey.get(xref);
       if (existingKey !== undefined) {
         const pos = _posCache.get(existingKey);
-        if (pos) _relPosCache.set(`sp:${k}:${j}`, {x: pos.x, y: pos.y, data: sp, existing: true});
+        if (pos) _relPosCache.set(`sp:${k}:${j}`, {x: pos.x, y: pos.y, xref, existing: true});
       } else {
-        _relPosCache.set(`sp:${k}:${j}`, {x: x + NODE_W + H_GAP + newSpIdx * slotW, y, data: sp, existing: false});
+        _relPosCache.set(`sp:${k}:${j}`, {x: x + NODE_W + H_GAP + newSpIdx * slotW, y, xref, existing: false});
         newSpIdx++;
       }
     });
 
     // Siblings: males go LEFT, females go RIGHT (after any new spouses)
     let newSibIdx = 0;
-    rels.siblings.forEach((sib, i) => {
-      const existingKey = xrefToKey.get(sib.id);
+    rels.siblings.forEach((xref, i) => {
+      const existingKey = xrefToKey.get(xref);
       if (existingKey !== undefined) {
         const pos = _posCache.get(existingKey);
-        if (pos) _relPosCache.set(`sib:${k}:${i}`, {x: pos.x, y: pos.y, data: sib, existing: true});
+        if (pos) _relPosCache.set(`sib:${k}:${i}`, {x: pos.x, y: pos.y, xref, existing: true});
       } else {
         const sibX = male
           ? x - (newSibIdx + 1) * slotW                          // left of anchor
           : x + NODE_W + H_GAP + (newSpIdx + newSibIdx) * slotW; // right, after spouses
-        _relPosCache.set(`sib:${k}:${i}`, {x: sibX, y, data: sib, existing: false});
+        _relPosCache.set(`sib:${k}:${i}`, {x: sibX, y, xref, existing: false});
         newSibIdx++;
       }
     });
@@ -989,7 +946,7 @@ function computeRelativePositions() {
 }
 
 function hasHiddenParents(k) {
-  return ((2 * k) in ANCESTORS || (2 * k + 1) in ANCESTORS) &&
+  return ((2 * k) in TREE || (2 * k + 1) in TREE) &&
          !visibleKeys.has(2 * k) && !visibleKeys.has(2 * k + 1);
 }
 
@@ -1056,8 +1013,8 @@ function fitAndCenter(focusKey) {
 }
 
 function expandNode(k) {
-  if ((2 * k) in ANCESTORS)     visibleKeys.add(2 * k);
-  if ((2 * k + 1) in ANCESTORS) visibleKeys.add(2 * k + 1);
+  if ((2 * k) in TREE)     visibleKeys.add(2 * k);
+  if ((2 * k + 1) in TREE) visibleKeys.add(2 * k + 1);
   render();
   fitAndCenter();
 }
@@ -1142,7 +1099,7 @@ function render() {
   // Person nodes
   for (const k of visibleKeys) {
     const { x, y } = nodePos(k);
-    const data   = ANCESTORS[k];
+    const data   = PEOPLE[TREE[k]];
     const isRoot = (k === 1);
     const isMale = (k % 2 === 0 && k > 1);
     const fill   = isRoot ? '#2563eb' : (isMale ? '#1e40af' : '#6d28d9');
@@ -1150,7 +1107,7 @@ function render() {
     const nodeG = svgEl('g', { cursor: 'pointer' });
     nodeG.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!didDrag) showDetail(k);
+      if (!didDrag) showDetail(TREE[k]);
     });
 
     const nodeRect = svgEl('rect', {
@@ -1241,8 +1198,8 @@ function render() {
         } else {
           expandedRelatives.add(k);
           // Auto-expand parents so siblings have a visible shared ancestor
-          if ((2 * k) in ANCESTORS) visibleKeys.add(2 * k);
-          if ((2 * k + 1) in ANCESTORS) visibleKeys.add(2 * k + 1);
+          if ((2 * k) in TREE) visibleKeys.add(2 * k);
+          if ((2 * k + 1) in TREE) visibleKeys.add(2 * k + 1);
           render(); fitAndCenter(k);
         }
       });
@@ -1258,11 +1215,12 @@ function render() {
   }
 
   // ── Relative nodes and connectors ────────────────────────────────────────
-  function drawRelNode(rx, ry, nodeData, fill) {
+  function drawRelNode(rx, ry, xref, fill) {
+    const nodeData = PEOPLE[xref] || {};
     const rg = svgEl('g', { cursor: 'pointer' });
     rg.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!didDrag) showDetailForStub(nodeData);
+      if (!didDrag) showDetail(xref);
     });
     rg.appendChild(svgEl('rect', { x: rx, y: ry, width: NODE_W, height: NODE_H, rx: 8, fill, opacity: 0.85 }));
     const dname = (nodeData.name || '?');
@@ -1292,10 +1250,10 @@ function render() {
 
   for (const [key, entry] of _relPosCache.entries()) {
     if (entry.existing) continue;  // already rendered as an ancestor node
-    const {x: rx, y: ry, data} = entry;
+    const {x: rx, y: ry, xref} = entry;
     const isSibling = key.startsWith('sib:');
     const fill = isSibling ? '#1e3a5f' : '#065f46';
-    drawRelNode(rx, ry, data, fill);
+    drawRelNode(rx, ry, xref, fill);
   }
 
   // Relative connectors
@@ -1383,7 +1341,7 @@ function init() {
     const start = Math.pow(2, g);
     const end   = Math.pow(2, g + 1);
     for (let k = start; k < end; k++) {
-      if (k in ANCESTORS) visibleKeys.add(k);
+      if (k in TREE) visibleKeys.add(k);
     }
   }
 
@@ -1395,7 +1353,7 @@ function init() {
 
   render();
   fitAndCenter();
-  if (new URLSearchParams(window.location.search).get('open') === '1') showDetail(1);
+  if (new URLSearchParams(window.location.search).get('open') === '1') showDetail(TREE[1]);
 }
 
 // ---- Pinch-to-zoom + two-finger pan (trackpad wheel events) ----
@@ -1454,23 +1412,25 @@ window.addEventListener('resize', () => {
 """
 
 
-def render_html(ancestor_data: dict, root_name: str, indis: dict, relatives: dict) -> str:
+def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis: dict) -> str:
     """Return a complete self-contained HTML string."""
-    safe_name = html_mod.escape(root_name)
-    json_str  = json.dumps(ancestor_data)
-    all_people = sorted(
+    safe_name      = html_mod.escape(root_name)
+    tree_json      = json.dumps(tree)
+    people_json    = json.dumps(people)
+    relatives_json = json.dumps({str(k): v for k, v in relatives.items()})
+    all_people     = sorted(
         [{"id": xref, "name": info["name"] or "",
           "birth_year": info.get("birth_year") or "",
           "death_year": info.get("death_year") or ""}
          for xref, info in indis.items()],
         key=lambda p: p["name"].lower()
     )
-    all_people_json  = json.dumps(all_people)
-    relatives_json   = json.dumps({str(k): v for k, v in relatives.items()})
+    all_people_json = json.dumps(all_people)
     return (
         _HTML_TEMPLATE
         .replace('__ROOT_NAME__', safe_name)
-        .replace('__ANCESTORS_JSON__', json_str)
+        .replace('__TREE_JSON__', tree_json)
+        .replace('__PEOPLE_JSON__', people_json)
         .replace('__ALL_PEOPLE_JSON__', all_people_json)
         .replace('__RELATIVES_JSON__', relatives_json)
     )
@@ -1505,18 +1465,24 @@ def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
     if not root_xref:
         raise ValueError(f'Person not found: {person!r}')
 
-    ancestor_data = build_ancestor_json(root_xref, indis, fams, sources)
-    root_name     = ancestor_data.get(1, {}).get('name', '?')
-    relatives     = build_relatives_json(ancestor_data, indis, fams)
+    tree      = build_tree_json(root_xref, indis, fams)
+    relatives = build_relatives_json(tree, indis, fams)
 
-    html = render_html(ancestor_data, root_name, indis, relatives)
+    all_xrefs = set(tree.values())
+    for rels in relatives.values():
+        all_xrefs.update(rels['siblings'])
+        all_xrefs.update(rels['spouses'])
+    people    = build_people_json(all_xrefs, indis, sources)
+
+    root_name = people.get(root_xref, {}).get('name', '?')
+    html = render_html(tree, root_name, people, relatives, indis)
     with open(path_out, 'w', encoding='utf-8') as f:
         f.write(html)
 
-    max_gen = max(math.floor(math.log2(k)) for k in ancestor_data) if ancestor_data else 0
+    max_gen = max(math.floor(math.log2(k)) for k in tree) if tree else 0
     return {
         'root_name':      root_name,
-        'ancestor_count': len(ancestor_data),
+        'ancestor_count': len(tree),
         'generations':    max_gen + 1,
     }
 

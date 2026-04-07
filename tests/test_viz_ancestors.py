@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from viz_ancestors import parse_gedcom, get_parents, build_ancestor_json, build_relatives_json, viz_ancestors
+from viz_ancestors import parse_gedcom, get_parents, build_tree_json, build_people_json, build_relatives_json, viz_ancestors
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'
 
@@ -201,42 +201,36 @@ class TestParentLookup:
 
 
 # ---------------------------------------------------------------------------
-# TestAncestorTree
+# TestTree  (Ahnentafel key → xref mapping)
 # ---------------------------------------------------------------------------
 
-class TestAncestorTree:
+class TestTree:
 
     @pytest.fixture(scope='class')
     def tree(self, indis, fams):
-        return build_ancestor_json('@I1@', indis, fams)
+        return build_tree_json('@I1@', indis, fams)
 
     def test_root_has_ahnentafel_1(self, tree):
         assert 1 in tree
-        assert tree[1]['name'] == 'Rose Smith'
+        assert tree[1] == '@I1@'
 
     def test_father_is_2(self, tree):
-        assert 2 in tree
-        assert tree[2]['name'] == 'James Smith'
+        assert tree[2] == '@I2@'
 
     def test_mother_is_3(self, tree):
-        assert 3 in tree
-        assert tree[3]['name'] == 'Clara Jones'
+        assert tree[3] == '@I3@'
 
     def test_paternal_grandfather_is_4(self, tree):
-        assert 4 in tree
-        assert tree[4]['name'] == 'Patrick Smith'
+        assert tree[4] == '@I4@'
 
     def test_paternal_grandmother_is_5(self, tree):
-        assert 5 in tree
-        assert tree[5]['name'] == "Mary O'Brien"
+        assert tree[5] == '@I5@'
 
     def test_maternal_grandfather_is_6(self, tree):
-        assert 6 in tree
-        assert tree[6]['name'] == 'John Jones'
+        assert tree[6] == '@I6@'
 
     def test_maternal_grandmother_is_7(self, tree):
-        assert 7 in tree
-        assert tree[7]['name'] == 'Jane Brown'
+        assert tree[7] == '@I7@'
 
     def test_missing_ancestor_absent(self, tree):
         """Patrick Smith (@I4@) has no FAMC → his parents (keys 8,9) absent."""
@@ -245,38 +239,78 @@ class TestAncestorTree:
 
     def test_great_grandparents_via_maternal_grandmother(self, tree):
         """Jane Brown's parents → keys 14 (father) and 15 (mother)."""
-        assert 14 in tree
-        assert tree[14]['name'] == 'William Brown'
-        assert 15 in tree
-        assert tree[15]['name'] == 'Helen Taylor'
+        assert tree[14] == '@I8@'
+        assert tree[15] == '@I9@'
 
     def test_missing_half_branch(self, tree):
         """@F6@ has no WIFE → maternal grandfather's mother (key 13) absent."""
-        assert 12 in tree   # Thomas Jones is paternal side of @I6@
+        assert 12 in tree
         assert 13 not in tree
 
     def test_ancestor_count(self, tree):
-        # Root(1) + parents(2) + grandparents(4) + great-gp partially:
-        # William(14), Helen(15), Thomas(12) = 3 great-grandparents known
-        # Total: 1+2+4+3 = 10
         assert len(tree) == 10
 
-    def test_tree_node_has_required_keys(self, tree):
-        node = tree[1]
-        for key in ('name', 'birth_year', 'death_year', 'sex', 'events', 'notes'):
-            assert key in node
+    def test_values_are_xrefs(self, tree):
+        """Every value must be a valid INDI xref string."""
+        for xref in tree.values():
+            assert isinstance(xref, str)
+            assert xref.startswith('@I')
 
-    def test_sex_in_tree(self, tree):
-        assert tree[1]['sex'] == 'F'
-        assert tree[2]['sex'] == 'M'
 
-    def test_events_in_tree(self, tree):
-        assert isinstance(tree[1]['events'], list)
-        assert any(e['tag'] == 'BIRT' for e in tree[1]['events'])
+# ---------------------------------------------------------------------------
+# TestPeople  (full person data lookup)
+# ---------------------------------------------------------------------------
 
-    def test_notes_in_tree(self, tree):
-        assert isinstance(tree[1]['notes'], list)
-        assert len(tree[1]['notes']) > 0
+class TestPeople:
+
+    @pytest.fixture(scope='class')
+    def tree(self, indis, fams):
+        return build_tree_json('@I1@', indis, fams)
+
+    @pytest.fixture(scope='class')
+    def people(self, tree, indis, parsed):
+        _, _, sources = parsed
+        return build_people_json(set(tree.values()), indis, sources)
+
+    def test_root_in_people(self, people):
+        assert '@I1@' in people
+
+    def test_people_has_required_fields(self, people):
+        p = people['@I1@']
+        for field in ('name', 'birth_year', 'death_year', 'sex', 'events', 'notes', 'sources'):
+            assert field in p
+
+    def test_name(self, people):
+        assert people['@I1@']['name'] == 'Rose Smith'
+        assert people['@I2@']['name'] == 'James Smith'
+
+    def test_sex(self, people):
+        assert people['@I1@']['sex'] == 'F'
+        assert people['@I2@']['sex'] == 'M'
+
+    def test_birth_year(self, people):
+        assert people['@I2@']['birth_year'] == '1960'
+
+    def test_events_list(self, people):
+        assert isinstance(people['@I1@']['events'], list)
+        assert any(e['tag'] == 'BIRT' for e in people['@I1@']['events'])
+
+    def test_notes(self, people):
+        assert len(people['@I1@']['notes']) > 0
+        assert 'Rose was an avid gardener' in people['@I1@']['notes'][0]
+
+    def test_relative_xref_included(self, tree, indis, parsed):
+        """build_people_json also works for relative xrefs (siblings/spouses)."""
+        _, _, sources = parsed
+        people = build_people_json({'@I11@', '@I12@'}, indis, sources)
+        assert people['@I11@']['name'] == 'Alice Smith'
+        assert people['@I12@']['name'] == 'Mark Davis'
+
+    def test_unknown_xref_excluded(self, indis, parsed):
+        """An xref not in indis is silently skipped."""
+        _, _, sources = parsed
+        people = build_people_json({'@NOBODY@'}, indis, sources)
+        assert '@NOBODY@' not in people
 
 
 # ---------------------------------------------------------------------------
@@ -287,47 +321,41 @@ class TestRelatives:
 
     @pytest.fixture(scope='class')
     def tree(self, indis, fams):
-        return build_ancestor_json('@I1@', indis, fams)
+        return build_tree_json('@I1@', indis, fams)
 
     @pytest.fixture(scope='class')
     def relatives(self, tree, indis, fams):
         return build_relatives_json(tree, indis, fams)
 
     def test_root_has_siblings(self, relatives):
-        """Key 1 (Rose) has Alice Smith as a sibling."""
+        """Key 1 (Rose) has Alice Smith (@I11@) as a sibling."""
         assert 1 in relatives
-        sib_ids = [s['id'] for s in relatives[1]['siblings']]
-        assert '@I11@' in sib_ids
-
-    def test_root_sibling_stub_fields(self, relatives):
-        """Sibling stubs must carry id, name, birth_year, death_year, sex."""
-        alice = next(s for s in relatives[1]['siblings'] if s['id'] == '@I11@')
-        assert alice['name'] == 'Alice Smith'
-        assert alice['birth_year'] == '1992'
-        assert alice['sex'] == 'F'
+        assert '@I11@' in relatives[1]['siblings']
 
     def test_root_has_spouse(self, relatives):
-        """Key 1 (Rose) has Mark Davis as a spouse."""
+        """Key 1 (Rose) has Mark Davis (@I12@) as a spouse."""
         assert 1 in relatives
-        sp_ids = [s['id'] for s in relatives[1]['spouses']]
-        assert '@I12@' in sp_ids
+        assert '@I12@' in relatives[1]['spouses']
 
-    def test_root_spouse_stub_fields(self, relatives):
-        mark = next(s for s in relatives[1]['spouses'] if s['id'] == '@I12@')
-        assert mark['name'] == 'Mark Davis'
-        assert mark['birth_year'] == '1988'
-        assert mark['sex'] == 'M'
+    def test_siblings_are_xref_strings(self, relatives):
+        """Siblings list must contain plain xref strings, not objects."""
+        for xref in relatives[1]['siblings']:
+            assert isinstance(xref, str)
+            assert xref.startswith('@I')
+
+    def test_spouses_are_xref_strings(self, relatives):
+        for xref in relatives[1]['spouses']:
+            assert isinstance(xref, str)
+            assert xref.startswith('@I')
 
     def test_father_has_sibling_not_in_tree(self, relatives):
-        """Key 2 (James) has Robert Smith as a sibling; Robert is not an ancestor."""
+        """Key 2 (James) has Robert Smith (@I13@) as a sibling."""
         assert 2 in relatives
-        sib_ids = [s['id'] for s in relatives[2]['siblings']]
-        assert '@I13@' in sib_ids
+        assert '@I13@' in relatives[2]['siblings']
 
     def test_spouse_already_in_tree_still_returned(self, relatives):
-        """Key 2 (James) spouse is Clara (key 3) — still included; dedup is JS-side."""
-        sp_ids = [s['id'] for s in relatives[2]['spouses']]
-        assert '@I3@' in sp_ids
+        """Key 2 (James) spouse is Clara (@I3@) — still included; dedup is JS-side."""
+        assert '@I3@' in relatives[2]['spouses']
 
     def test_person_with_no_relatives_absent(self, relatives):
         """Key 12 (Thomas Jones) has no FAMC and no spouse → not in relatives dict."""
@@ -335,14 +363,7 @@ class TestRelatives:
 
     def test_no_self_in_siblings(self, relatives):
         """The anchor person must not appear in their own sibling list."""
-        for key, rels in relatives.items():
-            anchor_xref = None
-            # Reconstruct anchor xref from tree (via known mapping from fixture)
-            for sib in rels['siblings']:
-                assert sib['id'] != sib  # trivially, but verify no duplicates
-            # Verify Rose (@I1@) not in her own sibling list
-        sib_ids = [s['id'] for s in relatives[1]['siblings']]
-        assert '@I1@' not in sib_ids
+        assert '@I1@' not in relatives[1]['siblings']
 
 
 # ---------------------------------------------------------------------------
@@ -424,19 +445,27 @@ class TestOutput:
         assert 'Residence' in content
 
     def test_html_contains_sex_data(self, tmp_path):
-        """Sex field must be embedded in the ANCESTORS JSON."""
+        """Sex field must be embedded in PEOPLE JSON."""
         out = str(tmp_path / 'out.html')
         viz_ancestors(str(FIXTURE), '@I1@', out)
         content = Path(out).read_text(encoding='utf-8')
         assert '"sex": "F"' in content or '"sex":"F"' in content
 
     def test_html_contains_events_data(self, tmp_path):
-        """Events list must be embedded in the ANCESTORS JSON."""
+        """Events list must be embedded in PEOPLE JSON."""
         out = str(tmp_path / 'out.html')
         viz_ancestors(str(FIXTURE), '@I1@', out)
         content = Path(out).read_text(encoding='utf-8')
         assert '"events"' in content
         assert 'Greenwich, Connecticut, USA' in content
+
+    def test_html_contains_tree_and_people_json(self, tmp_path):
+        """Both TREE and PEOPLE consts must be present in the output."""
+        out = str(tmp_path / 'out.html')
+        viz_ancestors(str(FIXTURE), '@I1@', out)
+        content = Path(out).read_text(encoding='utf-8')
+        assert 'const TREE' in content
+        assert 'const PEOPLE' in content
 
     def test_html_contains_aka_note(self, tmp_path):
         """AKA alias stored as 2 NOTE must appear in the embedded JSON."""
