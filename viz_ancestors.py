@@ -623,7 +623,7 @@ function sortEvents(events) {
 let _openDetailKey = null;
 
 function showDetail(xref) {
-  if (_openDetailKey === xref) { closeDetail(); return; }
+  if (_openDetailKey === xref) return;  // already open for this person
   const data  = PEOPLE[xref];
   const panel = document.getElementById('detail-panel');
 
