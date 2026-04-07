@@ -193,7 +193,6 @@ def purge_broken_obje(
             file_val = _find_file_in_block(lines, i, block_level)
             end = _block_end(lines, i, block_level)
             if file_val is not None and not _file_exists(file_val, gedcom_dir):
-                broken_xrefs_inline_marker = file_val  # noqa: F841 (for clarity)
                 obje_removed += 1
                 broken_files.append(file_val)
                 i = end

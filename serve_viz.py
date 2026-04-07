@@ -4,26 +4,32 @@ Dev server: watches viz_ancestors.py for changes, regenerates the HTML,
 and serves it on http://localhost:8080/viz.html
 """
 import http.server
+import os
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs, unquote
 
-GED = Path("/Users/sashaperigo/claude-code/smyrna-diaspora-family-tree/Smyrna-Diaspora-Family-Tree.ged")
+_ged_env = os.environ.get("GED_FILE", "")
+if not _ged_env:
+    sys.exit("Error: set the GED_FILE environment variable to the path of your .ged file")
+GED = Path(_ged_env)
 VIZ = Path(__file__).parent / "viz_ancestors.py"
-OUT = Path("/tmp/viz.html")
+OUT = Path(os.environ.get("VIZ_OUT", "/tmp/viz.html"))
 PORT = 8080
 
 
-def regenerate():
-    person = sys.argv[1] if len(sys.argv) > 1 else "@I382535447943@"
+def regenerate(person=None):
+    if person is None:
+        person = sys.argv[1] if len(sys.argv) > 1 else "@I380071267816@"
     result = subprocess.run(
         ["python3", str(VIZ), str(GED), "--person", person, "-o", str(OUT)],
         capture_output=True, text=True
     )
     if result.returncode == 0:
-        print(f"[rebuilt] {OUT}")
+        print(f"[rebuilt] {OUT} (person={person})")
     else:
         print(f"[error] {result.stderr.strip()}")
 
@@ -45,9 +51,13 @@ def watch():
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path in ('/', '/viz.html'):
-            self.path = '/viz.html'
-            self.directory = '/tmp'
+        parsed = urlparse(self.path)
+        if parsed.path in ('/', '/viz.html'):
+            params = parse_qs(parsed.query)
+            if 'person' in params:
+                regenerate(unquote(params['person'][0]))
+            self.path = OUT.name
+            self.directory = str(OUT.parent)
             return http.server.SimpleHTTPRequestHandler.do_GET(self)
         self.send_error(404)
 

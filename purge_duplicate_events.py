@@ -228,9 +228,8 @@ def purge_duplicate_events(
       'sources_added'  : source sub-blocks migrated from duplicates to keepers
     """
     with open(path_in, encoding='utf-8') as f:
-        raw_lines = f.readlines()
+        all_lines = f.readlines()
 
-    all_lines = [l.rstrip('\n') for l in raw_lines]
     lines_out: list[str] = []
     total_events_merged = 0
     total_sources_added = 0
@@ -267,11 +266,11 @@ def purge_duplicate_events(
         dest = path_out if path_out else path_in
         tmp = dest + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines_out) + '\n')
+            f.writelines(lines_out)
         os.replace(tmp, dest)
     elif not dry_run and path_out and path_out != path_in:
         with open(path_out, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines_out) + '\n')
+            f.writelines(lines_out)
 
     return result
 
