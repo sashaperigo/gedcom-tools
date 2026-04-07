@@ -47,7 +47,14 @@ IGNORED_OCCUPATIONS: frozenset[str] = frozenset({
     'none',
     '(no occupation)',
     'keeping house',
+    'house wife',
 })
+
+# Occupation values whose lowercase form starts with one of these prefixes are
+# also ignored (catches variants like "Unpaid Domestic Duties (Retired)").
+IGNORED_OCCUPATION_PREFIXES: tuple[str, ...] = (
+    'unpaid domestic duties',
+)
 
 
 
@@ -71,6 +78,8 @@ def extract_occupation_from_note(note_val: str) -> str | None:
     occ = m.group(1).strip()
     occ_lower = occ.lower()
     if occ_lower in IGNORED_OCCUPATIONS:
+        return None
+    if any(occ_lower.startswith(prefix) for prefix in IGNORED_OCCUPATION_PREFIXES):
         return None
     return occ
 

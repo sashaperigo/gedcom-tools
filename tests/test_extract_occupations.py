@@ -106,10 +106,19 @@ class TestExtractOccupationFromNote:
     def test_keeping_house_is_ignored(self):
         assert extract_occupation_from_note('Occupation: Keeping House') is None
 
+    def test_house_wife_is_ignored(self):
+        assert extract_occupation_from_note('Occupation: House Wife') is None
+
+    def test_unpaid_domestic_duties_variant_is_ignored(self):
+        assert extract_occupation_from_note('Occupation: Unpaid Domestic Duties (Retired)') is None
+
+    def test_unpaid_domestic_duties_prefix_case_insensitive(self):
+        assert extract_occupation_from_note('Occupation: unpaid domestic duties - other') is None
+
     def test_ignored_occupations_set_contains_expected_values(self):
         for val in ('student', 'scholar', 'school', 'home duties',
                     'unpaid domestic duties', 'private means', 'none',
-                    '(no occupation)', 'keeping house'):
+                    '(no occupation)', 'keeping house', 'house wife'):
             assert val in IGNORED_OCCUPATIONS
 
 
