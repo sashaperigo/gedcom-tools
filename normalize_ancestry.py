@@ -16,11 +16,14 @@ Runs the following steps in order:
  10. linter                     Fix dates, whitespace, PLAC, names, long lines, dupes
 
 Usage:
-  # Normalize in-place:
+  # Write result to yourfile_normalized.ged (default — original untouched):
   python normalize_ancestry.py yourfile.ged
 
-  # Write result to a new file, leave original untouched:
+  # Write result to a specific output file:
   python normalize_ancestry.py yourfile.ged --output clean.ged
+
+  # Overwrite the original file in place:
+  python normalize_ancestry.py yourfile.ged --in-place
 
   # Preview all changes without writing:
   python normalize_ancestry.py yourfile.ged --dry-run
@@ -200,7 +203,9 @@ def main() -> None:
     )
     parser.add_argument('gedfile', help='Path to the .ged file')
     parser.add_argument('--output', '-o', metavar='FILE',
-                        help='Write result here instead of overwriting input')
+                        help='Write result to this file (default: <input>_normalized.ged)')
+    parser.add_argument('--in-place', action='store_true',
+                        help='Overwrite the input file instead of writing a new file')
     parser.add_argument('--dry-run', action='store_true',
                         help='Run all steps on a temp copy; print results without writing')
     parser.add_argument('--skip', metavar='STEP', nargs='+',
@@ -211,6 +216,17 @@ def main() -> None:
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
 
+    if args.output and args.in_place:
+        sys.exit('Error: --output and --in-place are mutually exclusive')
+
+    if args.in_place:
+        path_out = args.gedfile
+    elif args.output:
+        path_out = args.output
+    else:
+        base, ext = os.path.splitext(args.gedfile)
+        path_out = base + '_normalized' + (ext or '.ged')
+
     mode = 'DRY RUN' if args.dry_run else 'NORMALIZE'
     print(f'[{mode}] {args.gedfile}')
     if args.skip:
@@ -218,7 +234,7 @@ def main() -> None:
 
     results = normalize_ancestry(
         args.gedfile,
-        path_out=args.output,
+        path_out=path_out,
         dry_run=args.dry_run,
         skip=args.skip,
     )
@@ -238,8 +254,7 @@ def main() -> None:
     print(f'  {"Total":30}  {_fmt_delta(total_delta):>14}')
 
     if not args.dry_run:
-        dest = args.output or args.gedfile
-        print(f'\n  Written to: {dest}')
+        print(f'\n  Written to: {path_out}')
 
 
 if __name__ == '__main__':
