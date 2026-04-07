@@ -369,6 +369,85 @@ def fix_name_double_spaces(path: str, dry_run: bool = False):
 
 
 # ---------------------------------------------------------------------------
+# Name casing (ALL CAPS → Title Case)
+# ---------------------------------------------------------------------------
+
+# Particles that stay lowercase unless they open a slash-delimited surname block.
+_NAME_PARTICLES = frozenset({
+    'af', 'aus',
+    'bin', 'binte',
+    'da', 'dal', 'dalla', 'das', 'de', 'degli', 'dei', 'del', 'della',
+    'delle', 'dello', 'den', 'der', 'des', 'di', 'do', 'dos', 'du',
+    'la', 'las', 'le', 'les', 'lo', 'los',
+    'van', 'von',
+    'y',
+    'z', 'ze', 'zu', 'zur',
+})
+
+
+def _name_to_title_case(val: str) -> str:
+    """
+    Convert an all-caps GEDCOM NAME value to proper title case.
+
+    Rules:
+    - Each word is title-cased (handles hyphens and apostrophes via str.title()).
+    - A word whose lowercase form is in _NAME_PARTICLES is kept lowercase,
+      unless it is the very first word or it opens a slash-delimited surname
+      block (i.e. it starts with '/').
+    - Slash delimiters are preserved exactly.
+    """
+    titled = val.title()  # handles O'BRIEN→O'Brien, SMITH-JONES→Smith-Jones
+    words = titled.split(' ')
+    out = []
+    for i, word in enumerate(words):
+        lslash = word.startswith('/')
+        rslash = word.endswith('/')
+        core = word.strip('/')
+        # Keep particle lowercase unless it's the first word or starts a
+        # slash-delimited surname block.
+        if core.lower() in _NAME_PARTICLES and i > 0 and not lslash:
+            core = core.lower()
+        out.append(('/' if lslash else '') + core + ('/' if rslash else ''))
+    return ' '.join(out)
+
+
+def fix_name_case(path: str, dry_run: bool = False) -> int:
+    """
+    Convert all-caps NAME values to title case. Returns number of lines changed.
+
+    Only NAME lines where every alphabetic character is uppercase are touched;
+    names that already contain any lowercase letter are left untouched.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    for lineno, raw in enumerate(lines_in, 1):
+        line = raw.rstrip('\n')
+        m = NAME_LINE_RE.match(line)
+        if m:
+            val = m.group(3)
+            letters = [c for c in val if c.isalpha()]
+            if letters and all(c.isupper() for c in letters):
+                fixed = _name_to_title_case(val)
+                if fixed != val:
+                    changed += 1
+                    if dry_run:
+                        print(f'  line {lineno}: {val!r}  →  {fixed!r}')
+                    line = m.group(1) + fixed
+        lines_out.append(line + '\n')
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
 # Long-line wrapping (NOTE lines > 255 chars → CONC continuations)
 # ---------------------------------------------------------------------------
 
@@ -828,6 +907,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_trailing_whitespace(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_sources(path, dry_run=dry_run)
     fixes_applied += fix_name_double_spaces(path, dry_run=dry_run)
+    fixes_applied += fix_name_case(path, dry_run=dry_run)
     fixes_applied += fix_long_lines(path, dry_run=dry_run)
     fixes_applied += fix_plac(path, dry_run=dry_run)
     fixes_applied += fix_plac_address_parts(path, dry_run=dry_run)
