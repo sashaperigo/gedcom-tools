@@ -1,0 +1,28 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Test /Person/
+1 SEX M
+1 BIRT
+2 DATE 1 JAN 1900
+2 PLAC 51 Forest Ave, Greenwich, Fairfield, Connecticut, USA
+1 DEAT
+2 DATE 1 JAN 1980
+2 PLAC Putnam Cemetery, Greenwich, Fairfield, Connecticut, USA
+1 RESI
+2 DATE 1950
+2 PLAC Greenwich, Fairfield, Connecticut, USA
+1 BURI
+2 PLAC St. Mary's Church, London, England
+1 RESI
+2 DATE 1960
+2 PLAC Apt 4B, New York, New York, USA
+1 RESI
+2 DATE 1970
+2 PLAC 100 Old Post Road, Rye, Westchester, New York, USA
+3 ADDR Suite 200
+1 RESI
+2 PLAC London, England
+0 TRLR

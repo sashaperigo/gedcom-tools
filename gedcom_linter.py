@@ -509,6 +509,23 @@ def fix_trailing_whitespace(path: str, dry_run: bool = False):
 
 PLAC_RE = re.compile(r'^(\d+ PLAC )(.+)$')
 
+_STREET_SUFFIXES = re.compile(
+    r'\b(Avenue|Ave|Boulevard|Blvd|Road|Rd|Street|St|Lane|Ln|Drive|Dr'
+    r'|Way|Court|Ct|Place|Pl|Terrace|Ter|Circle|Cir|Highway|Hwy'
+    r'|Route|Rte|Alley|Aly|Parkway|Pkwy)\b', re.IGNORECASE)
+
+_PLACE_KEYWORDS = re.compile(
+    r'\b(Cemetery|Cemetary|Graveyard|Churchyard|Church|Chapel|Cathedral'
+    r'|Hospital|Clinic|Sanitarium|Sanatorium|School|College|University'
+    r'|Synagogue|Mosque|Temple|Crematorium|Crematory|Mortuary|Funeral'
+    r'|Convent|Monastery|Asylum|Prison|Jail|Workhouse|Poorhouse'
+    r'|Infirmary|Barracks|Fort|Camp|Plantation)\b', re.IGNORECASE)
+
+# Title abbreviations that prefix named places (e.g. "St. Mary's Church",
+# "Mt. Auburn Cemetery") — stripped before street-suffix detection so the
+# abbreviation "St" doesn't misclassify them as street addresses.
+_TITLE_PREFIX_RE = re.compile(r'^[A-Za-z]{1,3}\.\s+')
+
 
 def normalize_plac(val: str) -> str:
     """
@@ -559,6 +576,146 @@ def fix_plac(path: str, dry_run: bool = False):
                     print(f'  line {lineno}: {val!r}  →  {fixed!r}')
                 line = m.group(1) + fixed
         lines_out.append(line + '\n')
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+def classify_plac_part(part: str) -> str | None:
+    """
+    Classify a candidate misplaced first part of a PLAC value.
+
+    Returns:
+      'addr'      — looks like a street address → move to ADDR tag
+      'note'      — looks like a named-place descriptor → move to NOTE tag
+      'ambiguous' — neither pattern matches; flag for review, no auto-fix
+      None        — part is empty (caller should skip)
+
+    Classification priority:
+      1. Leading digit OR street-suffix keyword → 'addr'
+      2. Named-place keyword → 'note'
+      3. Everything else → 'ambiguous'
+    """
+    p = part.strip()
+    if not p:
+        return None
+    # Strip a leading title abbreviation (e.g. "St.", "Mt.", "Dr.") before
+    # checking street suffixes so that "St. Mary's Church" is not misclassified
+    # as a street address due to the abbreviation "St".
+    stripped = _TITLE_PREFIX_RE.sub('', p)
+    if p[0].isdigit() or _STREET_SUFFIXES.search(stripped):
+        return 'addr'
+    if _PLACE_KEYWORDS.search(p):
+        return 'note'
+    return 'ambiguous'
+
+
+def scan_plac_address_parts(path: str) -> list:
+    """
+    Return list of (lineno, plac_val, first_part, category) for every PLAC
+    line whose first comma-separated part is clearly misplaced.
+
+    category is 'addr' (→ ADDR tag) or 'note' (→ NOTE tag).
+    Ambiguous first parts (plain names that match neither pattern) are
+    intentionally excluded — they are indistinguishable from valid city names.
+    Only lines with at least two comma-separated parts are considered.
+    """
+    results = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = PLAC_RE.match(line)
+            if not m:
+                continue
+            val = m.group(2).strip()
+            parts = [p.strip() for p in val.split(',')]
+            if len(parts) < 2:
+                continue
+            first = parts[0]
+            category = classify_plac_part(first)
+            if category not in ('addr', 'note'):
+                continue
+            results.append((lineno, val, first, category))
+    return results
+
+
+def fix_plac_address_parts(path: str, dry_run: bool = False) -> int:
+    """
+    Move misplaced first parts out of PLAC values.
+
+    - Street addresses ('addr') → inserted as a subordinate ADDR tag
+    - Named descriptors ('note') → inserted as a subordinate NOTE tag
+    - Ambiguous parts → skipped (not auto-fixed)
+
+    If the subordinate tag already exists on the very next line, the
+    misplaced part is prepended: "<part>; <existing value>".
+
+    Returns the number of PLAC lines changed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    # Work on a list we can splice into
+    lines_out = list(lines_in)
+    changed = 0
+    i = 0
+    while i < len(lines_out):
+        line = lines_out[i].rstrip('\n')
+        m = PLAC_RE.match(line)
+        if not m:
+            i += 1
+            continue
+
+        val = m.group(2).strip()
+        parts = [p.strip() for p in val.split(',')]
+        if len(parts) < 2:
+            i += 1
+            continue
+
+        first = parts[0]
+        category = classify_plac_part(first)
+        if category not in ('addr', 'note'):
+            i += 1
+            continue
+
+        tag = 'ADDR' if category == 'addr' else 'NOTE'
+        plac_level = int(m.group(1).split()[0])
+        child_level = plac_level + 1
+        child_prefix = f'{child_level} {tag} '
+        stripped_val = ', '.join(parts[1:])
+        new_plac_line = m.group(1).rstrip() + ' ' + stripped_val
+
+        if dry_run:
+            print(f'  line {i + 1}: PLAC {val!r}')
+            print(f'    → PLAC {stripped_val!r}')
+            print(f'    → insert: {child_prefix}{first!r}')
+
+        # Check if the immediately following line is already the same child tag
+        next_i = i + 1
+        if next_i < len(lines_out):
+            next_line = lines_out[next_i].rstrip('\n')
+            if next_line.startswith(child_prefix):
+                existing_val = next_line[len(child_prefix):]
+                merged = f'{first}; {existing_val}'
+                if dry_run:
+                    print(f'    → merge existing {tag}: {merged!r}')
+                if not dry_run:
+                    lines_out[next_i] = child_prefix + merged + '\n'
+                    lines_out[i] = new_plac_line + '\n'
+                changed += 1
+                i += 2
+                continue
+
+        if not dry_run:
+            lines_out[i] = new_plac_line + '\n'
+            lines_out.insert(i + 1, child_prefix + first + '\n')
+        changed += 1
+        i += 2  # skip past the newly inserted line
 
     if not dry_run and changed:
         tmp = path + '.tmp'
@@ -661,6 +818,10 @@ def main():
         help='Normalize PLAC comma-spacing in-place',
     )
     parser.add_argument(
+        '--fix-address-parts', action='store_true',
+        help='Move misplaced address/descriptor parts out of PLAC values in-place',
+    )
+    parser.add_argument(
         '--fix-duplicate-sources', action='store_true',
         help='Remove exact-duplicate SOUR citation blocks in-place',
     )
@@ -686,6 +847,7 @@ def main():
         args.fix_dates = True
         args.fix_whitespace = True
         args.fix_places = True
+        args.fix_address_parts = True
         args.fix_duplicate_sources = True
         args.fix_names = True
         args.fix_long_lines = True
@@ -738,6 +900,15 @@ def main():
         else:
             print(f'{changed} PLAC line(s) normalized.')
 
+    if args.fix_address_parts:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Moving misplaced PLAC address parts in: {args.gedfile}')
+        changed = fix_plac_address_parts(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} PLAC line(s) would be changed.')
+        else:
+            print(f'{changed} PLAC line(s) fixed.')
+
     if args.fix_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing DATE values in: {args.gedfile}')
@@ -754,7 +925,8 @@ def main():
         else:
             print('No remaining violations.')
     if not any([args.fix_dates, args.fix_whitespace, args.fix_places,
-                args.fix_names, args.fix_long_lines, args.fix_duplicate_sources]):
+                args.fix_address_parts, args.fix_names, args.fix_long_lines,
+                args.fix_duplicate_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
 
@@ -811,6 +983,17 @@ def main():
                 print(f'  line {ln}: {orig!r}  →  {fixed!r}')
         else:
             print('OK: all PLAC values are well-formed.')
+
+        addr_parts = scan_plac_address_parts(args.gedfile)
+        if addr_parts:
+            errors = True
+            print(f'\n{len(addr_parts)} PLAC value(s) with misplaced address/descriptor parts '
+                  '(run --fix-address-parts to move):')
+            for ln, val, part, cat in addr_parts:
+                tag = 'ADDR' if cat == 'addr' else 'NOTE'
+                print(f'  line {ln}: {val!r}  →  move {part!r} to {tag}')
+        else:
+            print('OK: no misplaced address parts in PLAC values.')
 
         no_year, bad_format = scan(args.gedfile)
 
