@@ -52,10 +52,10 @@ class TestNameToTitleCase:
         assert _name_to_title_case('JOHN DE LA /TORRE/') == 'John de la /Torre/'
 
     def test_van_before_surname(self):
-        assert _name_to_title_case('PIETER /VAN DEN BERG/') == 'Pieter /Van den Berg/'
+        assert _name_to_title_case('PIETER /VAN DEN BERG/') == 'Pieter /van den Berg/'
 
     def test_von_before_surname(self):
-        assert _name_to_title_case('HANS /VON TRAPP/') == 'Hans /Von Trapp/'
+        assert _name_to_title_case('HANS /VON TRAPP/') == 'Hans /von Trapp/'
 
     def test_di_particle(self):
         assert _name_to_title_case('MARIO DI /STEFANO/') == 'Mario di /Stefano/'
@@ -65,12 +65,12 @@ class TestNameToTitleCase:
 
     # ── Particles inside slashes (first word of surname → capitalized) ───────
 
-    def test_de_inside_slashes_capitalized(self):
-        # "De Torre" — particle is the start of the surname block
-        assert _name_to_title_case('JOHN /DE TORRE/') == 'John /De Torre/'
+    def test_de_inside_slashes_lowercase(self):
+        # "de Torre" — particle stays lowercase even at the start of a surname block
+        assert _name_to_title_case('JOHN /DE TORRE/') == 'John /de Torre/'
 
-    def test_van_inside_slashes_capitalized(self):
-        assert _name_to_title_case('PIETER /VAN BERG/') == 'Pieter /Van Berg/'
+    def test_van_inside_slashes_lowercase(self):
+        assert _name_to_title_case('PIETER /VAN BERG/') == 'Pieter /van Berg/'
 
     # ── Special punctuation ───────────────────────────────────────────────────
 

@@ -405,7 +405,7 @@ def _name_to_title_case(val: str) -> str:
         core = word.strip('/')
         # Keep particle lowercase unless it's the first word or starts a
         # slash-delimited surname block.
-        if core.lower() in _NAME_PARTICLES and i > 0 and not lslash:
+        if core.lower() in _NAME_PARTICLES and i > 0:
             core = core.lower()
         out.append(('/' if lslash else '') + core + ('/' if rslash else ''))
     return ' '.join(out)
