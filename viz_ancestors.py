@@ -1046,36 +1046,34 @@ function render() {
     const hasMother = visibleKeys.has(mk);
     if (!hasFather && !hasMother) continue;
 
-    const midY    = cy - V_GAP / 2;
     const childCx = cx + NODE_W / 2;
 
-    canvas.appendChild(svgEl('line', {
-      x1: childCx, y1: cy, x2: childCx, y2: midY,
-      stroke: '#475569', 'stroke-width': 1.5
-    }));
-
-    if (hasFather) {
+    if (hasFather && hasMother) {
+      // Horizontal line between the two parents at mid-node height,
+      // with a vertical drop from the child's center up to that line.
+      const { x: fx, y: fy } = nodePos(fk);
+      const { x: mx }        = nodePos(mk);
+      const coupleY = fy + NODE_H / 2;
+      // Clamp child drop-point to the span of the couple line
+      const joinX = Math.max(fx + NODE_W, Math.min(mx, childCx));
+      canvas.appendChild(svgEl('line', {
+        x1: fx + NODE_W, y1: coupleY, x2: mx, y2: coupleY,
+        stroke: '#475569', 'stroke-width': 1.5
+      }));
+      canvas.appendChild(svgEl('line', {
+        x1: joinX, y1: coupleY, x2: childCx, y2: cy,
+        stroke: '#475569', 'stroke-width': 1.5
+      }));
+    } else if (hasFather) {
       const { x: fx, y: fy } = nodePos(fk);
       canvas.appendChild(svgEl('line', {
-        x1: fx + NODE_W / 2, y1: fy + NODE_H,
-        x2: fx + NODE_W / 2, y2: midY,
+        x1: fx + NODE_W / 2, y1: fy + NODE_H, x2: childCx, y2: cy,
         stroke: '#475569', 'stroke-width': 1.5
       }));
-    }
-    if (hasMother) {
+    } else {
       const { x: mx, y: my } = nodePos(mk);
       canvas.appendChild(svgEl('line', {
-        x1: mx + NODE_W / 2, y1: my + NODE_H,
-        x2: mx + NODE_W / 2, y2: midY,
-        stroke: '#475569', 'stroke-width': 1.5
-      }));
-    }
-    if (hasFather && hasMother) {
-      const { x: fx } = nodePos(fk);
-      const { x: mx } = nodePos(mk);
-      canvas.appendChild(svgEl('line', {
-        x1: fx + NODE_W / 2, y1: midY,
-        x2: mx + NODE_W / 2, y2: midY,
+        x1: mx + NODE_W / 2, y1: my + NODE_H, x2: childCx, y2: cy,
         stroke: '#475569', 'stroke-width': 1.5
       }));
     }
