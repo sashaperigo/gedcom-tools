@@ -1,0 +1,52 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Grandpa /Smith/
+1 SEX M
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Grandma /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Dad /Smith/
+1 SEX M
+1 FAMC @F1@
+1 FAMS @F2@
+0 @I4@ INDI
+1 NAME Child /Smith/
+1 SEX F
+1 FAMC @F2@
+0 @I5@ INDI
+1 NAME Husband /Jones/
+1 SEX M
+1 FAMS @F3@
+0 @I6@ INDI
+1 NAME Wife /Jones/
+1 SEX F
+1 FAMS @F3@
+0 @I7@ INDI
+1 NAME Isolated /One/
+1 SEX M
+0 @I8@ INDI
+1 NAME Isolated /Two/
+1 SEX F
+0 @I9@ INDI
+1 NAME Single /Parent/
+1 SEX M
+1 FAMS @F4@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I3@
+0 @F2@ FAM
+1 HUSB @I3@
+1 CHIL @I4@
+0 @F3@ FAM
+1 HUSB @I5@
+1 WIFE @I6@
+0 @F4@ FAM
+1 HUSB @I9@
+0 TRLR
