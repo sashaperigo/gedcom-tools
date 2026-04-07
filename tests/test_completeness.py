@@ -5,8 +5,9 @@ Covers:
   1. No duplicate SOUR records (same title, author, publisher).
   2. Every INDI record has at least one NAME tag.
   3. Every FAM record has at least one member (HUSB, WIFE, or CHIL).
-  4. Every FAMS pointer on an INDI has a corresponding HUSB/WIFE in that FAM.
-  5. Every FAMC pointer on an INDI has a corresponding CHIL in that FAM.
+  4. Every OBJE pointer resolves to a defined OBJE record.
+  5. Every FAMS pointer on an INDI has a corresponding HUSB/WIFE in that FAM.
+  6. Every FAMC pointer on an INDI has a corresponding CHIL in that FAM.
 """
 import os
 import re
@@ -15,14 +16,17 @@ from collections import defaultdict
 
 GED_PATH = os.environ.get("GED_FILE", "")
 
-DEFN_RE = re.compile(r"^0 (@[^@]+@) ([A-Z]+)")
-L1_TAG  = re.compile(r"^1 ([A-Z]+)(?: (.*))?$")
-L2_TAG  = re.compile(r"^2 ([A-Z]+)(?: (.*))?$")
+DEFN_RE  = re.compile(r"^0 (@[^@]+@) ([A-Z]+)")
+L1_TAG   = re.compile(r"^1 ([A-Z]+)(?: (.*))?$")
+L2_TAG   = re.compile(r"^2 ([A-Z]+)(?: (.*))?$")
+OBJE_PTR = re.compile(r"^\d+ OBJE (@[^@]+@)$")
 
 
 def parse_ged(path: str) -> dict:
     records   = {}
     sour_body = defaultdict(list)
+    defined   = {}   # xref -> record type string
+    obje_refs = []   # (citing_xref, target_xref) for every OBJE pointer
     current   = None
     cur_type  = None
 
@@ -33,6 +37,7 @@ def parse_ged(path: str) -> dict:
             m = DEFN_RE.match(line)
             if m:
                 current, cur_type = m.group(1), m.group(2)
+                defined[current] = cur_type
                 records[current] = {"type": cur_type, "tags": defaultdict(list), "raw": []}
                 continue
 
@@ -50,7 +55,11 @@ def parse_ged(path: str) -> dict:
                 if m2 and m2.group(1) in ("TITL", "AUTH", "PUBL"):
                     sour_body[current].append(line)
 
-    return {"records": records, "sour_body": sour_body}
+            mo = OBJE_PTR.match(line)
+            if mo:
+                obje_refs.append((current, mo.group(1)))
+
+    return {"records": records, "sour_body": sour_body, "defined": defined, "obje_refs": obje_refs}
 
 
 @pytest.fixture(scope="module")
@@ -98,6 +107,19 @@ def test_every_fam_has_member(ged):
     assert bad == [], (
         f"{len(bad)} FAM record(s) with no HUSB, WIFE, or CHIL:\n"
         + "\n".join(f"  {x}" for x in bad)
+    )
+
+
+def test_obje_pointers_resolve(ged):
+    defined = ged["defined"]
+    bad = [
+        (src, xref)
+        for src, xref in ged["obje_refs"]
+        if defined.get(xref) != "OBJE"
+    ]
+    assert bad == [], (
+        f"{len(bad)} OBJE pointer(s) don't resolve to an OBJE record:\n"
+        + "\n".join(f"  {s} → {x}" for s, x in bad[:10])
     )
 
 

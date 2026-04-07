@@ -8,6 +8,7 @@ Covers:
   4. No PLAC value is blank.
   5. No marriage date precedes either spouse's birth date.
   6. No marriage date follows either spouse's death date.
+  7. No individual has two BIRT or DEAT events with an identical date and place.
 """
 import os
 import re
@@ -190,4 +191,75 @@ def test_marriage_not_after_spouse_death(ged):
         + "\n".join(
             f"  FAM {f}: {n!r} died {d}, married {m}" for f, n, m, d in bad
         )
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. No duplicate identical BIRT/DEAT events
+# ---------------------------------------------------------------------------
+
+def _iter_event_blocks(path: str):
+    """
+    Yield (xref, tag, date, plac) for every BIRT/DEAT block in every INDI record.
+    date and plac are None when absent from the block.
+    """
+    L2_PLAC = re.compile(r"^2 PLAC (.+)$")
+    with open(path, encoding="utf-8") as f:
+        all_lines = [l.rstrip("\n") for l in f]
+
+    i = 0
+    while i < len(all_lines):
+        if not re.match(r"^0 @.*@ INDI\b", all_lines[i]):
+            i += 1
+            continue
+        xref = re.match(r"^0 (@[^@]+@)", all_lines[i]).group(1)
+        i += 1
+        rec_lines = []
+        while i < len(all_lines) and not re.match(r"^0 ", all_lines[i]):
+            rec_lines.append(all_lines[i])
+            i += 1
+
+        j = 0
+        while j < len(rec_lines):
+            m = re.match(r"^1 (BIRT|DEAT)\b", rec_lines[j])
+            if not m:
+                j += 1
+                continue
+            tag = m.group(1)
+            j += 1
+            date = plac = None
+            while j < len(rec_lines) and re.match(r"^[2-9] ", rec_lines[j]):
+                dm = L2_DATE.match(rec_lines[j])
+                pm = L2_PLAC.match(rec_lines[j])
+                if dm:
+                    date = dm.group(1).strip()
+                if pm:
+                    plac = pm.group(1).strip()
+                j += 1
+            yield xref, tag, date, plac
+
+
+@pytest.fixture(scope="module")
+def event_blocks():
+    return list(_iter_event_blocks(GED_PATH))
+
+
+def test_no_duplicate_identical_events(event_blocks):
+    """No individual should have two BIRT or DEAT blocks with the same date and place."""
+    seen = defaultdict(list)
+    for xref, tag, date, plac in event_blocks:
+        seen[(xref, tag)].append((date, plac))
+
+    bad = []
+    for (xref, tag), keys in seen.items():
+        counts = {}
+        for k in keys:
+            counts[k] = counts.get(k, 0) + 1
+        dups = {k: n for k, n in counts.items() if n > 1}
+        if dups:
+            bad.append((xref, tag, dups))
+
+    assert bad == [], (
+        f"{len(bad)} individual(s) have duplicate BIRT/DEAT events with identical date+place:\n"
+        + "\n".join(f"  {x} {t}: {d}" for x, t, d in bad[:10])
     )
