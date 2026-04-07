@@ -6,14 +6,15 @@ Runs the following steps in order:
 
   1. strip_ancestry_artifacts   Remove proprietary Ancestry tags (_APID, _OID, etc.)
   2. convert_physical_attrs     Convert _HEIG/_WEIG to standard GEDCOM DSCR
-  3. convert_nonstandard_events Convert _MILT, _SEPR, _DCAUSE to standard GEDCOM
-  4. convert_wlnk               Convert _WLNK web links to ASSO/NOTE records
-  5. clean_notexml              Strip <notexml> wrappers from NOTE fields
-  6. extract_occupations        Pull "Occupation: X" from notes into OCCU events
-  7. purge_blocked_occupations  Remove trivial OCCU entries (Student, Scholar, etc.)
-  8. purge_duplicate_events     Merge duplicate BIRT/DEAT blocks
-  9. purge_broken_obje          Remove OBJE references with missing files
- 10. linter                     Fix dates, whitespace, PLAC, names, long lines, dupes
+  3. add_unaccented_names       Add AKA entries with accents stripped (ö→oe, etc.)
+  4. convert_nonstandard_events Convert _MILT, _SEPR, _DCAUSE to standard GEDCOM
+  5. convert_wlnk               Convert _WLNK web links to ASSO/NOTE records
+  6. clean_notexml              Strip <notexml> wrappers from NOTE fields
+  7. extract_occupations        Pull "Occupation: X" from notes into OCCU events
+  8. purge_blocked_occupations  Remove trivial OCCU entries (Student, Scholar, etc.)
+  9. purge_duplicate_events     Merge duplicate BIRT/DEAT blocks
+ 10. purge_broken_obje          Remove OBJE references with missing files
+ 11. linter                     Fix dates, whitespace, PLAC, names, long lines, dupes
 
 Usage:
   # Write result to yourfile_normalized.ged (default — original untouched):
@@ -40,6 +41,7 @@ import tempfile
 
 from strip_ancestry_artifacts import strip_ancestry_artifacts
 from convert_physical_attrs import convert_physical_attrs
+from add_unaccented_names import add_unaccented_names
 from convert_nonstandard_events import convert_nonstandard_events
 from convert_wlnk import convert_wlnk
 from clean_notexml import clean_notexml
@@ -68,6 +70,12 @@ def _run_convert_physical_attrs(path: str) -> tuple[str, str]:
     r = convert_physical_attrs(path)
     detail = (f'{r["heig_converted"]} _HEIG, '
               f'{r["weig_converted"]} _WEIG converted')
+    return _fmt_delta(r['lines_delta']), detail
+
+
+def _run_add_unaccented_names(path: str) -> tuple[str, str]:
+    r = add_unaccented_names(path)
+    detail = f'{r["names_added"]} AKA names added'
     return _fmt_delta(r['lines_delta']), detail
 
 
@@ -126,6 +134,7 @@ def _run_linter(path: str) -> tuple[str, str]:
 STEPS: list[tuple[str, str, callable]] = [
     ('strip',            'strip_ancestry_artifacts  ', _run_strip),
     ('convert_physical', 'convert_physical_attrs    ', _run_convert_physical_attrs),
+    ('add_aka',          'add_unaccented_names      ', _run_add_unaccented_names),
     ('convert_events',   'convert_nonstandard_events', _run_convert_events),
     ('convert_wlnk',     'convert_wlnk              ', _run_convert_wlnk),
     ('clean_notes',      'clean_notexml             ', _run_clean_notexml),

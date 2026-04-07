@@ -1,0 +1,28 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Manon /Pérez/
+2 GIVN Manon
+2 SURN Pérez
+0 @I2@ INDI
+1 NAME Klara /Köttner/
+0 @I3@ INDI
+1 NAME John /Smith/
+0 @I4@ INDI
+1 NAME Adolph Joseph "Bob" /Faraón/
+0 @I5@ INDI
+1 NAME Pierre Marie Georges /Maréchal/
+0 @I6@ INDI
+1 NAME Anaïs Elisabeth /Bouniol/
+0 @I7@ INDI
+1 NAME José /García/
+1 NAME Jose /Garcia/
+2 TYPE AKA
+0 @I8@ INDI
+1 NAME Euphémie /Giulietti/
+2 GIVN Euphémie
+2 SURN Giulietti
+2 NOTE Born in Smyrna
+0 TRLR
