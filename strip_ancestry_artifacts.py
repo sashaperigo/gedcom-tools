@@ -53,6 +53,11 @@ ANCESTRY_TAGS: frozenset[str] = frozenset({
     '_TYPE',   # Ancestry media type
     '_WPID',   # Web photo ID
     '_HPID',   # Historical photo ID
+    '_MTYPE',  # Media subtype (portrait, headstone, story, etc.)
+    '_STYPE',  # Source/file type (jpeg, pdf, etc.)
+    '_SIZE',   # File size in bytes
+    '_DSCR',   # Media description / caption
+    '_META',   # Ancestry metadataxml block
     # Tree / environment
     '_TREE',   # Tree identifier
     '_ENV',    # Environment ("ANCESTRY" etc.)
