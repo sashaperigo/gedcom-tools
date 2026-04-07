@@ -1,0 +1,127 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @S1@ SOUR
+1 TITL Census 1901
+0 @S2@ SOUR
+1 TITL Birth Register
+0 @S3@ SOUR
+1 TITL Church Record
+0 @S4@ SOUR
+1 TITL Passenger List
+0 @I1@ INDI
+1 NAME Alice /Smith/
+1 SEX F
+1 BIRT
+2 DATE 1 JAN 1900
+2 PLAC London, England
+2 SOUR @S1@
+3 PAGE Census entry
+1 BIRT
+2 DATE 1 JAN 1900
+2 PLAC London, England
+2 SOUR @S2@
+3 PAGE Birth certificate
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 BIRT
+2 DATE 15 MAR 1850
+2 PLAC Paris, France
+1 BIRT
+2 DATE 20 APR 1850
+2 PLAC Paris, France
+0 @I3@ INDI
+1 NAME Carol /Brown/
+1 SEX F
+1 BIRT
+2 DATE 5 JUN 1920
+2 PLAC Smyrna, Turkey
+1 BIRT
+2 DATE 5 JUN 1920
+0 @I4@ INDI
+1 NAME Dave /Wilson/
+1 SEX M
+1 BIRT
+1 BIRT
+0 @I5@ INDI
+1 NAME Eve /Taylor/
+1 SEX F
+1 BIRT
+2 DATE 10 OCT 1880
+2 PLAC Vienna, Austria
+1 DEAT
+2 DATE 10 OCT 1880
+2 PLAC Vienna, Austria
+0 @I6@ INDI
+1 NAME Frank /Green/
+1 SEX M
+1 BIRT
+2 DATE 1 APR 1900
+2 PLAC Berlin, Germany
+2 SOUR @S3@
+3 PAGE Church baptism record
+1 BIRT
+2 DATE 15 SEP 1900
+2 PLAC Berlin, Germany
+1 BIRT
+2 DATE 1 APR 1900
+2 PLAC Berlin, Germany
+2 SOUR @S4@
+3 PAGE Ship manifest
+0 @I7@ INDI
+1 NAME Grace /Hall/
+1 SEX F
+1 BIRT
+2 DATE 12 DEC 1775
+2 PLAC Dublin, Ireland
+2 SOUR @S1@
+3 PAGE Census entry
+1 BIRT
+2 DATE 12 DEC 1775
+2 PLAC Dublin, Ireland
+2 SOUR @S1@
+3 PAGE Census entry
+0 @I8@ INDI
+1 NAME Henry /King/
+1 SEX M
+1 BIRT
+2 DATE 3 MAR 1910
+2 PLAC Rome, Italy
+2 SOUR @S2@
+3 PAGE Birth record
+1 BIRT
+2 DATE 3 MAR 1910
+2 PLAC Rome, Italy
+0 @I9@ INDI
+1 NAME Iris /Lane/
+1 SEX F
+1 BIRT
+2 DATE 7 JUL 1888
+2 PLAC Cairo, Egypt
+1 BIRT
+2 DATE 7 JUL 1888
+2 PLAC Cairo, Egypt
+2 SOUR @S3@
+3 PAGE Parish record
+0 @I10@ INDI
+1 NAME James /Moore/
+1 SEX M
+1 DEAT
+2 DATE 4 NOV 1944
+2 PLAC Normandy, France
+2 SOUR @S4@
+3 PAGE Military record
+1 DEAT
+2 DATE 4 NOV 1944
+2 PLAC Normandy, France
+2 SOUR @S1@
+3 PAGE Casualty list
+0 @I11@ INDI
+1 NAME Karen /Nash/
+1 SEX F
+1 BIRT
+2 DATE 20 FEB 1930
+2 PLAC Sydney, Australia
+0 TRLR
