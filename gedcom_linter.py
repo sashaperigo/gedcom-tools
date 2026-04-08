@@ -31,6 +31,9 @@ Checks performed:
   5. NAME double spaces — name values have no collapsed double spaces.
   6. Long lines — no line exceeds 255 characters.
   7. Duplicate SOUR citations — no exact-duplicate source blocks per event.
+  8. Level jumps — no line's level exceeds the previous line's level by more
+     than 1 (e.g., a level-3 line appearing directly after a level-1 line is
+     invalid GEDCOM 5.5.1). No auto-fix; these require manual correction.
 
 Notes:
   - Only level-2 DATE lines (event dates on INDI/FAM records) are touched by
@@ -498,6 +501,28 @@ def scan_long_lines(path: str, max_len: int = GEDCOM_MAX_LINE):
             line = raw.rstrip('\n')
             if len(line) > max_len:
                 violations.append((lineno, len(line)))
+    return violations
+
+
+def scan_level_jumps(path: str) -> list[tuple[int, int, int]]:
+    """
+    Return list of (lineno, prev_level, curr_level) where the level increases
+    by more than 1 from one line to the next.
+
+    A jump greater than 1 (e.g., level 3 immediately after level 1) is invalid
+    in GEDCOM 5.5.1 and likely indicates a malformed or truncated record.
+    """
+    violations: list[tuple[int, int, int]] = []
+    prev_level: int | None = None
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            m = _LEVEL_RE.match(raw)
+            if not m:
+                continue
+            curr_level = int(m.group(1))
+            if prev_level is not None and curr_level > prev_level + 1:
+                violations.append((lineno, prev_level, curr_level))
+            prev_level = curr_level
     return violations
 
 
@@ -1103,6 +1128,16 @@ def main():
                 print(f'  line {ln}: {length} chars')
         else:
             print('OK: no lines exceed 255 characters.')
+
+        level_jumps = scan_level_jumps(args.gedfile)
+        if level_jumps:
+            errors = True
+            print(f'\n{len(level_jumps)} invalid level jump(s) '
+                  '(level increases by more than 1 — requires manual correction):')
+            for ln, prev, curr in level_jumps:
+                print(f'  line {ln}: level {prev} → level {curr}')
+        else:
+            print('OK: no invalid level jumps.')
 
         plac_issues = scan_plac(args.gedfile)
         if plac_issues:
