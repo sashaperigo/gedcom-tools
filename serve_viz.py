@@ -56,6 +56,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             params = parse_qs(parsed.query)
             if 'person' in params:
                 regenerate(unquote(params['person'][0]))
+            else:
+                regenerate()
             self.path = OUT.name
             self.directory = str(OUT.parent)
             return http.server.SimpleHTTPRequestHandler.do_GET(self)
