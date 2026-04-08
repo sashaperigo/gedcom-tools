@@ -484,14 +484,36 @@ function render() {
 /* ─── Decision helpers ───────────────────────────────────────────── */
 function decide(type, xref_b, action, xref_a) {
   if (type === 'indi') {
-    if (action === 'merge') { D.indi_map[xref_b] = xref_a; delete D.indi_disposition[xref_b]; }
-    else { delete D.indi_map[xref_b]; D.indi_disposition[xref_b] = action; }
+    if (action === 'merge') {
+      D.indi_map[xref_b] = xref_a; delete D.indi_disposition[xref_b];
+      // Once a File A person is matched, remove all other candidates pointing to them
+      DATA.candidates.individuals.forEach(function(m) {
+        if (m.xref_a === xref_a && m.xref_b !== xref_b) {
+          delete D.indi_map[m.xref_b];
+          D.indi_disposition[m.xref_b] = 'skip';
+        }
+      });
+    } else { delete D.indi_map[xref_b]; D.indi_disposition[xref_b] = action; }
   } else if (type === 'source') {
-    if (action === 'merge') { D.source_map[xref_b] = xref_a; delete D.source_disposition[xref_b]; }
-    else { delete D.source_map[xref_b]; D.source_disposition[xref_b] = action; }
+    if (action === 'merge') {
+      D.source_map[xref_b] = xref_a; delete D.source_disposition[xref_b];
+      DATA.candidates.sources.forEach(function(m) {
+        if (m.xref_a === xref_a && m.xref_b !== xref_b) {
+          delete D.source_map[m.xref_b];
+          D.source_disposition[m.xref_b] = 'skip';
+        }
+      });
+    } else { delete D.source_map[xref_b]; D.source_disposition[xref_b] = action; }
   } else if (type === 'fam') {
-    if (action === 'merge') { D.family_map[xref_b] = xref_a; delete D.family_disposition[xref_b]; }
-    else { delete D.family_map[xref_b]; D.family_disposition[xref_b] = action; }
+    if (action === 'merge') {
+      D.family_map[xref_b] = xref_a; delete D.family_disposition[xref_b];
+      DATA.candidates.families.forEach(function(m) {
+        if (m.xref_a === xref_a && m.xref_b !== xref_b) {
+          delete D.family_map[m.xref_b];
+          D.family_disposition[m.xref_b] = 'skip';
+        }
+      });
+    } else { delete D.family_map[xref_b]; D.family_disposition[xref_b] = action; }
   }
   scheduleSave(); updateProgress(); render();
 }

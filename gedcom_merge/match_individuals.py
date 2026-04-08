@@ -683,6 +683,33 @@ def match_individuals(
                     score_components=best_comps,
                 ))
 
+    # Sibling rivalry filter: if ind_b has a sibling in File B who scores
+    # substantially better (>= 0.10) against the same File A person, this
+    # candidate is almost certainly a false positive — the sibling is the real match.
+    xa_to_cands: dict[str, list[tuple[float, str]]] = defaultdict(list)
+    for xref_b, pool in candidate_pool.items():
+        if xref_b not in matched_b_to_a and pool:
+            xa_to_cands[pool[0][1]].append((pool[0][0], xref_b))
+
+    sibling_filtered: set[str] = set()
+    for xref_b, pool in candidate_pool.items():
+        if xref_b in matched_b_to_a or xref_b in sibling_filtered or not pool:
+            continue
+        best_score, best_xa, _ = pool[0]
+        ind_b = file_b.individuals[xref_b]
+        siblings_b: set[str] = set()
+        for famc in ind_b.family_child[:1]:
+            fam = file_b.families.get(famc)
+            if fam:
+                siblings_b.update(c for c in fam.child_xrefs if c != xref_b)
+        for sib_score, sib_xref in xa_to_cands.get(best_xa, []):
+            if sib_xref in siblings_b and sib_score >= best_score + 0.10:
+                sibling_filtered.add(xref_b)
+                break
+
+    for xref_b in sibling_filtered:
+        candidate_pool[xref_b] = []
+
     # Build candidates list from remaining unmatched B with pool scores
     candidates: list[IndividualMatch] = []
     for xref_b, pool in candidate_pool.items():
