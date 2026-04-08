@@ -41,11 +41,35 @@ def _score_string(a: str | None, b: str | None) -> float:
     return _levenshtein_similarity(a, b)
 
 
+def _extract_location_prefix(title: str | None) -> str | None:
+    """
+    For Ancestry-style titles ("Location, Database Name, Dates"), return the
+    normalized location prefix (everything before the first comma).
+
+    Returns None if the title has no commas or is empty.
+    """
+    if not title or ',' not in title:
+        return None
+    prefix = title.split(',', 1)[0].strip().lower()
+    return prefix if prefix else None
+
+
 def _score_title(src_a: Source, src_b: Source) -> float:
     """
     Primary: Jaccard on token sets.
     Secondary tiebreaker: normalized Levenshtein if Jaccard is 0.5–0.85.
+
+    Hard veto: for Ancestry-style "Location, Database, Dates" titles, if both
+    sources have a location prefix and they differ, return 0.0 — different
+    locations mean different databases regardless of how similar the rest is.
     """
+    loc_a = _extract_location_prefix(src_a.title)
+    loc_b = _extract_location_prefix(src_b.title)
+
+    # Hard veto: both have location prefixes and they don't match
+    if loc_a and loc_b and loc_a != loc_b:
+        return 0.0
+
     j = jaccard(src_a.title_tokens, src_b.title_tokens)
     if 0.50 < j < 0.85:
         # Also compute Levenshtein on full titles as tiebreaker

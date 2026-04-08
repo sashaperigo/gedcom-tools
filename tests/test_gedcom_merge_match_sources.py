@@ -3,7 +3,7 @@
 import pytest
 from gedcom_merge.model import GedcomFile, Source, GedcomNode
 from gedcom_merge.normalize import tokenize_title
-from gedcom_merge.match_sources import match_sources, _score_pair
+from gedcom_merge.match_sources import match_sources, _score_pair, _score_title
 
 
 def _make_source(xref: str, title: str, author: str = '', publisher: str = '') -> Source:
@@ -110,6 +110,36 @@ class TestMatchSources:
         assert result.auto_matches == []
         assert result.candidates == []
         assert result.unmatched_b == []
+
+    def test_ancestry_location_prefix_veto(self):
+        """Different location prefix → score 0.0, regardless of shared database name."""
+        a = _make_source('@S1@', 'California, Driver Licenses, 1900-2000')
+        b = _make_source('@S2@', 'Florida, Driver Licenses, 1900-2000')
+        score = _score_title(a, b)
+        assert score == 0.0, f'Expected 0.0 (location veto) but got {score}'
+
+    def test_ancestry_same_location_prefix_matches(self):
+        """Same location prefix → normal Jaccard scoring applies."""
+        a = _make_source('@S1@', 'California, Driver Licenses, 1900-2000')
+        b = _make_source('@S2@', 'California, Driver Licenses, 1900-2000')
+        score = _score_title(a, b)
+        assert score >= 0.90, f'Expected >= 0.90 but got {score}'
+
+    def test_no_comma_titles_not_vetoed(self):
+        """Titles without commas are not treated as Ancestry databases — no location veto."""
+        a = _make_source('@S1@', 'Massachusetts Vital Records')
+        b = _make_source('@S2@', 'Florida Vital Records')
+        # No comma → no location extraction → normal Jaccard
+        score = _score_title(a, b)
+        # Should score low due to different state tokens, but NOT 0.0 from veto
+        assert score < 0.80  # different states, low score is expected
+
+    def test_ancestry_veto_full_pair_score(self):
+        """Different locations veto the whole pair score via _score_pair."""
+        a = _make_source('@S1@', 'California, Driver Licenses, 1900-2000')
+        b = _make_source('@S2@', 'Florida, Driver Licenses, 1900-2000')
+        score = _score_pair(a, b)
+        assert score < 0.65, f'Expected below review threshold but got {score}'
 
     def test_candidate_threshold(self):
         """Moderately similar sources go to candidates, not auto-matches."""
