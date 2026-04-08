@@ -539,6 +539,209 @@ def scan_addr_under_plac(path: str) -> list[tuple[int, int]]:
     return violations
 
 
+def scan_note_under_plac(path: str) -> list[tuple[int, int]]:
+    """
+    Return list of (lineno, level) for NOTE lines that are direct children of
+    PLAC lines (i.e., NOTE at level N+1 immediately following PLAC at level N),
+    outside of any SOUR block.
+
+    Venue names (church, cemetery, etc.) stored as NOTE children of PLAC should
+    instead be ADDR siblings of PLAC, per the project convention.
+    """
+    violations: list[tuple[int, int]] = []
+    prev_level: int | None = None
+    prev_tag: str | None = None
+    in_sour_depth: int | None = None  # level at which SOUR opened, or None
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = re.match(r'^(\d+) ([A-Z_]+)', line)
+            if not m:
+                continue
+            curr_level = int(m.group(1))
+            curr_tag = m.group(2)
+            # Track SOUR entry/exit
+            if curr_tag == 'SOUR' and prev_level is not None and curr_level > 0:
+                in_sour_depth = curr_level
+            elif in_sour_depth is not None and curr_level <= in_sour_depth:
+                in_sour_depth = None
+            if (curr_tag == 'NOTE' and prev_tag == 'PLAC'
+                    and curr_level == prev_level + 1
+                    and in_sour_depth is None):
+                violations.append((lineno, curr_level))
+            prev_level = curr_level
+            prev_tag = curr_tag
+    return violations
+
+
+def scan_note_under_addr(path: str) -> list[tuple[int, int]]:
+    """
+    Return list of (lineno, level) for NOTE lines that are direct children of
+    ADDR lines (i.e., NOTE at level N+1 immediately following ADDR at level N),
+    outside of any SOUR block.
+
+    These should be restructured so the venue name appears on the ADDR line
+    and the street address becomes a CONT continuation.
+    """
+    violations: list[tuple[int, int]] = []
+    prev_level: int | None = None
+    prev_tag: str | None = None
+    in_sour_depth: int | None = None
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = re.match(r'^(\d+) ([A-Z_]+)', line)
+            if not m:
+                continue
+            curr_level = int(m.group(1))
+            curr_tag = m.group(2)
+            if curr_tag == 'SOUR' and prev_level is not None and curr_level > 0:
+                in_sour_depth = curr_level
+            elif in_sour_depth is not None and curr_level <= in_sour_depth:
+                in_sour_depth = None
+            if (curr_tag == 'NOTE' and prev_tag == 'ADDR'
+                    and curr_level == prev_level + 1
+                    and in_sour_depth is None):
+                violations.append((lineno, curr_level))
+            prev_level = curr_level
+            prev_tag = curr_tag
+    return violations
+
+
+def fix_note_under_plac(path: str, dry_run: bool = False) -> int:
+    """
+    Convert NOTE lines that are invalid children of PLAC into ADDR siblings.
+
+    Each ``(N+1) NOTE <venue>`` immediately following ``N PLAC ...`` (outside
+    a SOUR block) is rewritten to ``N ADDR <venue>``. Any CONT/CONC lines
+    that follow are promoted by one level to stay subordinate to the new ADDR.
+
+    Returns the number of NOTE lines converted.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    in_sour_depth: int | None = None
+    i = 0
+    while i < len(lines_in):
+        line = lines_in[i].rstrip('\n')
+        m = re.match(r'^(\d+) ([A-Z_]+)(.*)', line)
+        if m:
+            curr_level = int(m.group(1))
+            curr_tag = m.group(2)
+            rest = m.group(3)  # everything after the tag (including leading space+value)
+            # Track SOUR blocks
+            if curr_tag == 'SOUR' and curr_level > 0:
+                in_sour_depth = curr_level
+            elif in_sour_depth is not None and curr_level <= in_sour_depth:
+                in_sour_depth = None
+            # Check for NOTE immediately after PLAC
+            if curr_tag == 'NOTE' and in_sour_depth is None:
+                prev_gedcom = None
+                for prev_raw in reversed(lines_out):
+                    pm = re.match(r'^(\d+) ([A-Z_]+)', prev_raw.rstrip('\n'))
+                    if pm:
+                        prev_gedcom = (int(pm.group(1)), pm.group(2))
+                        break
+                if prev_gedcom and prev_gedcom[1] == 'PLAC' and prev_gedcom[0] == curr_level - 1:
+                    new_level = curr_level - 1
+                    fixed_line = f'{new_level} ADDR{rest}'
+                    if dry_run:
+                        print(f'  line {i + 1}: {line!r}')
+                        print(f'           → {fixed_line!r}')
+                    lines_out.append(fixed_line + '\n')
+                    changed += 1
+                    i += 1
+                    # Promote any CONT/CONC continuation lines
+                    while i < len(lines_in):
+                        cont_line = lines_in[i].rstrip('\n')
+                        cm = re.match(r'^(\d+) (CONT|CONC)', cont_line)
+                        if cm and int(cm.group(1)) == curr_level + 1:
+                            fixed_cont = f'{curr_level} {cm.group(2)}' + cont_line[len(f'{curr_level + 1} {cm.group(2)}'):]
+                            if dry_run:
+                                print(f'  line {i + 1}: {cont_line!r}')
+                                print(f'           → {fixed_cont!r}')
+                            lines_out.append(fixed_cont + '\n')
+                            i += 1
+                        else:
+                            break
+                    continue
+        lines_out.append(line + '\n')
+        i += 1
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+def fix_note_under_addr(path: str, dry_run: bool = False) -> int:
+    """
+    Restructure NOTE children of ADDR so the venue name leads the ADDR line.
+
+    When ``N ADDR <street>`` is immediately followed by ``(N+1) NOTE <venue>``
+    (outside a SOUR block), rewrite to:
+
+        N ADDR <venue>
+        (N+1) CONT <street>
+
+    This puts the venue name first (as is conventional) and demotes the street
+    address to a CONT continuation.
+
+    Returns the number of blocks restructured.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    in_sour_depth: int | None = None
+    i = 0
+    while i < len(lines_in):
+        line = lines_in[i].rstrip('\n')
+        m = re.match(r'^(\d+) ([A-Z_]+)(.*)', line)
+        if m:
+            curr_level = int(m.group(1))
+            curr_tag = m.group(2)
+            if curr_tag == 'SOUR' and curr_level > 0:
+                in_sour_depth = curr_level
+            elif in_sour_depth is not None and curr_level <= in_sour_depth:
+                in_sour_depth = None
+            if curr_tag == 'ADDR' and in_sour_depth is None and i + 1 < len(lines_in):
+                next_line = lines_in[i + 1].rstrip('\n')
+                nm = re.match(r'^(\d+) NOTE(.*)', next_line)
+                if nm and int(nm.group(1)) == curr_level + 1:
+                    street_val = m.group(3)   # e.g. " Shaftesbury Avenue"
+                    venue_val = nm.group(2)    # e.g. " French Hospital"
+                    new_addr = f'{curr_level} ADDR{venue_val}'
+                    new_cont = f'{curr_level + 1} CONT{street_val}'
+                    if dry_run:
+                        print(f'  line {i + 1}: {line!r}')
+                        print(f'  line {i + 2}: {next_line!r}')
+                        print(f'           → {new_addr!r}')
+                        print(f'           → {new_cont!r}')
+                    lines_out.append(new_addr + '\n')
+                    lines_out.append(new_cont + '\n')
+                    changed += 1
+                    i += 2
+                    continue
+        lines_out.append(line + '\n')
+        i += 1
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
 def fix_addr_under_plac(path: str, dry_run: bool = False) -> int:
     """
     Promote ADDR lines that are invalid children of PLAC up one level, making
@@ -1081,6 +1284,8 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_name_case(path, dry_run=dry_run)
     fixes_applied += fix_long_lines(path, dry_run=dry_run)
     fixes_applied += fix_addr_under_plac(path, dry_run=dry_run)
+    fixes_applied += fix_note_under_plac(path, dry_run=dry_run)
+    fixes_applied += fix_note_under_addr(path, dry_run=dry_run)
     fixes_applied += fix_plac(path, dry_run=dry_run)
     fixes_applied += fix_plac_address_parts(path, dry_run=dry_run)
     dates_fixed, _ = fix_file(path, dry_run=dry_run)
@@ -1140,6 +1345,14 @@ def main():
         help='Promote ADDR lines that are invalid children of PLAC up one level in-place',
     )
     parser.add_argument(
+        '--fix-note-under-plac', action='store_true',
+        help='Convert NOTE children of PLAC to ADDR siblings (venue names) in-place',
+    )
+    parser.add_argument(
+        '--fix-note-under-addr', action='store_true',
+        help='Restructure NOTE children of ADDR: venue name leads ADDR, street becomes CONT',
+    )
+    parser.add_argument(
         '--fix-all', action='store_true',
         help='Run all fix operations in sequence',
     )
@@ -1158,6 +1371,8 @@ def main():
         args.fix_names = True
         args.fix_long_lines = True
         args.fix_addr_under_plac = True
+        args.fix_note_under_plac = True
+        args.fix_note_under_addr = True
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
@@ -1207,6 +1422,24 @@ def main():
         else:
             print(f'{changed} ADDR line(s) promoted.')
 
+    if args.fix_note_under_plac:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Converting NOTE-under-PLAC to ADDR siblings in: {args.gedfile}')
+        changed = fix_note_under_plac(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} NOTE line(s) would be converted to ADDR.')
+        else:
+            print(f'{changed} NOTE line(s) converted to ADDR.')
+
+    if args.fix_note_under_addr:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Restructuring NOTE-under-ADDR (venue first) in: {args.gedfile}')
+        changed = fix_note_under_addr(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} ADDR block(s) would be restructured.')
+        else:
+            print(f'{changed} ADDR block(s) restructured.')
+
     if args.fix_places:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing PLAC values in: {args.gedfile}')
@@ -1242,7 +1475,8 @@ def main():
             print('No remaining violations.')
     if not any([args.fix_dates, args.fix_whitespace, args.fix_places,
                 args.fix_address_parts, args.fix_names, args.fix_long_lines,
-                args.fix_duplicate_sources, args.fix_addr_under_plac]):
+                args.fix_duplicate_sources, args.fix_addr_under_plac,
+                args.fix_note_under_plac, args.fix_note_under_addr]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
 
@@ -1311,6 +1545,30 @@ def main():
                 print(f'  ... and {len(addr_plac_issues) - 20} more.')
         else:
             print('OK: no ADDR lines incorrectly nested under PLAC.')
+
+        note_plac_issues = scan_note_under_plac(args.gedfile)
+        if note_plac_issues:
+            errors = True
+            print(f'\n{len(note_plac_issues)} NOTE line(s) incorrectly nested under PLAC '
+                  '(run --fix-note-under-plac to convert to ADDR siblings):')
+            for ln, level in note_plac_issues[:20]:
+                print(f'  line {ln}: level-{level} NOTE under level-{level - 1} PLAC')
+            if len(note_plac_issues) > 20:
+                print(f'  ... and {len(note_plac_issues) - 20} more.')
+        else:
+            print('OK: no NOTE lines incorrectly nested under PLAC.')
+
+        note_addr_issues = scan_note_under_addr(args.gedfile)
+        if note_addr_issues:
+            errors = True
+            print(f'\n{len(note_addr_issues)} NOTE line(s) incorrectly nested under ADDR '
+                  '(run --fix-note-under-addr to restructure with venue name first):')
+            for ln, level in note_addr_issues[:20]:
+                print(f'  line {ln}: level-{level} NOTE under level-{level - 1} ADDR')
+            if len(note_addr_issues) > 20:
+                print(f'  ... and {len(note_addr_issues) - 20} more.')
+        else:
+            print('OK: no NOTE lines incorrectly nested under ADDR.')
 
         name_slash_issues = scan_name_slashes(args.gedfile)
         if name_slash_issues:
