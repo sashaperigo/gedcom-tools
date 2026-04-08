@@ -112,7 +112,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 indis[xref]['sex'] = val
                 current_evt = current_note = None
             elif lvl == 1 and tag in _EVENT_TAGS:
-                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'note': val if val else None}
+                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'cause': None, 'note': val if val else None}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
@@ -130,6 +130,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['place'] = val
                 elif tag == 'TYPE':
                     current_evt['type'] = val
+                elif tag == 'CAUS':
+                    current_evt['cause'] = val
                 elif tag == 'NOTE':
                     current_evt['note'] = val
             elif lvl == 1 and tag == 'NOTE':
@@ -656,7 +658,13 @@ function buildProse(evt) {
   const meta  = () => [full, date].filter(Boolean).join(' \\u00b7 ');
   switch (evt.tag) {
     case 'BIRT': return { prose: short ? `Born in ${short}` : (date ? `Born ${date}` : 'Birth'),          meta: meta() };
-    case 'DEAT': return { prose: short ? `Died in ${short}` : (date ? `Died ${date}` : 'Death'),          meta: meta() };
+    case 'DEAT': {
+      const cause = evt.cause ? `of ${evt.cause}` : '';
+      if (cause && short) return { prose: `Died ${cause} in ${short}`, meta: meta() };
+      if (cause)          return { prose: `Died ${cause}`,             meta: meta() };
+      if (short)          return { prose: `Died in ${short}`,          meta: meta() };
+      return { prose: date ? `Died ${date}` : 'Death', meta: meta() };
+    }
     case 'BURI': return { prose: short ? `Buried in ${short}` : (date ? `Buried ${date}` : 'Burial'),    meta: meta() };
     case 'RESI': return { prose: short ? `Lived in ${short}` : (date ? `Lived ${date}` : 'Residence'),   meta: meta() };
     case 'OCCU': {
@@ -811,7 +819,7 @@ function showDetail(xref) {
   const evtDiv  = document.getElementById('detail-events');
   const alsoLivedDiv = document.getElementById('detail-also-lived');
   const allVisible = (data.events || []).filter(e =>
-    (e.date || e.place || e.note || e.type) &&
+    (e.date || e.place || e.note || e.type || e.cause) &&
     !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
   );
   const _keepInTimeline = e =>
