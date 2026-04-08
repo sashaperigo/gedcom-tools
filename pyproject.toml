@@ -10,9 +10,15 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 keywords = ["gedcom", "genealogy", "linter", "family-tree"]
+dependencies = [
+    "rapidfuzz>=3.0",
+    "rich>=13.0",
+    "unidecode>=1.3",
+]
 
 [project.scripts]
 gedcom-lint = "gedcom_linter:main"
+gedcom-merge = "gedcom_merge.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

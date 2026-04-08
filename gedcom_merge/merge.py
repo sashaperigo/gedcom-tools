@@ -1,0 +1,778 @@
+"""
+merge.py — Merge matched GEDCOM records into a single unified GedcomFile.
+
+The primary file's structure is preserved. Records from the secondary file are
+integrated following the rules in the spec:
+  - More specific dates/places win
+  - Name variants union (B primary → AKA if different from A primary)
+  - Citations union and deduplicate
+  - No data is silently discarded
+
+All changes are tracked in MergeStats for the report.
+"""
+
+from __future__ import annotations
+import copy
+from dataclasses import dataclass, field
+
+from gedcom_merge.model import (
+    GedcomFile, GedcomNode,
+    Individual, Family, Source, Repository, MediaObject, Note,
+    NameRecord, EventRecord, CitationRecord, ParsedDate,
+    MergeDecisions,
+)
+from gedcom_merge.normalize import (
+    normalize_name_str, parse_date, date_overlap_score, place_similarity,
+)
+
+
+# ---------------------------------------------------------------------------
+# Merge statistics (fed to report.py)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class MergeStats:
+    indi_matched_auto: int = 0
+    indi_matched_manual: int = 0
+    indi_added: int = 0
+    indi_skipped: int = 0
+
+    fam_matched_auto: int = 0
+    fam_matched_manual: int = 0
+    fam_added: int = 0
+
+    source_matched_auto: int = 0
+    source_matched_manual: int = 0
+    source_added: int = 0
+    source_skipped: int = 0
+
+    birth_date_preferred_a: int = 0
+    birth_place_preferred_b: int = 0
+    aka_names_added: int = 0
+    events_added_from_b: int = 0
+    citations_added_from_b: int = 0
+    date_conflicts_exact_wins: int = 0   # approximate discarded in favour of exact
+    date_conflicts_kept_both: int = 0    # meaningfully different dates kept as separate events
+
+    warnings: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# ID remapping helpers
+# ---------------------------------------------------------------------------
+
+def _build_id_map(
+    file_a: GedcomFile,
+    file_b: GedcomFile,
+    decisions: MergeDecisions,
+    stats: MergeStats,
+) -> dict[str, str]:
+    """
+    Build a complete xref_b → xref_a mapping for all B records.
+
+    Matched records point to their A counterpart.
+    Unmatched records that are 'add' get a new unique xref.
+    """
+    id_map: dict[str, str] = {}
+
+    # Matched sources
+    for xref_b, xref_a in decisions.source_map.items():
+        id_map[xref_b] = xref_a
+
+    # Matched individuals
+    for xref_b, xref_a in decisions.indi_map.items():
+        id_map[xref_b] = xref_a
+
+    # Matched families
+    for xref_b, xref_a in decisions.family_map.items():
+        id_map[xref_b] = xref_a
+
+    # Unmatched records to add → generate new IDs
+    _counter = {'I': 0, 'F': 0, 'S': 0, 'R': 0, 'O': 0, 'N': 0}
+
+    def _new_id(prefix: str) -> str:
+        _counter[prefix] += 1
+        return f'@{prefix}_MERGE_{_counter[prefix]:04d}@'
+
+    for xref_b, disp in decisions.indi_disposition.items():
+        if xref_b not in id_map:
+            if disp == 'add':
+                id_map[xref_b] = _new_id('I')
+                stats.indi_added += 1
+            else:
+                stats.indi_skipped += 1
+
+    for xref_b, disp in decisions.family_disposition.items():
+        if xref_b not in id_map:
+            if disp == 'add':
+                id_map[xref_b] = _new_id('F')
+                stats.fam_added += 1
+
+    for xref_b, disp in decisions.source_disposition.items():
+        if xref_b not in id_map:
+            if disp == 'add':
+                id_map[xref_b] = _new_id('S')
+                stats.source_added += 1
+            else:
+                stats.source_skipped += 1
+
+    # Repositories and media from B: always add (they're referenced)
+    for xref_b in file_b.repositories:
+        if xref_b not in id_map:
+            id_map[xref_b] = _new_id('R')
+
+    for xref_b in file_b.media:
+        if xref_b not in id_map:
+            id_map[xref_b] = _new_id('O')
+
+    for xref_b in file_b.notes:
+        if xref_b not in id_map:
+            id_map[xref_b] = _new_id('N')
+
+    return id_map
+
+
+def _remap(xref: str | None, id_map: dict[str, str]) -> str | None:
+    if xref is None:
+        return None
+    return id_map.get(xref, xref)  # If not in map, assume it's already an A xref
+
+
+def _remap_citation(cit: CitationRecord, id_map: dict[str, str]) -> CitationRecord:
+    return CitationRecord(
+        source_xref=_remap(cit.source_xref, id_map) or cit.source_xref,
+        page=cit.page,
+        data=cit.data,
+        raw=cit.raw,
+    )
+
+
+def _remap_citations(
+    citations: list[CitationRecord], id_map: dict[str, str]
+) -> list[CitationRecord]:
+    return [_remap_citation(c, id_map) for c in citations]
+
+
+# ---------------------------------------------------------------------------
+# Citation deduplication
+# ---------------------------------------------------------------------------
+
+def _citation_key(cit: CitationRecord) -> tuple[str, str]:
+    """Dedup key: (source_xref, page). Empty page treated as ''."""
+    return (cit.source_xref, cit.page or '')
+
+
+def _merge_citations(
+    cits_a: list[CitationRecord],
+    cits_b: list[CitationRecord],
+    id_map: dict[str, str],
+    stats: MergeStats,
+) -> list[CitationRecord]:
+    """
+    Union citations from A and B. Deduplicate by (source_xref, page).
+    When one PAGE is a substring of the other, keep the more complete one.
+    """
+    result: list[CitationRecord] = list(cits_a)
+    seen: dict[str, CitationRecord] = {}
+    for c in cits_a:
+        seen[c.source_xref] = c  # track by source xref for substring check
+
+    for cit_b in _remap_citations(cits_b, id_map):
+        key = _citation_key(cit_b)
+        # Check for exact duplicate
+        if any(_citation_key(c) == key for c in result):
+            continue
+        # Check substring: if B's page is a substring of an existing citation, skip
+        existing = seen.get(cit_b.source_xref)
+        if existing and existing.page and cit_b.page:
+            if cit_b.page in existing.page:
+                continue  # existing is more complete
+            if existing.page in cit_b.page:
+                # B is more complete — keep B, remove existing
+                result = [c for c in result if c is not existing]
+        result.append(cit_b)
+        seen[cit_b.source_xref] = cit_b
+        stats.citations_added_from_b += 1
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Date / place preference
+# ---------------------------------------------------------------------------
+
+def _prefer_date(d_a: ParsedDate | None, d_b: ParsedDate | None) -> ParsedDate | None:
+    """Return the more specific date."""
+    if d_a is None:
+        return d_b
+    if d_b is None:
+        return d_a
+    return d_a if d_a.specificity() >= d_b.specificity() else d_b
+
+
+def _prefer_place(p_a: str | None, p_b: str | None) -> str | None:
+    """Return the more specific place (more hierarchical components)."""
+    if not p_a:
+        return p_b
+    if not p_b:
+        return p_a
+    parts_a = [p.strip() for p in p_a.split(',') if p.strip()]
+    parts_b = [p.strip() for p in p_b.split(',') if p.strip()]
+    return p_b if len(parts_b) > len(parts_a) else p_a
+
+
+# ---------------------------------------------------------------------------
+# Event matching and merging
+# ---------------------------------------------------------------------------
+
+def _events_similar(ev_a: EventRecord, ev_b: EventRecord) -> bool:
+    """True if two events represent the same life event."""
+    if ev_a.tag != ev_b.tag:
+        return False
+    if ev_a.event_type != ev_b.event_type:
+        return False
+    # For unique events (birth, death) always merge if tag matches
+    if ev_a.tag in ('BIRT', 'DEAT', 'BURI'):
+        return True
+    # For others, require approximate date match or both missing
+    if ev_a.date is None and ev_b.date is None:
+        return True
+    score = date_overlap_score(ev_a.date, ev_b.date)
+    return score >= 0.5
+
+
+def _merge_event(
+    ev_a: EventRecord,
+    ev_b: EventRecord,
+    id_map: dict[str, str],
+    stats: MergeStats,
+) -> EventRecord:
+    """Merge ev_b into ev_a. Prefer more specific date/place."""
+    merged_date = _prefer_date(ev_a.date, ev_b.date)
+    merged_place = _prefer_place(ev_a.place, ev_b.place)
+    merged_cits = _merge_citations(ev_a.citations, ev_b.citations, id_map, stats)
+
+    # Rebuild raw node (keep A's raw, update value if needed)
+    return EventRecord(
+        tag=ev_a.tag,
+        event_type=ev_a.event_type or ev_b.event_type,
+        date=merged_date,
+        place=merged_place,
+        citations=merged_cits,
+        raw=ev_a.raw,  # preserve A's raw node
+    )
+
+
+def _merge_events(
+    events_a: list[EventRecord],
+    events_b: list[EventRecord],
+    id_map: dict[str, str],
+    stats: MergeStats,
+) -> list[EventRecord]:
+    """
+    Match events by (tag + event_type + approximate date), then merge matched
+    pairs with nuanced date-conflict handling:
+
+    Case 1 — one approximate, one exact, close (overlap score ≥ 0.4):
+        Keep the exact date only. Citations stay with the exact event;
+        the approximate's citations are dropped. Place merged (more specific wins).
+        → stats.date_conflicts_exact_wins
+
+    Case 2 — meaningfully different dates (year gap > 2):
+        Keep both as separate events. Primary = better sourced (more citations;
+        ties go to File A). Alternate gets event_type='alternate'. Citations
+        are NOT merged — each event keeps only its own.
+        → stats.date_conflicts_kept_both
+
+    Case 3 — same or overlapping dates, similar specificity:
+        Standard merge — prefer more specific date/place, union citations.
+
+    Unmatched B events are always appended.
+    """
+    result: list[EventRecord] = []
+    used_b: set[int] = set()
+
+    for ev_a in events_a:
+        # Find first matching B event
+        best_b_idx = None
+        for i, ev_b in enumerate(events_b):
+            if i in used_b:
+                continue
+            if _events_similar(ev_a, ev_b):
+                best_b_idx = i
+                break
+
+        if best_b_idx is None:
+            result.append(ev_a)
+            continue
+
+        ev_b = events_b[best_b_idx]
+        used_b.add(best_b_idx)
+
+        # Both dates must be present with a year for conflict detection
+        a_year = ev_a.date.year if ev_a.date else None
+        b_year = ev_b.date.year if ev_b.date else None
+        a_approx = ev_a.date is not None and ev_a.date.qualifier is not None
+        b_approx = ev_b.date is not None and ev_b.date.qualifier is not None
+
+        # Case 1: one approximate, one exact, close → keep the exact date
+        if a_year and b_year and (a_approx != b_approx):
+            from gedcom_merge.normalize import date_overlap_score as _dos
+            overlap = _dos(ev_a.date, ev_b.date)
+            if overlap >= 0.4:
+                exact_ev = ev_b if a_approx else ev_a
+                result.append(EventRecord(
+                    tag=exact_ev.tag,
+                    event_type=exact_ev.event_type,
+                    date=exact_ev.date,
+                    place=_prefer_place(ev_a.place, ev_b.place),
+                    citations=_remap_citations(exact_ev.citations, id_map),
+                    raw=exact_ev.raw,
+                ))
+                stats.date_conflicts_exact_wins += 1
+                continue
+
+        # Case 2: meaningfully different years (gap > 2) → keep both
+        if a_year and b_year and abs(a_year - b_year) > 2:
+            cits_a = _remap_citations(ev_a.citations, id_map)
+            cits_b = _remap_citations(ev_b.citations, id_map)
+            # Primary = better sourced; ties → File A wins
+            a_is_primary = len(ev_a.citations) >= len(ev_b.citations)
+            primary_ev, alt_ev = (ev_a, ev_b) if a_is_primary else (ev_b, ev_a)
+            primary_cits, alt_cits = (cits_a, cits_b) if a_is_primary else (cits_b, cits_a)
+
+            result.append(EventRecord(
+                tag=primary_ev.tag,
+                event_type=primary_ev.event_type,
+                date=primary_ev.date,
+                place=primary_ev.place,
+                citations=primary_cits,
+                raw=primary_ev.raw,
+            ))
+            result.append(EventRecord(
+                tag=alt_ev.tag,
+                event_type='alternate',
+                date=alt_ev.date,
+                place=alt_ev.place,
+                citations=alt_cits,
+                raw=alt_ev.raw,
+            ))
+            stats.date_conflicts_kept_both += 1
+            continue
+
+        # Case 3: normal merge (dates close or same)
+        result.append(_merge_event(ev_a, ev_b, id_map, stats))
+
+    # Append unmatched B events
+    for i, ev_b in enumerate(events_b):
+        if i not in used_b:
+            result.append(EventRecord(
+                tag=ev_b.tag,
+                event_type=ev_b.event_type,
+                date=ev_b.date,
+                place=ev_b.place,
+                citations=_remap_citations(ev_b.citations, id_map),
+                raw=ev_b.raw,
+            ))
+            stats.events_added_from_b += 1
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Name merging
+# ---------------------------------------------------------------------------
+
+def _merge_notes(notes_a: list[str], notes_b: list[str]) -> list[str]:
+    """
+    Union inline notes from A and B. Deduplicate by stripped text.
+    Notes with different content are both kept.
+    """
+    seen: set[str] = {n.strip() for n in notes_a}
+    result: list[str] = list(notes_a)
+    for note in notes_b:
+        if note.strip() not in seen:
+            result.append(note)
+            seen.add(note.strip())
+    return result
+
+
+def _merge_names(
+    names_a: list[NameRecord],
+    names_b: list[NameRecord],
+    stats: MergeStats,
+) -> list[NameRecord]:
+    """
+    Union name records. A's primary stays primary.
+    If B's primary differs from A's primary, add as AKA.
+    """
+    result: list[NameRecord] = list(names_a)
+
+    # Collect set of normalized (given, surname) already in result
+    known: set[tuple[str, str]] = {(n.given, n.surname) for n in names_a}
+
+    for name_b in names_b:
+        key = (name_b.given, name_b.surname)
+        if key in known:
+            continue
+        # Add as AKA if not already there
+        new_name = NameRecord(
+            full=name_b.full,
+            given=name_b.given,
+            surname=name_b.surname,
+            name_type=name_b.name_type or 'AKA',
+            citations=name_b.citations,
+        )
+        result.append(new_name)
+        known.add(key)
+        stats.aka_names_added += 1
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Individual merging
+# ---------------------------------------------------------------------------
+
+def _merge_individual(
+    ind_a: Individual,
+    ind_b: Individual,
+    id_map: dict[str, str],
+    stats: MergeStats,
+    field_choices: list | None = None,
+) -> Individual:
+    """Merge ind_b into ind_a, returning a new Individual."""
+    # Names
+    merged_names = _merge_names(ind_a.names, ind_b.names, stats)
+
+    # Sex
+    sex = ind_a.sex
+    if not sex and ind_b.sex:
+        sex = ind_b.sex
+
+    # Events
+    merged_events = _merge_events(ind_a.events, ind_b.events, id_map, stats)
+
+    # Family links: remap B's links then union
+    famc = list(ind_a.family_child)
+    for xref in ind_b.family_child:
+        remapped = _remap(xref, id_map)
+        if remapped and remapped not in famc:
+            famc.append(remapped)
+
+    fams = list(ind_a.family_spouse)
+    for xref in ind_b.family_spouse:
+        remapped = _remap(xref, id_map)
+        if remapped and remapped not in fams:
+            fams.append(remapped)
+
+    # Citations
+    merged_cits = _merge_citations(ind_a.citations, ind_b.citations, id_map, stats)
+
+    # Media
+    media = list(ind_a.media)
+    for xref in ind_b.media:
+        remapped = _remap(xref, id_map)
+        if remapped and remapped not in media:
+            media.append(remapped)
+
+    # Notes: union inline text (deduplicated) and linked note xrefs
+    merged_notes = _merge_notes(ind_a.notes, ind_b.notes)
+    note_xrefs = list(ind_a.note_xrefs)
+    for xref in ind_b.note_xrefs:
+        remapped = _remap(xref, id_map)
+        if remapped and remapped not in note_xrefs:
+            note_xrefs.append(remapped)
+
+    # Re-derive normalized fields from merged names/events
+    normalized_surnames: set[str] = set()
+    normalized_givens: set[str] = set()
+    for name in merged_names:
+        if name.surname:
+            normalized_surnames.add(name.surname)
+        for part in name.given.split():
+            normalized_givens.add(part)
+
+    birth_date: ParsedDate | None = None
+    death_date: ParsedDate | None = None
+    for ev in merged_events:
+        if ev.tag == 'BIRT' and birth_date is None:
+            birth_date = ev.date
+        elif ev.tag == 'DEAT' and death_date is None:
+            death_date = ev.date
+
+    return Individual(
+        xref=ind_a.xref,
+        names=merged_names,
+        sex=sex,
+        events=merged_events,
+        family_child=famc,
+        family_spouse=fams,
+        citations=merged_cits,
+        media=media,
+        notes=merged_notes,
+        note_xrefs=note_xrefs,
+        raw=ind_a.raw,
+        normalized_surnames=normalized_surnames,
+        normalized_givens=normalized_givens,
+        birth_date=birth_date,
+        death_date=death_date,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Family merging
+# ---------------------------------------------------------------------------
+
+def _merge_family(
+    fam_a: Family,
+    fam_b: Family,
+    id_map: dict[str, str],
+    stats: MergeStats,
+) -> Family:
+    """Merge fam_b into fam_a."""
+    # Children: A order preserved, B appended
+    children = list(fam_a.child_xrefs)
+    for xref in fam_b.child_xrefs:
+        remapped = _remap(xref, id_map)
+        if remapped and remapped not in children:
+            children.append(remapped)
+
+    merged_events = _merge_events(fam_a.events, fam_b.events, id_map, stats)
+    merged_cits = _merge_citations(fam_a.citations, fam_b.citations, id_map, stats)
+
+    return Family(
+        xref=fam_a.xref,
+        husband_xref=fam_a.husband_xref or _remap(fam_b.husband_xref, id_map),
+        wife_xref=fam_a.wife_xref or _remap(fam_b.wife_xref, id_map),
+        child_xrefs=children,
+        events=merged_events,
+        citations=merged_cits,
+        raw=fam_a.raw,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Source merging
+# ---------------------------------------------------------------------------
+
+def _merge_source(
+    src_a: Source,
+    src_b: Source,
+    id_map: dict[str, str],
+    stats: MergeStats,
+) -> Source:
+    """Merge src_b into src_a."""
+    # Title: keep A's unless B is clearly more complete
+    title = src_a.title
+    if not title:
+        title = src_b.title
+
+    author = src_a.author or src_b.author
+    publisher = src_a.publisher or src_b.publisher
+    repository_xref = src_a.repository_xref
+    if not repository_xref and src_b.repository_xref:
+        repository_xref = _remap(src_b.repository_xref, id_map)
+
+    # Notes: concatenate unique notes
+    existing_notes = set(src_a.notes)
+    notes = list(src_a.notes)
+    for note in src_b.notes:
+        if note not in existing_notes:
+            notes.append(note)
+
+    # REFN: keep both if different
+    refn = src_a.refn
+    if src_b.refn and src_b.refn != src_a.refn:
+        refn = f"{src_a.refn or ''};{src_b.refn}".strip(';')
+
+    return Source(
+        xref=src_a.xref,
+        title=title,
+        author=author,
+        publisher=publisher,
+        repository_xref=repository_xref,
+        notes=notes,
+        refn=refn,
+        raw=src_a.raw,
+        title_tokens=src_a.title_tokens,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main merge function
+# ---------------------------------------------------------------------------
+
+def merge_records(
+    file_a: GedcomFile,
+    file_b: GedcomFile,
+    decisions: MergeDecisions,
+) -> tuple[GedcomFile, MergeStats]:
+    """
+    Merge file_b into file_a using the decisions from interactive review.
+
+    Returns (merged_file, stats).
+    Never silently discards data — all unmatched B records marked 'add' are
+    included; only explicitly 'skip' records are excluded.
+    """
+    stats = MergeStats()
+
+    # Track manual vs auto
+    stats.indi_matched_auto = 0  # caller fills from IndividualMatchResult
+    stats.source_matched_auto = 0
+
+    id_map = _build_id_map(file_a, file_b, decisions, stats)
+
+    # --------------- Sources ---------------
+    merged_sources: dict[str, Source] = {}
+
+    for xref_a, src_a in file_a.sources.items():
+        xref_b = next((b for b, a in decisions.source_map.items() if a == xref_a), None)
+        if xref_b:
+            src_b = file_b.sources[xref_b]
+            merged_sources[xref_a] = _merge_source(src_a, src_b, id_map, stats)
+        else:
+            merged_sources[xref_a] = src_a
+
+    # Add unmatched B sources
+    for xref_b, src_b in file_b.sources.items():
+        disp = decisions.source_disposition.get(xref_b, 'skip')
+        if xref_b not in decisions.source_map and disp == 'add':
+            new_xref = id_map.get(xref_b)
+            if new_xref:
+                src_copy = Source(
+                    xref=new_xref,
+                    title=src_b.title,
+                    author=src_b.author,
+                    publisher=src_b.publisher,
+                    repository_xref=_remap(src_b.repository_xref, id_map),
+                    notes=list(src_b.notes),
+                    refn=src_b.refn,
+                    raw=src_b.raw,
+                    title_tokens=src_b.title_tokens,
+                )
+                merged_sources[new_xref] = src_copy
+
+    # --------------- Repositories ---------------
+    merged_repos: dict[str, Repository] = dict(file_a.repositories)
+    for xref_b, repo_b in file_b.repositories.items():
+        new_xref = id_map.get(xref_b, xref_b)
+        if new_xref not in merged_repos:
+            merged_repos[new_xref] = Repository(
+                xref=new_xref, name=repo_b.name, raw=repo_b.raw
+            )
+
+    # --------------- Media ---------------
+    merged_media: dict[str, MediaObject] = dict(file_a.media)
+    for xref_b, obj_b in file_b.media.items():
+        new_xref = id_map.get(xref_b, xref_b)
+        if new_xref not in merged_media:
+            merged_media[new_xref] = MediaObject(
+                xref=new_xref, file=obj_b.file, form=obj_b.form,
+                title=obj_b.title, raw=obj_b.raw
+            )
+
+    # --------------- Notes ---------------
+    merged_notes: dict[str, Note] = dict(file_a.notes)
+    for xref_b, note_b in file_b.notes.items():
+        new_xref = id_map.get(xref_b, xref_b)
+        if new_xref not in merged_notes:
+            from gedcom_merge.model import Note as _Note
+            merged_notes[new_xref] = _Note(xref=new_xref, text=note_b.text, raw=note_b.raw)
+
+    # --------------- Individuals ---------------
+    merged_indis: dict[str, Individual] = {}
+
+    for xref_a, ind_a in file_a.individuals.items():
+        xref_b = next((b for b, a in decisions.indi_map.items() if a == xref_a), None)
+        if xref_b:
+            ind_b = file_b.individuals[xref_b]
+            field_choices = decisions.field_choices.get(xref_b)
+            merged_indis[xref_a] = _merge_individual(ind_a, ind_b, id_map, stats, field_choices)
+        else:
+            merged_indis[xref_a] = ind_a
+
+    # Add unmatched B individuals
+    for xref_b, ind_b in file_b.individuals.items():
+        disp = decisions.indi_disposition.get(xref_b, 'skip')
+        if xref_b not in decisions.indi_map and disp == 'add':
+            new_xref = id_map.get(xref_b)
+            if new_xref:
+                # Remap all xrefs
+                famc = [_remap(x, id_map) or x for x in ind_b.family_child]
+                fams = [_remap(x, id_map) or x for x in ind_b.family_spouse]
+                cits = _remap_citations(ind_b.citations, id_map)
+                evs = [
+                    EventRecord(
+                        tag=e.tag, event_type=e.event_type, date=e.date,
+                        place=e.place,
+                        citations=_remap_citations(e.citations, id_map),
+                        raw=e.raw,
+                    )
+                    for e in ind_b.events
+                ]
+                merged_indis[new_xref] = Individual(
+                    xref=new_xref,
+                    names=ind_b.names,
+                    sex=ind_b.sex,
+                    events=evs,
+                    family_child=famc,
+                    family_spouse=fams,
+                    citations=cits,
+                    media=[_remap(x, id_map) or x for x in ind_b.media],
+                    raw=ind_b.raw,
+                    normalized_surnames=set(ind_b.normalized_surnames),
+                    normalized_givens=set(ind_b.normalized_givens),
+                    birth_date=ind_b.birth_date,
+                    death_date=ind_b.death_date,
+                )
+
+    # --------------- Families ---------------
+    merged_fams: dict[str, Family] = {}
+
+    for xref_a, fam_a in file_a.families.items():
+        xref_b = next((b for b, a in decisions.family_map.items() if a == xref_a), None)
+        if xref_b:
+            fam_b = file_b.families[xref_b]
+            merged_fams[xref_a] = _merge_family(fam_a, fam_b, id_map, stats)
+        else:
+            merged_fams[xref_a] = fam_a
+
+    # Add unmatched B families
+    for xref_b, fam_b in file_b.families.items():
+        disp = decisions.family_disposition.get(xref_b, 'skip')
+        if xref_b not in decisions.family_map and disp == 'add':
+            new_xref = id_map.get(xref_b)
+            if new_xref:
+                children = [_remap(x, id_map) or x for x in fam_b.child_xrefs]
+                evs = [
+                    EventRecord(
+                        tag=e.tag, event_type=e.event_type, date=e.date,
+                        place=e.place,
+                        citations=_remap_citations(e.citations, id_map),
+                        raw=e.raw,
+                    )
+                    for e in fam_b.events
+                ]
+                merged_fams[new_xref] = Family(
+                    xref=new_xref,
+                    husband_xref=_remap(fam_b.husband_xref, id_map),
+                    wife_xref=_remap(fam_b.wife_xref, id_map),
+                    child_xrefs=children,
+                    events=evs,
+                    citations=_remap_citations(fam_b.citations, id_map),
+                    raw=fam_b.raw,
+                )
+
+    merged = GedcomFile(
+        individuals=merged_indis,
+        families=merged_fams,
+        sources=merged_sources,
+        repositories=merged_repos,
+        media=merged_media,
+        notes=merged_notes,
+        submitter=file_a.submitter,
+        header_raw=file_a.header_raw,
+        path='',
+    )
+    return merged, stats
