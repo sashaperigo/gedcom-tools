@@ -1188,9 +1188,8 @@ function fitAndCenter(focusKey) {
   if (minX === Infinity) minX = 0;
   const treeW = maxX - minX + 2 * MARGIN_X;
   const treeH = maxY + 20;
-  const scaleX = (vp.clientWidth  * 0.96) / treeW;
   const scaleY = (vp.clientHeight * 0.92) / treeH;
-  scale = Math.min(1, scaleX, scaleY);
+  scale = Math.min(1, scaleY);
 
   if (focusKey) {
     // Center horizontally on the midpoint between the focus node's parents;
