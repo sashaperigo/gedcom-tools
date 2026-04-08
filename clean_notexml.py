@@ -30,6 +30,8 @@ import os
 import re
 import sys
 
+from gedcom_io import write_lines
+
 _NOTEXML_RE = re.compile(r'<notexml>(.*?)</notexml>', re.DOTALL)
 _LINE_RE = re.compile(r'<line>(.*?)</line>', re.DOTALL)
 _NOTE_RE = re.compile(r'^(\d+) NOTE (.*)$', re.DOTALL)
@@ -139,15 +141,7 @@ def clean_notexml(
         'notes_cleaned': notes_cleaned,
     }
 
-    if not dry_run and lines_delta != 0:
-        dest = path_out if path_out else path_in
-        tmp = dest + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, dest)
-    elif not dry_run and path_out and path_out != path_in:
-        with open(path_out, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
+    write_lines(lines_out, path_in, path_out, dry_run, changed=lines_delta != 0)
 
     return result
 

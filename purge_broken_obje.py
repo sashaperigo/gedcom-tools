@@ -37,11 +37,12 @@ import os
 import re
 import sys
 
+from gedcom_io import level as _level, write_lines
+
 # ---------------------------------------------------------------------------
 # Regexes
 # ---------------------------------------------------------------------------
 
-_LEVEL_RE = re.compile(r'^(\d+)')
 _TOP_OBJE_RE = re.compile(r'^0 (@[^@]+@) OBJE\s*$')   # top-level: 0 @X@ OBJE
 _INLINE_OBJE_RE = re.compile(r'^(\d+) OBJE\s*$')       # inline:    N OBJE  (no value)
 _PTR_OBJE_RE = re.compile(r'^(\d+) OBJE (@[^@]+@)\s*$')  # pointer: N OBJE @X@
@@ -62,11 +63,6 @@ def _file_exists(file_val: str, gedcom_dir: str) -> bool:
     if os.path.isabs(val):
         return os.path.isfile(val)
     return os.path.isfile(os.path.join(gedcom_dir, val))
-
-
-def _level(line: str) -> int | None:
-    m = _LEVEL_RE.match(line)
-    return int(m.group(1)) if m else None
 
 
 # ---------------------------------------------------------------------------
@@ -213,15 +209,7 @@ def purge_broken_obje(
         'broken_files': broken_files,
     }
 
-    if not dry_run and lines_removed > 0:
-        dest = path_out if path_out else path_in
-        tmp = dest + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, dest)
-    elif not dry_run and path_out and path_out != path_in:
-        with open(path_out, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
+    write_lines(lines_out, path_in, path_out, dry_run, changed=lines_removed > 0)
 
     return result
 

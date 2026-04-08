@@ -18,10 +18,11 @@ Usage:
 """
 
 import argparse
-import os
 import re
 import sys
 from collections import defaultdict
+
+from gedcom_io import level_tag as _tag_of, write_lines
 
 # ---------------------------------------------------------------------------
 # Ancestry-proprietary tags to remove (with all child lines)
@@ -65,16 +66,7 @@ ANCESTRY_TAGS: frozenset[str] = frozenset({
     '_MTTAG',  # Ancestry media tag / label (reference and definition records)
 })
 
-_LEVEL_RE = re.compile(r'^(\d+) ([A-Z_][A-Z0-9_]*)( |$)')
 _L0_XREF_RE = re.compile(r'^0 @[^@]+@ ([A-Z_][A-Z0-9_]*)')
-
-
-def _tag_of(line: str) -> tuple[int, str] | None:
-    """Return (level, tag) for a GEDCOM line, or None if it doesn't match."""
-    m = _LEVEL_RE.match(line)
-    if m:
-        return int(m.group(1)), m.group(2)
-    return None
 
 
 def strip_ancestry_artifacts(
@@ -151,16 +143,7 @@ def strip_ancestry_artifacts(
         'tags_removed': dict(tags_removed),
     }
 
-    if not dry_run and lines_removed > 0:
-        dest = path_out if path_out else path_in
-        tmp = dest + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, dest)
-    elif not dry_run and path_out and path_out != path_in:
-        # No changes but caller wants a copy
-        with open(path_out, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
+    write_lines(lines_out, path_in, path_out, dry_run, changed=lines_removed > 0)
 
     return result
 

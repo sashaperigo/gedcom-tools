@@ -33,10 +33,11 @@ import re
 import sys
 import unicodedata
 
+from gedcom_io import level, write_lines
+
 _L0_RE = re.compile(r'^0 ')
 _INDI_RE = re.compile(r'^0 @[^@]+@ INDI\b')
 _XREF_RE = re.compile(r'^0 (@[^@]+@)')
-_LEVEL_RE = re.compile(r'^(\d+) ')
 _NAME_RE = re.compile(r'^(1 NAME )(.+)$')
 
 _UMLAUT_MAP = str.maketrans({
@@ -131,8 +132,8 @@ def add_unaccented_names(
                 # Consume level-2+ children of this NAME block
                 while i < len(lines):
                     child_line = lines[i].rstrip('\n')
-                    lm = _LEVEL_RE.match(child_line)
-                    if lm and int(lm.group(1)) >= 2:
+                    lv = level(child_line)
+                    if lv is not None and lv >= 2:
                         lines_out.append(lines[i])
                         i += 1
                     else:
@@ -163,15 +164,7 @@ def add_unaccented_names(
         'names_added': names_added,
     }
 
-    if not dry_run and names_added:
-        dest = path_out if path_out else path_in
-        tmp = dest + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, dest)
-    elif not dry_run and path_out and path_out != path_in:
-        with open(path_out, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
+    write_lines(lines_out, path_in, path_out, dry_run, changed=bool(names_added))
 
     return result
 

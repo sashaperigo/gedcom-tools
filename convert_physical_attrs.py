@@ -28,16 +28,10 @@ Usage:
 """
 
 import argparse
-import os
 import re
 import sys
 
-_LEVEL_TAG_RE = re.compile(r'^(\d+) ([A-Z_][A-Z0-9_]*)')
-
-
-def _level_tag(raw: str) -> tuple[int, str] | None:
-    m = _LEVEL_TAG_RE.match(raw.rstrip('\n'))
-    return (int(m.group(1)), m.group(2)) if m else None
+from gedcom_io import level_tag as _level_tag, write_lines
 
 
 def _line_value(raw: str) -> str:
@@ -95,15 +89,7 @@ def convert_physical_attrs(
         'weig_converted': weig_converted,
     }
 
-    if not dry_run and (heig_converted or weig_converted):
-        dest = path_out if path_out else path_in
-        tmp = dest + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, dest)
-    elif not dry_run and path_out and path_out != path_in:
-        with open(path_out, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
+    write_lines(lines_out, path_in, path_out, dry_run, changed=bool(heig_converted or weig_converted))
 
     return result
 

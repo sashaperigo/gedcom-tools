@@ -34,12 +34,7 @@ import re
 import sys
 import tempfile
 
-_LEVEL_RE = re.compile(r'^(\d+) ')
-
-
-def _level(line: str) -> int | None:
-    m = _LEVEL_RE.match(line)
-    return int(m.group(1)) if m else None
+from gedcom_io import level as _level
 
 
 def _collect_l1_block(lines: list[str], start: int) -> tuple[list[str], int]:

@@ -27,12 +27,7 @@ import os
 import re
 import sys
 
-_LEVEL_RE = re.compile(r'^(\d+) ')
-
-
-def _level(line: str) -> int | None:
-    m = _LEVEL_RE.match(line)
-    return int(m.group(1)) if m else None
+from gedcom_io import level as _level, write_lines
 
 
 def _extract_source_blocks(event_body: list[str]) -> list[tuple[str, ...]]:
@@ -264,15 +259,7 @@ def purge_duplicate_events(
         'sources_added': total_sources_added,
     }
 
-    if not dry_run and (lines_removed != 0 or total_sources_added > 0):
-        dest = path_out if path_out else path_in
-        tmp = dest + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, dest)
-    elif not dry_run and path_out and path_out != path_in:
-        with open(path_out, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
+    write_lines(lines_out, path_in, path_out, dry_run, changed=lines_removed != 0 or total_sources_added > 0)
 
     return result
 

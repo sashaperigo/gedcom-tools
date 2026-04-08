@@ -33,6 +33,8 @@ import re
 import sys
 from collections import defaultdict
 
+from gedcom_io import write_lines
+
 ANCESTRY_PERSON_RE = re.compile(
     r'ancestry\.com/family-tree/person/tree/\d+/person/(\d+)'
 )
@@ -153,15 +155,7 @@ def convert_wlnk(
         'unresolved': unresolved,
     }
 
-    if not dry_run and lines_removed != 0:
-        dest = path_out if path_out else path_in
-        tmp = dest + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, dest)
-    elif not dry_run and path_out and path_out != path_in:
-        with open(path_out, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
+    write_lines(lines_out, path_in, path_out, dry_run, changed=lines_removed != 0)
 
     return result
 

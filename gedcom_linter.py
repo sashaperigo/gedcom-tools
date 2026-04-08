@@ -114,6 +114,33 @@ YEAR_RE = re.compile(r"\b\d{3,4}\b")
 # Normalization rules (applied in order)
 # ---------------------------------------------------------------------------
 
+# Rules applied sequentially by normalize_date(). Each entry is
+# (pattern, replacement, flags). The full date-range rule is handled
+# separately because it requires .strip() on captured groups.
+_DATE_RULES: list[tuple[str, str, int]] = [
+    # Approximate qualifiers → ABT
+    (r'^(about|abt\.?|circa|ca\.?|approx\.?|maybe)\s+', 'ABT ', re.I),
+    # Before / After
+    (r'^(before|bef\.?)\s+', 'BEF ', re.I),
+    (r'^(after|aft\.?)\s+', 'AFT ', re.I),
+    # Plain "YYYY-YYYY"
+    (r'^(\d{4})-(\d{4})$', r'BET \1 AND \2', 0),
+    # "bet. YYYY-YYYY" or "between YYYY-YYYY"
+    (r'^bet\.?\s+(\d{3,4})-(\d{3,4})$', r'BET \1 AND \2', re.I),
+    (r'^between\s+(\d{3,4})-(\d{3,4})$', r'BET \1 AND \2', re.I),
+    # "bet[ween] X and Y"
+    (r'^bet(?:ween)?\.?\s+(\S+)\s+and\s+(\S+)$', r'BET \1 AND \2', re.I),
+    # Ordinal day numbers: "1st", "2nd", "3rd", "4th" etc.
+    (r'^(\d{1,2})(st|nd|rd|th)\s+', r'\1 ', re.I),
+    # "Month D, YYYY" → "D Month YYYY"
+    (r'^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$', r'\2 \1 \3', 0),
+    # "D Month, YYYY" → "D Month YYYY"  (trailing comma)
+    (r'^(\d{1,2})\s+([A-Za-z]+),\s*(\d{4})$', r'\1 \2 \3', 0),
+    # "YYYY Month D" → "D Month YYYY"
+    (r'^(\d{4})\s+([A-Za-z]+)\s+(\d{1,2})$', r'\3 \2 \1', 0),
+]
+
+
 def normalize_date(val: str) -> str:
     """
     Attempt to convert a non-standard GEDCOM date string to a valid
@@ -135,39 +162,14 @@ def normalize_date(val: str) -> str:
     """
     v = val.strip()
 
-    # Approximate qualifiers
-    v = re.sub(r'^(about|abt\.?|circa|ca\.?|approx\.?|maybe)\s+', 'ABT ', v, flags=re.I)
-
-    # Before / After
-    v = re.sub(r'^(before|bef\.?)\s+', 'BEF ', v, flags=re.I)
-    v = re.sub(r'^(after|aft\.?)\s+', 'AFT ', v, flags=re.I)
-
-    # "full date - full date" range (e.g. "Abt. 1569 - 1583")
+    # "full date - full date" range (e.g. "Abt. 1569 - 1583") — handled
+    # separately because it requires .strip() on captured groups.
     m = re.match(r'^(.+\d{4})\s*-\s*(.+\d{4})$', v)
     if m:
         v = f'BET {m.group(1).strip()} AND {m.group(2).strip()}'
 
-    # Plain "YYYY-YYYY"
-    v = re.sub(r'^(\d{4})-(\d{4})$', r'BET \1 AND \2', v)
-
-    # "bet. YYYY-YYYY" or "between YYYY-YYYY"
-    v = re.sub(r'^bet\.?\s+(\d{3,4})-(\d{3,4})$', r'BET \1 AND \2', v, flags=re.I)
-    v = re.sub(r'^between\s+(\d{3,4})-(\d{3,4})$', r'BET \1 AND \2', v, flags=re.I)
-
-    # "bet[ween] X and Y"
-    v = re.sub(r'^bet(?:ween)?\.?\s+(\S+)\s+and\s+(\S+)$', r'BET \1 AND \2', v, flags=re.I)
-
-    # Ordinal day numbers: "1st", "2nd", "3rd", "4th" etc.
-    v = re.sub(r'^(\d{1,2})(st|nd|rd|th)\s+', r'\1 ', v, flags=re.I)
-
-    # "Month D, YYYY" → "D Month YYYY"
-    v = re.sub(r'^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$', r'\2 \1 \3', v)
-
-    # "D Month, YYYY" → "D Month YYYY"  (trailing comma)
-    v = re.sub(r'^(\d{1,2})\s+([A-Za-z]+),\s*(\d{4})$', r'\1 \2 \3', v)
-
-    # "YYYY Month D" → "D Month YYYY"
-    v = re.sub(r'^(\d{4})\s+([A-Za-z]+)\s+(\d{1,2})$', r'\3 \2 \1', v)
+    for pattern, replacement, flags in _DATE_RULES:
+        v = re.sub(pattern, replacement, v, flags=flags)
 
     # Normalize month names to 3-letter GEDCOM abbreviations
     v = MONTH_RE.sub(replace_month, v)
@@ -212,6 +214,48 @@ def _sour_blocks(lines: list[str]):
             i += 1
 
 
+def _iter_sour_blocks_with_context(lines: list[str]):
+    """
+    Iterate over lines, yielding (start_i, end_i, key, children_t) for each
+    SOUR citation block.
+
+    - start_i / end_i  : half-open range [start_i, end_i) of lines in the block
+    - key              : (current_rec_line, event_start_lineno, xref) — unique
+                         per source citation within a record/event
+    - children_t       : tuple of stripped child lines (used for dedup comparison)
+    """
+    defn_re = re.compile(r'^0 ')
+    current_rec = None
+    current_event = None
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        if defn_re.match(line):
+            current_rec = line
+            current_event = None
+            i += 1
+            continue
+        if line.startswith('1 '):
+            current_event = i
+            i += 1
+            continue
+        m = SOUR_CITE_LINE_RE.match(line)
+        if m and current_rec:
+            xref = m.group(2)
+            level = int(m.group(1))
+            j = i + 1
+            while j < len(lines):
+                cm = _LEVEL_RE.match(lines[j].rstrip('\n'))
+                if cm and int(cm.group(1)) <= level:
+                    break
+                j += 1
+            children_t = tuple(lines[k].rstrip('\n') for k in range(i + 1, j))
+            yield (i, j, (current_rec, current_event, xref), children_t)
+            i = j
+        else:
+            i += 1
+
+
 def scan_duplicate_sources(path: str):
     """
     Return list of (lineno, xref) for SOUR citation blocks that are exact
@@ -222,42 +266,14 @@ def scan_duplicate_sources(path: str):
         lines = f.readlines()
 
     violations = []
-    defn_re = re.compile(r'^0 ')
-    current_rec = None
-    current_event = None  # line index of current event start (unique per block)
-    seen: dict = {}  # (rec, event_start_lineno, xref) -> set of children tuples
+    seen: dict = {}
 
-    for i, raw in enumerate(lines):
-        line = raw.rstrip('\n')
-        if defn_re.match(line):
-            current_rec = line
-            current_event = None
-            seen = {}
-            continue
-        if line.startswith('1 '):
-            current_event = i  # use line index so each event block is unique
-            continue
-        m = SOUR_CITE_LINE_RE.match(line)
-        if m and current_rec:
-            xref = m.group(2)
-            key = (current_rec, current_event, xref)
-            # collect children inline
-            j = i + 1
-            children = []
-            while j < len(lines):
-                child = lines[j].rstrip('\n')
-                cm = _LEVEL_RE.match(child)
-                if cm and int(cm.group(1)) <= int(m.group(1)):
-                    break
-                children.append(child)
-                j += 1
-            children_t = tuple(children)
-            if key not in seen:
-                seen[key] = set()
-            if children_t in seen[key]:
-                violations.append((i + 1, xref))
-            else:
-                seen[key].add(children_t)
+    for start_i, _end_i, key, children_t in _iter_sour_blocks_with_context(lines):
+        seen.setdefault(key, set())
+        if children_t in seen[key]:
+            violations.append((start_i + 1, key[2]))
+        else:
+            seen[key].add(children_t)
 
     return violations
 
@@ -270,52 +286,19 @@ def fix_duplicate_sources(path: str, dry_run: bool = False):
     with open(path, encoding='utf-8') as f:
         lines = f.readlines()
 
-    defn_re = re.compile(r'^0 ')
-    current_rec = None
-    current_event = None  # line index of current event start (unique per block)
     seen: dict = {}
     remove_ranges = []  # list of (start_idx, end_idx) to drop
 
-    i = 0
-    while i < len(lines):
-        line = lines[i].rstrip('\n')
-        if defn_re.match(line):
-            current_rec = line
-            current_event = None
-            seen = {}
-            i += 1
-            continue
-        if line.startswith('1 '):
-            current_event = i  # use line index so each event block is unique
-            i += 1
-            continue
-        m = SOUR_CITE_LINE_RE.match(line)
-        if m and current_rec:
-            xref = m.group(2)
-            level = int(m.group(1))
-            j = i + 1
-            while j < len(lines):
-                child = lines[j].rstrip('\n')
-                cm = _LEVEL_RE.match(child)
-                if cm and int(cm.group(1)) <= level:
-                    break
-                j += 1
-            children_t = tuple(lines[k].rstrip('\n') for k in range(i + 1, j))
-            key = (current_rec, current_event, xref)
-            if key not in seen:
-                seen[key] = set()
-            if children_t in seen[key]:
-                if dry_run:
-                    print(f'  line {i + 1}: duplicate {xref} under {current_event}')
-                remove_ranges.append((i, j))
-            else:
-                seen[key].add(children_t)
-            i = j
+    for start_i, end_i, key, children_t in _iter_sour_blocks_with_context(lines):
+        seen.setdefault(key, set())
+        if children_t in seen[key]:
+            if dry_run:
+                print(f'  line {start_i + 1}: duplicate {key[2]} under {key[1]}')
+            remove_ranges.append((start_i, end_i))
         else:
-            i += 1
+            seen[key].add(children_t)
 
     if not dry_run and remove_ranges:
-        # Build set of line indices to drop
         drop = set()
         for start, end in remove_ranges:
             drop.update(range(start, end))
@@ -608,15 +591,22 @@ def scan_note_under_addr(path: str) -> list[tuple[int, int]]:
     return violations
 
 
-def fix_note_under_plac(path: str, dry_run: bool = False) -> int:
+def _fix_misplaced_tag(
+    path: str,
+    child_tag: str,
+    new_tag: str,
+    parent_tag: str,
+    track_sour: bool,
+    dry_run: bool,
+) -> int:
     """
-    Convert NOTE lines that are invalid children of PLAC into ADDR siblings.
+    Promote lines where ``child_tag`` appears as an invalid child of ``parent_tag``
+    up one level, renaming them to ``new_tag``. Any CONT/CONC continuation lines
+    immediately following are also promoted by one level.
 
-    Each ``(N+1) NOTE <venue>`` immediately following ``N PLAC ...`` (outside
-    a SOUR block) is rewritten to ``N ADDR <venue>``. Any CONT/CONC lines
-    that follow are promoted by one level to stay subordinate to the new ADDR.
+    When ``track_sour`` is True, lines inside a SOUR citation block are skipped.
 
-    Returns the number of NOTE lines converted.
+    Returns the number of lines fixed.
     """
     with open(path, encoding='utf-8') as f:
         lines_in = f.readlines()
@@ -632,22 +622,21 @@ def fix_note_under_plac(path: str, dry_run: bool = False) -> int:
             curr_level = int(m.group(1))
             curr_tag = m.group(2)
             rest = m.group(3)  # everything after the tag (including leading space+value)
-            # Track SOUR blocks
-            if curr_tag == 'SOUR' and curr_level > 0:
-                in_sour_depth = curr_level
-            elif in_sour_depth is not None and curr_level <= in_sour_depth:
-                in_sour_depth = None
-            # Check for NOTE immediately after PLAC
-            if curr_tag == 'NOTE' and in_sour_depth is None:
+            if track_sour:
+                if curr_tag == 'SOUR' and curr_level > 0:
+                    in_sour_depth = curr_level
+                elif in_sour_depth is not None and curr_level <= in_sour_depth:
+                    in_sour_depth = None
+            if curr_tag == child_tag and (not track_sour or in_sour_depth is None):
                 prev_gedcom = None
                 for prev_raw in reversed(lines_out):
                     pm = re.match(r'^(\d+) ([A-Z_]+)', prev_raw.rstrip('\n'))
                     if pm:
                         prev_gedcom = (int(pm.group(1)), pm.group(2))
                         break
-                if prev_gedcom and prev_gedcom[1] == 'PLAC' and prev_gedcom[0] == curr_level - 1:
+                if prev_gedcom and prev_gedcom[1] == parent_tag and prev_gedcom[0] == curr_level - 1:
                     new_level = curr_level - 1
-                    fixed_line = f'{new_level} ADDR{rest}'
+                    fixed_line = f'{new_level} {new_tag}{rest}'
                     if dry_run:
                         print(f'  line {i + 1}: {line!r}')
                         print(f'           → {fixed_line!r}')
@@ -678,6 +667,20 @@ def fix_note_under_plac(path: str, dry_run: bool = False) -> int:
         os.replace(tmp, path)
 
     return changed
+
+
+def fix_note_under_plac(path: str, dry_run: bool = False) -> int:
+    """
+    Convert NOTE lines that are invalid children of PLAC into ADDR siblings.
+
+    Each ``(N+1) NOTE <venue>`` immediately following ``N PLAC ...`` (outside
+    a SOUR block) is rewritten to ``N ADDR <venue>``. Any CONT/CONC lines
+    that follow are promoted by one level to stay subordinate to the new ADDR.
+
+    Returns the number of NOTE lines converted.
+    """
+    return _fix_misplaced_tag(path, child_tag='NOTE', new_tag='ADDR', parent_tag='PLAC',
+                               track_sour=True, dry_run=dry_run)
 
 
 def fix_note_under_addr(path: str, dry_run: bool = False) -> int:
@@ -752,58 +755,8 @@ def fix_addr_under_plac(path: str, dry_run: bool = False) -> int:
 
     Returns the number of ADDR lines fixed.
     """
-    with open(path, encoding='utf-8') as f:
-        lines_in = f.readlines()
-
-    lines_out = []
-    changed = 0
-    i = 0
-    while i < len(lines_in):
-        line = lines_in[i].rstrip('\n')
-        m = re.match(r'^(\d+) ([A-Z_]+)', line)
-        if m and m.group(2) == 'ADDR':
-            curr_level = int(m.group(1))
-            # Check if the previous GEDCOM line was a PLAC at curr_level - 1
-            # Walk backwards through lines_out to find the last non-empty line
-            prev_gedcom = None
-            for prev_raw in reversed(lines_out):
-                pm = re.match(r'^(\d+) ([A-Z_]+)', prev_raw.rstrip('\n'))
-                if pm:
-                    prev_gedcom = (int(pm.group(1)), pm.group(2))
-                    break
-            if prev_gedcom and prev_gedcom[1] == 'PLAC' and prev_gedcom[0] == curr_level - 1:
-                new_level = curr_level - 1
-                fixed_line = f'{new_level} ADDR' + line[len(f'{curr_level} ADDR'):]
-                if dry_run:
-                    print(f'  line {i + 1}: {line!r}')
-                    print(f'           → {fixed_line!r}')
-                lines_out.append(fixed_line + '\n')
-                changed += 1
-                i += 1
-                # Also promote any immediately following CONT/CONC lines
-                while i < len(lines_in):
-                    cont_line = lines_in[i].rstrip('\n')
-                    cm = re.match(r'^(\d+) (CONT|CONC)', cont_line)
-                    if cm and int(cm.group(1)) == curr_level + 1:
-                        fixed_cont = f'{curr_level} {cm.group(2)}' + cont_line[len(f'{curr_level + 1} {cm.group(2)}'):]
-                        if dry_run:
-                            print(f'  line {i + 1}: {cont_line!r}')
-                            print(f'           → {fixed_cont!r}')
-                        lines_out.append(fixed_cont + '\n')
-                        i += 1
-                    else:
-                        break
-                continue
-        lines_out.append(line + '\n')
-        i += 1
-
-    if not dry_run and changed:
-        tmp = path + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            f.writelines(lines_out)
-        os.replace(tmp, path)
-
-    return changed
+    return _fix_misplaced_tag(path, child_tag='ADDR', new_tag='ADDR', parent_tag='PLAC',
+                               track_sour=False, dry_run=dry_run)
 
 
 def scan_level_jumps(path: str) -> list[tuple[int, int, int]]:
