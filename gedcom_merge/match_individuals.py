@@ -492,6 +492,13 @@ def _score_pair(
     if actual_death_a and actual_death_b and abs(actual_death_a - actual_death_b) > 25:
         return 0.0, {}
 
+    # Hard veto: one person died before the other was born — impossible match.
+    # Use actual birth/death years only (not estimates — too imprecise for this check).
+    if actual_death_a and actual_birth_b and actual_death_a < actual_birth_b:
+        return 0.0, {}
+    if actual_death_b and actual_birth_a and actual_death_b < actual_birth_a:
+        return 0.0, {}
+
     score = (
         surname_score * 0.20 +
         given_score   * 0.20 +

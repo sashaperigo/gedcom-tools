@@ -577,6 +577,32 @@ class TestFinalRescorePass:
         assert '@CB@' in matched_b
 
 
+class TestDeathBeforeBirthVeto:
+    def test_a_died_before_b_born(self):
+        a = _make_indi('@I1@', 'John', 'Smith', birth_year=1800, death_year=1850)
+        b = _make_indi('@I2@', 'John', 'Smith', birth_year=1860)
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score == 0.0, f'A died 1850, B born 1860 — impossible match, got {score}'
+
+    def test_b_died_before_a_born(self):
+        a = _make_indi('@I1@', 'John', 'Smith', birth_year=1900)
+        b = _make_indi('@I2@', 'John', 'Smith', birth_year=1820, death_year=1870)
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score == 0.0, f'B died 1870, A born 1900 — impossible match, got {score}'
+
+    def test_overlapping_lifespan_not_vetoed(self):
+        a = _make_indi('@I1@', 'John', 'Smith', birth_year=1850, death_year=1920)
+        b = _make_indi('@I2@', 'John', 'Smith', birth_year=1850, death_year=1920)
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score > 0.0
+
+
 class TestCorroborationRequirement:
     def test_name_only_match_capped_below_review_threshold(self):
         """Individuals with matching names but no birth/death dates and no family
