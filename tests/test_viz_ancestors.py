@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from viz_ancestors import parse_gedcom, get_parents, build_tree_json, build_people_json, build_relatives_json, viz_ancestors
+from viz_ancestors import parse_gedcom, get_parents, build_tree_json, build_people_json, build_relatives_json, viz_ancestors, _date_sort_key, sort_events
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'
 
@@ -490,3 +490,106 @@ class TestOutput:
         assert 'Alice Smith' in content   # Rose's sibling
         assert 'Mark Davis' in content    # Rose's spouse
         assert 'Robert Smith' in content  # James's sibling
+
+
+# ---------------------------------------------------------------------------
+# TestSortEvents
+# ---------------------------------------------------------------------------
+
+class TestDateSortKey:
+
+    def test_full_dmy(self):
+        assert _date_sort_key('13 MAR 1942') == (1942, 3, 13)
+
+    def test_month_year(self):
+        assert _date_sort_key('MAR 1942') == (1942, 3, 0)
+
+    def test_year_only(self):
+        assert _date_sort_key('1942') == (1942, 0, 0)
+
+    def test_none(self):
+        assert _date_sort_key(None) == (0, 0, 0)
+
+    def test_empty(self):
+        assert _date_sort_key('') == (0, 0, 0)
+
+    def test_abt_qualifier(self):
+        assert _date_sort_key('ABT 21 MAR 1942') == (1942, 3, 21)
+
+    def test_bef_qualifier(self):
+        assert _date_sort_key('BEF 1 JAN 1900') == (1900, 1, 1)
+
+    def test_aft_qualifier(self):
+        assert _date_sort_key('AFT DEC 1941') == (1941, 12, 0)
+
+    def test_bet_uses_first_date(self):
+        assert _date_sort_key('BET 1 MAY 1942 AND 2 MAY 1942') == (1942, 5, 1)
+
+    def test_ordering(self):
+        dates = ['12 MAY 1942', '9 MAY 1942', '1 MAY 1942', 'ABT 21 MAR 1942',
+                 '17 MAR 1942', '13 MAR 1942']
+        assert sorted(dates, key=_date_sort_key) == [
+            '13 MAR 1942', '17 MAR 1942', 'ABT 21 MAR 1942',
+            '1 MAY 1942', '9 MAY 1942', '12 MAY 1942',
+        ]
+
+
+class TestSortEvents:
+
+    def _evt(self, tag, date=None, type_=None):
+        return {'tag': tag, 'date': date, 'type': type_, 'place': None, 'note': None}
+
+    def test_birt_pinned_first(self):
+        events = [
+            self._evt('RESI', '1 MAR 1942'),
+            self._evt('BIRT', '1 JAN 1926'),
+        ]
+        result = sort_events(events)
+        assert result[0]['tag'] == 'BIRT'
+
+    def test_deat_pinned_last(self):
+        events = [
+            self._evt('DEAT', '1 JAN 2021'),
+            self._evt('RESI', '1 MAR 1942'),
+        ]
+        result = sort_events(events)
+        assert result[-1]['tag'] == 'DEAT'
+
+    def test_buri_pinned_last(self):
+        events = [
+            self._evt('BURI', '5 JAN 2021'),
+            self._evt('RESI', '1 MAR 1942'),
+            self._evt('DEAT', '1 JAN 2021'),
+        ]
+        result = sort_events(events)
+        assert result[-1]['tag'] in ('DEAT', 'BURI')
+        assert result[-2]['tag'] in ('DEAT', 'BURI')
+
+    def test_chronological_by_full_date(self):
+        """Events within 1942 must sort by month and day, not just year."""
+        events = [
+            self._evt('EVEN', '12 MAY 1942', 'Arrival'),   # Bharatpur
+            self._evt('EVEN', '9 MAY 1942',  'Arrival'),   # Bombay
+            self._evt('EVEN', '1 MAY 1942',  'Departure'),
+            self._evt('EVEN', 'ABT 21 MAR 1942', 'Arrival'),
+            self._evt('EVEN', '17 MAR 1942', 'Arrival'),
+            self._evt('EVEN', '13 MAR 1942', 'Departure'),
+        ]
+        result = sort_events(events)
+        dates = [e['date'] for e in result]
+        assert dates == [
+            '13 MAR 1942', '17 MAR 1942', 'ABT 21 MAR 1942',
+            '1 MAY 1942', '9 MAY 1942', '12 MAY 1942',
+        ]
+
+    def test_no_date_sorts_before_dated(self):
+        events = [
+            self._evt('RESI', '1 MAR 1942'),
+            self._evt('OCCU', None),
+        ]
+        result = sort_events(events)
+        assert result[0]['tag'] == 'OCCU'
+
+    def test_preserves_all_events(self):
+        events = [self._evt('EVEN', f'{i} JAN 1942') for i in range(1, 6)]
+        assert len(sort_events(events)) == 5

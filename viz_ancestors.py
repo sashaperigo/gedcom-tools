@@ -156,10 +156,26 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = ctx[1]
             if lvl == 1 and tag == 'HUSB':
                 fams[xref]['husb'] = val
+                current_evt = None
             elif lvl == 1 and tag == 'WIFE':
                 fams[xref]['wife'] = val
+                current_evt = None
             elif lvl == 1 and tag == 'CHIL':
                 fams[xref]['chil'].append(val)
+                current_evt = None
+            elif lvl == 1 and tag == 'MARR':
+                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None}
+                fams[xref]['marr'] = evt
+                current_evt = evt
+            elif lvl == 2 and current_evt is not None:
+                if tag == 'DATE':
+                    current_evt['date'] = val
+                elif tag == 'PLAC':
+                    current_evt['place'] = val
+                elif tag == 'NOTE':
+                    current_evt['note'] = val
+            elif lvl == 1:
+                current_evt = None
 
         elif ctx[0] == 'sour':
             xref = ctx[1]
@@ -201,7 +217,52 @@ def build_tree_json(root_xref: str, indis: dict, fams: dict) -> dict:
     return result
 
 
-def build_people_json(xrefs: set, indis: dict, sources: dict | None = None) -> dict:
+_MONTH_NUM = {
+    'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4,
+    'MAY': 5, 'JUN': 6, 'JUL': 7, 'AUG': 8,
+    'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12,
+}
+
+def _date_sort_key(date_str: str | None) -> tuple:
+    """Return (year, month, day) tuple for chronological sorting.
+    Unknown components default to 0. Handles GEDCOM qualifiers and BET ranges."""
+    if not date_str:
+        return (0, 0, 0)
+    s = date_str.strip().upper()
+    for prefix in ('ABT ', 'BEF ', 'AFT ', 'CAL ', 'EST '):
+        if s.startswith(prefix):
+            s = s[4:]
+            break
+    bet = re.match(r'^BET\s+(.+?)\s+AND\s+(.+)$', s)
+    if bet:
+        s = bet.group(1)
+    dmy = re.match(r'^(\d{1,2})\s+([A-Z]{3})\s+(\d{4})$', s)
+    if dmy:
+        return (int(dmy.group(3)), _MONTH_NUM.get(dmy.group(2), 0), int(dmy.group(1)))
+    my = re.match(r'^([A-Z]{3})\s+(\d{4})$', s)
+    if my:
+        return (int(my.group(2)), _MONTH_NUM.get(my.group(1), 0), 0)
+    yr = re.match(r'^(\d{4})$', s)
+    if yr:
+        return (int(yr.group(1)), 0, 0)
+    return (0, 0, 0)
+
+
+def sort_events(events: list) -> list:
+    """Sort events chronologically, with BIRT pinned first and DEAT/BURI pinned last."""
+    def key(evt):
+        tag = evt.get('tag', '')
+        if tag == 'BIRT':
+            order = 0
+        elif tag in ('DEAT', 'BURI'):
+            order = 2
+        else:
+            order = 1
+        return (order,) + _date_sort_key(evt.get('date'))
+    return sorted(events, key=key)
+
+
+def build_people_json(xrefs: set, indis: dict, fams: dict | None = None, sources: dict | None = None) -> dict:
     """
     Build full person data for a set of xrefs.
     Returns {xref: {name, birth_year, death_year, sex, events, notes, sources}}.
@@ -217,12 +278,22 @@ def build_people_json(xrefs: set, indis: dict, sources: dict | None = None) -> d
                 title = sources.get(sxref)
                 if title and title not in src_titles:
                     src_titles.append(title)
+        events = list(info['events'])
+        if fams:
+            for fam_xref in info.get('fams', []):
+                fam = fams.get(fam_xref, {})
+                marr = fam.get('marr')
+                if not marr:
+                    continue
+                spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
+                spouse_name = indis[spouse_xref]['name'] if spouse_xref and spouse_xref in indis else None
+                events.append({**marr, 'spouse': spouse_name})
         result[xref] = {
             'name':       info['name'] or '?',
             'birth_year': info['birth_year'],
             'death_year': info['death_year'],
             'sex':        info['sex'],
-            'events':     info['events'],
+            'events':     sort_events(events),
             'notes':      info['notes'],
             'sources':    src_titles,
         }
@@ -369,6 +440,14 @@ header h1 { font-size: 16px; font-weight: 600; }
              border-left: 3px solid rgba(254, 243, 160, 0.35);
              margin-bottom: 10px; }
 .note-card a { color: #fde68a; text-underline-offset: 2px; }
+.marr-card { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px;
+             background: rgba(232, 121, 249, 0.08);
+             border-left: 3px solid rgba(232, 121, 249, 0.5); }
+.marr-card .marr-year { font-size: 12px; font-weight: 700; color: #94a3b8;
+                        text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
+.marr-card .marr-prose { font-size: 15px; font-weight: 600; color: #f1f5f9; line-height: 1.4; }
+.marr-card .marr-meta { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+.marr-card .evt-note-inline { font-size: 12px; }
 /* ── Timeline ───────────────────────────────────────────── */
 #detail-timeline { position: relative; padding-left: 28px; }
 .timeline-spine { position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
@@ -600,8 +679,19 @@ function buildProse(evt) {
         return { prose: `Also known as: ${evt.note || ''}`, meta: date };
       return { prose: type || short || 'Fact', meta: date };
     }
+    case 'MARR': {
+      const who = evt.spouse || '';
+      const prose = who ? `Married ${who}` : 'Marriage';
+      return { prose, meta: meta() };
+    }
     case 'PROB': return { prose: short ? `Probate in ${short}` : (date ? `Probate ${date}` : 'Probate'), meta: meta() };
+    case 'ARRV': return { prose: short ? `Arrived in ${short}` : (date ? `Arrived ${date}` : 'Arrival'),     meta: meta() };
+    case 'DEPA': return { prose: short ? `Departed from ${short}` : (date ? `Departed ${date}` : 'Departure'), meta: meta() };
     default: {
+      if (type === 'Arrival')
+        return { prose: short ? `Arrived in ${short}` : (date ? `Arrived ${date}` : 'Arrival'), meta: meta() };
+      if (type === 'Departure')
+        return { prose: short ? `Departed from ${short}` : (date ? `Departed ${date}` : 'Departure'), meta: meta() };
       return {
         prose: type || (short ? short : (EVENT_LABELS[evt.tag] || evt.tag)),
         meta:  [full, date].filter(Boolean).join(' \\u00b7 ')
@@ -610,8 +700,10 @@ function buildProse(evt) {
   }
 }
 
-function dotColor(tag) {
-  switch (tag) {
+function dotColor(evt) {
+  if (evt.type === 'Name Change') return '#f97316';
+  if (evt.tag === 'MARR') return '#e879f9';
+  switch (evt.tag) {
     case 'BIRT': case 'DEAT':              return '#f1f5f9';
     case 'BURI':                           return '#94a3b8';
     case 'RESI':                           return '#38bdf8';
@@ -624,17 +716,35 @@ function dotColor(tag) {
 }
 
 const _YR_RE = /\\b(\\d{4})\\b/;
-function sortEvents(events) {
-  return [...events].sort((a, b) => {
-    if (a.tag === 'BIRT') return -1;
-    if (b.tag === 'BIRT') return 1;
-    const isEnd = t => t === 'DEAT' || t === 'BURI';
-    if (isEnd(a.tag) && !isEnd(b.tag)) return 1;
-    if (!isEnd(a.tag) && isEnd(b.tag)) return -1;
-    const ya = a.date ? ((_YR_RE.exec(a.date) || [, 0])[1] | 0) : 0;
-    const yb = b.date ? ((_YR_RE.exec(b.date) || [, 0])[1] | 0) : 0;
-    return ya - yb;
-  });
+function sortEvents(events) { return events; }  // pre-sorted by Python
+
+function collapseResidences(events) {
+  const result = [];
+  let i = 0;
+  while (i < events.length) {
+    const evt = events[i];
+    if (evt.tag !== 'RESI') { result.push(evt); i++; continue; }
+    const short = fmtPlace(evt.place || '');
+    // Collect consecutive RESI events with the same short place name
+    const run = [evt];
+    let j = i + 1;
+    while (j < events.length && events[j].tag === 'RESI' &&
+           fmtPlace(events[j].place || '') === short) {
+      run.push(events[j]);
+      j++;
+    }
+    if (run.length < 2) { result.push(evt); i = j; continue; }
+    const years = run.map(e => (_YR_RE.exec(e.date || '') || [,null])[1]).filter(Boolean);
+    const yearRange = years.length >= 2 ? `${years[0]}\u2013${years[years.length - 1]}` : (years[0] || '');
+    const notes = run.flatMap(e => {
+      if (!e.note) return [];
+      const yr = (_YR_RE.exec(e.date || '') || [,null])[1];
+      return [yr ? `${yr}: ${e.note}` : e.note];
+    });
+    result.push({ ...evt, _yearRange: yearRange, note: notes.length ? notes.join('\\n') : null });
+    i = j;
+  }
+  return result;
 }
 
 // ── Detail panel ─────────────────────────────────────────────────────────────
@@ -712,7 +822,7 @@ function showDetail(xref) {
     !(e.tag === 'OCCU' && !e.date) &&
     !(e.tag === 'NATI' && !e.date)
   );
-  const sorted  = sortEvents(visible);
+  const sorted  = collapseResidences(sortEvents(visible));
 
   if (!sorted.length) { evtDiv.innerHTML = ''; }
   else {
@@ -729,12 +839,27 @@ function showDetail(xref) {
       }
 
       const { prose, meta } = buildProse(evt);
-      const color   = dotColor(evt.tag);
+      const color   = dotColor(evt);
+      const noteInl = evt.note
+        ? evt.note.split('\\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
+
+      if (evt.tag === 'MARR') {
+        const yearLabel = evtYear ? `<div class="marr-year">${evtYear}</div>` : '';
+        html +=
+          `<div class="marr-card">` +
+          yearLabel +
+          `<div class="marr-prose">${escHtml(prose)}</div>` +
+          (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
+          noteInl +
+          `</div>`;
+        continue;
+      }
+
       const isAnch  = evt.tag === 'BIRT' || evt.tag === 'DEAT';
       const dotCls  = isAnch ? 'evt-dot dot-anchor' : 'evt-dot';
-      const noteInl = evt.note
-        ? `<div class="evt-note-inline">${escHtml(evt.note)}</div>` : '';
-      const yearStr = evtYear ? `<span class="evt-year">${evtYear}</span>` : '';
+      const yearStr = evt._yearRange
+        ? `<span class="evt-year">${escHtml(evt._yearRange)}</span>`
+        : (evtYear ? `<span class="evt-year">${evtYear}</span>` : '');
       html +=
         `<div class="evt-entry">` +
         `<div class="${dotCls}" style="background:${color}"></div>` +
@@ -750,7 +875,7 @@ function showDetail(xref) {
   function undatedRows(evts) {
     return evts.map(evt => {
       const { prose, meta } = buildProse(evt);
-      const color   = dotColor(evt.tag);
+      const color   = dotColor(evt);
       const noteInl = evt.note ? `<div class="evt-note-inline">${escHtml(evt.note)}</div>` : '';
       return `<div class="evt-entry">` +
         `<div class="evt-dot" style="background:${color}"></div>` +
@@ -1555,7 +1680,7 @@ def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
         all_xrefs.update(rels['spouses'])
         for sp_list in rels.get('sib_spouses', {}).values():
             all_xrefs.update(sp_list)
-    people    = build_people_json(all_xrefs, indis, sources)
+    people    = build_people_json(all_xrefs, indis, fams, sources)
 
     root_name = people.get(root_xref, {}).get('name', '?')
     html = render_html(tree, root_name, people, relatives, indis)
