@@ -112,7 +112,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 indis[xref]['sex'] = val
                 current_evt = current_note = None
             elif lvl == 1 and tag in _EVENT_TAGS:
-                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'cause': None, 'note': val if val else None}
+                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': val if val else None}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
@@ -132,6 +132,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['type'] = val
                 elif tag == 'CAUS':
                     current_evt['cause'] = val
+                elif tag == 'ADDR':
+                    current_evt['addr'] = val
                 elif tag == 'NOTE':
                     current_evt['note'] = val
             elif lvl == 1 and tag == 'NOTE':
@@ -700,6 +702,9 @@ function buildProse(evt) {
         return { prose: short ? `Arrived in ${short}` : (date ? `Arrived ${date}` : 'Arrival'), meta: meta() };
       if (type === 'Departure')
         return { prose: short ? `Departed from ${short}` : (date ? `Departed ${date}` : 'Departure'), meta: meta() };
+      if (type === 'Church') {
+        return { prose: evt.addr || short || 'Church', meta: meta() };
+      }
       return {
         prose: type || (short ? short : (EVENT_LABELS[evt.tag] || evt.tag)),
         meta:  [full, date].filter(Boolean).join(' \\u00b7 ')
