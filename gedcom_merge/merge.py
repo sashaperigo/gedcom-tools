@@ -140,6 +140,41 @@ def _build_id_map(
         if xref_b not in id_map:
             id_map[xref_b] = _new_id('N')
 
+    # Final pass: collect all source/repo/media xrefs referenced by B individuals
+    # and B families that have been assigned IDs (either via review or auto-add).
+    # Their citations must resolve — auto-add any sources not yet in id_map.
+    def _collect_cit_sources(citations: list) -> list[str]:
+        return [c.source_xref for c in citations if c.source_xref]
+
+    for xref_b, ind_b in file_b.individuals.items():
+        if xref_b not in id_map:
+            continue  # not being added — skip
+        all_source_xrefs = _collect_cit_sources(ind_b.citations)
+        for ev in ind_b.events:
+            all_source_xrefs.extend(_collect_cit_sources(ev.citations))
+        for sx in all_source_xrefs:
+            if sx not in id_map:
+                id_map[sx] = _new_id('S')
+                stats.source_added += 1
+                # Also auto-add that source's repository if needed
+                src_b = file_b.sources.get(sx)
+                if src_b and src_b.repository_xref and src_b.repository_xref not in id_map:
+                    id_map[src_b.repository_xref] = _new_id('R')
+
+    for xref_b, fam_b in file_b.families.items():
+        if xref_b not in id_map:
+            continue
+        all_source_xrefs = _collect_cit_sources(fam_b.citations)
+        for ev in fam_b.events:
+            all_source_xrefs.extend(_collect_cit_sources(ev.citations))
+        for sx in all_source_xrefs:
+            if sx not in id_map:
+                id_map[sx] = _new_id('S')
+                stats.source_added += 1
+                src_b = file_b.sources.get(sx)
+                if src_b and src_b.repository_xref and src_b.repository_xref not in id_map:
+                    id_map[src_b.repository_xref] = _new_id('R')
+
     return id_map
 
 
@@ -147,6 +182,31 @@ def _remap(xref: str | None, id_map: dict[str, str]) -> str | None:
     if xref is None:
         return None
     return id_map.get(xref, xref)  # If not in map, assume it's already an A xref
+
+
+def _remap_raw_node(node: GedcomNode, id_map: dict[str, str]) -> GedcomNode:
+    """
+    Return a deep copy of a GedcomNode tree with all xref-format values remapped.
+
+    Any value that looks like @XREF@ and exists in id_map is replaced with its
+    mapped value. This ensures raw nodes from File B that are written directly
+    (for non-standard tags) have their source/individual/family xrefs remapped.
+    """
+    def _remap_value(val: str) -> str:
+        if val and val.startswith('@') and val.endswith('@') and val in id_map:
+            return id_map[val]
+        return val
+
+    def _clone(n: GedcomNode) -> GedcomNode:
+        return GedcomNode(
+            level=n.level,
+            tag=n.tag,
+            value=_remap_value(n.value),
+            xref=n.xref,  # top-level xref is set by the caller, not remapped here
+            children=[_clone(c) for c in n.children],
+        )
+
+    return _clone(node)
 
 
 def _remap_citation(cit: CitationRecord, id_map: dict[str, str]) -> CitationRecord:
@@ -332,13 +392,14 @@ def _merge_events(
             overlap = _dos(ev_a.date, ev_b.date)
             if overlap >= 0.4:
                 exact_ev = ev_b if a_approx else ev_a
+                raw = exact_ev.raw if exact_ev is ev_a else _remap_raw_node(exact_ev.raw, id_map)
                 result.append(EventRecord(
                     tag=exact_ev.tag,
                     event_type=exact_ev.event_type,
                     date=exact_ev.date,
                     place=_prefer_place(ev_a.place, ev_b.place),
                     citations=_remap_citations(exact_ev.citations, id_map),
-                    raw=exact_ev.raw,
+                    raw=raw,
                 ))
                 stats.date_conflicts_exact_wins += 1
                 continue
@@ -352,13 +413,15 @@ def _merge_events(
             primary_ev, alt_ev = (ev_a, ev_b) if a_is_primary else (ev_b, ev_a)
             primary_cits, alt_cits = (cits_a, cits_b) if a_is_primary else (cits_b, cits_a)
 
+            primary_raw = primary_ev.raw if primary_ev is ev_a else _remap_raw_node(primary_ev.raw, id_map)
+            alt_raw = alt_ev.raw if alt_ev is ev_a else _remap_raw_node(alt_ev.raw, id_map)
             result.append(EventRecord(
                 tag=primary_ev.tag,
                 event_type=primary_ev.event_type,
                 date=primary_ev.date,
                 place=primary_ev.place,
                 citations=primary_cits,
-                raw=primary_ev.raw,
+                raw=primary_raw,
             ))
             result.append(EventRecord(
                 tag=alt_ev.tag,
@@ -366,7 +429,7 @@ def _merge_events(
                 date=alt_ev.date,
                 place=alt_ev.place,
                 citations=alt_cits,
-                raw=alt_ev.raw,
+                raw=alt_raw,
             ))
             stats.date_conflicts_kept_both += 1
             continue
@@ -383,7 +446,7 @@ def _merge_events(
                 date=ev_b.date,
                 place=ev_b.place,
                 citations=_remap_citations(ev_b.citations, id_map),
-                raw=ev_b.raw,
+                raw=_remap_raw_node(ev_b.raw, id_map),
             ))
             stats.events_added_from_b += 1
 
@@ -411,6 +474,7 @@ def _merge_notes(notes_a: list[str], notes_b: list[str]) -> list[str]:
 def _merge_names(
     names_a: list[NameRecord],
     names_b: list[NameRecord],
+    id_map: dict[str, str],
     stats: MergeStats,
 ) -> list[NameRecord]:
     """
@@ -426,13 +490,13 @@ def _merge_names(
         key = (name_b.given, name_b.surname)
         if key in known:
             continue
-        # Add as AKA if not already there
+        # Add as AKA if not already there; remap source citations from B
         new_name = NameRecord(
             full=name_b.full,
             given=name_b.given,
             surname=name_b.surname,
             name_type=name_b.name_type or 'AKA',
-            citations=name_b.citations,
+            citations=_remap_citations(name_b.citations, id_map),
         )
         result.append(new_name)
         known.add(key)
@@ -454,7 +518,7 @@ def _merge_individual(
 ) -> Individual:
     """Merge ind_b into ind_a, returning a new Individual."""
     # Names
-    merged_names = _merge_names(ind_a.names, ind_b.names, stats)
+    merged_names = _merge_names(ind_a.names, ind_b.names, id_map, stats)
 
     # Sex
     sex = ind_a.sex
@@ -645,10 +709,10 @@ def merge_records(
         else:
             merged_sources[xref_a] = src_a
 
-    # Add unmatched B sources
+    # Add unmatched B sources — includes both explicitly reviewed 'add' sources
+    # and auto-added sources (referenced by added individuals/families but never reviewed).
     for xref_b, src_b in file_b.sources.items():
-        disp = decisions.source_disposition.get(xref_b, 'skip')
-        if xref_b not in decisions.source_map and disp == 'add':
+        if xref_b not in decisions.source_map and xref_b in id_map:
             new_xref = id_map.get(xref_b)
             if new_xref:
                 src_copy = Source(
@@ -724,16 +788,25 @@ def merge_records(
                     )
                     for e in ind_b.events
                 ]
+                # Remap name citations too
+                remapped_names = [
+                    NameRecord(
+                        full=n.full, given=n.given, surname=n.surname,
+                        name_type=n.name_type,
+                        citations=_remap_citations(n.citations, id_map),
+                    )
+                    for n in ind_b.names
+                ]
                 merged_indis[new_xref] = Individual(
                     xref=new_xref,
-                    names=ind_b.names,
+                    names=remapped_names,
                     sex=ind_b.sex,
                     events=evs,
                     family_child=famc,
                     family_spouse=fams,
                     citations=cits,
                     media=[_remap(x, id_map) or x for x in ind_b.media],
-                    raw=ind_b.raw,
+                    raw=_remap_raw_node(ind_b.raw, id_map),
                     normalized_surnames=set(ind_b.normalized_surnames),
                     normalized_givens=set(ind_b.normalized_givens),
                     birth_date=ind_b.birth_date,
@@ -763,7 +836,7 @@ def merge_records(
                         tag=e.tag, event_type=e.event_type, date=e.date,
                         place=e.place,
                         citations=_remap_citations(e.citations, id_map),
-                        raw=e.raw,
+                        raw=_remap_raw_node(e.raw, id_map),
                     )
                     for e in fam_b.events
                 ]
@@ -774,7 +847,7 @@ def merge_records(
                     child_xrefs=children,
                     events=evs,
                     citations=_remap_citations(fam_b.citations, id_map),
-                    raw=fam_b.raw,
+                    raw=_remap_raw_node(fam_b.raw, id_map),
                 )
 
     merged = GedcomFile(

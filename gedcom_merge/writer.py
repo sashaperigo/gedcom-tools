@@ -142,7 +142,8 @@ def _serialize_node(node: GedcomNode, override_level: int | None = None) -> list
         while True:
             max_len = _MAX_LINE_LEN - len(cont_prefix)
             if len(remaining) <= max_len:
-                lines.append(cont_prefix + remaining)
+                line_val = cont_prefix + remaining
+                lines.append(line_val.rstrip())  # strip trailing whitespace on empty CONT lines
                 break
             chunk = remaining[:max_len]
             lines.append(cont_prefix + chunk)
@@ -364,6 +365,8 @@ def _make_header(
         '2 VERS 5.5.1',
         '2 FORM LINEAGE-LINKED',
         '1 CHAR UTF-8',
+        '1 PLAC',
+        '2 FORM City, County, State, Country',
     ]
     if file_a_path or file_b_path:
         note = f'Merged from: {file_a_path} and {file_b_path}'

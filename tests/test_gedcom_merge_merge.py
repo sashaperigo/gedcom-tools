@@ -148,14 +148,14 @@ class TestMergeNames:
         stats = MergeStats()
         name_a = NameRecord('John /Smith/', 'john', 'smith', None)
         name_b = NameRecord('John /Smith/', 'john', 'smith', None)
-        result = _merge_names([name_a], [name_b], stats)
+        result = _merge_names([name_a], [name_b], {}, stats)
         assert result[0] is name_a  # A stays primary
 
     def test_adds_new_name_as_aka(self):
         stats = MergeStats()
         name_a = NameRecord('John /Smith/', 'john', 'smith', None)
         name_b = NameRecord('Johnny /Smith/', 'johnny', 'smith', None)
-        result = _merge_names([name_a], [name_b], stats)
+        result = _merge_names([name_a], [name_b], {}, stats)
         assert len(result) == 2
         assert result[1].name_type == 'AKA'
         assert stats.aka_names_added == 1
@@ -164,7 +164,7 @@ class TestMergeNames:
         stats = MergeStats()
         name_a = NameRecord('John /Smith/', 'john', 'smith', None)
         name_b = NameRecord('John /Smith/', 'john', 'smith', None)
-        result = _merge_names([name_a], [name_b], stats)
+        result = _merge_names([name_a], [name_b], {}, stats)
         assert len(result) == 1
         assert stats.aka_names_added == 0
 
