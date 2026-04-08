@@ -470,8 +470,22 @@ def _score_pair(
     if est_birth_a and est_birth_b and abs(est_birth_a - est_birth_b) > 50:
         return 0.0, {}
 
-    # Hard veto: specific (non-estimated) birth dates both present and differ by > 5 years
-    if actual_birth_a and actual_birth_b and abs(actual_birth_a - actual_birth_b) > 5:
+    # Hard veto: both have specific birth dates (month+year minimum, no qualifier) and
+    # they differ by > 5 years. A bare year ("1892") or approximate date ("ABT 1890")
+    # does NOT count as specific — only month+year or day+month+year without a qualifier.
+    def _specific_birth_year(ev) -> int | None:
+        if not ev or not ev.date:
+            return None
+        d = ev.date
+        if d.qualifier is not None:  # ABT, BEF, AFT, BET → not specific
+            return None
+        if d.month is None:          # year-only → not specific
+            return None
+        return d.year
+
+    specific_birth_a = _specific_birth_year(birt_a)
+    specific_birth_b = _specific_birth_year(birt_b)
+    if specific_birth_a and specific_birth_b and abs(specific_birth_a - specific_birth_b) > 5:
         return 0.0, {}
 
     # Hard veto: death years both present and differ by > 25 years

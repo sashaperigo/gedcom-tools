@@ -272,21 +272,63 @@ class TestFiftyYearVeto:
         assert '@I2@' not in {m.xref_b for m in result.candidates}
 
     def test_specific_birth_dates_over_5_years_apart_vetoed(self):
-        """Both have specific birth years that differ by > 5 years → hard veto."""
+        """Both have month+year birth dates (no qualifier) differing > 5 years → hard veto."""
+        a = _make_indi('@I1@', 'John', 'Smith')
+        b = _make_indi('@I2@', 'John', 'Smith')
+        # Add month+year birth events manually (no qualifier)
+        from gedcom_merge.model import ParsedDate
+        a.events.append(EventRecord(tag='BIRT', event_type=None,
+                                    date=ParsedDate(None, 1850, month=3), place=None,
+                                    raw=GedcomNode(1, 'BIRT', '', None)))
+        b.events.append(EventRecord(tag='BIRT', event_type=None,
+                                    date=ParsedDate(None, 1860, month=6), place=None,
+                                    raw=GedcomNode(1, 'BIRT', '', None)))
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score == 0.0, f'10-year month+year gap should veto, got {score}'
+
+    def test_year_only_birth_not_treated_as_specific(self):
+        """A bare year (no month) does NOT count as a specific birth date."""
+        # 1850 vs 1860 — year only, no month → should NOT trigger the 5-year veto
         ind_a = _make_indi('@I1@', 'John', 'Smith', birth_year=1850)
         ind_b = _make_indi('@I2@', 'John', 'Smith', birth_year=1860)
         file_a = _make_file(indis={'@I1@': ind_a})
         file_b = _make_file(indis={'@I2@': ind_b})
         score, _ = _score_pair(ind_a, ind_b, {}, file_a, file_b)
-        assert score == 0.0, f'10-year specific birth gap should veto, got {score}'
+        # Should not be vetoed by specific-date rule (though may score low)
+        assert score > 0.0, f'Year-only dates should not trigger specific-date veto, got {score}'
+
+    def test_approximate_birth_not_treated_as_specific(self):
+        """ABT qualifier means not specific — should not trigger 5-year veto."""
+        from gedcom_merge.model import ParsedDate
+        a = _make_indi('@I1@', 'John', 'Smith')
+        b = _make_indi('@I2@', 'John', 'Smith')
+        a.events.append(EventRecord(tag='BIRT', event_type=None,
+                                    date=ParsedDate('ABT', 1850, month=3), place=None,
+                                    raw=GedcomNode(1, 'BIRT', '', None)))
+        b.events.append(EventRecord(tag='BIRT', event_type=None,
+                                    date=ParsedDate(None, 1860, month=6), place=None,
+                                    raw=GedcomNode(1, 'BIRT', '', None)))
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score > 0.0, f'ABT date should not trigger specific-date veto, got {score}'
 
     def test_specific_birth_dates_exactly_5_years_apart_not_vetoed(self):
-        """Specific birth years exactly 5 apart are on the boundary — allowed."""
-        ind_a = _make_indi('@I1@', 'John', 'Smith', birth_year=1850)
-        ind_b = _make_indi('@I2@', 'John', 'Smith', birth_year=1855)
-        file_a = _make_file(indis={'@I1@': ind_a})
-        file_b = _make_file(indis={'@I2@': ind_b})
-        score, _ = _score_pair(ind_a, ind_b, {}, file_a, file_b)
+        """Specific birth month+year exactly 5 apart — on the boundary, allowed."""
+        from gedcom_merge.model import ParsedDate
+        a = _make_indi('@I1@', 'John', 'Smith')
+        b = _make_indi('@I2@', 'John', 'Smith')
+        a.events.append(EventRecord(tag='BIRT', event_type=None,
+                                    date=ParsedDate(None, 1850, month=3), place=None,
+                                    raw=GedcomNode(1, 'BIRT', '', None)))
+        b.events.append(EventRecord(tag='BIRT', event_type=None,
+                                    date=ParsedDate(None, 1855, month=3), place=None,
+                                    raw=GedcomNode(1, 'BIRT', '', None)))
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
         assert score > 0.0, f'Exactly 5-year gap should not be vetoed, got {score}'
 
     def test_veto_uses_estimated_birth_when_missing(self):
