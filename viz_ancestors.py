@@ -814,14 +814,12 @@ function showDetail(xref) {
     (e.date || e.place || e.note || e.type) &&
     !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
   );
-  const undatedResi = allVisible.filter(e => e.tag === 'RESI' && !e.date);
-  const undatedOccu = allVisible.filter(e => e.tag === 'OCCU' && !e.date);
-  const undatedNati = allVisible.filter(e => e.tag === 'NATI' && !e.date);
-  const visible = allVisible.filter(e =>
-    !(e.tag === 'RESI' && !e.date) &&
-    !(e.tag === 'OCCU' && !e.date) &&
-    !(e.tag === 'NATI' && !e.date)
-  );
+  const _keepInTimeline = e =>
+    e.date ||
+    e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' ||
+    e.type === 'Arrival' || e.type === 'Departure';
+  const undatedFactoids = allVisible.filter(e => !_keepInTimeline(e));
+  const visible = allVisible.filter(_keepInTimeline);
   const sorted  = collapseResidences(sortEvents(visible));
 
   if (!sorted.length) { evtDiv.innerHTML = ''; }
@@ -887,9 +885,20 @@ function showDetail(xref) {
   }
 
   let bottomHtml = '';
-  if (undatedResi.length) bottomHtml += `<span class="also-lived-heading">Also lived in</span>` + undatedRows(undatedResi);
-  if (undatedOccu.length) bottomHtml += `<span class="also-lived-heading">Occupation</span>`    + undatedRows(undatedOccu);
-  if (undatedNati.length) bottomHtml += `<span class="also-lived-heading">Nationality</span>`   + undatedRows(undatedNati);
+  if (undatedFactoids.length) {
+    // Group by tag (using type for EVEN/FACT, falling back to EVENT_LABELS)
+    const groups = new Map();
+    for (const e of undatedFactoids) {
+      const key = (e.tag === 'RESI') ? 'Also lived in'
+        : (e.type && e.tag !== 'FACT') ? e.type
+        : (EVENT_LABELS[e.tag] || e.tag);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(e);
+    }
+    for (const [heading, evts] of groups) {
+      bottomHtml += `<span class="also-lived-heading">${escHtml(heading)}</span>` + undatedRows(evts);
+    }
+  }
 
   alsoLivedDiv.innerHTML = bottomHtml;
   alsoLivedDiv.className = bottomHtml ? 'has-content' : '';
