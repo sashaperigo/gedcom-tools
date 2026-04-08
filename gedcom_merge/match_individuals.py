@@ -200,12 +200,15 @@ def _estimate_birth_year(ind: Individual, file: GedcomFile) -> int | None:
     """
     Estimate a birth year for an individual with no recorded birth date.
 
-    Strategy 1: use a matched spouse's birth year (assume ±10 years).
-    Strategy 2: use a parent's birth year + 27 years.
+    Strategy 1: spouse's birth year (assume roughly same generation).
+    Strategy 2: parent's birth year + 27.
+    Strategy 3: child's birth year - 27 (average of first child's year - 27).
+    Strategy 4: if both parent estimate and child estimate are available, average them.
 
     Returns None if no estimate is possible.
     """
     # Strategy 1: spouse's birth year
+    spouse_est: int | None = None
     for fams in ind.family_spouse[:2]:
         fam = file.families.get(fams)
         if not fam:
@@ -218,9 +221,16 @@ def _estimate_birth_year(ind: Individual, file: GedcomFile) -> int | None:
                 continue
             birth_ev = next((e for e in spouse.events if e.tag == 'BIRT'), None)
             if birth_ev and birth_ev.date and birth_ev.date.year:
-                return birth_ev.date.year
+                spouse_est = birth_ev.date.year
+                break
+        if spouse_est:
+            break
+
+    if spouse_est:
+        return spouse_est
 
     # Strategy 2: parent's birth year + 27
+    parent_est: int | None = None
     for famc in ind.family_child[:1]:
         fam = file.families.get(famc)
         if not fam:
@@ -233,7 +243,38 @@ def _estimate_birth_year(ind: Individual, file: GedcomFile) -> int | None:
                 continue
             birth_ev = next((e for e in parent.events if e.tag == 'BIRT'), None)
             if birth_ev and birth_ev.date and birth_ev.date.year:
-                return birth_ev.date.year + 27
+                parent_est = birth_ev.date.year + 27
+                break
+        if parent_est:
+            break
+
+    # Strategy 3: child's birth year - 27 (use earliest-born child)
+    child_est: int | None = None
+    for fams in ind.family_spouse[:2]:
+        fam = file.families.get(fams)
+        if not fam:
+            continue
+        earliest_child_year: int | None = None
+        for chil_xref in fam.child_xrefs:
+            child = file.individuals.get(chil_xref)
+            if not child:
+                continue
+            birth_ev = next((e for e in child.events if e.tag == 'BIRT'), None)
+            if birth_ev and birth_ev.date and birth_ev.date.year:
+                yr = birth_ev.date.year
+                if earliest_child_year is None or yr < earliest_child_year:
+                    earliest_child_year = yr
+        if earliest_child_year:
+            child_est = earliest_child_year - 27
+            break
+
+    # Strategy 4: if both parent and child estimates exist, average them
+    if parent_est and child_est:
+        return round((parent_est + child_est) / 2)
+    if parent_est:
+        return parent_est
+    if child_est:
+        return child_est
 
     return None
 
@@ -407,16 +448,34 @@ def _score_pair(
     if ind_a.sex and ind_b.sex and ind_a.sex != ind_b.sex:
         return 0.0, {}
 
-    # Hard veto: birth years > 50 apart (use actual birth year or estimate)
-    def _birth_year(ind: Individual, file: GedcomFile) -> int | None:
-        ev = next((e for e in ind.events if e.tag == 'BIRT'), None)
-        if ev and ev.date and ev.date.year:
-            return ev.date.year
-        return _estimate_birth_year(ind, file)
+    def _get_birth_ev(ind: Individual):
+        return next((e for e in ind.events if e.tag == 'BIRT'), None)
 
-    ya = _birth_year(ind_a, file_a)
-    yb = _birth_year(ind_b, file_b)
-    if ya and yb and abs(ya - yb) > 50:
+    def _get_death_ev(ind: Individual):
+        return next((e for e in ind.events if e.tag == 'DEAT'), None)
+
+    birt_a = _get_birth_ev(ind_a)
+    birt_b = _get_birth_ev(ind_b)
+    deat_a = _get_death_ev(ind_a)
+    deat_b = _get_death_ev(ind_b)
+
+    actual_birth_a = birt_a.date.year if (birt_a and birt_a.date and birt_a.date.year) else None
+    actual_birth_b = birt_b.date.year if (birt_b and birt_b.date and birt_b.date.year) else None
+    actual_death_a = deat_a.date.year if (deat_a and deat_a.date and deat_a.date.year) else None
+    actual_death_b = deat_b.date.year if (deat_b and deat_b.date and deat_b.date.year) else None
+
+    # Hard veto: birth years > 50 apart (use actual birth year or estimate)
+    est_birth_a = actual_birth_a or _estimate_birth_year(ind_a, file_a)
+    est_birth_b = actual_birth_b or _estimate_birth_year(ind_b, file_b)
+    if est_birth_a and est_birth_b and abs(est_birth_a - est_birth_b) > 50:
+        return 0.0, {}
+
+    # Hard veto: specific (non-estimated) birth dates both present and differ by > 5 years
+    if actual_birth_a and actual_birth_b and abs(actual_birth_a - actual_birth_b) > 5:
+        return 0.0, {}
+
+    # Hard veto: death years both present and differ by > 25 years
+    if actual_death_a and actual_death_b and abs(actual_death_a - actual_death_b) > 25:
         return 0.0, {}
 
     score = (

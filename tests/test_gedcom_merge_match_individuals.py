@@ -271,19 +271,23 @@ class TestFiftyYearVeto:
         # Should not even be a candidate
         assert '@I2@' not in {m.xref_b for m in result.candidates}
 
-    def test_birth_years_exactly_50_apart_not_vetoed(self):
-        """50 years is the boundary — should still produce a candidate/match."""
+    def test_specific_birth_dates_over_5_years_apart_vetoed(self):
+        """Both have specific birth years that differ by > 5 years → hard veto."""
         ind_a = _make_indi('@I1@', 'John', 'Smith', birth_year=1850)
-        ind_b = _make_indi('@I2@', 'John', 'Smith', birth_year=1900)
+        ind_b = _make_indi('@I2@', 'John', 'Smith', birth_year=1860)
         file_a = _make_file(indis={'@I1@': ind_a})
         file_b = _make_file(indis={'@I2@': ind_b})
-        result = match_individuals(file_a, file_b)
-        all_b = {m.xref_b for m in result.auto_matches + result.candidates}
-        # Exact 50-year gap is on the boundary — may or may not match but should not veto
-        # (the veto is > 50, not >= 50)
-        # Just verify _score_pair doesn't return 0.0
         score, _ = _score_pair(ind_a, ind_b, {}, file_a, file_b)
-        assert score > 0.0
+        assert score == 0.0, f'10-year specific birth gap should veto, got {score}'
+
+    def test_specific_birth_dates_exactly_5_years_apart_not_vetoed(self):
+        """Specific birth years exactly 5 apart are on the boundary — allowed."""
+        ind_a = _make_indi('@I1@', 'John', 'Smith', birth_year=1850)
+        ind_b = _make_indi('@I2@', 'John', 'Smith', birth_year=1855)
+        file_a = _make_file(indis={'@I1@': ind_a})
+        file_b = _make_file(indis={'@I2@': ind_b})
+        score, _ = _score_pair(ind_a, ind_b, {}, file_a, file_b)
+        assert score > 0.0, f'Exactly 5-year gap should not be vetoed, got {score}'
 
     def test_veto_uses_estimated_birth_when_missing(self):
         """If one person lacks a birth year but has a spouse with known birth year,

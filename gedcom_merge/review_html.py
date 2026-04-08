@@ -77,6 +77,16 @@ def _indi_detail(ind: Individual | None, file: GedcomFile) -> dict:
                         siblings.append(sib.display_name)
     siblings = siblings[:6]
 
+    children: list[str] = []
+    for fams in ind.family_spouse[:3]:
+        fam = file.families.get(fams)
+        if fam:
+            for chil_xref in fam.child_xrefs:
+                child = file.individuals.get(chil_xref)
+                if child:
+                    children.append(child.display_name)
+    children = children[:8]
+
     citation_count = len(ind.citations) + sum(len(e.citations) for e in ind.events)
 
     # Estimated birth year when none is recorded
@@ -86,7 +96,9 @@ def _indi_detail(ind: Individual | None, file: GedcomFile) -> dict:
     if not has_birth:
         est_year = _estimate_birth_year(ind, file)
         if est_year:
+            birth_date_calc = 'est. ~' + str(est_year)
             # Determine basis label for the tooltip
+            basis_parts = []
             for fams in ind.family_spouse[:1]:
                 fam = file.families.get(fams)
                 if fam:
@@ -96,22 +108,30 @@ def _indi_detail(ind: Individual | None, file: GedcomFile) -> dict:
                             if sp:
                                 sp_birt = next((e for e in sp.events if e.tag == 'BIRT'), None)
                                 if sp_birt and sp_birt.date and sp_birt.date.year:
-                                    birth_date_calc = 'est. ~' + str(est_year)
-                                    birth_date_calc_basis = 'from spouse ' + sp.display_name
-            if not birth_date_calc:
-                for famc in ind.family_child[:1]:
-                    fam = file.families.get(famc)
-                    if fam:
-                        for px in [fam.husband_xref, fam.wife_xref]:
-                            if not px:
-                                continue
-                            parent = file.individuals.get(px)
-                            if parent:
-                                p_birt = next((e for e in parent.events if e.tag == 'BIRT'), None)
-                                if p_birt and p_birt.date and p_birt.date.year:
-                                    birth_date_calc = 'est. ~' + str(est_year)
-                                    birth_date_calc_basis = 'from parent ' + parent.display_name
-                                    break
+                                    basis_parts.append('spouse ' + sp.display_name)
+            for famc in ind.family_child[:1]:
+                fam = file.families.get(famc)
+                if fam:
+                    for px in [fam.husband_xref, fam.wife_xref]:
+                        if not px:
+                            continue
+                        parent = file.individuals.get(px)
+                        if parent:
+                            p_birt = next((e for e in parent.events if e.tag == 'BIRT'), None)
+                            if p_birt and p_birt.date and p_birt.date.year:
+                                basis_parts.append('parent ' + parent.display_name)
+                                break
+            for fams in ind.family_spouse[:2]:
+                fam = file.families.get(fams)
+                if fam:
+                    for chil_xref in fam.child_xrefs[:1]:
+                        child_ind = file.individuals.get(chil_xref)
+                        if child_ind:
+                            c_birt = next((e for e in child_ind.events if e.tag == 'BIRT'), None)
+                            if c_birt and c_birt.date and c_birt.date.year:
+                                basis_parts.append('child ' + child_ind.display_name)
+                                break
+            birth_date_calc_basis = 'from ' + ' & '.join(basis_parts) if basis_parts else ''
 
     return {
         'xref': ind.xref,
@@ -129,6 +149,7 @@ def _indi_detail(ind: Individual | None, file: GedcomFile) -> dict:
         'parents': parents,
         'spouses': spouses,
         'siblings': siblings,
+        'children': children,
         'citation_count': citation_count,
         'fams_count': len(ind.family_spouse),
     }
@@ -576,6 +597,7 @@ function indiTable(da, db, comps) {
                      [db.burial_date, db.burial_place].filter(Boolean).join(' \u00b7 ')),
     cmpRow('Parents', (da.parents||[]).join(' & '), (db.parents||[]).join(' & ')),
     cmpRow('Siblings', (da.siblings||[]).join(', '), (db.siblings||[]).join(', ')),
+    cmpRow('Children', (da.children||[]).join(', '), (db.children||[]).join(', ')),
     cmpRow('Spouse(s)', (da.spouses||[]).join(', '), (db.spouses||[]).join(', ')),
     cmpRow('Sources', da.citation_count ? da.citation_count + ' citations' : '',
                       db.citation_count ? db.citation_count + ' citations' : '')
