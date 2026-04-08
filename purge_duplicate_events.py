@@ -4,6 +4,8 @@ purge_duplicate_events.py — Remove duplicate BIRT/DEAT event blocks from a GED
 
 Two event blocks of the same type on the same individual are considered duplicates
 when they have identical DATE and PLAC values (both fields compared, both may be absent).
+Source citations are excluded from this comparison so that two events citing different
+sources are still recognised as duplicates if their DATE and PLAC match.
 
 When duplicates are found, the first block is kept and any source sub-blocks from
 the duplicate that are not already present in the keeper are appended to it.
