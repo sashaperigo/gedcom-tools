@@ -231,7 +231,8 @@ def build_people_json(xrefs: set, indis: dict, sources: dict | None = None) -> d
 
 def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
     """
-    Return {ahnentafel_key: {siblings: [xref,...], spouses: [xref,...]}} for all ancestors.
+    Return {ahnentafel_key: {siblings: [xref,...], spouses: [xref,...],
+    sib_spouses: {sib_xref: [spouse_xref,...]}}} for all ancestors.
     """
     result = {}
     for key, xref in tree.items():
@@ -250,8 +251,24 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
             spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
             if spouse_xref and spouse_xref in indis:
                 spouses.append(spouse_xref)
+        sib_spouses = {}
+        for sib_xref in siblings:
+            sib = indis.get(sib_xref)
+            if not sib:
+                continue
+            sib_sp = []
+            for fam_xref in sib.get('fams', []):
+                fam = fams.get(fam_xref, {})
+                sp_xref = fam.get('wife') if fam.get('husb') == sib_xref else fam.get('husb')
+                if sp_xref and sp_xref in indis:
+                    sib_sp.append(sp_xref)
+            if sib_sp:
+                sib_spouses[sib_xref] = sib_sp
         if siblings or spouses:
-            result[key] = {'siblings': siblings, 'spouses': spouses}
+            entry = {'siblings': siblings, 'spouses': spouses}
+            if sib_spouses:
+                entry['sib_spouses'] = sib_spouses
+            result[key] = entry
     return result
 
 
@@ -427,6 +444,8 @@ const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const RELATIVES = __RELATIVES_JSON__;
 const expandedRelatives = new Set([1]);
 let _relPosCache = new Map();
+// Maps "${anchorKey}:${sibIdx}" → current spouse index (0-based) for siblings with multiple spouses
+let _sibSpouseIdx = new Map();
 
 (function() {
   const input = document.getElementById('search-input');
@@ -792,6 +811,8 @@ document.getElementById('home-btn').addEventListener('click', () => {
 });
 
 const NODE_W = 175, NODE_H = 60, H_GAP = 10, V_GAP = 80;
+// Extra gap between anchor node and its adjacent sibling, to clear the arrow button (16px + 4px margin).
+const BTN_PAD = 24;
 const MARGIN_X = 90, MARGIN_TOP = 50, BTN_ZONE = 28;
 
 const visibleKeys = new Set();
@@ -890,6 +911,27 @@ function computePositions() {
     if (hasMother) { layout(mk, offset); }
   }
   layout(1, MARGIN_X);
+
+  // Couple compaction: move an isolated parent (no visible ancestors, no expanded siblings)
+  // adjacent to their partner when the gap between them exceeds one slot.
+  // This prevents e.g. a father with no ancestors from being placed far left of a mother
+  // whose large subtree pushed her far right.
+  for (const k of visibleKeys) {
+    const fk = 2*k, mk = 2*k+1;
+    if (!visibleKeys.has(fk) || !visibleKeys.has(mk)) continue;
+    const fp = _posCache.get(fk), mp = _posCache.get(mk);
+    if (!fp || !mp) continue;
+    const fHasAncestors = visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1);
+    const mHasAncestors = visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1);
+    const fHasSiblings  = (_sibSlots.get(fk) || 0) > 0;
+    const mHasSiblings  = (_sibSlots.get(mk) || 0) > 0;
+    const gap = mp.x - (fp.x + NODE_W + H_GAP);
+    if (!fHasAncestors && !fHasSiblings && gap > slotW) {
+      _posCache.set(fk, {x: mp.x - NODE_W - H_GAP, y: fp.y});
+    } else if (!mHasAncestors && !mHasSiblings && gap > slotW) {
+      _posCache.set(mk, {x: fp.x + NODE_W + H_GAP, y: mp.y});
+    }
+  }
 }
 
 function nodePos(k) {
@@ -926,19 +968,39 @@ function computeRelativePositions() {
       }
     });
 
-    // Siblings: males go LEFT, females go RIGHT (after any new spouses)
-    let newSibIdx = 0;
+    // Siblings: males go LEFT, females go RIGHT (after any new spouses).
+    // Each sibling group occupies 1 + (number of sibling's spouses) slots.
+    let newSibOffset = 0;
     rels.siblings.forEach((xref, i) => {
+      const sibSpouses = (rels.sib_spouses || {})[xref] || [];
       const existingKey = xrefToKey.get(xref);
       if (existingKey !== undefined) {
         const pos = _posCache.get(existingKey);
         if (pos) _relPosCache.set(`sib:${k}:${i}`, {x: pos.x, y: pos.y, xref, existing: true});
+        // Sibling already in tree — no new slot consumed, skip its spouses here
       } else {
         const sibX = male
-          ? x - (newSibIdx + 1) * slotW                          // left of anchor
-          : x + NODE_W + H_GAP + (newSpIdx + newSibIdx) * slotW; // right, after spouses
+          ? x - (newSibOffset + 1) * slotW - BTN_PAD                          // left of anchor, with button clearance
+          : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset) * slotW; // right, after spouses, with button clearance
         _relPosCache.set(`sib:${k}:${i}`, {x: sibX, y, xref, existing: false});
-        newSibIdx++;
+
+        // Show only the currently-selected spouse (one slot reserved if any spouses exist)
+        if (sibSpouses.length > 0) {
+          const spIdx = _sibSpouseIdx.get(`${k}:${i}`) || 0;
+          const spXref = sibSpouses[spIdx];
+          const existingSpKey = xrefToKey.get(spXref);
+          if (existingSpKey !== undefined) {
+            const pos = _posCache.get(existingSpKey);
+            if (pos) _relPosCache.set(`sibsp:${k}:${i}`, {x: pos.x, y: pos.y, xref: spXref, existing: true, total: sibSpouses.length, spIdx});
+          } else {
+            const spX = male
+              ? x - (newSibOffset + 2) * slotW - BTN_PAD
+              : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset + 1) * slotW;
+            _relPosCache.set(`sibsp:${k}:${i}`, {x: spX, y, xref: spXref, existing: false, total: sibSpouses.length, spIdx});
+          }
+        }
+
+        newSibOffset += 1 + (sibSpouses.length > 0 ? 1 : 0);
       }
     });
   }
@@ -1082,6 +1144,105 @@ function render() {
     }
   }
 
+  // Relative connectors (drawn before nodes so buttons render on top)
+  for (const k of expandedRelatives) {
+    const rels = RELATIVES[String(k)];
+    if (!rels) continue;
+    const ancEntry = _posCache.get(k);
+    if (!ancEntry) continue;
+    const {x: ax, y: ay} = ancEntry;
+    const hasFather = visibleKeys.has(2*k);
+    const hasMother = visibleKeys.has(2*k+1);
+
+    // Sibling connectors — Ancestry-style: one horizontal bar + individual vertical drops
+    const newSibs = rels.siblings.map((sib, i) => _relPosCache.get(`sib:${k}:${i}`))
+                                  .filter(e => e && !e.existing);
+    if (newSibs.length) {
+      const ancCx = ax + NODE_W / 2;
+      const male = isMaleKey(k);
+      const outerCx = male
+        ? Math.min(...newSibs.map(e => e.x + NODE_W / 2))
+        : Math.max(...newSibs.map(e => e.x + NODE_W / 2));
+      const [barX1, barX2] = male ? [outerCx, ancCx] : [ancCx, outerCx];
+      if (hasFather || hasMother) {
+        const midY = ay - V_GAP / 2;
+        let extBarX1 = barX1, extBarX2 = barX2;
+        if (hasFather && hasMother) {
+          const fp = _posCache.get(2*k), mp = _posCache.get(2*k+1);
+          const coupleY = fp.y + NODE_H / 2;
+          const dropX   = (fp.x + NODE_W + mp.x) / 2;
+          canvas.appendChild(svgEl('line', {x1: dropX, y1: coupleY, x2: dropX, y2: midY, stroke: '#475569', 'stroke-width': 1.5}));
+          extBarX1 = Math.min(barX1, dropX);
+          extBarX2 = Math.max(barX2, dropX);
+        }
+        canvas.appendChild(svgEl('line', {x1: extBarX1, y1: midY, x2: extBarX2, y2: midY, stroke: '#475569', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: ancCx, y1: midY, x2: ancCx, y2: ay, stroke: '#475569', 'stroke-width': 1.5}));
+        newSibs.forEach(({x: sx, y: sy}) => {
+          const sibCx = sx + NODE_W / 2;
+          canvas.appendChild(svgEl('line', {x1: sibCx, y1: midY, x2: sibCx, y2: sy, stroke: '#475569', 'stroke-width': 1.5}));
+        });
+      } else {
+        const barY = ay - 20;
+        canvas.appendChild(svgEl('line', {x1: barX1, y1: barY, x2: barX2, y2: barY, stroke: '#475569', 'stroke-width': 1.5}));
+        newSibs.forEach(({x: sx, y: sy}) => {
+          const sibCx = sx + NODE_W / 2;
+          canvas.appendChild(svgEl('line', {x1: sibCx, y1: barY, x2: sibCx, y2: sy, stroke: '#475569', 'stroke-width': 1.5}));
+        });
+        canvas.appendChild(svgEl('line', {x1: ancCx, y1: barY, x2: ancCx, y2: ay, stroke: '#475569', 'stroke-width': 1.5}));
+      }
+    }
+
+    // Anchor spouse marriage connectors
+    rels.spouses.forEach((sp, j) => {
+      const spEntry = _relPosCache.get(`sp:${k}:${j}`);
+      if (!spEntry || spEntry.existing) return;
+      const {x: spx} = spEntry;
+      const lineY = ay + NODE_H / 2;
+      const [x1, x2] = spx < ax ? [spx + NODE_W, ax] : [ax + NODE_W, spx];
+      canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+    });
+
+    // Sibling-spouse marriage connectors + cycle toggle button
+    rels.siblings.forEach((sibXref, i) => {
+      const sibEntry = _relPosCache.get(`sib:${k}:${i}`);
+      if (!sibEntry || sibEntry.existing) return;
+      const {x: sx, y: sy} = sibEntry;
+      const spEntry = _relPosCache.get(`sibsp:${k}:${i}`);
+      if (!spEntry || spEntry.existing) return;
+      const {x: spx, total, spIdx} = spEntry;
+      const lineY = sy + NODE_H / 2;
+      const [x1, x2] = spx < sx ? [spx + NODE_W, sx] : [sx + NODE_W, spx];
+      const midX = (x1 + x2) / 2;
+      // Draw marriage double lines, leaving a gap in the middle for the toggle button
+      if (total > 1) {
+        const gap = 12;
+        canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2: midX - gap, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2: midX - gap, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: midX + gap, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: midX + gap, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        // Cycle button
+        const bw = 20, bh = 16;
+        const btn = svgEl('rect', {x: midX - bw/2, y: lineY - bh/2, width: bw, height: bh, rx: 4, fill: '#0f766e', cursor: 'pointer'});
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const next = ((spIdx + 1) % total);
+          _sibSpouseIdx.set(`${k}:${i}`, next);
+          render();
+        });
+        canvas.appendChild(btn);
+        // Right-pointing triangle
+        canvas.appendChild(svgEl('polygon', {
+          points: `${midX-4},${lineY-4} ${midX+5},${lineY} ${midX-4},${lineY+4}`,
+          fill: 'white', 'pointer-events': 'none'
+        }));
+      } else {
+        canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+      }
+    });
+  }
+
   // Generation labels (left side)
   const gensSeen = new Set([...visibleKeys].map(genOf));
   for (const g of gensSeen) {
@@ -1147,49 +1308,41 @@ function render() {
     }
     canvas.appendChild(nodeG);
 
-    // Expand / collapse buttons
+    // Expand / collapse buttons — 16×16 polygon triangles, same size as side arrows
     if (hasHiddenParents(k)) {
-      const bx = x + NODE_W / 2 - 14;
-      const by = y - BTN_ZONE + 2;
-      const btn = svgEl('rect', {
-        x: bx, y: by, width: 28, height: 22,
-        rx: 5, fill: '#059669', cursor: 'pointer'
-      });
+      const bx = x + NODE_W / 2 - 8;
+      const by = y - BTN_ZONE + 4;
+      const btn = svgEl('rect', {x: bx, y: by, width: 16, height: 16, rx: 4, fill: '#059669', cursor: 'pointer'});
       btn.addEventListener('click', (e) => { e.stopPropagation(); expandNode(k); });
       canvas.appendChild(btn);
-      const btxt = svgEl('text', {
-        x: x + NODE_W / 2, y: by + 14,
-        'text-anchor': 'middle', fill: 'white', 'font-size': 12,
-        'font-family': 'system-ui, sans-serif', 'pointer-events': 'none'
-      });
-      btxt.textContent = '\\u25b2';
-      canvas.appendChild(btxt);
+      canvas.appendChild(svgEl('polygon', {
+        points: `${bx+4},${by+11} ${bx+8},${by+5} ${bx+12},${by+11}`,
+        fill: 'white', 'pointer-events': 'none'
+      }));
     } else if (hasVisibleParents(k)) {
-      const bx = x + NODE_W / 2 - 14;
-      const by = y - BTN_ZONE + 2;
-      const btn = svgEl('rect', {
-        x: bx, y: by, width: 28, height: 22,
-        rx: 5, fill: '#475569', cursor: 'pointer'
-      });
+      const bx = x + NODE_W / 2 - 8;
+      const by = y - BTN_ZONE + 4;
+      const btn = svgEl('rect', {x: bx, y: by, width: 16, height: 16, rx: 4, fill: '#475569', cursor: 'pointer'});
       btn.addEventListener('click', (e) => { e.stopPropagation(); collapseNode(k); });
       canvas.appendChild(btn);
-      const btxt = svgEl('text', {
-        x: x + NODE_W / 2, y: by + 14,
-        'text-anchor': 'middle', fill: 'white', 'font-size': 12,
-        'font-family': 'system-ui, sans-serif', 'pointer-events': 'none'
-      });
-      btxt.textContent = '\\u25bc';
-      canvas.appendChild(btxt);
+      canvas.appendChild(svgEl('polygon', {
+        points: `${bx+4},${by+5} ${bx+8},${by+11} ${bx+12},${by+5}`,
+        fill: 'white', 'pointer-events': 'none'
+      }));
     }
 
-    // Relatives toggle button (⊕/⊖) for non-root ancestors that have siblings or spouses
+    // Relatives toggle button for non-root ancestors that have siblings or spouses.
+    // Positioned outside the node on the side where siblings expand:
+    // males expand left → button on left; females expand right → button on right.
     if (k !== 1 && RELATIVES[String(k)]) {
       const isExpanded = expandedRelatives.has(k);
-      const rbx = x + NODE_W - 18;
-      const rby = y + NODE_H - 18;
+      const male = isMaleKey(k);
+      const rbw = 16, rbh = 16;
+      const rbx = male ? x - rbw - 4 : x + NODE_W + 4;
+      const rby = y + (NODE_H - rbh) / 2;
       const rbtn = svgEl('rect', {
-        x: rbx, y: rby, width: 16, height: 16,
-        rx: 4, fill: isExpanded ? '#0f766e' : '#334155', cursor: 'pointer', opacity: 0.9
+        x: rbx, y: rby, width: rbw, height: rbh,
+        rx: 4, fill: isExpanded ? '#334155' : '#059669', cursor: 'pointer', opacity: 0.9
       });
       rbtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1205,13 +1358,16 @@ function render() {
         }
       });
       canvas.appendChild(rbtn);
-      const rtxt = svgEl('text', {
-        x: rbx + 8, y: rby + 11,
-        'text-anchor': 'middle', fill: 'white', 'font-size': 11,
-        'font-family': 'system-ui, sans-serif', 'pointer-events': 'none'
+      // Draw triangle as SVG polygon so left and right are perfect mirrors.
+      // Collapsed: points toward where siblings will appear. Expanded: flips back.
+      const pointLeft = (male !== isExpanded);
+      const arrow = svgEl('polygon', {
+        points: pointLeft
+          ? `${rbx+11},${rby+4} ${rbx+5},${rby+8} ${rbx+11},${rby+12}`
+          : `${rbx+5},${rby+4} ${rbx+11},${rby+8} ${rbx+5},${rby+12}`,
+        fill: 'white', 'pointer-events': 'none'
       });
-      rtxt.textContent = isExpanded ? '\\u2296' : '\\u2295';
-      canvas.appendChild(rtxt);
+      canvas.appendChild(arrow);
     }
   }
 
@@ -1252,105 +1408,9 @@ function render() {
   for (const [key, entry] of _relPosCache.entries()) {
     if (entry.existing) continue;  // already rendered as an ancestor node
     const {x: rx, y: ry, xref} = entry;
-    const isSibling = key.startsWith('sib:');
+    const isSibling = key.startsWith('sib:') && !key.startsWith('sibsp:');
     const fill = isSibling ? '#1e3a5f' : '#065f46';
     drawRelNode(rx, ry, xref, fill);
-  }
-
-  // Relative connectors
-  for (const k of expandedRelatives) {
-    const rels = RELATIVES[String(k)];
-    if (!rels) continue;
-    const ancEntry = _posCache.get(k);
-    if (!ancEntry) continue;
-    const {x: ax, y: ay} = ancEntry;
-    const hasFather = visibleKeys.has(2*k);
-    const hasMother = visibleKeys.has(2*k+1);
-
-    // Sibling connectors — Ancestry-style: one horizontal bar + individual vertical drops
-    const newSibs = rels.siblings.map((sib, i) => _relPosCache.get(`sib:${k}:${i}`))
-                                  .filter(e => e && !e.existing);
-    if (newSibs.length) {
-      const ancCx = ax + NODE_W / 2;
-      const male = isMaleKey(k);
-      const outerCx = male
-        ? Math.min(...newSibs.map(e => e.x + NODE_W / 2))   // leftmost for males (siblings go left)
-        : Math.max(...newSibs.map(e => e.x + NODE_W / 2));  // rightmost for females (siblings go right)
-      const [barX1, barX2] = male ? [outerCx, ancCx] : [ancCx, outerCx];
-      if (hasFather || hasMother) {
-        const midY = ay - V_GAP / 2;
-        // When both parents visible, draw the vertical from the couple line
-        // down to the children bar and extend the bar to include that drop point.
-        let extBarX1 = barX1, extBarX2 = barX2;
-        if (hasFather && hasMother) {
-          const fp = _posCache.get(2*k), mp = _posCache.get(2*k+1);
-          const coupleY    = fp.y + NODE_H / 2;
-          const dropX      = (fp.x + NODE_W + mp.x) / 2;  // midpoint of couple gap
-          // Pure vertical — never diagonal
-          canvas.appendChild(svgEl('line', {
-            x1: dropX, y1: coupleY, x2: dropX, y2: midY,
-            stroke: '#475569', 'stroke-width': 1.5
-          }));
-          extBarX1 = Math.min(barX1, dropX);
-          extBarX2 = Math.max(barX2, dropX);
-        }
-        // Horizontal children bar (extended to include couple drop point)
-        canvas.appendChild(svgEl('line', {
-          x1: extBarX1, y1: midY, x2: extBarX2, y2: midY,
-          stroke: '#475569', 'stroke-width': 1.5
-        }));
-        // Anchor's own drop from bar down to anchor node top
-        canvas.appendChild(svgEl('line', {
-          x1: ancCx, y1: midY, x2: ancCx, y2: ay,
-          stroke: '#475569', 'stroke-width': 1.5
-        }));
-        // Individual vertical drops from bar down to each sibling top
-        newSibs.forEach(({x: sx, y: sy}) => {
-          const sibCx = sx + NODE_W / 2;
-          canvas.appendChild(svgEl('line', {
-            x1: sibCx, y1: midY, x2: sibCx, y2: sy,
-            stroke: '#475569', 'stroke-width': 1.5
-          }));
-        });
-      } else {
-        // No parents visible: horizontal bar at mid-node height, vertical drops down
-        const barY = ay - 20;
-        canvas.appendChild(svgEl('line', {
-          x1: barX1, y1: barY, x2: barX2, y2: barY,
-          stroke: '#475569', 'stroke-width': 1.5
-        }));
-        newSibs.forEach(({x: sx, y: sy}) => {
-          const sibCx = sx + NODE_W / 2;
-          canvas.appendChild(svgEl('line', {
-            x1: sibCx, y1: barY, x2: sibCx, y2: sy,
-            stroke: '#475569', 'stroke-width': 1.5
-          }));
-        });
-        // Also drop from anchor
-        canvas.appendChild(svgEl('line', {
-          x1: ancCx, y1: barY, x2: ancCx, y2: ay,
-          stroke: '#475569', 'stroke-width': 1.5
-        }));
-      }
-    }
-
-    // Spouse marriage connectors — skip existing spouses, already shown in tree
-    rels.spouses.forEach((sp, j) => {
-      const spEntry = _relPosCache.get(`sp:${k}:${j}`);
-      if (!spEntry || spEntry.existing) return;
-      const {x: spx} = spEntry;
-      const lineY = ay + NODE_H / 2;
-      // Connect nearest edges regardless of which side the spouse is on
-      const [x1, x2] = spx < ax ? [spx + NODE_W, ax] : [ax + NODE_W, spx];
-      canvas.appendChild(svgEl('line', {
-        x1, y1: lineY - 3, x2, y2: lineY - 3,
-        stroke: '#0f766e', 'stroke-width': 1.5
-      }));
-      canvas.appendChild(svgEl('line', {
-        x1, y1: lineY + 3, x2, y2: lineY + 3,
-        stroke: '#0f766e', 'stroke-width': 1.5
-      }));
-    });
   }
 
   applyTransform();
@@ -1493,6 +1553,8 @@ def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
     for rels in relatives.values():
         all_xrefs.update(rels['siblings'])
         all_xrefs.update(rels['spouses'])
+        for sp_list in rels.get('sib_spouses', {}).values():
+            all_xrefs.update(sp_list)
     people    = build_people_json(all_xrefs, indis, sources)
 
     root_name = people.get(root_xref, {}).get('name', '?')
