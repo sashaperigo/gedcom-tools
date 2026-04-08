@@ -18,6 +18,8 @@
 2 PLAC London, England
 2 SOUR @S1@
 3 PAGE Birth record
+2 SOUR @S1@
+3 PAGE Birth certificate
 1 DEAT
 2 DATE 20 JUN 1920
 2 PLAC Paris, France
@@ -49,6 +51,8 @@
 3 PAGE Census entry
 1 SOUR @S1@
 2 PAGE Source reference
+1 SOUR @S1@
+2 PAGE Duplicate reference
 0 @I4@ INDI
 1 NAME Peter /Brown/
 2 GIVN Peter

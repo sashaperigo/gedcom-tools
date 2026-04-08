@@ -3,13 +3,16 @@ Tests for export_minimal.py
 
 Uses tests/fixtures/minimal_export.ged — a synthetic GEDCOM covering:
 
-  @I1@  Primary NAME with SOUR + AKA NAME; BIRT with fact-SOUR; DEAT clean;
-        person-level SOUR → AKA dropped, NAME SOUR stripped (GIVN/SURN kept),
-        BIRT SOUR stripped, DEAT unchanged, person SOUR preserved
+  @I1@  Primary NAME with SOUR + AKA NAME; BIRT with TWO fact-SOURs to @S1@
+        (different PAGE values); DEAT clean; person-level SOUR
+        → AKA dropped, NAME SOUR stripped, BIRT SOURs stripped (DATE+PLAC kept),
+        DEAT unchanged, person SOUR preserved
+        With keep_fact_sources: both BIRT SOURs collapse to one bare pointer
   @I2@  Primary NAME + AKA NAME; BIRT with DATE + fact-SOUR; person-level SOUR
         → AKA dropped, BIRT SOUR stripped (DATE kept), person SOUR preserved
-  @I3@  Primary NAME only; BIRT with ONLY a fact-SOUR; person-level SOUR
-        → BIRT block dropped (empty after strip), person SOUR preserved
+  @I3@  Primary NAME only; BIRT with ONLY a fact-SOUR; TWO person-level SOURs
+        to @S1@ (different PAGE values)
+        → BIRT block dropped (empty after strip), duplicate person SOUR removed
   @I4@  Primary NAME; SEX with fact-SOUR; BIRT with DATE+PLAC; person-level SOUR
         → SEX preserved (inline value), BIRT unchanged, person SOUR preserved
   @F1@  MARR with DATE+PLAC+fact-SOUR; second MARR with ONLY fact-SOUR
@@ -352,9 +355,9 @@ class TestStats:
         assert stats['aka_blocks_removed'] == 2
 
     def test_fact_sources_removed(self, result):
-        # @I1@ NAME, @I1@ BIRT, @I2@ BIRT, @I3@ BIRT, @I4@ SEX, @F1@ MARR1, @F1@ MARR2 = 7
+        # @I1@ NAME, @I1@ BIRT×2, @I2@ BIRT, @I3@ BIRT, @I4@ SEX, @F1@ MARR1, @F1@ MARR2 = 8
         _, stats = result
-        assert stats['fact_sources_removed'] == 7
+        assert stats['fact_sources_removed'] == 8
 
     def test_empty_events_dropped(self, result):
         # @I3@ BIRT, @F1@ second MARR = 2
@@ -561,65 +564,44 @@ class TestInputUnchanged:
 class TestDedupSourCitations:
     """Duplicate SOUR citations produced when stripping removes distinguishing detail."""
 
-    # Two person-level SOURs to @S1@ (different PAGE), one BIRT with two
-    # fact-level SOURs to @S1@ (different PAGE).
-    DUPED_GED = (
-        '0 HEAD\n'
-        '1 GEDC\n'
-        '2 VERS 5.5.1\n'
-        '0 @I1@ INDI\n'
-        '1 NAME Alice /Test/\n'
-        '1 SOUR @S1@\n'
-        '2 PAGE First ref\n'
-        '1 SOUR @S1@\n'
-        '2 PAGE Second ref\n'
-        '1 BIRT\n'
-        '2 DATE 1 JAN 1900\n'
-        '2 SOUR @S1@\n'
-        '3 PAGE Page A\n'
-        '2 SOUR @S1@\n'
-        '3 PAGE Page B\n'
-        '0 @S1@ SOUR\n'
-        '1 TITL Test Source\n'
-        '0 TRLR\n'
-    )
-
-    def _run(self, tmp_path, **kwargs):
-        src = tmp_path / 'duped.ged'
-        src.write_text(self.DUPED_GED, encoding='utf-8')
-        out = tmp_path / 'out.txt'
-        result = export_minimal(str(src), path_out=str(out), skip_normalize=True, **kwargs)
-        return out.read_text(encoding='utf-8'), result
-
-    def test_person_level_sour_deduped(self, tmp_path):
-        """Two 1 SOUR @S1@ on the same person collapse to one after PAGE is stripped."""
-        content, _ = self._run(tmp_path)
-        sour_lines = [l for l in content.splitlines() if re.match(r'^1 SOUR\b', l)]
+    def test_person_level_sour_deduped(self, result):
+        """@I3@ has two 1 SOUR @S1@ (different PAGEs); after stripping, only one remains."""
+        content, _ = result
+        lines = content.splitlines()
+        in_i3 = False
+        sour_lines = []
+        for line in lines:
+            if re.match(r'^0 ', line):
+                in_i3 = line.startswith('0 @I3@ INDI')
+                continue
+            if not in_i3:
+                continue
+            if re.match(r'^1 SOUR\b', line):
+                sour_lines.append(line)
         assert sour_lines == ['1 SOUR @S1@']
 
     def test_fact_level_sour_deduped_when_kept(self, tmp_path):
-        """Two 2 SOUR @S1@ under the same BIRT collapse to one when keep_fact_sources=True."""
-        content, _ = self._run(tmp_path, keep_fact_sources=True)
+        """@I1@ BIRT has two 2 SOUR @S1@ (different PAGEs); with keep_fact_sources, only one survives."""
+        out = tmp_path / 'out.txt'
+        export_minimal(str(FIXTURE), path_out=str(out), skip_normalize=True,
+                       keep_fact_sources=True)
+        content = out.read_text(encoding='utf-8')
         birt_blocks = event_blocks_for(content, '@I1@', 'BIRT')
         assert len(birt_blocks) == 1
         sour_lines = [l for l in birt_blocks[0] if re.match(r'^2 SOUR\b', l)]
         assert len(sour_lines) == 1
 
-    def test_stat_default_mode(self, tmp_path):
-        """Default mode: 1 person-level dup removed; fact-level SOURs are stripped entirely."""
-        _, result = self._run(tmp_path)
-        assert result['duplicate_sources_removed'] == 1
+    def test_duplicate_sources_removed_stat(self, result):
+        """Default mode: 1 person-level dup from @I3@; @I1@ BIRT dupes are stripped entirely."""
+        _, stats = result
+        assert stats['duplicate_sources_removed'] == 1
 
-    def test_stat_keep_fact_sources(self, tmp_path):
-        """keep_fact_sources: 1 person-level dup + 1 fact-level dup = 2 total."""
-        _, result = self._run(tmp_path, keep_fact_sources=True)
-        assert result['duplicate_sources_removed'] == 2
-
-    def test_stat_zero_on_clean_file(self, tmp_path):
-        """No duplicates in the main fixture."""
+    def test_duplicate_sources_removed_keep_fact_sources(self, tmp_path):
+        """keep_fact_sources: 1 person-level dup (@I3@) + 1 fact-level dup (@I1@ BIRT) = 2."""
         out = tmp_path / 'out.txt'
-        result = export_minimal(str(FIXTURE), path_out=str(out), skip_normalize=True)
-        assert result['duplicate_sources_removed'] == 0
+        result = export_minimal(str(FIXTURE), path_out=str(out), skip_normalize=True,
+                                keep_fact_sources=True)
+        assert result['duplicate_sources_removed'] == 2
 
 
 # ---------------------------------------------------------------------------
