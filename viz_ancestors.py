@@ -231,7 +231,8 @@ def build_people_json(xrefs: set, indis: dict, sources: dict | None = None) -> d
 
 def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
     """
-    Return {ahnentafel_key: {siblings: [xref,...], spouses: [xref,...]}} for all ancestors.
+    Return {ahnentafel_key: {siblings: [xref,...], spouses: [xref,...],
+    sib_spouses: {sib_xref: [spouse_xref,...]}}} for all ancestors.
     """
     result = {}
     for key, xref in tree.items():
@@ -250,8 +251,24 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
             spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
             if spouse_xref and spouse_xref in indis:
                 spouses.append(spouse_xref)
+        sib_spouses = {}
+        for sib_xref in siblings:
+            sib = indis.get(sib_xref)
+            if not sib:
+                continue
+            sib_sp = []
+            for fam_xref in sib.get('fams', []):
+                fam = fams.get(fam_xref, {})
+                sp_xref = fam.get('wife') if fam.get('husb') == sib_xref else fam.get('husb')
+                if sp_xref and sp_xref in indis:
+                    sib_sp.append(sp_xref)
+            if sib_sp:
+                sib_spouses[sib_xref] = sib_sp
         if siblings or spouses:
-            result[key] = {'siblings': siblings, 'spouses': spouses}
+            entry = {'siblings': siblings, 'spouses': spouses}
+            if sib_spouses:
+                entry['sib_spouses'] = sib_spouses
+            result[key] = entry
     return result
 
 
@@ -950,19 +967,37 @@ function computeRelativePositions() {
       }
     });
 
-    // Siblings: males go LEFT, females go RIGHT (after any new spouses)
-    let newSibIdx = 0;
+    // Siblings: males go LEFT, females go RIGHT (after any new spouses).
+    // Each sibling group occupies 1 + (number of sibling's spouses) slots.
+    let newSibOffset = 0;
     rels.siblings.forEach((xref, i) => {
+      const sibSpouses = (rels.sib_spouses || {})[xref] || [];
       const existingKey = xrefToKey.get(xref);
       if (existingKey !== undefined) {
         const pos = _posCache.get(existingKey);
         if (pos) _relPosCache.set(`sib:${k}:${i}`, {x: pos.x, y: pos.y, xref, existing: true});
+        // Sibling already in tree — no new slot consumed, skip its spouses here
       } else {
         const sibX = male
-          ? x - (newSibIdx + 1) * slotW - BTN_PAD                          // left of anchor, with button clearance
-          : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibIdx) * slotW; // right, after spouses, with button clearance
+          ? x - (newSibOffset + 1) * slotW - BTN_PAD                          // left of anchor, with button clearance
+          : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset) * slotW; // right, after spouses, with button clearance
         _relPosCache.set(`sib:${k}:${i}`, {x: sibX, y, xref, existing: false});
-        newSibIdx++;
+
+        // Sibling's spouses go further out on the same side as the sibling
+        sibSpouses.forEach((spXref, j) => {
+          const existingSpKey = xrefToKey.get(spXref);
+          if (existingSpKey !== undefined) {
+            const pos = _posCache.get(existingSpKey);
+            if (pos) _relPosCache.set(`sibsp:${k}:${i}:${j}`, {x: pos.x, y: pos.y, xref: spXref, existing: true});
+          } else {
+            const spX = male
+              ? x - (newSibOffset + 2 + j) * slotW - BTN_PAD
+              : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset + 1 + j) * slotW;
+            _relPosCache.set(`sibsp:${k}:${i}:${j}`, {x: spX, y, xref: spXref, existing: false});
+          }
+        });
+
+        newSibOffset += 1 + sibSpouses.length;
       }
     });
   }
@@ -1154,7 +1189,7 @@ function render() {
       }
     }
 
-    // Spouse marriage connectors
+    // Anchor spouse marriage connectors
     rels.spouses.forEach((sp, j) => {
       const spEntry = _relPosCache.get(`sp:${k}:${j}`);
       if (!spEntry || spEntry.existing) return;
@@ -1163,6 +1198,23 @@ function render() {
       const [x1, x2] = spx < ax ? [spx + NODE_W, ax] : [ax + NODE_W, spx];
       canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
       canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+    });
+
+    // Sibling-spouse marriage connectors
+    rels.siblings.forEach((sibXref, i) => {
+      const sibEntry = _relPosCache.get(`sib:${k}:${i}`);
+      if (!sibEntry || sibEntry.existing) return;
+      const {x: sx, y: sy} = sibEntry;
+      const sibSpouses = (rels.sib_spouses || {})[sibXref] || [];
+      sibSpouses.forEach((spXref, j) => {
+        const spEntry = _relPosCache.get(`sibsp:${k}:${i}:${j}`);
+        if (!spEntry || spEntry.existing) return;
+        const {x: spx} = spEntry;
+        const lineY = sy + NODE_H / 2;
+        const [x1, x2] = spx < sx ? [spx + NODE_W, sx] : [sx + NODE_W, spx];
+        canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+      });
     });
   }
 
@@ -1331,7 +1383,7 @@ function render() {
   for (const [key, entry] of _relPosCache.entries()) {
     if (entry.existing) continue;  // already rendered as an ancestor node
     const {x: rx, y: ry, xref} = entry;
-    const isSibling = key.startsWith('sib:');
+    const isSibling = key.startsWith('sib:') && !key.startsWith('sibsp:');
     const fill = isSibling ? '#1e3a5f' : '#065f46';
     drawRelNode(rx, ry, xref, fill);
   }
@@ -1476,6 +1528,8 @@ def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
     for rels in relatives.values():
         all_xrefs.update(rels['siblings'])
         all_xrefs.update(rels['spouses'])
+        for sp_list in rels.get('sib_spouses', {}).values():
+            all_xrefs.update(sp_list)
     people    = build_people_json(all_xrefs, indis, sources)
 
     root_name = people.get(root_xref, {}).get('name', '?')
