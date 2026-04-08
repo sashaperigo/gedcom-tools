@@ -529,3 +529,46 @@ class TestFinalRescorePass:
         # Both should auto-match because names + dates are identical
         assert '@PB@' in matched_b
         assert '@CB@' in matched_b
+
+
+class TestCorroborationRequirement:
+    def test_name_only_match_capped_below_review_threshold(self):
+        """Individuals with matching names but no birth/death dates and no family
+        context should be capped below review threshold (0.62) to avoid surfacing
+        ambiguous name-only matches."""
+        # Same name, same sex, but NO dates on either side, no family context
+        a = _make_indi('@I1@', 'Mario', 'DAndria', sex='M')
+        b = _make_indi('@I2@', 'Mario', 'DAndria', sex='M')
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score <= 0.62, f'Name-only match should be capped at 0.62, got {score}'
+
+    def test_match_with_birth_date_not_capped(self):
+        """When at least one side has a birth year, corroboration requirement is met."""
+        a = _make_indi('@I1@', 'Mario', 'DAndria', sex='M', birth_year=1920)
+        b = _make_indi('@I2@', 'Mario', 'DAndria', sex='M')  # no date on B side
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score > 0.62, f'Match with birth date should not be capped, got {score}'
+
+    def test_match_with_family_context_not_capped(self):
+        """When family context is established (a parent matched), corroboration met."""
+        father_a = _make_indi('@FA@', 'Papa', 'DAndria', sex='M', fams=['@F1@'])
+        a = _make_indi('@I1@', 'Mario', 'DAndria', sex='M', famc=['@F1@'])
+        fam_a = _make_family('@F1@', '@FA@', None, ['@I1@'])
+
+        father_b = _make_indi('@FB@', 'Papa', 'DAndria', sex='M', fams=['@F2@'])
+        b = _make_indi('@I2@', 'Mario', 'DAndria', sex='M', famc=['@F2@'])
+        fam_b = _make_family('@F2@', '@FB@', None, ['@I2@'])
+
+        file_a = _make_file(indis={'@FA@': father_a, '@I1@': a}, fams={'@F1@': fam_a})
+        file_b = _make_file(indis={'@FB@': father_b, '@I2@': b}, fams={'@F2@': fam_b})
+
+        # Father is already matched
+        matched = {'@FB@': '@FA@'}
+        score, comps = _score_pair(a, b, matched, file_a, file_b)
+        # Family context should be 0.90, which satisfies corroboration
+        assert comps.get('family', 0) > 0.50
+        assert score > 0.62

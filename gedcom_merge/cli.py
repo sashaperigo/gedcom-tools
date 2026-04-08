@@ -37,8 +37,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help='Score below which candidates are ignored (default: 0.65)')
     p.add_argument('--source-auto-threshold', type=float, default=0.90,
                    help='Auto-match threshold for sources (default: 0.90)')
-    p.add_argument('--source-review-threshold', type=float, default=0.65,
-                   help='Review threshold for sources (default: 0.65)')
+    p.add_argument('--source-review-threshold', type=float, default=0.85,
+                   help='Review threshold for sources (default: 0.85)')
     p.add_argument('--resume', metavar='SESSION_FILE',
                    help='Resume from a saved session file')
     p.add_argument('--session', metavar='SESSION_FILE', default='merge-session.json',

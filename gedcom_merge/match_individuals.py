@@ -432,6 +432,20 @@ def _score_pair(
     # (adoption/step-parent edge case) but never auto-matches.
     if family_score <= 0.05 and _has_parent_contradiction(ind_b, ind_a, matched_b_to_a, file_a, file_b):
         score = min(score, 0.60)
+
+    # Corroboration requirement: name-only matches are too ambiguous.
+    # If neither individual has any birth/death year AND no relatives are matched,
+    # cap the score below the review threshold so it doesn't surface for review.
+    def _has_dated_event(ind: Individual, tag: str) -> bool:
+        return any(e.tag == tag and e.date and e.date.year for e in ind.events)
+
+    has_any_date = (
+        _has_dated_event(ind_a, 'BIRT') or _has_dated_event(ind_b, 'BIRT') or
+        _has_dated_event(ind_a, 'DEAT') or _has_dated_event(ind_b, 'DEAT')
+    )
+    if not has_any_date and family_score <= 0.50:
+        score = min(score, 0.62)
+
     components = {
         'surname': round(surname_score, 3),
         'given': round(given_score, 3),
