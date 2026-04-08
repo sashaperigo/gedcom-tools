@@ -760,6 +760,7 @@ let _openDetailKey = null;
 
 function showDetail(xref) {
   if (_openDetailKey === xref) return;  // already open for this person
+  const panelWasOpen = _openDetailKey !== null;
   const data  = PEOPLE[xref];
   const panel = document.getElementById('detail-panel');
 
@@ -925,7 +926,7 @@ function showDetail(xref) {
   const vp = document.getElementById('viewport');
   vp.style.marginRight = '480px';
   document.getElementById('home-btn').style.right = (480 + 24) + 'px';
-  _animateFitAndCenter(220);
+  if (!panelWasOpen) _animateFitAndCenter(220);
 }
 
 function closeDetail() {
