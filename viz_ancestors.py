@@ -275,7 +275,7 @@ header { padding: 12px 20px; background: #1e293b;
          display: flex; align-items: center; gap: 16px; }
 header h1 { font-size: 16px; font-weight: 600; }
 .hint { font-size: 12px; color: #94a3b8; }
-#search-container { margin-left: auto; position: relative; }
+#search-container { position: relative; }
 #search-input {
   background: #0f172a; border: 1px solid #334155; border-radius: 20px;
   color: #f1f5f9; font-size: 13px; padding: 6px 14px; width: 220px;
@@ -323,11 +323,10 @@ header h1 { font-size: 16px; font-weight: 600; }
                 font-size: 20px; cursor: pointer; padding: 14px 14px 14px 4px;
                 line-height: 1; flex-shrink: 0; align-self: flex-start; }
 #detail-close:hover { color: #f1f5f9; }
-#home-btn { position: fixed; bottom: 24px; right: 24px; z-index: 200; transition: right 0.22s ease;
-            background: #1e293b; border: 1px solid #334155; border-radius: 50%;
-            width: 44px; height: 44px; display: flex; align-items: center;
+#home-btn { background: none; border: 1px solid #334155; border-radius: 50%;
+            width: 34px; height: 34px; display: flex; align-items: center;
             justify-content: center; cursor: pointer; color: #94a3b8;
-            font-size: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+            font-size: 18px; flex-shrink: 0; margin-left: auto; }
 #home-btn:hover { background: #334155; color: #f1f5f9; }
 /* ── Lifespan bar ───────────────────────────────────────── */
 #detail-lifespan-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
@@ -390,6 +389,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 <header>
   <h1>Ancestors of __ROOT_NAME__</h1>
   <span class="hint">Pinch to zoom · Two-finger drag to pan · Click ▲ to expand ancestors</span>
+  <button id="home-btn" title="Return to root">&#x2302;</button>
   <div id="search-container">
     <input id="search-input" type="text" placeholder="Search people…" autocomplete="off" />
     <ul id="search-results"></ul>
@@ -400,7 +400,6 @@ header h1 { font-size: 16px; font-weight: 600; }
   <g id="canvas"></g>
 </svg>
 </div>
-<button id="home-btn" title="Return to root">&#x2302;</button>
 <div id="detail-panel">
   <div id="detail-header">
     <div id="detail-accent-bar"></div>
