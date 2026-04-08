@@ -513,6 +513,68 @@ def _score_family_context(
     return 0.5   # no relatives to check → neutral
 
 
+def _plausible_lifespan(ind: Individual, file: GedcomFile) -> tuple[int | None, int | None]:
+    """
+    Return (earliest_birth, latest_death) as plausible bounds for when this
+    individual could have been alive.
+
+    Rules (per domain conventions for genealogical records):
+    - Born in X (any qualifier): latest_death = X + 100
+    - Died BEF Y: death in [Y-40, Y], so earliest_birth = Y - 140 (death_min - 100 yrs)
+    - Died exact/ABT/BET Y: latest_death = Y + 5 (small slack for qualifiers)
+    - Died AFT Y: latest_death = Y + 100 (open-ended)
+    - No birth or death: fall back to estimated birth year ± slack
+    """
+    birth_ev = next((e for e in ind.events if e.tag == 'BIRT'), None)
+    death_ev = next((e for e in ind.events if e.tag == 'DEAT'), None)
+
+    # ── earliest plausible birth ──────────────────────────────────────────────
+    earliest_birth: int | None = None
+    if birth_ev and birth_ev.date and birth_ev.date.year:
+        d = birth_ev.date
+        if d.qualifier == 'BEF':
+            earliest_birth = None          # unbounded: could be any time before Y
+        elif d.qualifier == 'AFT':
+            earliest_birth = d.year
+        else:                              # exact, ABT, BET — use year with slack
+            earliest_birth = d.year - 10
+    elif death_ev and death_ev.date and death_ev.date.year:
+        d = death_ev.date
+        if d.qualifier == 'BEF':
+            # Death in [Y-40, Y]; born at most 100 years before death_min
+            earliest_birth = d.year - 40 - 100
+        else:
+            # Died around Y; born at most 100 years before
+            earliest_birth = d.year - 100
+    else:
+        est = _estimate_birth_year(ind, file)
+        if est:
+            earliest_birth = est - 15
+
+    # ── latest plausible death ────────────────────────────────────────────────
+    latest_death: int | None = None
+    if death_ev and death_ev.date and death_ev.date.year:
+        d = death_ev.date
+        if d.qualifier == 'BEF':
+            latest_death = d.year
+        elif d.qualifier == 'AFT':
+            latest_death = d.year + 100
+        else:                              # exact, ABT, BET
+            year2 = getattr(d, 'year2', None)
+            latest_death = (year2 or d.year) + 5
+    elif birth_ev and birth_ev.date and birth_ev.date.year:
+        d = birth_ev.date
+        # Born around/before/after Y — assume they could live at most 100 years
+        year = d.year if d.qualifier != 'BEF' else d.year
+        latest_death = year + 100
+    else:
+        est = _estimate_birth_year(ind, file)
+        if est:
+            latest_death = est + 115
+
+    return earliest_birth, latest_death
+
+
 def _score_pair(
     ind_a: Individual,
     ind_b: Individual,
@@ -593,6 +655,18 @@ def _score_pair(
     if actual_death_a and actual_birth_b and actual_death_a < actual_birth_b:
         return 0.0, {}
     if actual_death_b and actual_birth_a and actual_death_b < actual_birth_a:
+        return 0.0, {}
+
+    # Hard veto: plausible lifespans cannot overlap.
+    # Catches cross-date cases like "born ABT 1150" vs "died BEF 1512" where
+    # no single-field check fires (different field types on each side).
+    #   - Born X → latest possible death = X + 100
+    #   - Died BEF Y → death in [Y-40, Y], earliest possible birth = Y - 140
+    eb_a, ld_a = _plausible_lifespan(ind_a, file_a)
+    eb_b, ld_b = _plausible_lifespan(ind_b, file_b)
+    if ld_a is not None and eb_b is not None and ld_a < eb_b:
+        return 0.0, {}
+    if ld_b is not None and eb_a is not None and ld_b < eb_a:
         return 0.0, {}
 
     score = (

@@ -15,6 +15,7 @@ from gedcom_merge.match_individuals import (
     _has_parent_contradiction,
     _score_family_context,
     _score_pair,
+    _plausible_lifespan,
     _NAME_ALIASES,
 )
 from gedcom_merge.normalize import parse_date
@@ -133,14 +134,14 @@ class TestBuildSurnameIndex:
     def test_basic_index(self):
         indi = _make_indi('@I1@', 'John', 'Smith')
         file_a = _make_file(indis={'@I1@': indi})
-        idx = _build_surname_index(file_a.individuals)
+        idx = _build_surname_index(file_a)
         assert '@I1@' in idx.get('smith', [])
 
     def test_multiple_surnames(self):
         indi = _make_indi('@I1@', 'John', 'Smith')
         indi.normalized_surnames = {'smith', 'jones'}  # AKA
         file_a = _make_file(indis={'@I1@': indi})
-        idx = _build_surname_index(file_a.individuals)
+        idx = _build_surname_index(file_a)
         assert '@I1@' in idx.get('smith', [])
         assert '@I1@' in idx.get('jones', [])
 
@@ -148,7 +149,7 @@ class TestBuildSurnameIndex:
         indi = _make_indi('@I1@', 'Madonna', '')
         indi.normalized_surnames = set()
         file_a = _make_file(indis={'@I1@': indi})
-        idx = _build_surname_index(file_a.individuals)
+        idx = _build_surname_index(file_a)
         assert '@I1@' in idx.get('_given_madonna', [])
 
 
@@ -644,3 +645,158 @@ class TestCorroborationRequirement:
         # Family context should be 0.90, which satisfies corroboration
         assert comps.get('family', 0) > 0.50
         assert score > 0.62
+
+
+# ---------------------------------------------------------------------------
+# Helpers for dated events with qualifiers
+# ---------------------------------------------------------------------------
+
+def _make_indi_dated(
+    xref: str,
+    given: str,
+    surname: str,
+    sex: str = 'M',
+    birth_year: int | None = None,
+    birth_qualifier: str | None = None,
+    death_year: int | None = None,
+    death_qualifier: str | None = None,
+) -> Individual:
+    """Like _make_indi but allows specifying date qualifiers (ABT, BEF, AFT)."""
+    names = [NameRecord(
+        full=f'{given} /{surname}/',
+        given=given.lower(),
+        surname=surname.lower(),
+        name_type=None,
+    )]
+    events = []
+    if birth_year is not None:
+        events.append(EventRecord(
+            tag='BIRT',
+            event_type=None,
+            date=ParsedDate(birth_qualifier, birth_year),
+            place=None,
+            raw=GedcomNode(1, 'BIRT', '', None),
+        ))
+    if death_year is not None:
+        events.append(EventRecord(
+            tag='DEAT',
+            event_type=None,
+            date=ParsedDate(death_qualifier, death_year),
+            place=None,
+            raw=GedcomNode(1, 'DEAT', '', None),
+        ))
+    node = GedcomNode(0, 'INDI', '', xref)
+    birth_date = ParsedDate(birth_qualifier, birth_year) if birth_year is not None else None
+    death_date = ParsedDate(death_qualifier, death_year) if death_year is not None else None
+    return Individual(
+        xref=xref,
+        names=names,
+        sex=sex,
+        events=events,
+        family_child=[],
+        family_spouse=[],
+        citations=[],
+        media=[],
+        raw=node,
+        normalized_surnames={surname.lower()},
+        normalized_givens={g.lower() for g in given.split()},
+        birth_date=birth_date,
+        death_date=death_date,
+    )
+
+
+class TestPlausibleLifespan:
+    """Unit tests for _plausible_lifespan."""
+
+    def _file(self, ind: Individual) -> GedcomFile:
+        return _make_file(indis={ind.xref: ind})
+
+    def test_born_abt_no_death(self):
+        """Born ABT 1150, no death → latest death = 1150 + 100 = 1250."""
+        ind = _make_indi_dated('@I1@', 'John', 'Smith', birth_year=1150, birth_qualifier='ABT')
+        eb, ld = _plausible_lifespan(ind, self._file(ind))
+        assert ld == 1250
+        assert eb is not None and eb <= 1150
+
+    def test_died_bef_no_birth(self):
+        """No birth, died BEF 1512 → death in [1472, 1512], earliest birth = 1472-100 = 1372."""
+        ind = _make_indi_dated('@I1@', 'John', 'Smith', death_year=1512, death_qualifier='BEF')
+        eb, ld = _plausible_lifespan(ind, self._file(ind))
+        assert ld == 1512
+        assert eb == 1512 - 40 - 100  # = 1372
+
+    def test_exact_birth_no_death(self):
+        """Born 1850 exactly → latest death = 1950."""
+        ind = _make_indi_dated('@I1@', 'John', 'Smith', birth_year=1850)
+        eb, ld = _plausible_lifespan(ind, self._file(ind))
+        assert ld == 1950
+
+    def test_exact_death_no_birth(self):
+        """Died 1900 exactly → latest death = 1905, earliest birth = 1800."""
+        ind = _make_indi_dated('@I1@', 'John', 'Smith', death_year=1900)
+        eb, ld = _plausible_lifespan(ind, self._file(ind))
+        assert ld == 1905
+        assert eb == 1800
+
+    def test_both_dates_present(self):
+        """Both birth and death present → use actual values."""
+        ind = _make_indi_dated('@I1@', 'John', 'Smith', birth_year=1850, death_year=1920)
+        eb, ld = _plausible_lifespan(ind, self._file(ind))
+        assert ld == 1925  # 1920 + 5 slack
+        assert eb <= 1850
+
+    def test_aft_death(self):
+        """Died AFT 1800 → latest death = 1900 (open-ended)."""
+        ind = _make_indi_dated('@I1@', 'John', 'Smith', death_year=1800, death_qualifier='AFT')
+        _, ld = _plausible_lifespan(ind, self._file(ind))
+        assert ld == 1900
+
+
+class TestLifespanOverlapVeto:
+    """Integration tests for the cross-date lifespan veto in _score_pair."""
+
+    def test_born_1150_vs_died_bef_1512_is_vetoed(self):
+        """Core case: born ABT 1150 (dies by 1250) vs died BEF 1512 (born after 1372)."""
+        a = _make_indi_dated('@I1@', 'John', 'Smith', birth_year=1150, birth_qualifier='ABT')
+        b = _make_indi_dated('@I2@', 'John', 'Smith', death_year=1512, death_qualifier='BEF')
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score == 0.0, f'Should be vetoed; got {score}'
+
+    def test_same_era_not_vetoed(self):
+        """Born 1850, no death vs died 1900 — plausible overlap, should not veto."""
+        a = _make_indi_dated('@I1@', 'John', 'Smith', birth_year=1850)
+        b = _make_indi_dated('@I2@', 'John', 'Smith', death_year=1900)
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score > 0.0
+
+    def test_reversed_order_also_vetoed(self):
+        """Symmetry: if A died BEF 1512 and B was born ABT 1150, also vetoed."""
+        a = _make_indi_dated('@I1@', 'John', 'Smith', death_year=1512, death_qualifier='BEF')
+        b = _make_indi_dated('@I2@', 'John', 'Smith', birth_year=1150, birth_qualifier='ABT')
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score == 0.0, f'Reversed order should also be vetoed; got {score}'
+
+    def test_exact_birth_vs_bef_death_veto(self):
+        """Born 1700 (dies by 1800) vs died BEF 1900 (born 1760+) — overlap possible."""
+        a = _make_indi_dated('@I1@', 'John', 'Smith', birth_year=1700)
+        b = _make_indi_dated('@I2@', 'John', 'Smith', death_year=1900, death_qualifier='BEF')
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        # A's latest death = 1800, B's earliest birth = 1860-100 = 1760. 1800 >= 1760 → no veto.
+        assert score > 0.0
+
+    def test_no_dates_not_vetoed(self):
+        """When neither side has any dates, lifespan check produces Nones — no veto."""
+        a = _make_indi_dated('@I1@', 'John', 'Smith')
+        b = _make_indi_dated('@I2@', 'John', 'Smith')
+        file_a = _make_file(indis={'@I1@': a})
+        file_b = _make_file(indis={'@I2@': b})
+        score, _ = _score_pair(a, b, {}, file_a, file_b)
+        assert score > 0.0
