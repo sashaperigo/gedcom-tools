@@ -108,6 +108,17 @@ def _build_id_map(
                 id_map[xref_b] = _new_id('F')
                 stats.fam_added += 1
 
+    # Ensure all individuals referenced by added B families have IDs.
+    # Without this, a family added from B can reference B individual xrefs that
+    # were never reviewed (defaulting to 'skip'), leaving dangling HUSB/WIFE/CHIL.
+    for xref_b, fam_b in file_b.families.items():
+        disp = decisions.family_disposition.get(xref_b, 'skip')
+        if xref_b not in decisions.family_map and disp == 'add' and xref_b in id_map:
+            for member_xref in [fam_b.husband_xref, fam_b.wife_xref] + fam_b.child_xrefs:
+                if member_xref and member_xref not in id_map:
+                    id_map[member_xref] = _new_id('I')
+                    stats.indi_added += 1
+
     for xref_b, disp in decisions.source_disposition.items():
         if xref_b not in id_map:
             if disp == 'add':
@@ -692,10 +703,12 @@ def merge_records(
         else:
             merged_indis[xref_a] = ind_a
 
-    # Add unmatched B individuals
+    # Add unmatched B individuals.
+    # Include any B individual that has a new ID in id_map — either because
+    # the user explicitly chose 'add', or because it was auto-added as a
+    # member of a B family that is being added.
     for xref_b, ind_b in file_b.individuals.items():
-        disp = decisions.indi_disposition.get(xref_b, 'skip')
-        if xref_b not in decisions.indi_map and disp == 'add':
+        if xref_b not in decisions.indi_map and xref_b in id_map:
             new_xref = id_map.get(xref_b)
             if new_xref:
                 # Remap all xrefs
