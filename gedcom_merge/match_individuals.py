@@ -597,7 +597,7 @@ def match_individuals(
             if xref_a in matched_a:
                 continue
             ind_a = file_a.individuals[xref_a]
-            score, comps = _score_pair(ind_b, ind_a, matched_b_to_a, file_a, file_b)
+            score, comps = _score_pair(ind_a, ind_b, matched_b_to_a, file_a, file_b)
             if score >= review_threshold:
                 best_per_b.append((score, xref_a, comps))
         best_per_b.sort(key=lambda x: -x[0])
@@ -627,7 +627,7 @@ def match_individuals(
                 if xref_a in matched_a:
                     continue
                 ind_a = file_a.individuals[xref_a]
-                score, comps = _score_pair(ind_b, ind_a, matched_b_to_a, file_a, file_b)
+                score, comps = _score_pair(ind_a, ind_b, matched_b_to_a, file_a, file_b)
                 if score >= review_threshold:
                     rescored.append((score, xref_a, comps))
             rescored.sort(key=lambda x: -x[0])
@@ -671,7 +671,7 @@ def match_individuals(
             if xref_a in matched_a:
                 continue
             ind_a = file_a.individuals[xref_a]
-            score, comps = _score_pair(ind_b, ind_a, matched_b_to_a, file_a, file_b)
+            score, comps = _score_pair(ind_a, ind_b, matched_b_to_a, file_a, file_b)
             if score >= review_threshold:
                 rescored.append((score, xref_a, comps))
         rescored.sort(key=lambda x: -x[0])
