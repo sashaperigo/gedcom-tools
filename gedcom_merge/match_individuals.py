@@ -52,6 +52,49 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+# Name alias table (Greek/Turkish/Western equivalents)
+# ---------------------------------------------------------------------------
+
+def _build_alias_groups() -> dict[str, set[str]]:
+    groups = [
+        {'george', 'georgios', 'giorgios', 'yorgos', 'gheorghe', 'jorje', 'georgis'},
+        {'helen', 'eleni', 'elena', 'helene', 'elen', 'ileana'},
+        {'john', 'ioannis', 'yiannis', 'yannis', 'giannis', 'jean', 'juan', 'giovanni', 'johannes', 'yannis', 'yanni'},
+        {'constantine', 'konstantinos', 'kostas', 'costas', 'costin', 'kostis', 'dinos'},
+        {'stephen', 'stavros', 'stefan', 'stefano', 'steve', 'stavro'},
+        {'mary', 'maria', 'marie', 'mariam', 'miriam'},
+        {'nicholas', 'nikolaos', 'nikos', 'nikolas', 'nicolas', 'nikola'},
+        {'peter', 'petros', 'pierre', 'piero', 'petar'},
+        {'michael', 'michail', 'michalis', 'mikael', 'miguel', 'mihail'},
+        {'anastasia', 'anastasios', 'tasoula', 'tassos', 'natasha', 'nastasia'},
+        {'theodore', 'theodoros', 'theo', 'thodoris', 'tudor'},
+        {'dimitri', 'dimitrios', 'demetrios', 'demetrius', 'demeter', 'demetri', 'mitsos'},
+        {'sophia', 'sofia', 'sophy', 'sofi'},
+        {'katerina', 'katherine', 'catherine', 'katarina'},
+        {'thomas', 'tomas', 'tommaso'},
+        {'anna', 'anne', 'ann', 'ana'},
+        {'alexander', 'alexandros', 'alexios', 'alexis', 'alex', 'alekos', 'aleksander'},
+        {'athanasios', 'thanasis', 'thanos', 'athanasius', 'thanasi'},
+        {'evangelos', 'evangeline', 'vangelis', 'evan', 'vangelio'},
+        {'panagiotis', 'panos', 'panayiotis', 'takis'},
+        {'christos', 'christodoulos', 'christoforos', 'christopher', 'chris', 'christo'},
+        {'spyros', 'spyridon', 'spiro', 'spiridon'},
+        {'vasilis', 'vassilis', 'vasileios', 'basil', 'basilios', 'bill'},
+        {'fotini', 'photini', 'fota', 'fani'},
+        {'charalambos', 'haralambos', 'babis', 'harry', 'harris'},
+        {'antonis', 'antonios', 'antonio', 'anthony', 'tony', 'antoine'},
+    ]
+    result: dict[str, set[str]] = {}
+    for group in groups:
+        for name in group:
+            result[name] = group
+    return result
+
+
+_NAME_ALIASES: dict[str, set[str]] = _build_alias_groups()
+
+
+# ---------------------------------------------------------------------------
 # Surname blocking
 # ---------------------------------------------------------------------------
 
@@ -137,6 +180,10 @@ def _score_names(ind_a: Individual, ind_b: Individual) -> tuple[float, float]:
             # Bonus: substring match (e.g., "Michael" vs "Michael James")
             if ga in gb or gb in ga:
                 s = max(s, 0.95)
+            # Alias boost: known equivalent name forms (Greek/Turkish/Western)
+            alias_group = _NAME_ALIASES.get(ga)
+            if alias_group and gb in alias_group:
+                s = max(s, 0.92)
             if s > best_given:
                 best_given = s
 
@@ -427,7 +474,7 @@ def match_individuals(
     file_b: GedcomFile,
     source_map: dict[str, str] | None = None,
     auto_threshold: float = 0.75,
-    review_threshold: float = 0.50,
+    review_threshold: float = 0.65,
 ) -> IndividualMatchResult:
     """
     Match individuals from file_b to file_a using surname blocking and
@@ -492,19 +539,22 @@ def match_individuals(
             rescored.sort(key=lambda x: -x[0])
             candidate_pool[xref_b] = rescored
 
-            if rescored and rescored[0][0] >= auto_threshold:
+            if rescored:
                 best_score, best_xref_a, best_comps = rescored[0]
-                # Confirm match
-                matched_b_to_a[xref_b] = best_xref_a
-                matched_a.add(best_xref_a)
-                auto_matches.append(IndividualMatch(
-                    xref_a=best_xref_a,
-                    xref_b=xref_b,
-                    score=best_score,
-                    score_components=best_comps,
-                ))
-                newly_matched.append(xref_b)
-                changed = True
+                family_score = best_comps.get('family', 0.5)
+                effective_threshold = 0.60 if family_score >= 0.90 else auto_threshold
+                if best_score >= effective_threshold:
+                    # Confirm match
+                    matched_b_to_a[xref_b] = best_xref_a
+                    matched_a.add(best_xref_a)
+                    auto_matches.append(IndividualMatch(
+                        xref_a=best_xref_a,
+                        xref_b=xref_b,
+                        score=best_score,
+                        score_components=best_comps,
+                    ))
+                    newly_matched.append(xref_b)
+                    changed = True
 
         # Mark relatives of newly matched B individuals as dirty
         dirty_b = set()
@@ -513,6 +563,38 @@ def match_individuals(
             for rel_xref in _relatives_of_b(ind_b, file_b):
                 if rel_xref not in matched_b_to_a:
                     dirty_b.add(rel_xref)
+
+    # Final re-score pass: family context is now fully populated.
+    # Many individuals were scored early when matched_b_to_a was sparse;
+    # re-scoring now may reveal additional auto-matches.
+    for xref_b in sorted(candidate_pool.keys()):
+        if xref_b in matched_b_to_a:
+            continue
+        pool = candidate_pool.get(xref_b, [])
+        ind_b = file_b.individuals[xref_b]
+        rescored = []
+        for _, xref_a, _ in pool:
+            if xref_a in matched_a:
+                continue
+            ind_a = file_a.individuals[xref_a]
+            score, comps = _score_pair(ind_b, ind_a, matched_b_to_a, file_a, file_b)
+            if score >= review_threshold:
+                rescored.append((score, xref_a, comps))
+        rescored.sort(key=lambda x: -x[0])
+        candidate_pool[xref_b] = rescored
+        if rescored:
+            best_score, best_xref_a, best_comps = rescored[0]
+            family_score = best_comps.get('family', 0.5)
+            effective_threshold = 0.60 if family_score >= 0.90 else auto_threshold
+            if best_score >= effective_threshold and best_xref_a not in matched_a:
+                matched_b_to_a[xref_b] = best_xref_a
+                matched_a.add(best_xref_a)
+                auto_matches.append(IndividualMatch(
+                    xref_a=best_xref_a,
+                    xref_b=xref_b,
+                    score=best_score,
+                    score_components=best_comps,
+                ))
 
     # Build candidates list from remaining unmatched B with pool scores
     candidates: list[IndividualMatch] = []

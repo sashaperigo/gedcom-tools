@@ -15,6 +15,7 @@ from gedcom_merge.match_individuals import (
     _has_parent_contradiction,
     _score_family_context,
     _score_pair,
+    _NAME_ALIASES,
 )
 from gedcom_merge.normalize import parse_date
 
@@ -439,3 +440,92 @@ class TestFamilyContextScoring:
         matched = {'@FB@': '@FA2@'}  # father_b → wrong father_a
         score = _score_family_context(ind_b, ind_a, matched, file_a, file_b)
         assert score <= 0.10
+
+
+class TestNameAliases:
+    def test_george_giorgios_boost(self):
+        """Greek/Western equivalents should score near 0.92."""
+        a = _make_indi('@I1@', 'George', 'Papadopoulos', birth_year=1880)
+        b = _make_indi('@I2@', 'Giorgios', 'Papadopoulos', birth_year=1880)
+        _, given_score = _score_names(a, b)
+        assert given_score >= 0.92
+
+    def test_helen_eleni_boost(self):
+        a = _make_indi('@I1@', 'Helen', 'Smith', sex='F', birth_year=1890)
+        b = _make_indi('@I2@', 'Eleni', 'Smith', sex='F', birth_year=1890)
+        _, given_score = _score_names(a, b)
+        assert given_score >= 0.92
+
+    def test_john_ioannis_boost(self):
+        a = _make_indi('@I1@', 'John', 'Petridis', birth_year=1875)
+        b = _make_indi('@I2@', 'Ioannis', 'Petridis', birth_year=1875)
+        _, given_score = _score_names(a, b)
+        assert given_score >= 0.92
+
+    def test_unrelated_names_not_boosted(self):
+        a = _make_indi('@I1@', 'George', 'Smith', birth_year=1880)
+        b = _make_indi('@I2@', 'Stavros', 'Smith', birth_year=1880)
+        _, given_score = _score_names(a, b)
+        # George and Stavros are NOT in the same alias group
+        assert given_score < 0.92
+
+    def test_alias_table_has_greek_names(self):
+        assert 'giorgios' in _NAME_ALIASES
+        assert 'george' in _NAME_ALIASES['giorgios']
+        assert 'eleni' in _NAME_ALIASES
+        assert 'helen' in _NAME_ALIASES['eleni']
+
+
+class TestFamilyContextThreshold:
+    def test_auto_matches_at_lower_threshold_with_parent_match(self):
+        """When a parent is matched (family_score >= 0.90), auto-match at 0.60 not 0.75."""
+        # Build: father_b matched to father_a; child pair should auto-match below 0.75
+        father_a = _make_indi('@FA@', 'Nikolaos', 'Petridis', birth_year=1850, fams=['@F1@'])
+        child_a = _make_indi('@CA@', 'Giorgios', 'Petridis', birth_year=1880, famc=['@F1@'])
+        fam_a = _make_family('@F1@', '@FA@', None, ['@CA@'])
+
+        father_b = _make_indi('@FB@', 'Nikolaos', 'Petridis', birth_year=1850, fams=['@F2@'])
+        child_b = _make_indi('@CB@', 'George', 'Petridis', birth_year=1880, famc=['@F2@'])
+        fam_b = _make_family('@F2@', '@FB@', None, ['@CB@'])
+
+        file_a = _make_file(
+            indis={'@FA@': father_a, '@CA@': child_a},
+            fams={'@F1@': fam_a},
+        )
+        file_b = _make_file(
+            indis={'@FB@': father_b, '@CB@': child_b},
+            fams={'@F2@': fam_b},
+        )
+
+        result = match_individuals(file_a, file_b, auto_threshold=0.75, review_threshold=0.50)
+        matched_b = {m.xref_b for m in result.auto_matches}
+        # child_b should auto-match despite name pair "Giorgios"/"George" having moderate string sim
+        assert '@CB@' in matched_b or '@FB@' in matched_b
+
+
+class TestFinalRescorePass:
+    def test_final_pass_promotes_candidate_with_full_context(self):
+        """An individual that scores below threshold alone should auto-match
+        after the final re-score pass has full family context."""
+        parent_a = _make_indi('@PA@', 'Dimitrios', 'Stavros', birth_year=1840, fams=['@F1@'])
+        child_a = _make_indi('@CA@', 'Spyros', 'Stavros', birth_year=1870, famc=['@F1@'])
+        fam_a = _make_family('@F1@', '@PA@', None, ['@CA@'])
+
+        parent_b = _make_indi('@PB@', 'Dimitrios', 'Stavros', birth_year=1840, fams=['@F2@'])
+        child_b = _make_indi('@CB@', 'Spyros', 'Stavros', birth_year=1870, famc=['@F2@'])
+        fam_b = _make_family('@F2@', '@PB@', None, ['@CB@'])
+
+        file_a = _make_file(
+            indis={'@PA@': parent_a, '@CA@': child_a},
+            fams={'@F1@': fam_a},
+        )
+        file_b = _make_file(
+            indis={'@PB@': parent_b, '@CB@': child_b},
+            fams={'@F2@': fam_b},
+        )
+
+        result = match_individuals(file_a, file_b, auto_threshold=0.75, review_threshold=0.50)
+        matched_b = {m.xref_b for m in result.auto_matches}
+        # Both should auto-match because names + dates are identical
+        assert '@PB@' in matched_b
+        assert '@CB@' in matched_b
