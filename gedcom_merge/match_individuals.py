@@ -93,6 +93,16 @@ def _build_alias_groups() -> dict[str, set[str]]:
 
 _NAME_ALIASES: dict[str, set[str]] = _build_alias_groups()
 
+# Tokens that mean "unknown" — treat as blank for both blocking and scoring.
+_UNKNOWN_TOKENS: frozenset[str] = frozenset({
+    'unknown', 'unkn', 'unk', 'unnamed', 'name unknown', '?', 'nn', 'n.n.',
+})
+
+
+def _is_unknown(name: str) -> bool:
+    """Return True if name is a placeholder meaning the name is not known."""
+    return name.strip().lower() in _UNKNOWN_TOKENS
+
 
 # ---------------------------------------------------------------------------
 # Surname blocking
@@ -104,12 +114,15 @@ def _build_surname_index(individuals: dict[str, Individual]) -> dict[str, list[s
     """
     index: dict[str, list[str]] = defaultdict(list)
     for xref, ind in individuals.items():
-        for sname in ind.normalized_surnames:
+        meaningful_surnames = [s for s in ind.normalized_surnames if not _is_unknown(s)]
+        for sname in meaningful_surnames:
             index[sname].append(xref)
-        if not ind.normalized_surnames:
-            # Fall back: index by first given-name token
-            for g in list(ind.normalized_givens)[:1]:
-                index['_given_' + g].append(xref)
+        if not meaningful_surnames:
+            # Fall back: index by first given-name token (skip unknown givens too)
+            for g in list(ind.normalized_givens)[:2]:
+                if not _is_unknown(g):
+                    index['_given_' + g].append(xref)
+                    break
     return dict(index)
 
 
@@ -126,7 +139,8 @@ def _get_candidates_for(
     """
     candidates: set[str] = set()
 
-    for sname in ind_b.normalized_surnames:
+    meaningful_surnames_b = [s for s in ind_b.normalized_surnames if not _is_unknown(s)]
+    for sname in meaningful_surnames_b:
         # Exact lookup
         for xref in index_a.get(sname, []):
             candidates.add(xref)
@@ -139,10 +153,11 @@ def _get_candidates_for(
                     candidates.update(xrefs)
 
     if not candidates:
-        # No surname → try given-name index
+        # No surname → try given-name index (skip unknown givens)
         for g in list(ind_b.normalized_givens)[:2]:
-            for xref in index_a.get('_given_' + g, []):
-                candidates.add(xref)
+            if not _is_unknown(g):
+                for xref in index_a.get('_given_' + g, []):
+                    candidates.add(xref)
 
     return candidates
 
@@ -157,10 +172,11 @@ def _score_names(ind_a: Individual, ind_b: Individual) -> tuple[float, float]:
 
     Compares all name variants from both sides, taking the best-matching pair.
     """
-    surnames_a = ind_a.normalized_surnames or {''}
-    surnames_b = ind_b.normalized_surnames or {''}
-    givens_a = ind_a.normalized_givens or {''}
-    givens_b = ind_b.normalized_givens or {''}
+    # Filter out "unknown" placeholders — treat as blank (absence of data)
+    surnames_a = {s for s in ind_a.normalized_surnames if not _is_unknown(s)} or {''}
+    surnames_b = {s for s in ind_b.normalized_surnames if not _is_unknown(s)} or {''}
+    givens_a = {g for g in ind_a.normalized_givens if not _is_unknown(g)} or {''}
+    givens_b = {g for g in ind_b.normalized_givens if not _is_unknown(g)} or {''}
 
     best_surname = 0.0
     for sa in surnames_a:

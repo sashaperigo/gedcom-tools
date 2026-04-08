@@ -234,12 +234,13 @@ def date_overlap_score(a: ParsedDate | None, b: ParsedDate | None) -> float:
             return 0.5               # within 2 years
 
     # No overlap — but if one or both dates are approximate, check for a
-    # near-miss (within 5 years of the approximate date's central year).
-    # e.g. "ABT 1850" vs exact "1856" should not score 0.0.
+    # near-miss (within 8 years of the approximate date's central year).
+    # ABT ranges are ±2, so two ABT dates 10 years apart have a gap of 6.
+    # e.g. "ABT 1900" vs "ABT 1910" or "ABT 1850" vs exact "1856" should not score 0.0.
     if ya_max < yb_min or yb_max < ya_min:
         if not (a_exact and b_exact):
             gap = max(ya_min, yb_min) - min(ya_max, yb_max)
-            if gap <= 5:
+            if gap <= 8:
                 return 0.4   # plausible near-miss with approximate date
         return 0.0
 

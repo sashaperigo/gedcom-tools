@@ -217,10 +217,17 @@ class TestDateOverlapScore:
         score = date_overlap_score(a, b)
         assert score == 0.4, f"Expected 0.4 near-miss score, got {score}"
 
-    def test_approximate_near_miss_beyond_5_years_scores_zero(self):
-        """ABT 1850 vs exact 1860 — gap > 5 years → 0.0."""
+    def test_approximate_near_miss_at_8_years_scores_near_miss(self):
+        """ABT 1850 vs exact 1860 — gap = 8 years → 0.4 near-miss (threshold is 8)."""
         a = parse_date("ABT 1850")  # range 1848–1852
-        b = parse_date("1860")      # gap = 8 years
+        b = parse_date("1860")      # gap = 8 years from 1852 to 1860
+        score = date_overlap_score(a, b)
+        assert score == 0.4, f"Expected 0.4 near-miss score, got {score}"
+
+    def test_approximate_near_miss_beyond_8_years_scores_zero(self):
+        """ABT 1850 vs exact 1863 — gap = 11 years → 0.0 (beyond tolerance)."""
+        a = parse_date("ABT 1850")  # range 1848–1852
+        b = parse_date("1863")      # gap = 11 years from 1852 to 1863
         score = date_overlap_score(a, b)
         assert score == 0.0
 
