@@ -40,6 +40,9 @@ Checks performed:
      No auto-fix; these require manual review.
  10. SEX values — SEX tag values must be M, F, or U per GEDCOM 5.5.1 §2.7.
      No auto-fix; these require manual review.
+ 11. ADDR under PLAC — ADDR is not a valid subordinate of PLAC in GEDCOM
+     5.5.1. ADDR should be a sibling of PLAC (child of the parent event).
+     --fix-addr-under-plac promotes such ADDR lines up one level.
 
 Notes:
   - Only level-2 DATE lines (event dates on INDI/FAM records) are touched by
@@ -508,6 +511,96 @@ def scan_long_lines(path: str, max_len: int = GEDCOM_MAX_LINE):
             if len(line) > max_len:
                 violations.append((lineno, len(line)))
     return violations
+
+
+def scan_addr_under_plac(path: str) -> list[tuple[int, int]]:
+    """
+    Return list of (lineno, level) for ADDR lines that are direct children of
+    PLAC lines (i.e., ADDR at level N+1 immediately following PLAC at level N).
+
+    GEDCOM 5.5.1 does not define ADDR as a subordinate of PLAC. ADDR belongs
+    as a sibling of PLAC (both children of the parent event), not nested under it.
+    """
+    violations: list[tuple[int, int]] = []
+    prev_level: int | None = None
+    prev_tag: str | None = None
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = re.match(r'^(\d+) ([A-Z_]+)', line)
+            if not m:
+                continue
+            curr_level = int(m.group(1))
+            curr_tag = m.group(2)
+            if curr_tag == 'ADDR' and prev_tag == 'PLAC' and curr_level == prev_level + 1:
+                violations.append((lineno, curr_level))
+            prev_level = curr_level
+            prev_tag = curr_tag
+    return violations
+
+
+def fix_addr_under_plac(path: str, dry_run: bool = False) -> int:
+    """
+    Promote ADDR lines that are invalid children of PLAC up one level, making
+    them siblings of PLAC (children of the parent event).
+
+    Also promotes any CONT/CONC continuation lines directly following such an
+    ADDR by one level to keep them correctly subordinate to ADDR.
+
+    Returns the number of ADDR lines fixed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    i = 0
+    while i < len(lines_in):
+        line = lines_in[i].rstrip('\n')
+        m = re.match(r'^(\d+) ([A-Z_]+)', line)
+        if m and m.group(2) == 'ADDR':
+            curr_level = int(m.group(1))
+            # Check if the previous GEDCOM line was a PLAC at curr_level - 1
+            # Walk backwards through lines_out to find the last non-empty line
+            prev_gedcom = None
+            for prev_raw in reversed(lines_out):
+                pm = re.match(r'^(\d+) ([A-Z_]+)', prev_raw.rstrip('\n'))
+                if pm:
+                    prev_gedcom = (int(pm.group(1)), pm.group(2))
+                    break
+            if prev_gedcom and prev_gedcom[1] == 'PLAC' and prev_gedcom[0] == curr_level - 1:
+                new_level = curr_level - 1
+                fixed_line = f'{new_level} ADDR' + line[len(f'{curr_level} ADDR'):]
+                if dry_run:
+                    print(f'  line {i + 1}: {line!r}')
+                    print(f'           → {fixed_line!r}')
+                lines_out.append(fixed_line + '\n')
+                changed += 1
+                i += 1
+                # Also promote any immediately following CONT/CONC lines
+                while i < len(lines_in):
+                    cont_line = lines_in[i].rstrip('\n')
+                    cm = re.match(r'^(\d+) (CONT|CONC)', cont_line)
+                    if cm and int(cm.group(1)) == curr_level + 1:
+                        fixed_cont = f'{curr_level} {cm.group(2)}' + cont_line[len(f'{curr_level + 1} {cm.group(2)}'):]
+                        if dry_run:
+                            print(f'  line {i + 1}: {cont_line!r}')
+                            print(f'           → {fixed_cont!r}')
+                        lines_out.append(fixed_cont + '\n')
+                        i += 1
+                    else:
+                        break
+                continue
+        lines_out.append(line + '\n')
+        i += 1
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
 
 
 def scan_level_jumps(path: str) -> list[tuple[int, int, int]]:
@@ -987,6 +1080,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_name_double_spaces(path, dry_run=dry_run)
     fixes_applied += fix_name_case(path, dry_run=dry_run)
     fixes_applied += fix_long_lines(path, dry_run=dry_run)
+    fixes_applied += fix_addr_under_plac(path, dry_run=dry_run)
     fixes_applied += fix_plac(path, dry_run=dry_run)
     fixes_applied += fix_plac_address_parts(path, dry_run=dry_run)
     dates_fixed, _ = fix_file(path, dry_run=dry_run)
@@ -1042,6 +1136,10 @@ def main():
         help='Wrap lines > 255 chars using CONC continuations in-place',
     )
     parser.add_argument(
+        '--fix-addr-under-plac', action='store_true',
+        help='Promote ADDR lines that are invalid children of PLAC up one level in-place',
+    )
+    parser.add_argument(
         '--fix-all', action='store_true',
         help='Run all fix operations in sequence',
     )
@@ -1059,6 +1157,7 @@ def main():
         args.fix_duplicate_sources = True
         args.fix_names = True
         args.fix_long_lines = True
+        args.fix_addr_under_plac = True
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
@@ -1099,6 +1198,15 @@ def main():
         else:
             print(f'{changed} line(s) wrapped.')
 
+    if args.fix_addr_under_plac:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Promoting ADDR-under-PLAC to sibling level in: {args.gedfile}')
+        changed = fix_addr_under_plac(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} ADDR line(s) would be promoted.')
+        else:
+            print(f'{changed} ADDR line(s) promoted.')
+
     if args.fix_places:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing PLAC values in: {args.gedfile}')
@@ -1134,7 +1242,7 @@ def main():
             print('No remaining violations.')
     if not any([args.fix_dates, args.fix_whitespace, args.fix_places,
                 args.fix_address_parts, args.fix_names, args.fix_long_lines,
-                args.fix_duplicate_sources]):
+                args.fix_duplicate_sources, args.fix_addr_under_plac]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
 
@@ -1191,6 +1299,18 @@ def main():
                 print(f'  line {ln}: level {prev} → level {curr}')
         else:
             print('OK: no invalid level jumps.')
+
+        addr_plac_issues = scan_addr_under_plac(args.gedfile)
+        if addr_plac_issues:
+            errors = True
+            print(f'\n{len(addr_plac_issues)} ADDR line(s) incorrectly nested under PLAC '
+                  '(run --fix-addr-under-plac to promote to sibling level):')
+            for ln, level in addr_plac_issues[:20]:
+                print(f'  line {ln}: level-{level} ADDR under level-{level - 1} PLAC')
+            if len(addr_plac_issues) > 20:
+                print(f'  ... and {len(addr_plac_issues) - 20} more.')
+        else:
+            print('OK: no ADDR lines incorrectly nested under PLAC.')
 
         name_slash_issues = scan_name_slashes(args.gedfile)
         if name_slash_issues:
