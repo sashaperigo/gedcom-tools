@@ -1019,7 +1019,11 @@ function _subtreeWidth(k, cache) {
   } else {
     const fw = hasFather ? _subtreeWidth(fk, cache) : 0;
     const mw = hasMother ? _subtreeWidth(mk, cache) : 0;
-    w = Math.max(1, fw + mw);
+    // Add 1 gap slot when both sides have visible ancestors so the two parent
+    // groups don't run into each other.
+    const fHasAnc = hasFather && (visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1));
+    const mHasAnc = hasMother && (visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1));
+    w = Math.max(1, fw + mw + (fHasAnc && mHasAnc ? 1 : 0));
   }
   // Reserve sibling slots (non-root only; root siblings are placed outside layout bounds)
   w += _sibSlots.get(k) || 0;
@@ -1054,8 +1058,12 @@ function computePositions() {
 
     // Lay out children so parents center above the full sibling group (not just the ancestor subtree).
     // Shifting by sibN/2 slots places parents above the midpoint of the combined anchor+sibling row.
+    const fHasAnc = hasFather && (visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1));
+    const mHasAnc = hasMother && (visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1));
+    const familyGap = (fHasAnc && mHasAnc) ? slotW : 0;
     let offset = xStart + (sibN / 2) * slotW;
     if (hasFather) { const fw = wCache.get(fk) || 1; layout(fk, offset); offset += fw * slotW; }
+    offset += familyGap;
     if (hasMother) { layout(mk, offset); }
   }
   layout(1, MARGIN_X);
