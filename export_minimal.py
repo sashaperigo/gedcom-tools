@@ -17,6 +17,9 @@ Applies a two-step pipeline:
         PLAC, NOTE, or other data children remaining)
       • Optionally reduce SOUR definition records to header + TITL only — controlled
         by --strip-sour-bodies
+      • Deduplicate bare SOUR citations: after stripping removes distinguishing
+        detail (PAGE, DATA, etc.), citations that were distinct may collapse to the
+        same bare pointer; duplicates within the same scope are removed
 
 The output is saved as a .txt file (default: <input_stem>_minimal.txt).
 
@@ -35,6 +38,8 @@ import sys
 import tempfile
 
 from gedcom_io import level as _level
+
+_SOUR_CITE_RE = re.compile(r'^(\d+) SOUR (@[^@]+@)\s*$')
 
 
 def _collect_l1_block(lines: list[str], start: int) -> tuple[list[str], int]:
@@ -132,6 +137,65 @@ def _strip_sour_body(rec_lines: list[str]) -> list[str]:
     return result
 
 
+def _dedup_sour_citations(lines: list[str]) -> tuple[list[str], int]:
+    """
+    Remove duplicate SOUR citation lines that share the same xref within the
+    same scope. Called after source stripping, which can make previously
+    distinct citations (different PAGE values) identical bare pointers.
+
+    - Level-1 SOUR citations are deduplicated per record.
+    - Level-2+ SOUR citations are deduplicated per (record, parent event).
+
+    Returns (deduped_lines, duplicates_removed).
+    """
+    out: list[str] = []
+    dupes = 0
+    current_rec: str | None = None
+    current_event: int | None = None
+    seen: dict[tuple, set] = {}
+    defn_re = re.compile(r'^0 ')
+
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        line = raw.rstrip('\n')
+
+        if defn_re.match(line):
+            current_rec = line
+            current_event = None
+            seen = {}
+            out.append(raw)
+            i += 1
+            continue
+
+        m = _SOUR_CITE_RE.match(line)
+        if m and current_rec is not None:
+            cite_level = int(m.group(1))
+            xref = m.group(2)
+            # Level-1 SOURs are scoped to the record; level-2+ to the parent event.
+            scope_event = None if cite_level == 1 else current_event
+            scope_key = (current_rec, scope_event, cite_level)
+            seen.setdefault(scope_key, set())
+            if xref in seen[scope_key]:
+                dupes += 1
+                i += 1
+                # Skip any children of this duplicate block
+                while i < len(lines):
+                    child_lv = _level(lines[i])
+                    if child_lv is None or child_lv <= cite_level:
+                        break
+                    i += 1
+                continue
+            seen[scope_key].add(xref)
+        elif line.startswith('1 ') and not m:
+            current_event = i
+
+        out.append(raw)
+        i += 1
+
+    return out, dupes
+
+
 def _process_record(
     rec_lines: list[str],
     strip_aka: bool,
@@ -216,13 +280,14 @@ def export_minimal(
     Returns
     -------
     dict with keys:
-      lines_in              : lines fed into step 2 (post-normalize)
-      lines_out             : lines in the output
-      aka_blocks_removed    : AKA NAME blocks dropped
-      fact_sources_removed  : fact-level SOUR blocks stripped (0 when keep_fact_sources)
-      empty_events_dropped  : event blocks dropped for having no data children
-      sour_records_trimmed  : SOUR definition records reduced to TITL only
-      notes_stripped        : person-level NOTE blocks dropped
+      lines_in                  : lines fed into step 2 (post-normalize)
+      lines_out                 : lines in the output
+      aka_blocks_removed        : AKA NAME blocks dropped
+      fact_sources_removed      : fact-level SOUR blocks stripped (0 when keep_fact_sources)
+      empty_events_dropped      : event blocks dropped for having no data children
+      sour_records_trimmed      : SOUR definition records reduced to TITL only
+      notes_stripped            : person-level NOTE blocks dropped
+      duplicate_sources_removed : bare SOUR citations removed as duplicates
     """
     if path_out is None:
         base = os.path.splitext(path_in)[0]
@@ -308,14 +373,20 @@ def export_minimal(
         if tmp_norm and os.path.exists(tmp_norm):
             os.unlink(tmp_norm)
 
+    # ------------------------------------------------------------------
+    # Step 3 — deduplicate bare SOUR citations produced by stripping
+    # ------------------------------------------------------------------
+    lines_out, dupes_removed = _dedup_sour_citations(lines_out)
+
     result = {
-        'lines_in':             len(all_lines),
-        'lines_out':            len(lines_out),
-        'aka_blocks_removed':   total_aka,
-        'fact_sources_removed': total_sources,
-        'empty_events_dropped': total_dropped,
-        'sour_records_trimmed': total_sour_trimmed,
-        'notes_stripped':       total_notes,
+        'lines_in':                  len(all_lines),
+        'lines_out':                 len(lines_out),
+        'aka_blocks_removed':        total_aka,
+        'fact_sources_removed':      total_sources,
+        'empty_events_dropped':      total_dropped,
+        'sour_records_trimmed':      total_sour_trimmed,
+        'notes_stripped':            total_notes,
+        'duplicate_sources_removed': dupes_removed,
     }
 
     if not dry_run:
@@ -386,6 +457,7 @@ def main() -> None:
     print(f'  Empty events dropped       : {result["empty_events_dropped"]:,}')
     print(f'  SOUR records trimmed       : {result["sour_records_trimmed"]:,}')
     print(f'  Notes stripped             : {result["notes_stripped"]:,}')
+    print(f'  Duplicate SOURs removed    : {result["duplicate_sources_removed"]:,}')
 
     if not args.dry_run:
         out = args.output or (os.path.splitext(args.gedfile)[0] + '_minimal.txt')

@@ -555,6 +555,74 @@ class TestInputUnchanged:
 
 
 # ---------------------------------------------------------------------------
+# Duplicate SOUR deduplication
+# ---------------------------------------------------------------------------
+
+class TestDedupSourCitations:
+    """Duplicate SOUR citations produced when stripping removes distinguishing detail."""
+
+    # Two person-level SOURs to @S1@ (different PAGE), one BIRT with two
+    # fact-level SOURs to @S1@ (different PAGE).
+    DUPED_GED = (
+        '0 HEAD\n'
+        '1 GEDC\n'
+        '2 VERS 5.5.1\n'
+        '0 @I1@ INDI\n'
+        '1 NAME Alice /Test/\n'
+        '1 SOUR @S1@\n'
+        '2 PAGE First ref\n'
+        '1 SOUR @S1@\n'
+        '2 PAGE Second ref\n'
+        '1 BIRT\n'
+        '2 DATE 1 JAN 1900\n'
+        '2 SOUR @S1@\n'
+        '3 PAGE Page A\n'
+        '2 SOUR @S1@\n'
+        '3 PAGE Page B\n'
+        '0 @S1@ SOUR\n'
+        '1 TITL Test Source\n'
+        '0 TRLR\n'
+    )
+
+    def _run(self, tmp_path, **kwargs):
+        src = tmp_path / 'duped.ged'
+        src.write_text(self.DUPED_GED, encoding='utf-8')
+        out = tmp_path / 'out.txt'
+        result = export_minimal(str(src), path_out=str(out), skip_normalize=True, **kwargs)
+        return out.read_text(encoding='utf-8'), result
+
+    def test_person_level_sour_deduped(self, tmp_path):
+        """Two 1 SOUR @S1@ on the same person collapse to one after PAGE is stripped."""
+        content, _ = self._run(tmp_path)
+        sour_lines = [l for l in content.splitlines() if re.match(r'^1 SOUR\b', l)]
+        assert sour_lines == ['1 SOUR @S1@']
+
+    def test_fact_level_sour_deduped_when_kept(self, tmp_path):
+        """Two 2 SOUR @S1@ under the same BIRT collapse to one when keep_fact_sources=True."""
+        content, _ = self._run(tmp_path, keep_fact_sources=True)
+        birt_blocks = event_blocks_for(content, '@I1@', 'BIRT')
+        assert len(birt_blocks) == 1
+        sour_lines = [l for l in birt_blocks[0] if re.match(r'^2 SOUR\b', l)]
+        assert len(sour_lines) == 1
+
+    def test_stat_default_mode(self, tmp_path):
+        """Default mode: 1 person-level dup removed; fact-level SOURs are stripped entirely."""
+        _, result = self._run(tmp_path)
+        assert result['duplicate_sources_removed'] == 1
+
+    def test_stat_keep_fact_sources(self, tmp_path):
+        """keep_fact_sources: 1 person-level dup + 1 fact-level dup = 2 total."""
+        _, result = self._run(tmp_path, keep_fact_sources=True)
+        assert result['duplicate_sources_removed'] == 2
+
+    def test_stat_zero_on_clean_file(self, tmp_path):
+        """No duplicates in the main fixture."""
+        out = tmp_path / 'out.txt'
+        result = export_minimal(str(FIXTURE), path_out=str(out), skip_normalize=True)
+        assert result['duplicate_sources_removed'] == 0
+
+
+# ---------------------------------------------------------------------------
 # Clean passthrough: file with no AKAs and no fact-level SOURs is unchanged
 # ---------------------------------------------------------------------------
 
