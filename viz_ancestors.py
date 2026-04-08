@@ -253,13 +253,15 @@ def _date_sort_key(date_str: str | None) -> tuple:
 
 
 def sort_events(events: list) -> list:
-    """Sort events chronologically, with BIRT pinned first and DEAT/BURI pinned last."""
+    """Sort events chronologically, with BIRT pinned first, DEAT pinned second-to-last, BURI always last."""
     def key(evt):
         tag = evt.get('tag', '')
         if tag == 'BIRT':
             order = 0
-        elif tag in ('DEAT', 'BURI'):
+        elif tag == 'DEAT':
             order = 2
+        elif tag == 'BURI':
+            order = 3
         else:
             order = 1
         return (order,) + _date_sort_key(evt.get('date'))
