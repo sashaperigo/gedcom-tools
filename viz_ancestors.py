@@ -445,6 +445,8 @@ const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const RELATIVES = __RELATIVES_JSON__;
 const expandedRelatives = new Set([1]);
 let _relPosCache = new Map();
+// Maps "${anchorKey}:${sibIdx}" → current spouse index (0-based) for siblings with multiple spouses
+let _sibSpouseIdx = new Map();
 
 (function() {
   const input = document.getElementById('search-input');
@@ -983,21 +985,23 @@ function computeRelativePositions() {
           : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset) * slotW; // right, after spouses, with button clearance
         _relPosCache.set(`sib:${k}:${i}`, {x: sibX, y, xref, existing: false});
 
-        // Sibling's spouses go further out on the same side as the sibling
-        sibSpouses.forEach((spXref, j) => {
+        // Show only the currently-selected spouse (one slot reserved if any spouses exist)
+        if (sibSpouses.length > 0) {
+          const spIdx = _sibSpouseIdx.get(`${k}:${i}`) || 0;
+          const spXref = sibSpouses[spIdx];
           const existingSpKey = xrefToKey.get(spXref);
           if (existingSpKey !== undefined) {
             const pos = _posCache.get(existingSpKey);
-            if (pos) _relPosCache.set(`sibsp:${k}:${i}:${j}`, {x: pos.x, y: pos.y, xref: spXref, existing: true});
+            if (pos) _relPosCache.set(`sibsp:${k}:${i}`, {x: pos.x, y: pos.y, xref: spXref, existing: true, total: sibSpouses.length, spIdx});
           } else {
             const spX = male
-              ? x - (newSibOffset + 2 + j) * slotW - BTN_PAD
-              : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset + 1 + j) * slotW;
-            _relPosCache.set(`sibsp:${k}:${i}:${j}`, {x: spX, y, xref: spXref, existing: false});
+              ? x - (newSibOffset + 2) * slotW - BTN_PAD
+              : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset + 1) * slotW;
+            _relPosCache.set(`sibsp:${k}:${i}`, {x: spX, y, xref: spXref, existing: false, total: sibSpouses.length, spIdx});
           }
-        });
+        }
 
-        newSibOffset += 1 + sibSpouses.length;
+        newSibOffset += 1 + (sibSpouses.length > 0 ? 1 : 0);
       }
     });
   }
@@ -1200,21 +1204,43 @@ function render() {
       canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
     });
 
-    // Sibling-spouse marriage connectors
+    // Sibling-spouse marriage connectors + cycle toggle button
     rels.siblings.forEach((sibXref, i) => {
       const sibEntry = _relPosCache.get(`sib:${k}:${i}`);
       if (!sibEntry || sibEntry.existing) return;
       const {x: sx, y: sy} = sibEntry;
-      const sibSpouses = (rels.sib_spouses || {})[sibXref] || [];
-      sibSpouses.forEach((spXref, j) => {
-        const spEntry = _relPosCache.get(`sibsp:${k}:${i}:${j}`);
-        if (!spEntry || spEntry.existing) return;
-        const {x: spx} = spEntry;
-        const lineY = sy + NODE_H / 2;
-        const [x1, x2] = spx < sx ? [spx + NODE_W, sx] : [sx + NODE_W, spx];
+      const spEntry = _relPosCache.get(`sibsp:${k}:${i}`);
+      if (!spEntry || spEntry.existing) return;
+      const {x: spx, total, spIdx} = spEntry;
+      const lineY = sy + NODE_H / 2;
+      const [x1, x2] = spx < sx ? [spx + NODE_W, sx] : [sx + NODE_W, spx];
+      const midX = (x1 + x2) / 2;
+      // Draw marriage double lines, leaving a gap in the middle for the toggle button
+      if (total > 1) {
+        const gap = 12;
+        canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2: midX - gap, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2: midX - gap, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: midX + gap, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: midX + gap, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        // Cycle button
+        const bw = 20, bh = 16;
+        const btn = svgEl('rect', {x: midX - bw/2, y: lineY - bh/2, width: bw, height: bh, rx: 4, fill: '#0f766e', cursor: 'pointer'});
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const next = ((spIdx + 1) % total);
+          _sibSpouseIdx.set(`${k}:${i}`, next);
+          render();
+        });
+        canvas.appendChild(btn);
+        // Right-pointing triangle
+        canvas.appendChild(svgEl('polygon', {
+          points: `${midX-4},${lineY-4} ${midX+5},${lineY} ${midX-4},${lineY+4}`,
+          fill: 'white', 'pointer-events': 'none'
+        }));
+      } else {
         canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
         canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
-      });
+      }
     });
   }
 
