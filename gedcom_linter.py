@@ -43,6 +43,9 @@ Checks performed:
  11. ADDR under PLAC — ADDR is not a valid subordinate of PLAC in GEDCOM
      5.5.1. ADDR should be a sibling of PLAC (child of the parent event).
      --fix-addr-under-plac promotes such ADDR lines up one level.
+ 12. PLAC FORM header — GEDCOM 5.5.1 §2.7.3 recommends a "1 PLAC / 2 FORM"
+     declaration in the HEAD block so importing software knows how to interpret
+     the comma-separated fields in PLAC values. Warns if absent. No auto-fix.
 
 Notes:
   - Only level-2 DATE lines (event dates on INDI/FAM records) are touched by
@@ -954,6 +957,43 @@ def normalize_plac(val: str) -> str:
     return v
 
 
+def scan_plac_form(path: str) -> str | None:
+    """
+    Return the PLAC FORM value declared in the file header, or None if absent.
+
+    GEDCOM 5.5.1 §2.7.3 recommends declaring the expected place hierarchy in
+    the HEAD block:
+
+        1 PLAC
+        2 FORM City, County, State, Country
+
+    Without this declaration, software importing the file cannot reliably
+    interpret the comma-separated fields in PLAC values.
+    """
+    in_head = False
+    in_plac = False
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.rstrip('\n')
+            if line.startswith('0 HEAD'):
+                in_head = True
+                continue
+            if in_head and line.startswith('0 '):
+                break  # left the HEAD block
+            if not in_head:
+                continue
+            if line == '1 PLAC':
+                in_plac = True
+                continue
+            if in_plac:
+                m = re.match(r'^2 FORM (.+)$', line)
+                if m:
+                    return m.group(1).strip()
+                if re.match(r'^[12] ', line):
+                    in_plac = False  # left the PLAC sub-block without finding FORM
+    return None
+
+
 def scan_plac(path: str):
     """Return list of (lineno, original_val, normalized_val) for bad PLAC lines."""
     violations = []
@@ -1546,6 +1586,18 @@ def main():
                 print(f'  ... and {len(sex_issues) - 20} more.')
         else:
             print('OK: all SEX values are valid (M, F, or U).')
+
+        plac_form = scan_plac_form(args.gedfile)
+        if plac_form is None:
+            errors = True
+            print('\nWARNING: no PLAC FORM declaration in header.')
+            print('  GEDCOM 5.5.1 §2.7.3 recommends declaring the place hierarchy so')
+            print('  importing software knows how to interpret comma-separated PLAC values.')
+            print('  Add to the HEAD block:')
+            print('    1 PLAC')
+            print('    2 FORM City, County, State, Country')
+        else:
+            print(f'OK: PLAC FORM declared in header: {plac_form!r}')
 
         plac_issues = scan_plac(args.gedfile)
         if plac_issues:
