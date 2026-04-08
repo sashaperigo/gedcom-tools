@@ -1491,13 +1491,13 @@ function render() {
         e.stopPropagation();
         if (expandedRelatives.has(k)) {
           expandedRelatives.delete(k);
-          render(); fitAndCenter();
+          render();
         } else {
           expandedRelatives.add(k);
           // Auto-expand parents so siblings have a visible shared ancestor
           if ((2 * k) in TREE) visibleKeys.add(2 * k);
           if ((2 * k + 1) in TREE) visibleKeys.add(2 * k + 1);
-          render(); fitAndCenter(k);
+          render();
         }
       });
       canvas.appendChild(rbtn);
