@@ -871,17 +871,31 @@ DATE_LINE_RE = re.compile(r'^(2 DATE )(.+)$')
 # Trailing-whitespace check and fix
 # ---------------------------------------------------------------------------
 
+_CONC_RE = re.compile(r'^\d+ CONC')
+
+
 def scan_trailing_whitespace(path: str):
     """
     Return list of (lineno, repr(line)) for every line that has trailing
     whitespace (spaces or tabs before the newline).
+
+    Lines whose immediate successor is a CONC tag are excluded: in GEDCOM
+    5.5.1, CONC concatenates with no separator, so a trailing space on the
+    preceding line is the only way to preserve a word boundary in the joined
+    text and must not be treated as an error.
     """
-    violations = []
     with open(path, encoding='utf-8') as f:
-        for lineno, raw in enumerate(f, 1):
-            stripped = raw.rstrip('\n')
-            if stripped != stripped.rstrip():
-                violations.append((lineno, stripped))
+        lines = f.readlines()
+
+    violations = []
+    for i, raw in enumerate(lines):
+        stripped = raw.rstrip('\n')
+        if stripped == stripped.rstrip():
+            continue  # no trailing whitespace
+        next_line = lines[i + 1].strip() if i + 1 < len(lines) else ''
+        if _CONC_RE.match(next_line):
+            continue  # trailing space is semantically required before CONC
+        violations.append((i + 1, stripped))
     return violations
 
 
@@ -889,18 +903,25 @@ def fix_trailing_whitespace(path: str, dry_run: bool = False):
     """
     Strip trailing whitespace from every line in *path*.
     Returns the number of lines changed.
+
+    Lines whose immediate successor is a CONC tag are left untouched: the
+    trailing space is semantically meaningful (see scan_trailing_whitespace).
     """
     with open(path, encoding='utf-8') as f:
         lines_in = f.readlines()
 
     lines_out = []
     changed = 0
-    for lineno, raw in enumerate(lines_in, 1):
+    for i, raw in enumerate(lines_in):
+        next_raw = lines_in[i + 1] if i + 1 < len(lines_in) else ''
+        if _CONC_RE.match(next_raw.strip()):
+            lines_out.append(raw)  # preserve trailing space before CONC
+            continue
         clean = raw.rstrip('\n').rstrip() + '\n'
         if clean != raw:
             changed += 1
             if dry_run:
-                print(f'  line {lineno}: {raw.rstrip(chr(10))!r}')
+                print(f'  line {i + 1}: {raw.rstrip(chr(10))!r}')
         lines_out.append(clean)
 
     if not dry_run and changed:
