@@ -57,32 +57,60 @@ except ImportError:
 
 def _build_alias_groups() -> dict[str, set[str]]:
     groups = [
-        {'george', 'georgios', 'giorgios', 'yorgos', 'gheorghe', 'jorje', 'georgis'},
-        {'helen', 'eleni', 'elena', 'helene', 'elen', 'ileana'},
-        {'john', 'ioannis', 'yiannis', 'yannis', 'giannis', 'jean', 'juan', 'giovanni', 'johannes', 'yannis', 'yanni'},
-        {'constantine', 'konstantinos', 'kostas', 'costas', 'costin', 'kostis', 'dinos'},
-        {'stephen', 'stavros', 'stefan', 'stefano', 'steve', 'stavro'},
-        {'mary', 'maria', 'marie', 'mariam', 'miriam'},
-        {'nicholas', 'nikolaos', 'nikos', 'nikolas', 'nicolas', 'nikola'},
-        {'peter', 'petros', 'pierre', 'piero', 'petar'},
-        {'michael', 'michail', 'michalis', 'mikael', 'miguel', 'mihail'},
-        {'anastasia', 'anastasios', 'tasoula', 'tassos', 'natasha', 'nastasia'},
-        {'theodore', 'theodoros', 'theo', 'thodoris', 'tudor'},
-        {'dimitri', 'dimitrios', 'demetrios', 'demetrius', 'demeter', 'demetri', 'mitsos'},
-        {'sophia', 'sofia', 'sophy', 'sofi'},
-        {'katerina', 'katherine', 'catherine', 'katarina'},
-        {'thomas', 'tomas', 'tommaso'},
-        {'anna', 'anne', 'ann', 'ana'},
-        {'alexander', 'alexandros', 'alexios', 'alexis', 'alex', 'alekos', 'aleksander'},
-        {'athanasios', 'thanasis', 'thanos', 'athanasius', 'thanasi'},
-        {'evangelos', 'evangeline', 'vangelis', 'evan', 'vangelio'},
+        # ── Male ──────────────────────────────────────────────────
+        {'george', 'georgios', 'giorgios', 'kevork', 'georgio', 'giorgio'},
+        {'francis', 'francesco', 'francois', 'français'},
+        {'john', 'ioannis', 'yiannis', 'yannis', 'giannis', 'jean', 'juan', 'giovanni', 'johannes',
+         'yanni'},
+        {'constantine', 'konstantinos', 'kostas', 'costas', 'constantino'},
+        {'stephen', 'esteban', 'stefan', 'stefano', 'steve', 'steven', 'stephano', 'stephane'},
+        {'nicholas', 'nikolaos', 'nikos', 'nikolas', 'nicolas', 'nikola', 'nicolao', 'nicola', 'nico',
+         'nicolo', 'nicolò', 'niccolo', 'niccolò', 'nicolaas', 'nicorosi'},
+        {'peter', 'petros', 'pierre', 'pietro', 'piero', 'petar', 'porto'},
+        {'michael', 'michail', 'michalis', 'mikael', 'miguel', 'mihail', 'michel', 'michele'},
+        {'theodore', 'theodoros', 'theo'},
+        {'dimitri', 'dimitrios', 'demetrios', 'demetrius', 'demetri'},
+        {'thomas', 'tomas', 'tommaso', 'tomaso'},
+        {'alexander', 'alexandros', 'alexios', 'alex', 'alekos', 'aleksander', 'alexandre'},
+        {'evangelos', 'vangelis'},
         {'panagiotis', 'panos', 'panayiotis', 'takis'},
-        {'christos', 'christodoulos', 'christoforos', 'christopher', 'chris', 'christo'},
-        {'spyros', 'spyridon', 'spiro', 'spiridon'},
-        {'vasilis', 'vassilis', 'vasileios', 'basil', 'basilios', 'bill'},
-        {'fotini', 'photini', 'fota', 'fani'},
-        {'charalambos', 'haralambos', 'babis', 'harry', 'harris'},
+        {'christos', 'christodoulos', 'christoforos', 'christopher', 'chris', 'christo',
+         'cristoforo', 'christoforo'},
+        {'spyros', 'spyridon', 'spiro', 'spiridon', 'spiridione'},
+        {'vasilis', 'vassilis', 'vasileios', 'basilios', 'vaselios', 'vasilios'},
         {'antonis', 'antonios', 'antonio', 'anthony', 'tony', 'antoine'},
+        {'emilio', 'emil', 'emile', 'emin'},
+        {'jacobo', 'giacomo', 'jacques', 'jacob', 'zaccaria'},
+        {'paul', 'paolo', 'paulo', 'pablo', 'pauli'},
+        {'philip', 'filippo', 'philippe', 'philippo'},
+        {'andrew', 'andre', 'andrei'},  # andrea = male in Italian context
+        {'dominic', 'dominique', 'domenico'},
+        {'gregory', 'gregoire', 'gregorio', 'kirkor'},
+        {'jerome', 'jérôme', 'gerolamo', 'geronimo', 'hyeronimo'},
+        {'louis', 'luigi'},
+        {'giuseppe', 'joseph', 'josef'},
+
+        # ── Female ────────────────────────────────────────────────
+        {'helen', 'eleni', 'elena', 'helene', 'helena', 'hélène', 'ellen'},
+        {'giuseppa', 'giuseppina', 'josephine', 'joséphine', 'josephina', 'josefina', 'josepha'},
+        {'mary', 'maria', 'marie'},
+        {'sophia', 'sofia', 'sophie'},
+        {'katerina', 'katherine', 'catherine', 'katarina', 'caterina', 'katrina', 'kate',
+         'catarina', 'catharina', 'kathleen', 'chatrine'},
+        {'anna', 'anne', 'ann', 'ana'},
+        {'evangeline', 'vangelio'},
+        {'fotini', 'photini'},
+        {'angela', 'angele', 'angelina', 'angelica', 'angelique', 'angélique', 'angeru'},
+        {'teresa', 'therese', 'thérèse', 'theresa'},
+        {'madeleine', 'magdalena', 'maddalena', 'madalena'},
+        {'brigida', 'brigidina', 'birgitta', 'bergula'},
+        {'apollonia', 'appollonia', 'plumu', 'plumù'},
+        {'despina', 'despinu'},
+        {'battistina', 'battina', 'bettina', 'battistine'},
+        {'julia', 'giulia', 'giuliana'},
+        {'joanna', 'giovanna', 'jeanne'},
+        {'rose', 'rosa', 'rosine', 'rosina', 'rosalie'},
+        {'louise', 'luigia'},
     ]
     result: dict[str, set[str]] = {}
     for group in groups:
@@ -108,21 +136,50 @@ def _is_unknown(name: str) -> bool:
 # Surname blocking
 # ---------------------------------------------------------------------------
 
-def _build_surname_index(individuals: dict[str, Individual]) -> dict[str, list[str]]:
+def _get_husband_surnames(ind: Individual, file: GedcomFile) -> list[str]:
+    """
+    Return normalized surnames of the husband(s) of a married woman with unknown surname.
+    Used to augment blocking for women whose surname wasn't recorded.
+    """
+    if ind.sex == 'M':
+        return []
+    surnames: list[str] = []
+    for fams in ind.family_spouse[:2]:
+        fam = file.families.get(fams)
+        if not fam:
+            continue
+        husb = file.individuals.get(fam.husband_xref or '')
+        if husb:
+            for s in husb.normalized_surnames:
+                if not _is_unknown(s) and s not in surnames:
+                    surnames.append(s)
+    return surnames
+
+
+def _build_surname_index(file: GedcomFile) -> dict[str, list[str]]:
     """
     Build normalized_surname → [xref, ...] index for fast blocking.
+
+    For women with unknown surnames who are married, also indexes them under
+    their husband's surname so they can be found when the other file records
+    that woman under the married name.
     """
     index: dict[str, list[str]] = defaultdict(list)
-    for xref, ind in individuals.items():
+    for xref, ind in file.individuals.items():
         meaningful_surnames = [s for s in ind.normalized_surnames if not _is_unknown(s)]
         for sname in meaningful_surnames:
             index[sname].append(xref)
         if not meaningful_surnames:
-            # Fall back: index by first given-name token (skip unknown givens too)
-            for g in list(ind.normalized_givens)[:2]:
-                if not _is_unknown(g):
-                    index['_given_' + g].append(xref)
-                    break
+            # For married women with unknown surnames, index by husband's surname
+            husb_surnames = _get_husband_surnames(ind, file)
+            for sname in husb_surnames:
+                index[sname].append(xref)
+            if not husb_surnames:
+                # Fall back: index by first given-name token (skip unknown givens too)
+                for g in list(ind.normalized_givens)[:2]:
+                    if not _is_unknown(g):
+                        index['_given_' + g].append(xref)
+                        break
     return dict(index)
 
 
@@ -130,12 +187,14 @@ def _get_candidates_for(
     ind_b: Individual,
     index_a: dict[str, list[str]],
     all_xrefs_a: list[str],
+    file_b: GedcomFile | None = None,
 ) -> set[str]:
     """
     Return the set of File A xrefs that are candidates for matching ind_b.
 
     Uses exact + fuzzy (Levenshtein ≤ 2) surname matching.
-    Falls back to brute-force if no surname match found.
+    For women with unknown surnames, also searches by husband's surname.
+    Falls back to given-name index if no surname match found.
     """
     candidates: set[str] = set()
 
@@ -151,6 +210,18 @@ def _get_candidates_for(
                     continue
                 if _levenshtein_distance(sname, indexed_sname) <= 2:
                     candidates.update(xrefs)
+
+    if not candidates and not meaningful_surnames_b and file_b:
+        # No meaningful surname: for married women, try husband's surname
+        for sname in _get_husband_surnames(ind_b, file_b):
+            for xref in index_a.get(sname, []):
+                candidates.add(xref)
+            if len(sname) >= 5:
+                for indexed_sname, xrefs in index_a.items():
+                    if indexed_sname.startswith('_given_'):
+                        continue
+                    if _levenshtein_distance(sname, indexed_sname) <= 2:
+                        candidates.update(xrefs)
 
     if not candidates:
         # No surname → try given-name index (skip unknown givens)
@@ -464,6 +535,15 @@ def _score_pair(
     if ind_a.sex and ind_b.sex and ind_a.sex != ind_b.sex:
         return 0.0, {}
 
+    # Hard veto: both sides have known surnames that are clearly different.
+    # fuzz.ratio on short strings can produce misleadingly high scores from
+    # accidental shared characters (e.g. "hancy" vs "banca" → 60%).
+    # If the best surname pair scores below 0.65, these are different families.
+    known_surnames_a = {s for s in ind_a.normalized_surnames if not _is_unknown(s)}
+    known_surnames_b = {s for s in ind_b.normalized_surnames if not _is_unknown(s)}
+    if known_surnames_a and known_surnames_b and surname_score < 0.65:
+        return 0.0, {}
+
     def _get_birth_ev(ind: Individual):
         return next((e for e in ind.events if e.tag == 'BIRT'), None)
 
@@ -592,7 +672,7 @@ def match_individuals(
 
     Returns IndividualMatchResult with auto_matches, candidates, and unmatched_b.
     """
-    index_a = _build_surname_index(file_a.individuals)
+    index_a = _build_surname_index(file_a)
     all_xrefs_a = list(file_a.individuals.keys())
 
     matched_b_to_a: dict[str, str] = {}   # confirmed xref_b → xref_a
@@ -607,7 +687,7 @@ def match_individuals(
 
     # Initial scoring pass for all B individuals
     for xref_b, ind_b in file_b.individuals.items():
-        candidates_a = _get_candidates_for(ind_b, index_a, all_xrefs_a)
+        candidates_a = _get_candidates_for(ind_b, index_a, all_xrefs_a, file_b)
         best_per_b: list[tuple[float, str, dict]] = []
         for xref_a in candidates_a:
             if xref_a in matched_a:

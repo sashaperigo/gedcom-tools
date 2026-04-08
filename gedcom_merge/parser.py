@@ -21,6 +21,7 @@ from gedcom_merge.model import (
 )
 from gedcom_merge.normalize import (
     normalize_name_str, normalize_surname, normalize_given,
+    extract_parenthetical_surnames, strip_parentheticals,
     tokenize_title, parse_date,
 )
 
@@ -260,9 +261,19 @@ def _parse_individual(node: GedcomNode) -> Individual:
     normalized_givens: set[str] = set()
     for name in names:
         if name.surname:
-            normalized_surnames.add(normalize_surname(name.surname))
+            # Add the primary surname with parentheticals stripped
+            clean_surname = strip_parentheticals(name.surname)
+            if clean_surname:
+                normalized_surnames.add(normalize_surname(clean_surname))
+        # Extract any parenthetical alternate surnames from the full raw name
+        # e.g. "/Bonnici/ (Bonnar)" or "/Bonnici (Bonnar)/"
+        for alt in extract_parenthetical_surnames(name.full):
+            if alt:
+                normalized_surnames.add(alt)
         if name.given:
-            for part in name.given.split():
+            # Strip parenthetical alternate-name tokens before tokenizing given names
+            clean_given = strip_parentheticals(name.given)
+            for part in clean_given.split():
                 normalized_givens.add(part)
 
     birth_date: ParsedDate | None = None

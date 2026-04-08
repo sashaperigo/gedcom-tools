@@ -25,7 +25,12 @@ from gedcom_merge.model import (
 )
 from gedcom_merge.session import SessionState, save_session
 from gedcom_merge.writer import _format_date
-from gedcom_merge.match_individuals import _estimate_birth_year
+from gedcom_merge.match_individuals import (
+    _estimate_birth_year,
+    _build_surname_index,
+    _get_candidates_for,
+    _score_pair,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +70,7 @@ def _indi_detail(ind: Individual | None, file: GedcomFile) -> dict:
                     s = file.individuals.get(sx)
                     if s:
                         spouses.append(s.display_name)
+    spouses.sort()
 
     siblings: list[str] = []
     for famc in ind.family_child[:1]:
@@ -75,6 +81,7 @@ def _indi_detail(ind: Individual | None, file: GedcomFile) -> dict:
                     sib = file.individuals.get(sib_xref)
                     if sib:
                         siblings.append(sib.display_name)
+    siblings.sort()
     siblings = siblings[:6]
 
     children: list[str] = []
@@ -85,6 +92,7 @@ def _indi_detail(ind: Individual | None, file: GedcomFile) -> dict:
                 child = file.individuals.get(chil_xref)
                 if child:
                     children.append(child.display_name)
+    children.sort()
     children = children[:8]
 
     citation_count = len(ind.citations) + sum(len(e.citations) for e in ind.events)
@@ -526,10 +534,22 @@ function undecide(type, xref_b) {
 
 /* ─── Batch operations ───────────────────────────────────────────── */
 function approveAll() {
-  DATA.auto.individuals.forEach(m => { D.indi_map[m.xref_b] = m.xref_a; });
-  DATA.auto.sources.forEach(m => { D.source_map[m.xref_b] = m.xref_a; });
-  DATA.auto.families.forEach(m => { D.family_map[m.xref_b] = m.xref_a; });
+  DATA.auto.individuals.forEach(m => { D.indi_map[m.xref_b] = m.xref_a; delete D.indi_disposition[m.xref_b]; });
+  DATA.auto.sources.forEach(m => { D.source_map[m.xref_b] = m.xref_a; delete D.source_disposition[m.xref_b]; });
+  DATA.auto.families.forEach(m => { D.family_map[m.xref_b] = m.xref_a; delete D.family_disposition[m.xref_b]; });
   D.auto_approved = true;
+  scheduleSave(); updateProgress(); render();
+}
+function approveRemaining() {
+  DATA.auto.individuals.forEach(m => {
+    if (D.indi_disposition[m.xref_b] !== 'skip') { D.indi_map[m.xref_b] = m.xref_a; delete D.indi_disposition[m.xref_b]; }
+  });
+  DATA.auto.sources.forEach(m => {
+    if (D.source_disposition[m.xref_b] !== 'skip') { D.source_map[m.xref_b] = m.xref_a; delete D.source_disposition[m.xref_b]; }
+  });
+  DATA.auto.families.forEach(m => {
+    if (D.family_disposition[m.xref_b] !== 'skip') { D.family_map[m.xref_b] = m.xref_a; delete D.family_disposition[m.xref_b]; }
+  });
   scheduleSave(); updateProgress(); render();
 }
 function unapproveAll() {
@@ -695,13 +715,74 @@ function srcCard(m) {
 }
 
 /* ─── Unmatched individual ───────────────────────────────────────── */
+var _searchCache = {};  // xref_b → results array
+var _searchOpen = {};   // xref_b → bool
+
+async function searchMatch(xref_b) {
+  _searchOpen[xref_b] = !_searchOpen[xref_b];
+  if (_searchOpen[xref_b] && !_searchCache[xref_b]) {
+    var el = document.getElementById('srch-' + xref_b.replace(/[@]/g,''));
+    if (el) el.innerHTML = '<div style="padding:12px;color:var(--text2);font-size:13px;">Searching\u2026</div>';
+    try {
+      var r = await fetch('/api/search_match?xref_b=' + encodeURIComponent(xref_b));
+      var data = await r.json();
+      _searchCache[xref_b] = data.results || [];
+    } catch(_) { _searchCache[xref_b] = []; }
+  }
+  render();
+}
+
+function renderSearchPanel(xref_b) {
+  if (!_searchOpen[xref_b]) return '';
+  var results = _searchCache[xref_b];
+  if (!results) {
+    return '<div id="srch-' + xref_b.replace(/[@]/g,'') + '" style="border-top:1px solid var(--border);padding:12px;color:var(--text2);font-size:13px;">Searching\u2026</div>';
+  }
+  if (!results.length) {
+    return '<div style="border-top:1px solid var(--border);padding:12px;color:var(--text2);font-size:13px;">No candidates found in File A.</div>';
+  }
+  var html = '<div style="border-top:1px solid var(--border);padding:12px 16px;background:rgba(0,0,0,.15);">' +
+    '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px;">Top candidates in File A</div>';
+  results.forEach(function(m) {
+    var da = m.detail_a||{}, db = m.detail_b||{};
+    var pct = Math.round(m.score * 100);
+    var cls = m.score>=.85?'score-hi':m.score>=.65?'score-md':'score-lo';
+    html += '<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">' +
+      '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
+      '<span class="score ' + cls + '">' + pct + '% match</span>' +
+      '<strong>' + esc(da.display_name||'?') + '</strong>';
+    var ba = [da.birth_date||da.birth_date_calc, da.birth_place].filter(Boolean).join(' \u00b7 ');
+    if (ba) html += ' <span style="font-size:12px;color:var(--text2);">' + esc(ba) + '</span>';
+    html += '</div>' + indiTable(da, db, m.score_components) +
+      '<div class="actions" style="padding:8px 14px;">' +
+      '<button class="btn btn-merge" onclick="_mergeFromSearch(\'' + esc(xref_b) + '\',\'' + esc(m.xref_a) + '\')">Merge &mdash; same person</button>' +
+      '<button class="btn btn-add" style="margin-left:6px;" onclick="_addFromSearch(\'' + esc(xref_b) + '\')">Add as new person</button>' +
+      '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function _mergeFromSearch(xref_b, xref_a) {
+  _searchOpen[xref_b] = false;
+  decide('indi', xref_b, 'merge', xref_a);
+}
+function _addFromSearch(xref_b) {
+  _searchOpen[xref_b] = false;
+  decide('indi', xref_b, 'add', null);
+}
+
 function unmatchedIndi(d) {
   var xb = d.xref_b, disp = D.indi_disposition[xb];
   var meta = [d.birth_date, d.birth_place].filter(Boolean).join(' \u00b7 ');
-  var info = '<div style="font-size:15px;font-weight:600;">' + esc(d.display_name||xb) + '</div>';
+  var filePill = '<span style="font-size:10px;font-weight:600;letter-spacing:.05em;padding:2px 7px;border-radius:10px;background:rgba(79,142,247,.18);color:#7eb0ff;margin-left:8px;">' + esc(DATA.file_b_name) + '</span>';
+  var info = '<div style="font-size:15px;font-weight:600;display:flex;align-items:center;">' + esc(d.display_name||xb) + filePill + '</div>';
   if (meta) info += '<div style="font-size:12px;color:var(--text2);margin-top:3px;">' + esc(meta) + '</div>';
   if (d.parents && d.parents.length) info += '<div style="font-size:12px;color:var(--text2);">Parents: ' + esc(d.parents.join(' & ')) + '</div>';
   if (d.spouses && d.spouses.length) info += '<div style="font-size:12px;color:var(--text2);">Spouse: ' + esc(d.spouses.join(', ')) + '</div>';
+
+  var searchBtn = '<button class="btn" style="margin-left:auto;font-size:12px;background:rgba(79,142,247,.18);color:#7eb0ff;border:1px solid rgba(79,142,247,.35);" onclick="searchMatch(\'' + esc(xb) + '\')">' +
+    (_searchOpen[xb] ? '\u25b2 Hide matches' : '\ud83d\udd0d Find match in File A') + '</button>';
 
   var actionBar;
   if (disp === 'add') {
@@ -714,12 +795,13 @@ function unmatchedIndi(d) {
     actionBar = '<div class="actions">' +
       '<button class="btn btn-add btn-add-u" onclick="decide(\'indi\',\'' + esc(xb) + '\',\'add\',null)">Add to merged file</button>' +
       '<button class="btn btn-skip btn-skip-u" onclick="decide(\'indi\',\'' + esc(xb) + '\',\'skip\',null)">Skip</button>' +
+      searchBtn +
       '<span class="hint"><kbd>a</kbd> add &nbsp; <kbd>s</kbd> skip</span></div>';
   }
 
   return '<div class="card" style="' + (disp==='add'?'border-color:rgba(79,142,247,.3)':disp?'opacity:.65':'') + '">' +
     '<div style="padding:12px 16px;border-bottom:1px solid var(--border);">' + info + '</div>' +
-    actionBar + '</div>';
+    actionBar + renderSearchPanel(xb) + '</div>';
 }
 
 /* ─── Unmatched source ───────────────────────────────────────────── */
@@ -745,9 +827,18 @@ function unmatchedSrc(d) {
 }
 
 /* ─── Tab renderers ──────────────────────────────────────────────── */
-function section(label, count) {
-  return '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;' +
-    'color:var(--text3);margin:16px 0 8px;">' + label + ' (' + count + ')</div>';
+function section(label, count, id) {
+  var idAttr = id ? ' id="' + id + '"' : '';
+  return '<div' + idAttr + ' style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;' +
+    'color:var(--text3);margin:16px 0 8px;scroll-margin-top:60px;">' + label + ' (' + count + ')</div>';
+}
+
+function jumpNav(sections) {
+  return '<div style="display:flex;gap:6px;margin-bottom:12px;">' +
+    sections.map(function(s) {
+      return '<a href="#' + s.id + '" style="font-size:12px;padding:4px 12px;border:1px solid var(--border);' +
+        'border-radius:4px;color:var(--text2);text-decoration:none;background:var(--bg2);">' + s.label + ' \u2193</a>';
+    }).join('') + '</div>';
 }
 
 function renderAuto() {
@@ -755,26 +846,38 @@ function renderAuto() {
   if (!ai.length && !as.length && !af.length)
     return '<div class="empty-state"><div class="icon">&#10003;</div><p>No auto-matches.</p></div>';
 
-  var allApproved = (ai.every(function(m){return D.indi_map[m.xref_b];})) &&
-                    (as.every(function(m){return D.source_map[m.xref_b];})) &&
-                    (af.every(function(m){return D.family_map[m.xref_b];}));
+  var allDecided = ai.every(function(m){ return D.indi_map[m.xref_b] || D.indi_disposition[m.xref_b]; }) &&
+                   as.every(function(m){ return D.source_map[m.xref_b] || D.source_disposition[m.xref_b]; }) &&
+                   af.every(function(m){ return D.family_map[m.xref_b] || D.family_disposition[m.xref_b]; });
+  var skippedCount = ai.filter(function(m){ return D.indi_disposition[m.xref_b] === 'skip'; }).length +
+                     as.filter(function(m){ return D.source_disposition[m.xref_b] === 'skip'; }).length +
+                     af.filter(function(m){ return D.family_disposition[m.xref_b] === 'skip'; }).length;
 
-  var banner = allApproved
+  var banner = allDecided
     ? '<div class="card" style="border-color:rgba(52,196,106,.3);margin-bottom:16px;">' +
       '<div class="actions decided d-merge" style="background:rgba(52,196,106,.06);">' +
-      '\u2713 All ' + (ai.length+as.length+af.length) + ' auto-matches approved' +
-      ' <button class="btn btn-skip" style="margin-left:auto;font-size:11px;" onclick="unapproveAll()">Undo all</button></div></div>'
+      '\u2713 All ' + (ai.length+as.length+af.length) + ' auto-matches decided' +
+      (skippedCount ? ' (' + skippedCount + ' skipped)' : '') +
+      ' <button class="btn btn-skip" style="margin-left:auto;font-size:11px;" onclick="unapproveAll()">Undo approvals</button></div></div>'
     : '<div class="card" style="margin-bottom:16px;"><div style="padding:14px 16px;">' +
       '<div style="font-size:15px;font-weight:600;">Auto-matched records</div>' +
       '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' +
       ai.length + ' individuals \u00b7 ' + as.length + ' sources \u00b7 ' + af.length + ' families' +
       ' &mdash; confidence above threshold</div></div>' +
-      '<div class="actions"><button class="btn btn-approve" onclick="approveAll()">\u2713 Approve All</button>' +
+      '<div class="actions">' +
+      (skippedCount
+        ? '<button class="btn btn-approve" onclick="approveRemaining()">\u2713 Approve Remaining</button>' +
+          '<button class="btn btn-skip" style="margin-left:6px;font-size:12px;" onclick="approveAll()">Approve All (override skips)</button>'
+        : '<button class="btn btn-approve" onclick="approveAll()">\u2713 Approve All</button>') +
       '<span class="hint">or review individually below</span></div></div>';
 
-  var html = banner;
-  if (ai.length) html += section('Individuals', ai.length) + ai.map(indiCard).join('');
-  if (as.length) html += section('Sources', as.length) + as.map(srcCard).join('');
+  var nav = (ai.length && as.length)
+    ? jumpNav([{id:'auto-indi',label:'Individuals'},{id:'auto-src',label:'Sources'}])
+    : '';
+
+  var html = banner + nav;
+  if (ai.length) html += section('Individuals', ai.length, 'auto-indi') + ai.map(indiCard).join('');
+  if (as.length) html += section('Sources', as.length, 'auto-src') + as.map(srcCard).join('');
   return html;
 }
 
@@ -782,9 +885,14 @@ function renderCandidates() {
   var ci = DATA.candidates.individuals, cs = DATA.candidates.sources;
   if (!ci.length && !cs.length)
     return '<div class="empty-state"><div class="icon">&#10003;</div><p>No candidate matches to review.</p></div>';
-  var html = '';
-  if (ci.length) html += section('Individuals', ci.length) + ci.map(indiCard).join('');
-  if (cs.length) html += section('Sources', cs.length) + cs.map(srcCard).join('');
+
+  var nav = (ci.length && cs.length)
+    ? jumpNav([{id:'cand-indi',label:'Individuals'},{id:'cand-src',label:'Sources'}])
+    : '';
+
+  var html = nav;
+  if (ci.length) html += section('Individuals', ci.length, 'cand-indi') + ci.map(indiCard).join('');
+  if (cs.length) html += section('Sources', cs.length, 'cand-src') + cs.map(srcCard).join('');
   return html;
 }
 
@@ -868,15 +976,73 @@ class _ReviewHandler(BaseHTTPRequestHandler):
     session_path: str = ''
     done_event: threading.Event = threading.Event()
     final_decisions: dict = {}
+    file_a: 'GedcomFile | None' = None
+    file_b: 'GedcomFile | None' = None
+    _surname_index_a: dict | None = None
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
         if path in ('/', '/index.html'):
             self._html()
         elif path == '/api/state':
             self._json({'decisions': self.__class__.decisions})
+        elif path == '/api/search_match':
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            xref_b = (qs.get('xref_b') or [''])[0]
+            self._search_match(xref_b)
         else:
             self.send_error(404)
+
+    def _search_match(self, xref_b: str):
+        cls = self.__class__
+        file_a, file_b = cls.file_a, cls.file_b
+        if not file_a or not file_b or not xref_b:
+            self._json({'results': []})
+            return
+
+        # Build surname index once and cache it
+        if cls._surname_index_a is None:
+            cls._surname_index_a = _build_surname_index(file_a)
+
+        ind_b = file_b.individuals.get(xref_b)
+        if not ind_b:
+            self._json({'results': []})
+            return
+
+        # Use current merge decisions as family context
+        matched_b_to_a: dict[str, str] = cls.decisions.get('indi_map', {})
+
+        all_xrefs_a = list(file_a.individuals.keys())
+        candidate_xrefs = _get_candidates_for(ind_b, cls._surname_index_a, all_xrefs_a, file_b)
+
+        # If blocking returned very few hits, fall back to scoring all of File A
+        # so we always surface the best matches regardless of surname similarity.
+        search_xrefs = candidate_xrefs if len(candidate_xrefs) >= 5 else set(all_xrefs_a)
+
+        scored: list[tuple[float, str, dict]] = []
+        for xref_a in search_xrefs:
+            ind_a = file_a.individuals[xref_a]
+            score, comps = _score_pair(ind_a, ind_b, matched_b_to_a, file_a, file_b)
+            if score > 0.0:
+                scored.append((score, xref_a, comps))
+
+        scored.sort(key=lambda t: t[0], reverse=True)
+        top3 = scored[:3]
+
+        results = []
+        for score, xref_a, comps in top3:
+            ind_a = file_a.individuals[xref_a]
+            results.append({
+                'xref_a': xref_a,
+                'score': score,
+                'score_components': comps,
+                'detail_a': _indi_detail(ind_a, file_a),
+                'detail_b': _indi_detail(ind_b, file_b),
+            })
+
+        self._json({'results': results})
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -987,6 +1153,9 @@ def run_web_review(
     _ReviewHandler.session_path = session_path
     _ReviewHandler.done_event = done_event
     _ReviewHandler.final_decisions = {}
+    _ReviewHandler.file_a = file_a
+    _ReviewHandler.file_b = file_b
+    _ReviewHandler._surname_index_a = None  # built lazily on first search
 
     server = HTTPServer(('127.0.0.1', port), _ReviewHandler)
     t = threading.Thread(target=server.serve_forever, daemon=True)

@@ -23,6 +23,7 @@ from gedcom_merge.model import (
 )
 from gedcom_merge.normalize import (
     normalize_name_str, parse_date, date_overlap_score, place_similarity,
+    extract_parenthetical_surnames, strip_parentheticals,
 )
 
 
@@ -564,9 +565,16 @@ def _merge_individual(
     normalized_givens: set[str] = set()
     for name in merged_names:
         if name.surname:
-            normalized_surnames.add(name.surname)
-        for part in name.given.split():
-            normalized_givens.add(part)
+            clean_surname = strip_parentheticals(name.surname)
+            if clean_surname:
+                normalized_surnames.add(clean_surname)
+        for alt in extract_parenthetical_surnames(name.full):
+            if alt:
+                normalized_surnames.add(alt)
+        if name.given:
+            clean_given = strip_parentheticals(name.given)
+            for part in clean_given.split():
+                normalized_givens.add(part)
 
     birth_date: ParsedDate | None = None
     death_date: ParsedDate | None = None

@@ -33,8 +33,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help='Output file path (default: merged.ged)')
     p.add_argument('--auto-threshold', type=float, default=0.75,
                    help='Score above which matches are auto-approved (default: 0.75)')
-    p.add_argument('--review-threshold', type=float, default=0.65,
-                   help='Score below which candidates are ignored (default: 0.65)')
+    p.add_argument('--review-threshold', type=float, default=0.50,
+                   help='Score below which candidates are ignored (default: 0.50)')
     p.add_argument('--source-auto-threshold', type=float, default=0.90,
                    help='Auto-match threshold for sources (default: 0.90)')
     p.add_argument('--source-review-threshold', type=float, default=0.85,

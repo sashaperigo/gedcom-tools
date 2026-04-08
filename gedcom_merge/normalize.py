@@ -84,6 +84,28 @@ def normalize_given(s: str) -> str:
     return _normalize_str(s)
 
 
+_PAREN_RE = re.compile(r'\(([^)]+)\)')
+
+
+def extract_parenthetical_surnames(full: str) -> list[str]:
+    """
+    Extract alternate surnames from parenthetical text in a GEDCOM NAME value.
+
+    Handles two forms:
+      "/Bonnici (Bonnar)/"  → surname field contains the parens
+      "/Bonnici/ (Bonnar)"  → parens appear after the closing slash (given field)
+
+    Returns a list of normalized surname strings extracted from the parentheses.
+    Non-name tokens like single letters or stopwords are left to the caller to filter.
+    """
+    return [_normalize_str(m.group(1)) for m in _PAREN_RE.finditer(full) if m.group(1).strip()]
+
+
+def strip_parentheticals(s: str) -> str:
+    """Remove all (...) groups from a string (used to clean given/surname fields)."""
+    return ' '.join(_PAREN_RE.sub(' ', s).split())
+
+
 # ---------------------------------------------------------------------------
 # Title tokenization (for source matching)
 # ---------------------------------------------------------------------------
