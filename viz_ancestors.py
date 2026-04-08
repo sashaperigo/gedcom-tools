@@ -1098,8 +1098,18 @@ function computeRelativePositions() {
     if (!rels) continue;
     const male = isMaleKey(k);
 
-    // Spouses always go to the RIGHT of the anchor
-    let newSpIdx = 0;
+    // Spouses always go to the RIGHT of the anchor.
+    // Start newSpIdx after any existing tree-spouses that already occupy right slots,
+    // so new (non-tree) spouses don't overlap with them.
+    const existingRightSlots = rels.spouses.reduce((acc, xref) => {
+      const ek = xrefToKey.get(xref);
+      if (ek !== undefined) {
+        const pos = _posCache.get(ek);
+        if (pos && pos.x >= x + NODE_W) return acc + 1;
+      }
+      return acc;
+    }, 0);
+    let newSpIdx = existingRightSlots;
     rels.spouses.forEach((xref, j) => {
       const existingKey = xrefToKey.get(xref);
       if (existingKey !== undefined) {
