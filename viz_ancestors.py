@@ -1023,6 +1023,13 @@ function _subtreeWidth(k, cache) {
     // groups don't run into each other.
     const fHasAnc = hasFather && (visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1));
     const mHasAnc = hasMother && (visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1));
+    // QUICK FIX: inject a fixed 1-slot gap when both sides have ancestors.
+    // This prevents the two parent groups from touching but is too blunt —
+    // it applies the same gap at every level regardless of actual subtree density,
+    // and doesn't handle asymmetric cases (e.g. one side much wider than the other).
+    // A proper fix would use a Reingold-Tilford-style contour algorithm to compute
+    // the minimal separation that avoids overlap at each level.
+    // See: https://github.com/sashaperigo/gedcom-tools/issues/5
     w = Math.max(1, fw + mw + (fHasAnc && mHasAnc ? 1 : 0));
   }
   // Reserve sibling slots (non-root only; root siblings are placed outside layout bounds)
@@ -1201,6 +1208,11 @@ function fitAndCenter(focusKey) {
   if (minX === Infinity) minX = 0;
   const treeW = maxX - minX + 2 * MARGIN_X;
   const treeH = maxY + 20;
+  // QUICK FIX: fit to height only, ignoring width. This fills vertical space
+  // but can leave wide trees clipped horizontally. A proper solution would
+  // fit to height as the primary axis and then pan so the focal node is
+  // centered — ensuring it's never out of view even when scaleX < scaleY.
+  // See: https://github.com/sashaperigo/gedcom-tools/issues/6
   const scaleY = (vp.clientHeight * 0.92) / treeH;
   scale = Math.min(1, scaleY);
 
