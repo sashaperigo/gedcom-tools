@@ -34,6 +34,12 @@ Checks performed:
   8. Level jumps — no line's level exceeds the previous line's level by more
      than 1 (e.g., a level-3 line appearing directly after a level-1 line is
      invalid GEDCOM 5.5.1). No auto-fix; these require manual correction.
+  9. NAME slash balance — each NAME value must contain zero or exactly one
+     slash-delimited surname section (e.g. "John /Smith/" is valid; two pairs
+     of slashes like "/John/ /Smith/" is invalid per GEDCOM 5.5.1 §2.7.2).
+     No auto-fix; these require manual review.
+ 10. SEX values — SEX tag values must be M, F, or U per GEDCOM 5.5.1 §2.7.
+     No auto-fix; these require manual review.
 
 Notes:
   - Only level-2 DATE lines (event dates on INDI/FAM records) are touched by
@@ -523,6 +529,53 @@ def scan_level_jumps(path: str) -> list[tuple[int, int, int]]:
             if prev_level is not None and curr_level > prev_level + 1:
                 violations.append((lineno, prev_level, curr_level))
             prev_level = curr_level
+    return violations
+
+
+def scan_name_slashes(path: str) -> list[tuple[int, str]]:
+    """
+    Return list of (lineno, value) for NAME lines whose value contains more
+    than one slash-delimited surname section.
+
+    GEDCOM 5.5.1 §2.7.2 allows exactly zero or one pair of slashes in a NAME
+    personal value: "Given /Surname/ Suffix".  Two or more pairs (e.g.
+    "/Given/ /Surname/") are invalid.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = NAME_LINE_RE.match(line)
+            if not m:
+                continue
+            val = m.group(3)
+            # Count slash-delimited sections: each pair is open+close slash
+            slash_count = val.count('/')
+            if slash_count > 2:
+                violations.append((lineno, val))
+    return violations
+
+
+_SEX_LINE_RE = re.compile(r'^1 SEX (.+)$')
+_VALID_SEX = frozenset({'M', 'F', 'U'})
+
+
+def scan_sex_values(path: str) -> list[tuple[int, str]]:
+    """
+    Return list of (lineno, value) for SEX lines whose value is not M, F, or U.
+
+    GEDCOM 5.5.1 defines SEX_VALUE as M | F | U (male, female, undetermined).
+    Any other value is a spec violation.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            m = _SEX_LINE_RE.match(raw.rstrip('\n'))
+            if not m:
+                continue
+            val = m.group(1).strip()
+            if val not in _VALID_SEX:
+                violations.append((lineno, val))
     return violations
 
 
@@ -1138,6 +1191,30 @@ def main():
                 print(f'  line {ln}: level {prev} → level {curr}')
         else:
             print('OK: no invalid level jumps.')
+
+        name_slash_issues = scan_name_slashes(args.gedfile)
+        if name_slash_issues:
+            errors = True
+            print(f'\n{len(name_slash_issues)} NAME value(s) with multiple slash-delimited '
+                  'sections (invalid per GEDCOM 5.5.1 §2.7.2 — requires manual correction):')
+            for ln, val in name_slash_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(name_slash_issues) > 20:
+                print(f'  ... and {len(name_slash_issues) - 20} more.')
+        else:
+            print('OK: all NAME values have valid slash structure.')
+
+        sex_issues = scan_sex_values(args.gedfile)
+        if sex_issues:
+            errors = True
+            print(f'\n{len(sex_issues)} SEX value(s) not in {{M, F, U}} '
+                  '(invalid per GEDCOM 5.5.1 — requires manual correction):')
+            for ln, val in sex_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(sex_issues) > 20:
+                print(f'  ... and {len(sex_issues) - 20} more.')
+        else:
+            print('OK: all SEX values are valid (M, F, or U).')
 
         plac_issues = scan_plac(args.gedfile)
         if plac_issues:
