@@ -70,7 +70,14 @@ def _score_title(src_a: Source, src_b: Source) -> float:
     if loc_a and loc_b and loc_a != loc_b:
         return 0.0
 
-    j = jaccard(src_a.title_tokens, src_b.title_tokens)
+    ta, tb = src_a.title_tokens, src_b.title_tokens
+    # Subset bonus: if all tokens of one title appear in the other (e.g. Ancestry
+    # databases where one tree records "..., 1800's-current" and the other drops
+    # the date range suffix), treat it as a near-certain match.
+    if ta and tb and (ta <= tb or tb <= ta):
+        return 0.97
+
+    j = jaccard(ta, tb)
     if 0.50 < j < 0.85:
         # Also compute Levenshtein on full titles as tiebreaker
         lev = _levenshtein_similarity(src_a.title, src_b.title)
