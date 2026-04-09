@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     from gedcom_merge.match_sources import match_sources
     from gedcom_merge.match_individuals import match_individuals
     from gedcom_merge.match_families import match_families
-    from gedcom_merge.merge import merge_records, MergeStats, deduplicate_merged_sources
+    from gedcom_merge.merge import merge_records, MergeStats, deduplicate_merged_sources, remove_empty_family_shells
     from gedcom_merge.writer import write_gedcom
     from gedcom_merge.validator import validate
     from gedcom_merge.report import generate_report
@@ -181,7 +181,14 @@ def main(argv: list[str] | None = None) -> int:
     ])
     stats.fam_matched_auto = len(fam_result.matches)
 
-    # ---- Phase 4.5: Post-merge source deduplication ----
+    # ---- Phase 4.5: Post-merge cleanup ----
+    print('Removing empty family shells...')
+    shells_removed = remove_empty_family_shells(merged)
+    if shells_removed:
+        print(f'  Removed {shells_removed} empty family shell(s)')
+    else:
+        print('  No empty family shells found.')
+
     print('Deduplicating sources...')
     dedup_count = deduplicate_merged_sources(merged)
     if dedup_count:

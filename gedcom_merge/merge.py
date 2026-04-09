@@ -873,6 +873,46 @@ def merge_records(
 
 
 # ---------------------------------------------------------------------------
+# Post-merge empty family shell removal
+# ---------------------------------------------------------------------------
+
+def remove_empty_family_shells(merged: GedcomFile) -> int:
+    """
+    Post-merge pass: remove FAM records that carry no genealogical content.
+
+    An "empty shell" is a family that has a spouse link (HUSB or WIFE) but
+    no events, no children, and no citations.  These are created when File B
+    contains a family record that was never matched to a File A family and
+    has no content of its own — the merge faithfully copies the empty record,
+    but the result adds no information to the tree.
+
+    For each removed family the corresponding FAMS pointer is removed from
+    both spouses' individual records so the merged file remains referentially
+    consistent.
+
+    Returns the number of family records removed.
+    """
+    empty_xrefs: set[str] = {
+        xref
+        for xref, fam in merged.families.items()
+        if (fam.husband_xref or fam.wife_xref)
+        and not fam.events
+        and not fam.child_xrefs
+        and not fam.citations
+    }
+    if not empty_xrefs:
+        return 0
+
+    for xref in empty_xrefs:
+        del merged.families[xref]
+
+    for indi in merged.individuals.values():
+        indi.family_spouse = [f for f in indi.family_spouse if f not in empty_xrefs]
+
+    return len(empty_xrefs)
+
+
+# ---------------------------------------------------------------------------
 # Post-merge source deduplication
 # ---------------------------------------------------------------------------
 

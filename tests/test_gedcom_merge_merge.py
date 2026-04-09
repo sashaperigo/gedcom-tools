@@ -13,6 +13,7 @@ from gedcom_merge.merge import (
     merge_records,
     _merge_citations, _merge_names, _merge_events, _merge_notes,
     _prefer_date, _prefer_place,
+    remove_empty_family_shells,
     MergeStats,
 )
 from gedcom_merge.normalize import parse_date
@@ -438,3 +439,121 @@ class TestMergeRecords:
         src_merged = merged.sources['@S1@']
         assert src_merged.author == 'John Scholar'
         assert 'Digitized 2020' in src_merged.notes
+
+
+# ---------------------------------------------------------------------------
+# Empty family shell tests
+# ---------------------------------------------------------------------------
+
+class TestRemoveEmptyFamilyShells:
+    def test_removes_shell_with_only_spouses(self):
+        """A family with HUSB+WIFE but no events/children/citations is removed."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        fam = _family('@F1@', '@I1@', '@I2@')  # no events, no children, no citations
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 1
+        assert '@F1@' not in merged.families
+
+    def test_cleans_up_fams_on_individuals(self):
+        """FAMS pointers to removed shells are cleaned from individual records."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        fam = _family('@F1@', '@I1@', '@I2@')
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': fam},
+        )
+        remove_empty_family_shells(merged)
+        assert '@F1@' not in merged.individuals['@I1@'].family_spouse
+        assert '@F1@' not in merged.individuals['@I2@'].family_spouse
+
+    def test_keeps_family_with_events(self):
+        """A family with a MARR event is preserved."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 0
+        assert '@F1@' in merged.families
+
+    def test_keeps_family_with_children(self):
+        """A family with children is preserved even with no events."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        ind_c = _indi('@I3@', 'Child', 'Smith', famc=['@F1@'])
+        fam = Family('@F1@', '@I1@', '@I2@', ['@I3@'], [], [], _node('FAM', '@F1@'))
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w, '@I3@': ind_c},
+            fams={'@F1@': fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 0
+
+    def test_keeps_non_shell_removes_shell(self):
+        """Removes only empty shells, leaving real families intact."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell_fam = _family('@F_MERGE_0001@', '@I1@', '@I2@')
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell_fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 1
+        assert '@F1@' in merged.families
+        assert '@F_MERGE_0001@' not in merged.families
+        assert '@F1@' in merged.individuals['@I1@'].family_spouse
+        assert '@F_MERGE_0001@' not in merged.individuals['@I1@'].family_spouse
+
+    def test_merge_records_does_not_produce_empty_shells(self):
+        """
+        End-to-end: unmatched B families with no content should not
+        appear as empty shells after merge + remove_empty_family_shells().
+        """
+        ind_a_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_a_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        fam_a = _family('@F1@', '@I1@', '@I2@')  # A's family — also empty, but from A
+
+        # File B has these same people (matched) in an empty family
+        ind_b_h = _indi('@I10@', 'John', 'Smith', fams=['@F10@'])
+        ind_b_w = _indi('@I11@', 'Jane', 'Smith', sex='F', fams=['@F10@'])
+        fam_b = _family('@F10@', '@I10@', '@I11@')  # empty, unmatched
+
+        file_a = _file(
+            indis={'@I1@': ind_a_h, '@I2@': ind_a_w},
+            fams={'@F1@': fam_a},
+        )
+        file_b = _file(
+            indis={'@I10@': ind_b_h, '@I11@': ind_b_w},
+            fams={'@F10@': fam_b},
+        )
+
+        decisions = MergeDecisions()
+        decisions.indi_map = {'@I10@': '@I1@', '@I11@': '@I2@'}
+        decisions.family_map = {}
+        decisions.family_disposition = {'@F10@': 'add'}  # auto-added by review.py
+        decisions.indi_disposition = {}
+        decisions.source_map = {}
+        decisions.source_disposition = {}
+
+        merged, _ = merge_records(file_a, file_b, decisions)
+        remove_empty_family_shells(merged)
+
+        empty = [
+            xref for xref, fam in merged.families.items()
+            if (fam.husband_xref or fam.wife_xref)
+            and not fam.events and not fam.child_xrefs and not fam.citations
+        ]
+        assert empty == [], f'Empty shells remain after cleanup: {empty}'
