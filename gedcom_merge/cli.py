@@ -74,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     from gedcom_merge.writer import write_gedcom
     from gedcom_merge.validator import validate
     from gedcom_merge.report import generate_report
+    from gedcom_merge.analysis import analyze_merged
     from gedcom_merge.session import new_session, load_session, save_session
     from gedcom_merge.review import run_review
     from gedcom_merge.review_html import run_web_review
@@ -188,6 +189,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print('  No duplicate sources found.')
 
+    # ---- Phase 4.6: Post-merge data quality analysis ----
+    print('Analyzing merged data quality...')
+    analysis = analyze_merged(merged)
+    if analysis.has_issues():
+        print(f'  Warning: {analysis.issue_count()} data quality issue(s) found:')
+        analysis.print_summary()
+    else:
+        print('  No data quality issues found.')
+
     # ---- Phase 5: Write ----
     print(f'Writing {args.output}...')
     write_gedcom(merged, args.output,
@@ -207,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         print('  Validation passed.')
 
     # ---- Phase 7: Report ----
-    generate_report(file_a, file_b, merged, stats, args.report)
+    generate_report(file_a, file_b, merged, stats, args.report, analysis=analysis)
 
     return 0
 

@@ -9,6 +9,7 @@ import datetime
 
 from gedcom_merge.model import GedcomFile
 from gedcom_merge.merge import MergeStats
+from gedcom_merge.analysis import AnalysisReport
 
 
 _DIVIDER = '=' * 50
@@ -20,6 +21,7 @@ def generate_report(
     merged: GedcomFile,
     stats: MergeStats,
     report_path: str,
+    analysis: AnalysisReport | None = None,
 ) -> str:
     """
     Build the merge report text, print it, and save to report_path.
@@ -68,6 +70,47 @@ def generate_report(
         lines.append('Warnings:')
         for w in stats.warnings:
             lines.append(f'  - {w}')
+
+    if analysis is not None:
+        lines.append('')
+        lines.append('Data Quality Analysis:')
+        if not analysis.has_issues():
+            lines.append('  No issues found.')
+        else:
+            lines.append(f'  Total issues: {analysis.issue_count()}')
+            if analysis.broken_xrefs:
+                lines.append(f'  Broken cross-references ({len(analysis.broken_xrefs)}):')
+                for msg in analysis.broken_xrefs:
+                    lines.append(f'    {msg}')
+            if analysis.duplicate_families:
+                lines.append(f'  Duplicate families ({len(analysis.duplicate_families)} pairs):')
+                for a, b in analysis.duplicate_families:
+                    lines.append(f'    {a} == {b}')
+            if analysis.duplicate_sources:
+                lines.append(f'  Duplicate sources ({len(analysis.duplicate_sources)} pairs):')
+                for a, b in analysis.duplicate_sources:
+                    lines.append(f'    {a} == {b}')
+            if analysis.orphaned_individuals:
+                lines.append(f'  Orphaned individuals ({len(analysis.orphaned_individuals)}):')
+                for xref in analysis.orphaned_individuals:
+                    lines.append(f'    {xref}')
+            if analysis.duplicate_names:
+                total = sum(len(v) for v in analysis.duplicate_names.values())
+                lines.append(f'  Duplicate NAME entries ({total} across {len(analysis.duplicate_names)} individuals):')
+                for xref, names in analysis.duplicate_names.items():
+                    lines.append(f'    {xref}: {", ".join(names)}')
+            if analysis.excessive_citations:
+                lines.append(f'  Events with excessive citations (>{10}): {len(analysis.excessive_citations)}')
+                for xref, tag, count in analysis.excessive_citations:
+                    lines.append(f'    {xref} {tag}: {count} citations')
+            if analysis.duplicate_citations:
+                lines.append(f'  Duplicate citations ({len(analysis.duplicate_citations)}):')
+                for xref, tag, src, page in analysis.duplicate_citations:
+                    lines.append(f'    {xref} {tag}: {src} page="{page}"')
+            if analysis.empty_families:
+                lines.append(f'  Empty family shells ({len(analysis.empty_families)}):')
+                for xref in analysis.empty_families:
+                    lines.append(f'    {xref}')
 
     text = '\n'.join(lines) + '\n'
 
