@@ -31,6 +31,7 @@ from gedcom_merge.match_individuals import (
     _get_candidates_for,
     _score_pair,
 )
+from gedcom_merge.match_sources import _score_pair as _score_source_pair
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +339,14 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 .empty-state{text-align:center;padding:60px 20px;color:var(--text3)}
 .empty-state .icon{font-size:40px;margin-bottom:10px}
 
+/* Back-to-top button */
+#back-top{position:fixed;bottom:24px;right:24px;background:var(--surface2);
+          border:1px solid var(--border);color:var(--text2);border-radius:50%;
+          width:40px;height:40px;font-size:18px;cursor:pointer;display:none;
+          align-items:center;justify-content:center;z-index:50;
+          box-shadow:0 2px 8px rgba(0,0,0,.4);transition:opacity .2s}
+#back-top.show{display:flex} #back-top:hover{color:var(--text);border-color:var(--accent)}
+
 /* Finish overlay */
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
          align-items:center;justify-content:center;z-index:100}
@@ -372,6 +381,7 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
   </nav>
   <main id="main"></main>
 </div>
+<button id="back-top" title="Back to top" onclick="document.getElementById('main').scrollTo({top:0,behavior:'smooth'})">&#8679;</button>
 <div id="overlay">
   <div class="finish-card">
     <h2>Review Complete</h2>
@@ -408,6 +418,9 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('lbl-b').textContent = DATA.file_b_name;
   updateBadges();
   loadState().then(() => render());
+  document.getElementById('main').addEventListener('scroll', function() {
+    document.getElementById('back-top').classList.toggle('show', this.scrollTop > 300);
+  });
 });
 
 document.addEventListener('keydown', e => {
@@ -805,8 +818,54 @@ function unmatchedIndi(d) {
 }
 
 /* ─── Unmatched source ───────────────────────────────────────────── */
+var _srcSearchCache = {};
+var _srcSearchOpen = {};
+
+async function searchSrcMatch(xref_b) {
+  _srcSearchOpen[xref_b] = !_srcSearchOpen[xref_b];
+  if (_srcSearchOpen[xref_b] && !_srcSearchCache[xref_b]) {
+    try {
+      var r = await fetch('/api/search_source?xref_b=' + encodeURIComponent(xref_b));
+      var data = await r.json();
+      _srcSearchCache[xref_b] = data.results || [];
+    } catch(_) { _srcSearchCache[xref_b] = []; }
+  }
+  render();
+}
+
+function renderSrcSearchPanel(xref_b) {
+  if (!_srcSearchOpen[xref_b]) return '';
+  var results = _srcSearchCache[xref_b];
+  if (!results) return '<div style="border-top:1px solid var(--border);padding:12px;color:var(--text2);font-size:13px;">Searching\u2026</div>';
+  if (!results.length) return '<div style="border-top:1px solid var(--border);padding:12px;color:var(--text2);font-size:13px;">No candidates found in File A.</div>';
+  var html = '<div style="border-top:1px solid var(--border);padding:12px 16px;background:rgba(0,0,0,.15);">' +
+    '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px;">Top candidates in File A</div>';
+  results.forEach(function(m) {
+    var da = m.detail_a||{}, db = m.detail_b||{};
+    var pct = Math.round(m.score * 100);
+    var cls = m.score>=.85?'score-hi':m.score>=.65?'score-md':'score-lo';
+    html += '<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">' +
+      '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
+      '<span class="score ' + cls + '">' + pct + '% match</span>' +
+      '<span style="font-size:13px;font-weight:600;">' + esc(da.title||m.xref_a) + '</span>' +
+      '</div>' + srcTable(da, db) +
+      '<div class="actions" style="padding:8px 14px;">' +
+      '<button class="btn btn-merge" onclick="_mergeSrcFromSearch(\'' + esc(xref_b) + '\',\'' + esc(m.xref_a) + '\')">Merge \u2014 same source</button>' +
+      '<button class="btn btn-add" style="margin-left:6px;" onclick="_addSrcFromSearch(\'' + esc(xref_b) + '\')">Add as new source</button>' +
+      '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function _mergeSrcFromSearch(xb, xa) { _srcSearchOpen[xb] = false; decide('source', xb, 'merge', xa); }
+function _addSrcFromSearch(xb) { _srcSearchOpen[xb] = false; decide('source', xb, 'add', null); }
+
 function unmatchedSrc(d) {
   var xb = d.xref_b, disp = D.source_disposition[xb];
+  var filePill = '<span style="font-size:10px;font-weight:600;letter-spacing:.05em;padding:2px 7px;border-radius:10px;background:rgba(124,95,230,.18);color:#b39dfa;margin-left:8px;">' + esc(DATA.file_b_name) + '</span>';
+  var searchBtn = '<button class="btn" style="margin-left:auto;font-size:12px;background:rgba(79,142,247,.18);color:#7eb0ff;border:1px solid rgba(79,142,247,.35);" onclick="searchSrcMatch(\'' + esc(xb) + '\')">' +
+    (_srcSearchOpen[xb] ? '\u25b2 Hide matches' : '\ud83d\udd0d Find match in File A') + '</button>';
   var actionBar;
   if (disp === 'add') {
     actionBar = '<div class="decided d-add">\u2713 Will be added' +
@@ -817,13 +876,14 @@ function unmatchedSrc(d) {
   } else {
     actionBar = '<div class="actions">' +
       '<button class="btn btn-add" onclick="decide(\'source\',\'' + esc(xb) + '\',\'add\',null)">Add</button>' +
-      '<button class="btn btn-skip" onclick="decide(\'source\',\'' + esc(xb) + '\',\'skip\',null)">Skip</button></div>';
+      '<button class="btn btn-skip" onclick="decide(\'source\',\'' + esc(xb) + '\',\'skip\',null)">Skip</button>' +
+      searchBtn + '</div>';
   }
   return '<div class="card">' +
     '<div style="padding:12px 16px;border-bottom:1px solid var(--border);">' +
-    '<div style="font-size:14px;font-weight:600;">' + esc(d.title||xb) + '</div>' +
-    (d.author ? '<div style="font-size:12px;color:var(--text2);">' + esc(d.author) + '</div>' : '') + '</div>' +
-    actionBar + '</div>';
+    '<div style="font-size:14px;font-weight:600;display:flex;align-items:center;">' + esc(d.title||xb) + filePill + '</div>' +
+    (d.author ? '<div style="font-size:12px;color:var(--text2);margin-top:2px;">' + esc(d.author) + '</div>' : '') + '</div>' +
+    actionBar + renderSrcSearchPanel(xb) + '</div>';
 }
 
 /* ─── Tab renderers ──────────────────────────────────────────────── */
@@ -911,9 +971,12 @@ function renderUnmatched() {
     '<button class="btn btn-skip" style="margin-left:6px;" onclick="skipAllUnmatched()">Skip All</button>' +
     '<span class="hint">or decide individually</span></div></div>';
 
-  var html = bulk;
-  if (ui.length) html += section('Individuals', ui.length) + ui.map(unmatchedIndi).join('');
-  if (us.length) html += section('Sources', us.length) + us.map(unmatchedSrc).join('');
+  var nav = (ui.length && us.length)
+    ? jumpNav([{id:'unmatched-indi',label:'Individuals'},{id:'unmatched-src',label:'Sources'}])
+    : '';
+  var html = bulk + nav;
+  if (ui.length) html += section('Individuals', ui.length, 'unmatched-indi') + ui.map(unmatchedIndi).join('');
+  if (us.length) html += section('Sources', us.length, 'unmatched-src') + us.map(unmatchedSrc).join('');
   if (uf.length) {
     html += section('Families', uf.length) + uf.map(function(d) {
       var xb = d.xref_b, disp = D.family_disposition[xb];
@@ -992,6 +1055,11 @@ class _ReviewHandler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             xref_b = (qs.get('xref_b') or [''])[0]
             self._search_match(xref_b)
+        elif path == '/api/search_source':
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query)
+            xref_b = (qs.get('xref_b') or [''])[0]
+            self._search_source(xref_b)
         else:
             self.send_error(404)
 
@@ -1040,6 +1108,41 @@ class _ReviewHandler(BaseHTTPRequestHandler):
                 'score_components': comps,
                 'detail_a': _indi_detail(ind_a, file_a),
                 'detail_b': _indi_detail(ind_b, file_b),
+            })
+
+        self._json({'results': results})
+
+    def _search_source(self, xref_b: str):
+        cls = self.__class__
+        file_a, file_b = cls.file_a, cls.file_b
+        if not file_a or not file_b or not xref_b:
+            self._json({'results': []})
+            return
+
+        src_b = file_b.sources.get(xref_b)
+        if not src_b:
+            self._json({'results': []})
+            return
+
+        scored: list[tuple[float, str]] = []
+        for xref_a, src_a in file_a.sources.items():
+            score = _score_source_pair(src_a, src_b)
+            if score > 0.0:
+                scored.append((score, xref_a))
+
+        scored.sort(key=lambda t: t[0], reverse=True)
+        top3 = scored[:3]
+
+        results = []
+        for score, xref_a in top3:
+            src_a = file_a.sources[xref_a]
+            results.append({
+                'xref_a': xref_a,
+                'score': score,
+                'title_a': src_a.title or '',
+                'author_a': src_a.author or '',
+                'title_b': src_b.title or '',
+                'author_b': src_b.author or '',
             })
 
         self._json({'results': results})
