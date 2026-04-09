@@ -56,62 +56,66 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 def _build_alias_groups() -> dict[str, set[str]]:
-    groups = [
-        # ── Male ──────────────────────────────────────────────────
-        {'george', 'georgios', 'giorgios', 'kevork', 'georgio', 'giorgio'},
-        {'francis', 'francesco', 'francois', 'français'},
-        {'john', 'ioannis', 'yiannis', 'yannis', 'giannis', 'jean', 'juan', 'giovanni', 'johannes',
-         'yanni'},
-        {'constantine', 'konstantinos', 'kostas', 'costas', 'constantino'},
-        {'stephen', 'esteban', 'stefan', 'stefano', 'steve', 'steven', 'stephano', 'stephane'},
-        {'nicholas', 'nikolaos', 'nikos', 'nikolas', 'nicolas', 'nikola', 'nicolao', 'nicola', 'nico',
-         'nicolo', 'nicolò', 'niccolo', 'niccolò', 'nicolaas', 'nicorosi'},
-        {'peter', 'petros', 'pierre', 'pietro', 'piero', 'petar', 'porto'},
-        {'michael', 'michail', 'michalis', 'mikael', 'miguel', 'mihail', 'michel', 'michele'},
-        {'theodore', 'theodoros', 'theo'},
-        {'dimitri', 'dimitrios', 'demetrios', 'demetrius', 'demetri'},
-        {'thomas', 'tomas', 'tommaso', 'tomaso'},
-        {'alexander', 'alexandros', 'alexios', 'alex', 'alekos', 'aleksander', 'alexandre'},
-        {'evangelos', 'vangelis'},
-        {'panagiotis', 'panos', 'panayiotis', 'takis'},
-        {'christos', 'christodoulos', 'christoforos', 'christopher', 'chris', 'christo',
-         'cristoforo', 'christoforo'},
-        {'spyros', 'spyridon', 'spiro', 'spiridon', 'spiridione'},
-        {'vasilis', 'vassilis', 'vasileios', 'basilios', 'vaselios', 'vasilios'},
-        {'antonis', 'antonios', 'antonio', 'anthony', 'tony', 'antoine'},
-        {'emilio', 'emil', 'emile', 'emin'},
-        {'jacobo', 'giacomo', 'jacques', 'jacob', 'zaccaria'},
-        {'paul', 'paolo', 'paulo', 'pablo', 'pauli'},
-        {'philip', 'filippo', 'philippe', 'philippo'},
-        {'andrew', 'andre', 'andrei'},  # andrea = male in Italian context
-        {'dominic', 'dominique', 'domenico'},
-        {'gregory', 'gregoire', 'gregorio', 'kirkor'},
-        {'jerome', 'jérôme', 'gerolamo', 'geronimo', 'hyeronimo'},
-        {'louis', 'luigi'},
-        {'giuseppe', 'joseph', 'josef'},
-
-        # ── Female ────────────────────────────────────────────────
-        {'helen', 'eleni', 'elena', 'helene', 'helena', 'hélène', 'ellen'},
-        {'giuseppa', 'giuseppina', 'josephine', 'joséphine', 'josephina', 'josefina', 'josepha'},
-        {'mary', 'maria', 'marie'},
-        {'sophia', 'sofia', 'sophie'},
-        {'katerina', 'katherine', 'catherine', 'katarina', 'caterina', 'katrina', 'kate',
-         'catarina', 'catharina', 'kathleen', 'chatrine'},
-        {'anna', 'anne', 'ann', 'ana'},
-        {'evangeline', 'vangelio'},
-        {'fotini', 'photini'},
-        {'angela', 'angele', 'angelina', 'angelica', 'angelique', 'angélique', 'angeru'},
-        {'teresa', 'therese', 'thérèse', 'theresa'},
-        {'madeleine', 'magdalena', 'maddalena', 'madalena'},
-        {'brigida', 'brigidina', 'birgitta', 'bergula'},
-        {'apollonia', 'appollonia', 'plumu', 'plumù'},
-        {'despina', 'despinu'},
-        {'battistina', 'battina', 'bettina', 'battistine'},
-        {'julia', 'giulia', 'giuliana'},
-        {'joanna', 'giovanna', 'jeanne'},
-        {'rose', 'rosa', 'rosine', 'rosina', 'rosalie'},
-        {'louise', 'luigia'},
-    ]
+    groups = [                                                                                             
+      # ── Male ──────────────────────────────────────────────────                                       
+      {'george', 'georgios', 'giorgios', 'kevork', 'georgio', 'giorgio'},                                
+      {'francis', 'francesco', 'francois', 'français'},                                                  
+      {'john', 'ioannis', 'yiannis', 'yannis', 'giannis', 'jean', 'juan', 'giovanni', 'johannes',        
+       'yanni'},                                                                                         
+      {'constantine', 'konstantinos', 'kostas', 'costas', 'constantino'},                                
+      {'stephen', 'esteban', 'stefan', 'stefano', 'steve', 'steven', 'stephano', 'stephane'},            
+      {'nicholas', 'nikolaos', 'nikos', 'nikolas', 'nicolas', 'nikola', 'nicolao', 'nicola', 'nico',     
+       'nicolo', 'nicolò', 'niccolo', 'niccolò', 'nicolaas', 'nicorosi'},                                
+      {'peter', 'petros', 'pierre', 'pietro', 'piero', 'petar', 'porto'},                                
+      {'michael', 'michail', 'michalis', 'mikael', 'miguel', 'mihail', 'michel', 'michele'},             
+      {'theodore', 'theodoros', 'theo'},                                                                 
+      {'dimitri', 'dimitrios', 'demetrios', 'demetrius', 'demetri'},                                     
+      {'thomas', 'tomas', 'tommaso', 'tomaso'},                                                          
+      {'alexander', 'alexandros', 'alexios', 'alex', 'alekos', 'aleksander', 'alexandre'},               
+      {'evangelos', 'vangelis'},                                                                         
+      {'panagiotis', 'panos', 'panayiotis', 'takis'},                                                    
+      {'christos', 'christodoulos', 'christoforos', 'christopher', 'chris', 'christo',                   
+       'cristoforo', 'christoforo'},                                                                     
+      {'spyros', 'spyridon', 'spiro', 'spiridon', 'spiridione'},                                         
+      {'vasilis', 'vassilis', 'vasileios', 'basilios', 'vaselios', 'vasilios'},                          
+      {'antonis', 'antonios', 'antonio', 'anthony', 'tony', 'antoine'},                                  
+      {'emilio', 'emil', 'emile', 'emin'},                                                               
+      {'jacobo', 'giacomo', 'jacques', 'jacob', 'zaccaria'},                                             
+      {'paul', 'paolo', 'paulo', 'pablo', 'pauli', 'polycarpe', 'policarpo'},                            
+      {'philip', 'filippo', 'philippe', 'philippo'},                                                     
+      {'andrew', 'andre', 'andrei'},                                                                     
+      {'dominic', 'dominique', 'domenico'},                                                              
+      {'gregory', 'gregoire', 'gregorio', 'kirkor'},                                                     
+      {'jerome', 'jérôme', 'gerolamo', 'geronimo', 'hyeronimo'},                                         
+      {'louis', 'luigi'},                                                                                
+      {'giuseppe', 'joseph', 'josef'},                                              
+      {'pantaleone', 'pandeli', 'leon'},                                                                 
+                                                                                                         
+      # ── Female ────────────────────────────────────────────────                                       
+      {'helen', 'eleni', 'elena', 'helene', 'helena', 'hélène', 'ellen'},                                
+      {'giuseppa', 'giuseppina', 'josephine', 'joséphine', 'josephina', 'josefina', 'josepha'},
+      {'mary', 'maria', 'marie', 'maruca', 'marigho'},                                                   
+      {'sophia', 'sofia', 'sophie'},                                                
+      {'katerina', 'katherine', 'catherine', 'katarina', 'caterina', 'katrina', 'kate',                  
+       'catarina', 'catharina', 'kathleen', 'chatrine', 'catu', 'catù'},                                 
+      {'anna', 'anne', 'ann', 'ana'},                                                                    
+      {'evangeline', 'vangelio'},                                                                        
+      {'fotini', 'photini'},                                                                             
+      {'angela', 'angele', 'angelina', 'angelica', 'angelique', 'angélique', 'angeru', 'angerù'},        
+      {'teresa', 'therese', 'thérèse', 'theresa'},                                                       
+      {'madeleine', 'magdalena', 'maddalena', 'madalena'},                                               
+      {'brigida', 'brigidina', 'birgitta', 'bergula'},                                                   
+      {'apollonia', 'appollonia', 'plumu', 'plumù'},                                                     
+      {'despina', 'despinu', 'despinù'},                                                                 
+      {'battistina', 'battina', 'bettina', 'battistine', 'batestu', 'batestù', 'battu'},                 
+      {'julia', 'giulia', 'giuliana'},                                                                   
+      {'joanna', 'giovanna', 'jeanne'},                                                                  
+      {'rose', 'rosa', 'rosine', 'rosina', 'rosalie'},                                                   
+      {'louise', 'luigia'},                                                                              
+      {'epiphanie', 'fanny'},                                                                            
+      {'lucia', 'lula'},                                                                                 
+      {'sofronia', 'subru', 'subrù'},                                                                    
+    ]                                       
     result: dict[str, set[str]] = {}
     for group in groups:
         for name in group:
@@ -169,6 +173,13 @@ def _build_surname_index(file: GedcomFile) -> dict[str, list[str]]:
         meaningful_surnames = [s for s in ind.normalized_surnames if not _is_unknown(s)]
         for sname in meaningful_surnames:
             index[sname].append(xref)
+            # For compound double-surnames (e.g. "sarachaga mendoza"), also index
+            # under each component so a single-surname record can find them.
+            parts = sname.split()
+            if len(parts) > 1:
+                for part in parts:
+                    if part not in meaningful_surnames:
+                        index[part].append(xref)
         if not meaningful_surnames:
             # For married women with unknown surnames, index by husband's surname
             husb_surnames = _get_husband_surnames(ind, file)
@@ -255,6 +266,13 @@ def _score_names(ind_a: Individual, ind_b: Individual) -> tuple[float, float]:
             if not sa or not sb:
                 continue
             s = _name_similarity(sa, sb)
+            # Compound-surname bonus: if one surname is a full word component
+            # of the other (e.g. "sarachaga" vs "sarachaga mendoza"), treat as
+            # a strong match — one file just records the double surname.
+            parts_a = sa.split()
+            parts_b = sb.split()
+            if sa in parts_b or sb in parts_a:
+                s = max(s, 0.92)
             if s > best_surname:
                 best_surname = s
 
