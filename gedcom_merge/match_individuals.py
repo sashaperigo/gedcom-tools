@@ -611,9 +611,14 @@ def _score_pair(
     sex_score = _score_sex(ind_a, ind_b)
     family_score = _score_family_context(ind_b, ind_a, matched_b_to_a, file_a, file_b)
 
-    # Hard veto: if sex is known and contradicts, score is essentially 0
+    # Hard veto: if sex is known and contradicts, score is essentially 0.
+    # Exception: bypass when name + birth + death are all near-perfect (≥ 3.6/4.0
+    # combined), which strongly implies a data-entry error in the SEX field rather
+    # than a genuine distinction between two different people.
     if ind_a.sex and ind_b.sex and ind_a.sex != ind_b.sex:
-        return 0.0, {}
+        primary_signal_sum = surname_score + given_score + birth_score + death_score
+        if primary_signal_sum < 3.4:
+            return 0.0, {}
 
     # Hard veto: both sides have known surnames that are clearly different.
     # fuzz.ratio on short strings can produce misleadingly high scores from

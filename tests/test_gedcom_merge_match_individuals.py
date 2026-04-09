@@ -184,6 +184,23 @@ class TestMatchIndividuals:
         result = match_individuals(file_a, file_b)
         assert len(result.auto_matches) == 0
 
+    def test_sex_mismatch_bypassed_when_all_signals_perfect(self):
+        """Sex mismatch with perfect name+birth+death → surfaces as candidate (data error)."""
+        ind_a = _make_indi('@I1@', 'Elena', 'Vitali', sex='M',
+                           birth_year=1909, death_year=1989)
+        ind_b = _make_indi('@I2@', 'Helena', 'Vitali', sex='F',
+                           birth_year=1909, death_year=1989)
+        # Give both specific birth months so birth_score reaches 1.0
+        for ind in (ind_a, ind_b):
+            birt = next(e for e in ind.events if e.tag == 'BIRT')
+            birt.date = ParsedDate(None, 1909, month=1, day=25)
+            ind.birth_date = birt.date
+        file_a = _make_file(indis={'@I1@': ind_a})
+        file_b = _make_file(indis={'@I2@': ind_b})
+        result = match_individuals(file_a, file_b)
+        all_matched = {m.xref_b for m in result.auto_matches + result.candidates}
+        assert '@I2@' in all_matched, "Should surface as candidate despite sex mismatch"
+
     def test_approximate_birth_year_matches(self):
         """ABT 1880 vs 1880 → should still match."""
         ind_a = _make_indi('@I1@', 'John', 'Smith', birth_year=1880)
