@@ -870,3 +870,139 @@ def merge_records(
         path='',
     )
     return merged, stats
+
+
+# ---------------------------------------------------------------------------
+# Post-merge source deduplication
+# ---------------------------------------------------------------------------
+
+def deduplicate_merged_sources(
+    merged: GedcomFile,
+    threshold: float = 0.85,
+) -> int:
+    """
+    Post-merge pass: collapse source records that are semantically identical
+    but were assigned different xrefs (e.g. the same Ancestry database cited
+    in both input trees with slightly different title strings).
+
+    Algorithm:
+    1. Collect *co-cited* pairs — source xrefs that appear together on the
+       same individual or family record.  This bounds the comparison space to
+       cases where a duplicate actually inflates citations.
+    2. Score each co-cited pair with match_sources._score_pair.
+    3. Build a remap: redundant_xref → canonical_xref.  File-A xrefs
+       (those NOT starting with ``@S_MERGE_``) are preferred as canonical.
+    4. Rewrite every citation in-place; deduplicate citations that now share
+       a source_xref; remove dead source records.
+
+    Returns the number of source records removed.
+    """
+    from gedcom_merge.match_sources import _score_pair as _score_src_pair
+    from dataclasses import replace as _dc_replace
+
+    # ------------------------------------------------------------------ #
+    # Step 1 – collect co-cited pairs                                     #
+    # ------------------------------------------------------------------ #
+
+    def _cit_xrefs(cits: list[CitationRecord]) -> list[str]:
+        return [c.source_xref for c in cits if c.source_xref]
+
+    def _record_xrefs(ind: Individual | None = None, fam: Family | None = None) -> list[str]:
+        obj = ind or fam
+        if obj is None:
+            return []
+        xrefs: list[str] = _cit_xrefs(obj.citations)
+        for ev in obj.events:
+            xrefs.extend(_cit_xrefs(ev.citations))
+        if ind is not None:
+            for nm in ind.names:
+                xrefs.extend(_cit_xrefs(nm.citations))
+        return xrefs
+
+    co_cited: set[tuple[str, str]] = set()
+    for ind in merged.individuals.values():
+        seen = list(dict.fromkeys(_record_xrefs(ind=ind)))
+        for i in range(len(seen)):
+            for j in range(i + 1, len(seen)):
+                a, b = seen[i], seen[j]
+                co_cited.add((min(a, b), max(a, b)))
+    for fam in merged.families.values():
+        seen = list(dict.fromkeys(_record_xrefs(fam=fam)))
+        for i in range(len(seen)):
+            for j in range(i + 1, len(seen)):
+                a, b = seen[i], seen[j]
+                co_cited.add((min(a, b), max(a, b)))
+
+    # ------------------------------------------------------------------ #
+    # Step 2 – score pairs and build remap                                #
+    # ------------------------------------------------------------------ #
+
+    # Union-find: remap[x] → canonical for x
+    remap: dict[str, str] = {}
+
+    def _canonical(x: str) -> str:
+        while x in remap:
+            x = remap[x]
+        return x
+
+    def _is_file_b(xref: str) -> bool:
+        return xref.startswith('@S_MERGE_')
+
+    for xa, xb in co_cited:
+        src_a = merged.sources.get(xa)
+        src_b = merged.sources.get(xb)
+        if not src_a or not src_b:
+            continue
+        if _score_src_pair(src_a, src_b) < threshold:
+            continue
+        ca, cb = _canonical(xa), _canonical(xb)
+        if ca == cb:
+            continue
+        # Prefer File-A xref as canonical; if both same type, keep ca
+        if _is_file_b(ca) and not _is_file_b(cb):
+            remap[ca] = cb
+        else:
+            remap[cb] = ca
+
+    if not remap:
+        return 0
+
+    # ------------------------------------------------------------------ #
+    # Step 3 – rewrite citations in-place                                 #
+    # ------------------------------------------------------------------ #
+
+    def _remap_cit_list(cits: list[CitationRecord]) -> list[CitationRecord]:
+        seen_keys: set[tuple[str, str]] = set()
+        result: list[CitationRecord] = []
+        for c in cits:
+            new_xref = _canonical(c.source_xref) if c.source_xref else c.source_xref
+            key = (new_xref, c.page or '')
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            if new_xref != c.source_xref:
+                c = _dc_replace(c, source_xref=new_xref)
+            result.append(c)
+        return result
+
+    for ind in merged.individuals.values():
+        ind.citations = _remap_cit_list(ind.citations)
+        for ev in ind.events:
+            ev.citations = _remap_cit_list(ev.citations)
+        for nm in ind.names:
+            nm.citations = _remap_cit_list(nm.citations)
+
+    for fam in merged.families.values():
+        fam.citations = _remap_cit_list(fam.citations)
+        for ev in fam.events:
+            ev.citations = _remap_cit_list(ev.citations)
+
+    # ------------------------------------------------------------------ #
+    # Step 4 – remove dead source records                                 #
+    # ------------------------------------------------------------------ #
+
+    dead = set(remap.keys())
+    for xref in dead:
+        merged.sources.pop(xref, None)
+
+    return len(dead)

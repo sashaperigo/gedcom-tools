@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     from gedcom_merge.match_sources import match_sources
     from gedcom_merge.match_individuals import match_individuals
     from gedcom_merge.match_families import match_families
-    from gedcom_merge.merge import merge_records, MergeStats
+    from gedcom_merge.merge import merge_records, MergeStats, deduplicate_merged_sources
     from gedcom_merge.writer import write_gedcom
     from gedcom_merge.validator import validate
     from gedcom_merge.report import generate_report
@@ -179,6 +179,14 @@ def main(argv: list[str] | None = None) -> int:
         m for m in indi_result.candidates if m.xref_b in decisions.indi_map
     ])
     stats.fam_matched_auto = len(fam_result.matches)
+
+    # ---- Phase 4.5: Post-merge source deduplication ----
+    print('Deduplicating sources...')
+    dedup_count = deduplicate_merged_sources(merged)
+    if dedup_count:
+        print(f'  Removed {dedup_count} duplicate source record(s)')
+    else:
+        print('  No duplicate sources found.')
 
     # ---- Phase 5: Write ----
     print(f'Writing {args.output}...')
