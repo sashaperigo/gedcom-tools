@@ -786,7 +786,7 @@ function _addFromSearch(xref_b) {
 }
 
 function unmatchedIndi(d) {
-  var xb = d.xref_b, disp = D.indi_disposition[xb];
+  var xb = d.xref_b, disp = D.indi_disposition[xb], mergedTo = D.indi_map[xb];
   var meta = [d.birth_date, d.birth_place].filter(Boolean).join(' \u00b7 ');
   var filePill = '<span style="font-size:10px;font-weight:600;letter-spacing:.05em;padding:2px 7px;border-radius:10px;background:rgba(79,142,247,.18);color:#7eb0ff;margin-left:8px;">' + esc(DATA.file_b_name) + '</span>';
   var info = '<div style="font-size:15px;font-weight:600;display:flex;align-items:center;">' + esc(d.display_name||xb) + filePill + '</div>';
@@ -798,7 +798,10 @@ function unmatchedIndi(d) {
     (_searchOpen[xb] ? '\u25b2 Hide matches' : '\ud83d\udd0d Find match in File A') + '</button>';
 
   var actionBar;
-  if (disp === 'add') {
+  if (mergedTo) {
+    actionBar = '<div class="decided d-merge">\u2713 Merged \u2192 ' + esc(mergedTo) +
+      ' <button class="btn btn-skip" style="margin-left:8px;font-size:11px;" onclick="undecide(\'indi\',\'' + esc(xb) + '\')">Undo</button></div>';
+  } else if (disp === 'add') {
     actionBar = '<div class="decided d-add">\u2713 Will be added' +
       ' <button class="btn btn-skip" style="margin-left:8px;font-size:11px;" onclick="undecide(\'indi\',\'' + esc(xb) + '\')">Undo</button></div>';
   } else if (disp === 'skip') {
@@ -812,7 +815,7 @@ function unmatchedIndi(d) {
       '<span class="hint"><kbd>a</kbd> add &nbsp; <kbd>s</kbd> skip</span></div>';
   }
 
-  return '<div class="card" style="' + (disp==='add'?'border-color:rgba(79,142,247,.3)':disp?'opacity:.65':'') + '">' +
+  return '<div class="card" style="' + (mergedTo?'border-color:rgba(52,196,106,.3)':disp==='add'?'border-color:rgba(79,142,247,.3)':disp?'opacity:.65':'') + '">' +
     '<div style="padding:12px 16px;border-bottom:1px solid var(--border);">' + info + '</div>' +
     actionBar + renderSearchPanel(xb) + '</div>';
 }
@@ -841,14 +844,16 @@ function renderSrcSearchPanel(xref_b) {
   var html = '<div style="border-top:1px solid var(--border);padding:12px 16px;background:rgba(0,0,0,.15);">' +
     '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px;">Top candidates in File A</div>';
   results.forEach(function(m) {
-    var da = m.detail_a||{}, db = m.detail_b||{};
     var pct = Math.round(m.score * 100);
     var cls = m.score>=.85?'score-hi':m.score>=.65?'score-md':'score-lo';
     html += '<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">' +
       '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">' +
       '<span class="score ' + cls + '">' + pct + '% match</span>' +
-      '<span style="font-size:13px;font-weight:600;">' + esc(da.title||m.xref_a) + '</span>' +
-      '</div>' + srcTable(da, db) +
+      '<span style="font-size:13px;font-weight:600;">' + esc(m.title_a||m.xref_a) + '</span>' +
+      '</div>' +
+      '<div style="padding:8px 14px;font-size:12px;color:var(--text2);">' +
+      (m.author_a ? '<div>Author: ' + esc(m.author_a) + '</div>' : '') +
+      '</div>' +
       '<div class="actions" style="padding:8px 14px;">' +
       '<button class="btn btn-merge" onclick="_mergeSrcFromSearch(\'' + esc(xref_b) + '\',\'' + esc(m.xref_a) + '\')">Merge \u2014 same source</button>' +
       '<button class="btn btn-add" style="margin-left:6px;" onclick="_addSrcFromSearch(\'' + esc(xref_b) + '\')">Add as new source</button>' +
@@ -862,12 +867,15 @@ function _mergeSrcFromSearch(xb, xa) { _srcSearchOpen[xb] = false; decide('sourc
 function _addSrcFromSearch(xb) { _srcSearchOpen[xb] = false; decide('source', xb, 'add', null); }
 
 function unmatchedSrc(d) {
-  var xb = d.xref_b, disp = D.source_disposition[xb];
+  var xb = d.xref_b, disp = D.source_disposition[xb], mergedTo = D.source_map[xb];
   var filePill = '<span style="font-size:10px;font-weight:600;letter-spacing:.05em;padding:2px 7px;border-radius:10px;background:rgba(124,95,230,.18);color:#b39dfa;margin-left:8px;">' + esc(DATA.file_b_name) + '</span>';
   var searchBtn = '<button class="btn" style="margin-left:auto;font-size:12px;background:rgba(79,142,247,.18);color:#7eb0ff;border:1px solid rgba(79,142,247,.35);" onclick="searchSrcMatch(\'' + esc(xb) + '\')">' +
     (_srcSearchOpen[xb] ? '\u25b2 Hide matches' : '\ud83d\udd0d Find match in File A') + '</button>';
   var actionBar;
-  if (disp === 'add') {
+  if (mergedTo) {
+    actionBar = '<div class="decided d-merge">\u2713 Merged \u2192 ' + esc(mergedTo) +
+      ' <button class="btn btn-skip" style="margin-left:8px;font-size:11px;" onclick="undecide(\'source\',\'' + esc(xb) + '\')">Undo</button></div>';
+  } else if (disp === 'add') {
     actionBar = '<div class="decided d-add">\u2713 Will be added' +
       ' <button class="btn btn-skip" style="margin-left:8px;font-size:11px;" onclick="undecide(\'source\',\'' + esc(xb) + '\')">Undo</button></div>';
   } else if (disp === 'skip') {
@@ -879,7 +887,7 @@ function unmatchedSrc(d) {
       '<button class="btn btn-skip" onclick="decide(\'source\',\'' + esc(xb) + '\',\'skip\',null)">Skip</button>' +
       searchBtn + '</div>';
   }
-  return '<div class="card">' +
+  return '<div class="card" style="' + (mergedTo?'border-color:rgba(52,196,106,.3)':disp==='add'?'border-color:rgba(79,142,247,.3)':disp?'opacity:.65':'') + '">' +
     '<div style="padding:12px 16px;border-bottom:1px solid var(--border);">' +
     '<div style="font-size:14px;font-weight:600;display:flex;align-items:center;">' + esc(d.title||xb) + filePill + '</div>' +
     (d.author ? '<div style="font-size:12px;color:var(--text2);margin-top:2px;">' + esc(d.author) + '</div>' : '') + '</div>' +
