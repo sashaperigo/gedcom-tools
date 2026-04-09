@@ -2,7 +2,7 @@
 
 import pytest
 from gedcom_merge.model import (
-    GedcomFile, Individual, Family, GedcomNode,
+    Individual, GedcomFile, GedcomNode,
     NameRecord, EventRecord, ParsedDate,
 )
 from gedcom_merge.match_individuals import (
@@ -19,85 +19,12 @@ from gedcom_merge.match_individuals import (
     _NAME_ALIASES,
 )
 from gedcom_merge.normalize import parse_date
+from tests.helpers import make_indi, make_family, make_file
 
-
-def _make_indi(
-    xref: str,
-    given: str,
-    surname: str,
-    sex: str = 'M',
-    birth_year: int | None = None,
-    death_year: int | None = None,
-    birth_place: str | None = None,
-    fams: list[str] | None = None,
-    famc: list[str] | None = None,
-) -> Individual:
-    names = [NameRecord(
-        full=f'{given} /{surname}/',
-        given=given.lower(),
-        surname=surname.lower(),
-        name_type=None,
-    )]
-    events = []
-    if birth_year:
-        events.append(EventRecord(
-            tag='BIRT',
-            event_type=None,
-            date=ParsedDate(None, birth_year),
-            place=birth_place,
-            raw=GedcomNode(1, 'BIRT', '', None),
-        ))
-    if death_year:
-        events.append(EventRecord(
-            tag='DEAT',
-            event_type=None,
-            date=ParsedDate(None, death_year),
-            place=None,
-            raw=GedcomNode(1, 'DEAT', '', None),
-        ))
-    node = GedcomNode(0, 'INDI', '', xref)
-    return Individual(
-        xref=xref,
-        names=names,
-        sex=sex,
-        events=events,
-        family_child=famc or [],
-        family_spouse=fams or [],
-        citations=[],
-        media=[],
-        raw=node,
-        normalized_surnames={surname.lower()},
-        normalized_givens={g.lower() for g in given.split()},
-        birth_date=ParsedDate(None, birth_year) if birth_year else None,
-        death_date=ParsedDate(None, death_year) if death_year else None,
-    )
-
-
-def _make_family(xref: str, husb: str | None, wife: str | None,
-                 children: list[str] | None = None) -> Family:
-    node = GedcomNode(0, 'FAM', '', xref)
-    return Family(
-        xref=xref,
-        husband_xref=husb,
-        wife_xref=wife,
-        child_xrefs=children or [],
-        events=[],
-        citations=[],
-        raw=node,
-    )
-
-
-def _make_file(indis=None, fams=None) -> GedcomFile:
-    return GedcomFile(
-        individuals=indis or {},
-        families=fams or {},
-        sources={},
-        repositories={},
-        media={},
-        notes={},
-        submitter=None,
-        header_raw=None,
-    )
+# Shorter aliases matching the naming style used in this file
+_make_indi    = make_indi
+_make_family  = make_family
+_make_file    = make_file
 
 
 class TestScoreNames:

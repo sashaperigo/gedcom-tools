@@ -13,7 +13,7 @@ All changes are tracked in MergeStats for the report.
 
 from __future__ import annotations
 import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 
 from gedcom_merge.model import (
     GedcomFile, GedcomNode,
@@ -1147,8 +1147,63 @@ def remove_empty_family_shells(merged: GedcomFile) -> int:
 
     for indi in merged.individuals.values():
         indi.family_spouse = [f for f in indi.family_spouse if f not in empty_xrefs]
+        indi.family_child  = [f for f in indi.family_child  if f not in empty_xrefs]
 
     return len(empty_xrefs)
+
+
+# ---------------------------------------------------------------------------
+# Citation dedup+remap helpers (shared by deduplicate_merged_sources and linter)
+# ---------------------------------------------------------------------------
+
+def _dedup_citations(
+    cits: list[CitationRecord],
+    remap: dict[str, str],
+) -> tuple[list[CitationRecord], int]:
+    """Remap source xrefs in a citation list and deduplicate by (xref, page).
+
+    Unlike _remap_citations (which only remaps xrefs for the during-merge pass),
+    this function also collapses citations that become identical after remapping.
+
+    Returns (new_list, changed_count) where changed_count includes both
+    citations whose xref was remapped and citations collapsed as post-remap
+    duplicates.
+    """
+    seen: set[tuple[str, str]] = set()
+    result: list[CitationRecord] = []
+    changed = 0
+    for c in cits:
+        new_xref = remap.get(c.source_xref, c.source_xref) if c.source_xref else c.source_xref
+        key = (new_xref or '', c.page or '')
+        if key in seen:
+            changed += 1  # collapsed duplicate
+            continue
+        seen.add(key)
+        if new_xref != c.source_xref:
+            c = _dc_replace(c, source_xref=new_xref)
+            changed += 1  # remapped
+        result.append(c)
+    return result, changed
+
+
+def _apply_citation_remap(merged: GedcomFile, remap: dict[str, str]) -> int:
+    """Apply a source-xref remap across all citation containers in a GedcomFile.
+
+    Remaps xrefs and collapses any citations that become duplicates after
+    remapping. Returns total count of citations that were remapped or collapsed.
+    """
+    total = 0
+    for ind in merged.individuals.values():
+        ind.citations, n = _dedup_citations(ind.citations, remap); total += n
+        for ev in ind.events:
+            ev.citations, n = _dedup_citations(ev.citations, remap); total += n
+        for nm in ind.names:
+            nm.citations, n = _dedup_citations(nm.citations, remap); total += n
+    for fam in merged.families.values():
+        fam.citations, n = _dedup_citations(fam.citations, remap); total += n
+        for ev in fam.events:
+            ev.citations, n = _dedup_citations(ev.citations, remap); total += n
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -1177,7 +1232,6 @@ def deduplicate_merged_sources(
     Returns the number of source records removed.
     """
     from gedcom_merge.match_sources import _score_pair as _score_src_pair
-    from dataclasses import replace as _dc_replace
 
     # ------------------------------------------------------------------ #
     # Step 1 – collect co-cited pairs                                     #
@@ -1247,31 +1301,10 @@ def deduplicate_merged_sources(
     # Step 3 – rewrite citations in-place                                 #
     # ------------------------------------------------------------------ #
 
-    def _remap_cit_list(cits: list[CitationRecord]) -> list[CitationRecord]:
-        seen_keys: set[tuple[str, str]] = set()
-        result: list[CitationRecord] = []
-        for c in cits:
-            new_xref = _canonical(c.source_xref) if c.source_xref else c.source_xref
-            key = (new_xref, c.page or '')
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            if new_xref != c.source_xref:
-                c = _dc_replace(c, source_xref=new_xref)
-            result.append(c)
-        return result
-
-    for ind in merged.individuals.values():
-        ind.citations = _remap_cit_list(ind.citations)
-        for ev in ind.events:
-            ev.citations = _remap_cit_list(ev.citations)
-        for nm in ind.names:
-            nm.citations = _remap_cit_list(nm.citations)
-
-    for fam in merged.families.values():
-        fam.citations = _remap_cit_list(fam.citations)
-        for ev in fam.events:
-            ev.citations = _remap_cit_list(ev.citations)
+    # Flatten the union-find remap so _apply_citation_remap can do single-
+    # hop lookups (each key maps directly to its chain-resolved canonical).
+    flat_remap = {k: _canonical(k) for k in remap}
+    _apply_citation_remap(merged, flat_remap)
 
     # ------------------------------------------------------------------ #
     # Step 4 – remove dead source records                                 #
@@ -1318,17 +1351,10 @@ def deduplicate_merged_sources(
                 remap[cb] = ca
 
     if extra_remap:
-        # Rewrite citations for newly identified duplicates
-        for ind in merged.individuals.values():
-            ind.citations = _remap_cit_list(ind.citations)
-            for ev in ind.events:
-                ev.citations = _remap_cit_list(ev.citations)
-            for nm in ind.names:
-                nm.citations = _remap_cit_list(nm.citations)
-        for fam in merged.families.values():
-            fam.citations = _remap_cit_list(fam.citations)
-            for ev in fam.events:
-                ev.citations = _remap_cit_list(ev.citations)
+        # Rewrite citations for newly identified duplicates (remap dict now
+        # includes both co-cited and title-based remaps; re-flatten).
+        flat_remap = {k: _canonical(k) for k in remap}
+        _apply_citation_remap(merged, flat_remap)
 
         extra_dead = set(extra_remap.keys())
         for xref in extra_dead:

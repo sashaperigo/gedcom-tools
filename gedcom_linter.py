@@ -1319,9 +1319,9 @@ def fix_merge_sources(path: str, keep_xref: str, remove_xref: str,
     Returns the number of citation records updated (remapped or collapsed).
     Requires the gedcom_merge parser/writer.
     """
-    import dataclasses
     from gedcom_merge.parser import parse_gedcom
     from gedcom_merge.writer import write_gedcom
+    from gedcom_merge.merge import _apply_citation_remap
 
     gf = parse_gedcom(path)
     if keep_xref not in gf.sources:
@@ -1329,36 +1329,7 @@ def fix_merge_sources(path: str, keep_xref: str, remove_xref: str,
     if remove_xref not in gf.sources:
         raise ValueError(f'remove xref not found in file: {remove_xref}')
 
-    updated = 0
-
-    def _remap(cits: list) -> list:
-        nonlocal updated
-        seen: set[tuple] = set()
-        result = []
-        for c in cits:
-            xref = keep_xref if c.source_xref == remove_xref else c.source_xref
-            key = (xref, c.page or '')
-            if key in seen:
-                updated += 1  # duplicate after remap — collapse it
-                continue
-            seen.add(key)
-            if xref != c.source_xref:
-                c = dataclasses.replace(c, source_xref=xref)
-                updated += 1
-            result.append(c)
-        return result
-
-    for ind in gf.individuals.values():
-        ind.citations = _remap(ind.citations)
-        for ev in ind.events:
-            ev.citations = _remap(ev.citations)
-        for nm in ind.names:
-            nm.citations = _remap(nm.citations)
-    for fam in gf.families.values():
-        fam.citations = _remap(fam.citations)
-        for ev in fam.events:
-            ev.citations = _remap(ev.citations)
-
+    updated = _apply_citation_remap(gf, {remove_xref: keep_xref})
     del gf.sources[remove_xref]
 
     if not dry_run:

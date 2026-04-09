@@ -1,8 +1,7 @@
 """Tests for gedcom_merge.merge — TDD ensuring no data is silently discarded."""
 
-import pytest
-import tempfile
 import os
+import pytest
 
 from gedcom_merge.model import (
     GedcomFile, Individual, Family, Source, GedcomNode,
@@ -21,64 +20,14 @@ from gedcom_merge.merge import (
     MergeStats,
 )
 from gedcom_merge.normalize import parse_date
+from tests.helpers import _node, make_indi, make_family, make_file, make_source, make_citation
 
-
-def _node(tag='INDI', xref=None) -> GedcomNode:
-    return GedcomNode(0, tag, '', xref, [])
-
-
-def _indi(xref, given='John', surname='Smith', sex='M',
-          birth_year=None, death_year=None,
-          birth_place=None, death_place=None,
-          fams=None, famc=None, citations=None) -> Individual:
-    names = [NameRecord(full=f'{given} /{surname}/', given=given.lower(),
-                        surname=surname.lower(), name_type=None)]
-    events = []
-    if birth_year:
-        bd = ParsedDate(None, birth_year)
-        events.append(EventRecord('BIRT', None, bd, birth_place,
-                                  citations or [], _node()))
-    if death_year:
-        dd = ParsedDate(None, death_year)
-        events.append(EventRecord('DEAT', None, dd, death_place,
-                                  [], _node()))
-    return Individual(
-        xref=xref, names=names, sex=sex, events=events,
-        family_child=famc or [], family_spouse=fams or [],
-        citations=citations or [], media=[], raw=_node(xref=xref),
-        normalized_surnames={surname.lower()},
-        normalized_givens={given.lower()},
-        birth_date=ParsedDate(None, birth_year) if birth_year else None,
-        death_date=ParsedDate(None, death_year) if death_year else None,
-    )
-
-
-def _source(xref, title='Test Source', author=None) -> Source:
-    from gedcom_merge.normalize import tokenize_title
-    return Source(xref=xref, title=title, author=author, publisher=None,
-                  repository_xref=None, notes=[], refn=None,
-                  raw=_node('SOUR', xref), title_tokens=tokenize_title(title))
-
-
-def _family(xref, husb=None, wife=None, children=None) -> Family:
-    return Family(xref=xref, husband_xref=husb, wife_xref=wife,
-                  child_xrefs=children or [], events=[], citations=[],
-                  raw=_node('FAM', xref))
-
-
-def _citation(source_xref, page=None) -> CitationRecord:
-    return CitationRecord(source_xref=source_xref, page=page, data=None,
-                          raw=_node('SOUR'))
-
-
-def _file(indis=None, fams=None, sources=None) -> GedcomFile:
-    return GedcomFile(
-        individuals=indis or {},
-        families=fams or {},
-        sources=sources or {},
-        repositories={}, media={}, notes={},
-        submitter=None, header_raw=None,
-    )
+# Shorter aliases for the helpers used pervasively in this file
+_indi     = make_indi
+_family   = make_family
+_file     = make_file
+_source   = make_source
+_citation = make_citation
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +496,27 @@ class TestRemoveEmptyFamilyShells:
         assert '@F1@' in merged.families
         assert '@F1@' in merged.individuals['@I1@'].family_spouse
         assert '@F1@' in merged.individuals['@I2@'].family_spouse
+
+    def test_strips_famc_pointing_to_removed_shell(self):
+        """FAMC on an individual pointing to a removed shell is cleaned up."""
+        # @I3@ is a child of the shell; the shell has no events/children in
+        # child_xrefs (so it qualifies as empty), but @I3@'s FAMC points there.
+        # After removal, @I3@'s FAMC must be cleared.
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell_fam = _family('@F_MERGE_0001@', '@I1@', '@I2@')
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        # @I3@ has FAMC pointing to the shell (mis-entered state, defensive cleanup)
+        ind_c = _indi('@I3@', 'Kid', 'Smith', famc=['@F_MERGE_0001@'])
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w, '@I3@': ind_c},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell_fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 1
+        assert '@F_MERGE_0001@' not in merged.families
+        assert '@F_MERGE_0001@' not in merged.individuals['@I3@'].family_child
 
     def test_removes_redundant_shell_when_spouse_has_other_family(self):
         """A shell is removed when the spouse has another family to fall back on."""
