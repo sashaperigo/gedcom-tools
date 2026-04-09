@@ -1311,6 +1311,69 @@ def fix_duplicate_names(path: str, dry_run: bool = False) -> int:
     return removed
 
 
+def _event_sort_key(ev) -> tuple:
+    """Sort key for a GEDCOM EventRecord.
+
+    Birth-type events (BIRT, CHR, BAPM, ADOP) are always placed first;
+    death-type events (DEAT, BURI, PROB, WILL) are always placed last.
+    All other events are sorted chronologically by date within the middle group.
+    Events with no date sort to the end of their group (year 9999).
+    """
+    FIRST_TAGS = {'BIRT', 'CHR', 'BAPM', 'ADOP'}
+    LAST_TAGS  = {'DEAT', 'BURI', 'PROB', 'WILL'}
+    group = 0 if ev.tag in FIRST_TAGS else (2 if ev.tag in LAST_TAGS else 1)
+    year  = (ev.date.year  or 9999) if ev.date else 9999
+    month = (ev.date.month or 0)    if ev.date else 0
+    day   = (ev.date.day   or 0)    if ev.date else 0
+    return (group, year, month, day)
+
+
+def scan_unsorted_events(path: str) -> list[str]:
+    """
+    Return a list of human-readable strings for individuals and families
+    whose events are not in chronological order.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    gf = parse_gedcom(path)
+    issues: list[str] = []
+    for xref, ind in gf.individuals.items():
+        keys = [_event_sort_key(e) for e in ind.events]
+        if keys != sorted(keys):
+            issues.append(f'{xref}: {len(ind.events)} events are out of chronological order')
+    for xref, fam in gf.families.items():
+        keys = [_event_sort_key(e) for e in fam.events]
+        if keys != sorted(keys):
+            issues.append(f'{xref}: {len(fam.events)} family events are out of chronological order')
+    return issues
+
+
+def fix_sort_events(path: str, dry_run: bool = False) -> int:
+    """
+    Sort events within each individual and family record into chronological
+    order. Birth-type events are pinned first; death-type events are pinned
+    last. Returns the count of records whose event order changed.
+    Requires the gedcom_merge parser/writer.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.writer import write_gedcom
+    gf = parse_gedcom(path)
+    changed = 0
+    for ind in gf.individuals.values():
+        original = [_event_sort_key(e) for e in ind.events]
+        ind.events = sorted(ind.events, key=_event_sort_key)
+        if [_event_sort_key(e) for e in ind.events] != original:
+            changed += 1
+    for fam in gf.families.values():
+        original = [_event_sort_key(e) for e in fam.events]
+        fam.events = sorted(fam.events, key=_event_sort_key)
+        if [_event_sort_key(e) for e in fam.events] != original:
+            changed += 1
+    if not dry_run and changed:
+        write_gedcom(gf, path)
+    return changed
+
+
 def _is_level2_date(line: str) -> bool:
     """Return True if this is a level-2 DATE line (event date, not citation)."""
     return line.startswith('2 DATE ')
@@ -1418,6 +1481,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_broken_xrefs(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_families(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
+    fixes_applied += fix_sort_events(path, dry_run=dry_run)
 
     with open(path, encoding='utf-8') as f:
         lines_after = sum(1 for _ in f)
@@ -1493,6 +1557,10 @@ def main():
         help='Remove duplicate NAME entries within individuals in-place',
     )
     parser.add_argument(
+        '--fix-sort-events', action='store_true',
+        help='Sort events in each record into chronological order in-place',
+    )
+    parser.add_argument(
         '--fix-all', action='store_true',
         help='Run all fix operations in sequence',
     )
@@ -1516,6 +1584,7 @@ def main():
         args.fix_broken_xrefs = True
         args.fix_duplicate_families = True
         args.fix_duplicate_names = True
+        args.fix_sort_events = True
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
@@ -1628,6 +1697,15 @@ def main():
         else:
             print(f'  {removed} duplicate NAME entry/entries removed.')
 
+    if args.fix_sort_events:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Sorting events chronologically in: {args.gedfile}')
+        changed = fix_sort_events(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {changed} record(s) would have events reordered.')
+        else:
+            print(f'  {changed} record(s) had events reordered.')
+
     if args.fix_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing DATE values in: {args.gedfile}')
@@ -1648,7 +1726,7 @@ def main():
                 args.fix_duplicate_sources, args.fix_addr_under_plac,
                 args.fix_note_under_plac, args.fix_note_under_addr,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
-                args.fix_duplicate_names]):
+                args.fix_duplicate_names, args.fix_sort_events]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
 
@@ -1881,6 +1959,18 @@ def main():
                     print(f'  ... and {len(dup_names) - 10} more individual(s).')
             else:
                 print('OK: no duplicate NAME entries.')
+
+            unsorted_evs = scan_unsorted_events(args.gedfile)
+            if unsorted_evs:
+                errors = True
+                print(f'\n{len(unsorted_evs)} record(s) with out-of-order events '
+                      '(run --fix-sort-events to sort):')
+                for msg in unsorted_evs[:20]:
+                    print(f'  {msg}')
+                if len(unsorted_evs) > 20:
+                    print(f'  ... and {len(unsorted_evs) - 20} more.')
+            else:
+                print('OK: all events are in chronological order.')
 
         except ImportError:
             print('\nNOTE: structural checks skipped (gedcom_merge module not available).')

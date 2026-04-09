@@ -820,6 +820,84 @@ class TestDeduplicateDuplicateFamilies:
 # Duplicate name deduplication tests
 # ---------------------------------------------------------------------------
 
+class TestSortEvents:
+    """Tests for scan_unsorted_events and fix_sort_events in gedcom_linter."""
+
+    def _ev(self, tag: str, year: int | None = None) -> EventRecord:
+        date = ParsedDate(None, year) if year else None
+        return EventRecord(tag=tag, event_type=None, date=date, place=None,
+                           citations=[], raw=_node())
+
+    def test_already_sorted_returns_zero(self):
+        """No reordering needed → 0 records changed."""
+        from gedcom_linter import fix_sort_events
+        ind = _indi('@I1@', birth_year=1900, death_year=1980)
+        merged = _file(indis={'@I1@': ind})
+        # Manually call sort on the in-memory object (fix_sort_events works on files;
+        # test sort key logic directly via _event_sort_key)
+        from gedcom_linter import _event_sort_key
+        keys_before = [_event_sort_key(e) for e in ind.events]
+        ind.events = sorted(ind.events, key=_event_sort_key)
+        keys_after = [_event_sort_key(e) for e in ind.events]
+        assert keys_before == keys_after  # already sorted
+
+    def test_birth_event_pinned_first(self):
+        """BIRT event sorts before earlier-dated middle events."""
+        from gedcom_linter import _event_sort_key
+        birt = self._ev('BIRT', 1920)
+        resi = self._ev('RESI', 1910)  # date earlier than birth — still after BIRT
+        events = [resi, birt]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert sorted_evs[0].tag == 'BIRT'
+        assert sorted_evs[1].tag == 'RESI'
+
+    def test_death_event_pinned_last(self):
+        """DEAT event sorts after later-dated middle events."""
+        from gedcom_linter import _event_sort_key
+        deat = self._ev('DEAT', 1960)
+        resi = self._ev('RESI', 1970)  # date later than death — still before DEAT
+        events = [resi, deat]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert sorted_evs[0].tag == 'RESI'
+        assert sorted_evs[1].tag == 'DEAT'
+
+    def test_middle_events_sorted_by_year(self):
+        """RESI and EVEN events in the middle group sort chronologically."""
+        from gedcom_linter import _event_sort_key
+        ev1 = self._ev('RESI', 1950)
+        ev2 = self._ev('EVEN', 1930)
+        ev3 = self._ev('RESI', 1940)
+        events = [ev1, ev2, ev3]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert [e.date.year for e in sorted_evs] == [1930, 1940, 1950]
+
+    def test_no_date_sorts_to_end_of_group(self):
+        """An event with no date sorts after dated events in the same group."""
+        from gedcom_linter import _event_sort_key
+        resi_dated = self._ev('RESI', 1950)
+        resi_undated = self._ev('RESI', None)
+        events = [resi_undated, resi_dated]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert sorted_evs[0].date is not None
+        assert sorted_evs[1].date is None
+
+    def test_scan_detects_out_of_order(self, tmp_path):
+        """scan_unsorted_events flags an individual with events out of order."""
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+        from gedcom_linter import scan_unsorted_events
+        from gedcom_merge.writer import write_gedcom
+        # Build a file with DEAT before BIRT (wrong order)
+        ind = _indi('@I1@', birth_year=1900, death_year=1980)
+        ind.events = list(reversed(ind.events))  # DEAT first, BIRT second
+        merged = _file(indis={'@I1@': ind})
+        out = tmp_path / 'test.ged'
+        write_gedcom(merged, str(out))
+        issues = scan_unsorted_events(str(out))
+        assert len(issues) == 1
+        assert '@I1@' in issues[0]
+
+
 class TestDeduplicateDuplicateNames:
     def test_removes_duplicate_name_within_individual(self):
         """Exact duplicate NAME in an individual is collapsed to one."""
