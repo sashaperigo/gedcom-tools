@@ -603,7 +603,7 @@ def _score_pair(
     # If the best surname pair scores below 0.65, these are different families.
     known_surnames_a = {s for s in ind_a.normalized_surnames if not _is_unknown(s)}
     known_surnames_b = {s for s in ind_b.normalized_surnames if not _is_unknown(s)}
-    if known_surnames_a and known_surnames_b and surname_score < 0.65:
+    if known_surnames_a and known_surnames_b and surname_score < 0.55:
         return 0.0, {}
 
     def _get_birth_ev(ind: Individual):

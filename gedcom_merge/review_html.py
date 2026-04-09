@@ -1093,9 +1093,9 @@ class _ReviewHandler(BaseHTTPRequestHandler):
         all_xrefs_a = list(file_a.individuals.keys())
         candidate_xrefs = _get_candidates_for(ind_b, cls._surname_index_a, all_xrefs_a, file_b)
 
-        # If blocking returned very few hits, fall back to scoring all of File A
-        # so we always surface the best matches regardless of surname similarity.
-        search_xrefs = candidate_xrefs if len(candidate_xrefs) >= 5 else set(all_xrefs_a)
+        # Always search all of File A for manual searches — exhaustive is better
+        # than fast when the user is explicitly looking for a match.
+        search_xrefs = set(all_xrefs_a)
 
         scored: list[tuple[float, str, dict]] = []
         for xref_a in search_xrefs:
