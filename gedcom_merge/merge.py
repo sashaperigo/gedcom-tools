@@ -863,6 +863,21 @@ def merge_records(
                 merged_fams[existing_xref] = _merge_family(
                     merged_fams[existing_xref], fam_b, id_map, stats
                 )
+                # Individuals were processed before families, so any B individual
+                # whose FAMS/FAMC was set to new_xref (a phantom @F_MERGE_ that
+                # will never be added to merged_fams) must be patched now to point
+                # to the actual existing family.
+                new_xref = id_map.get(xref_b)
+                if new_xref:
+                    for indi in merged_indis.values():
+                        indi.family_child = [
+                            existing_xref if x == new_xref else x
+                            for x in indi.family_child
+                        ]
+                        indi.family_spouse = [
+                            existing_xref if x == new_xref else x
+                            for x in indi.family_spouse
+                        ]
                 continue
 
             new_xref = id_map.get(xref_b)
@@ -1105,6 +1120,25 @@ def remove_empty_family_shells(merged: GedcomFile) -> int:
         and not fam.child_xrefs
         and not fam.citations
     }
+    if not empty_xrefs:
+        return 0
+
+    # Preserve shells where removing them would leave either spouse with no
+    # family connections at all (no other FAMS and no FAMC).  Deleting a
+    # shell that is a person's only link to any family would silently orphan
+    # them — that information loss is worse than keeping the thin record.
+    protected: set[str] = set()
+    for xref in empty_xrefs:
+        fam = merged.families[xref]
+        for spouse_xref in (fam.husband_xref, fam.wife_xref):
+            if spouse_xref and spouse_xref in merged.individuals:
+                indi = merged.individuals[spouse_xref]
+                other_fams = [f for f in indi.family_spouse if f != xref]
+                if not other_fams and not indi.family_child:
+                    protected.add(xref)
+                    break
+    empty_xrefs -= protected
+
     if not empty_xrefs:
         return 0
 
