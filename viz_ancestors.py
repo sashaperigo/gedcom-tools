@@ -959,7 +959,7 @@ function showDetail(xref) {
   );
   const _keepInTimeline = e =>
     e.date ||
-    e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' ||
+    e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'PROB' ||
     e.type === 'Arrival' || e.type === 'Departure';
   const undatedFactoids = allVisible.filter(e => !_keepInTimeline(e));
   const visible = allVisible.filter(_keepInTimeline);
@@ -971,8 +971,11 @@ function showDetail(xref) {
     for (const evt of sorted) {
       let section = 'Life';
       const evtYear = evt.date ? ((_YR_RE.exec(evt.date) || [,0])[1] | 0) : null;
+      const _typ = (evt.type || '').toLowerCase();
+      const _isDeathRelated = evt.tag === 'DEAT' || evt.tag === 'BURI' || evt.tag === 'PROB' ||
+        (evt.tag === 'EVEN' && (_typ.includes('death') || _typ.includes('obituar') || _typ.includes('avis de d') || _typ.includes('probate')));
       if (evt.tag === 'BIRT' || (evtYear && by && evtYear <= by + 18)) section = 'Early Life';
-      else if (evt.tag === 'DEAT' || evt.tag === 'BURI') section = 'Later Life';
+      else if (_isDeathRelated) section = 'Later Life';
 
       if (section !== lastSection) {
         html += `<span class="timeline-section-label">${escHtml(section)}</span>`;
