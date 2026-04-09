@@ -1311,6 +1311,61 @@ def fix_duplicate_names(path: str, dry_run: bool = False) -> int:
     return removed
 
 
+def fix_merge_sources(path: str, keep_xref: str, remove_xref: str,
+                      dry_run: bool = False) -> int:
+    """
+    Remap all citations from remove_xref to keep_xref, then delete remove_xref.
+    Use this to manually merge source records that the auto-dedup didn't catch.
+    Returns the number of citation records updated (remapped or collapsed).
+    Requires the gedcom_merge parser/writer.
+    """
+    import dataclasses
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.writer import write_gedcom
+
+    gf = parse_gedcom(path)
+    if keep_xref not in gf.sources:
+        raise ValueError(f'keep xref not found in file: {keep_xref}')
+    if remove_xref not in gf.sources:
+        raise ValueError(f'remove xref not found in file: {remove_xref}')
+
+    updated = 0
+
+    def _remap(cits: list) -> list:
+        nonlocal updated
+        seen: set[tuple] = set()
+        result = []
+        for c in cits:
+            xref = keep_xref if c.source_xref == remove_xref else c.source_xref
+            key = (xref, c.page or '')
+            if key in seen:
+                updated += 1  # duplicate after remap — collapse it
+                continue
+            seen.add(key)
+            if xref != c.source_xref:
+                c = dataclasses.replace(c, source_xref=xref)
+                updated += 1
+            result.append(c)
+        return result
+
+    for ind in gf.individuals.values():
+        ind.citations = _remap(ind.citations)
+        for ev in ind.events:
+            ev.citations = _remap(ev.citations)
+        for nm in ind.names:
+            nm.citations = _remap(nm.citations)
+    for fam in gf.families.values():
+        fam.citations = _remap(fam.citations)
+        for ev in fam.events:
+            ev.citations = _remap(ev.citations)
+
+    del gf.sources[remove_xref]
+
+    if not dry_run:
+        write_gedcom(gf, path)
+    return updated
+
+
 def _event_sort_key(ev) -> tuple:
     """Sort key for a GEDCOM EventRecord.
 
@@ -1561,6 +1616,11 @@ def main():
         help='Sort events in each record into chronological order in-place',
     )
     parser.add_argument(
+        '--merge-sources', nargs=2, metavar=('KEEP', 'REMOVE'),
+        help='Remap all citations from REMOVE xref to KEEP xref and delete REMOVE. '
+             'Example: --merge-sources @S100@ @S200@',
+    )
+    parser.add_argument(
         '--fix-all', action='store_true',
         help='Run all fix operations in sequence',
     )
@@ -1706,6 +1766,20 @@ def main():
         else:
             print(f'  {changed} record(s) had events reordered.')
 
+    if args.merge_sources:
+        keep, remove = args.merge_sources
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Merging {remove} → {keep} in: {args.gedfile}')
+        try:
+            n = fix_merge_sources(args.gedfile, keep, remove, dry_run=args.dry_run)
+            if args.dry_run:
+                print(f'  {n} citation(s) would be updated; {remove} would be removed.')
+            else:
+                print(f'  {n} citation(s) updated; {remove} removed.')
+        except ValueError as e:
+            print(f'  Error: {e}', file=sys.stderr)
+            sys.exit(1)
+
     if args.fix_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing DATE values in: {args.gedfile}')
@@ -1726,7 +1800,8 @@ def main():
                 args.fix_duplicate_sources, args.fix_addr_under_plac,
                 args.fix_note_under_plac, args.fix_note_under_addr,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
-                args.fix_duplicate_names, args.fix_sort_events]):
+                args.fix_duplicate_names, args.fix_sort_events,
+                args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
 

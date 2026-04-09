@@ -66,9 +66,14 @@ def _score_title(src_a: Source, src_b: Source) -> float:
     loc_a = _extract_location_prefix(src_a.title)
     loc_b = _extract_location_prefix(src_b.title)
 
-    # Hard veto: both have location prefixes and they don't match
+    # Hard veto: both have location prefixes and they don't match.
+    # Exception: if one prefix is a string-prefix of the other, the mismatch is
+    # caused by a comma positioned differently in the title (e.g. "U.S. City
+    # Directories, 1822-1995" vs "U.S., City Directories, 1822-1995") — not a
+    # genuine geographic difference. Skip the veto in that case.
     if loc_a and loc_b and loc_a != loc_b:
-        return 0.0
+        if not (loc_a.startswith(loc_b) or loc_b.startswith(loc_a)):
+            return 0.0
 
     ta, tb = src_a.title_tokens, src_b.title_tokens
     # Subset bonus: if all tokens of one title appear in the other (e.g. Ancestry

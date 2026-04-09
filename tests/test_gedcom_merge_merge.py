@@ -738,12 +738,10 @@ class TestDeduplicateMergedSourcesFullPass:
         # Citation on ind_b should now point to @S1@
         assert merged.individuals['@I2@'].citations[0].source_xref == '@S1@'
 
-    def test_file_a_vs_file_a_not_deduped(self):
-        """Two File-A sources with same title are NOT deduplicated (safety guard)."""
-        from gedcom_merge.normalize import tokenize_title
-        title = 'Parish Records'
-        src_a1 = _source('@S1@', title)
-        src_a2 = _source('@S2@', title)  # Also File-A (no @S_MERGE_ prefix)
+    def test_file_a_vs_file_a_similar_but_distinct_not_deduped(self):
+        """Two genuinely distinct File-A sources (score < 0.97) are not merged."""
+        src_a1 = _source('@S1@', 'U.S. Census, 1900')
+        src_a2 = _source('@S2@', 'U.S. Census, 1880')  # different year
         ind1 = _indi('@I1@', citations=[_citation('@S1@', 'p.1')])
         ind2 = _indi('@I2@', citations=[_citation('@S2@', 'p.2')])
         merged = _file(
@@ -754,6 +752,21 @@ class TestDeduplicateMergedSourcesFullPass:
         assert removed == 0
         assert '@S1@' in merged.sources
         assert '@S2@' in merged.sources
+
+    def test_file_a_vs_file_a_identical_title_deduped(self):
+        """Two File-A sources with identical titles (score ≥ 0.97) ARE merged."""
+        title = 'U.S. City Directories, 1822-1995'
+        src_a1 = _source('@S1@', title)
+        src_a2 = _source('@S2@', 'U.S., City Directories, 1822-1995')
+        ind1 = _indi('@I1@', citations=[_citation('@S1@')])
+        ind2 = _indi('@I2@', citations=[_citation('@S2@')])
+        merged = _file(
+            indis={'@I1@': ind1, '@I2@': ind2},
+            sources={'@S1@': src_a1, '@S2@': src_a2},
+        )
+        removed = deduplicate_merged_sources(merged, threshold=0.85)
+        assert removed == 1
+        assert len(merged.sources) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -819,6 +832,80 @@ class TestDeduplicateDuplicateFamilies:
 # ---------------------------------------------------------------------------
 # Duplicate name deduplication tests
 # ---------------------------------------------------------------------------
+
+class TestFixMergeSources:
+    """Tests for fix_merge_sources() in gedcom_linter."""
+
+    def _src(self, xref, title='Test Source'):
+        from gedcom_merge.normalize import tokenize_title
+        return Source(xref=xref, title=title, author=None, publisher=None,
+                      repository_xref=None, notes=[], refn=None,
+                      raw=_node('SOUR', xref), title_tokens=tokenize_title(title))
+
+    def _cit(self, xref, page=None):
+        return CitationRecord(source_xref=xref, page=page, data=None, raw=_node('SOUR'))
+
+    def test_citations_remapped(self, tmp_path):
+        """Citations to remove_xref are remapped to keep_xref."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        ind = _indi('@I1@')
+        ind.citations = [self._cit('@S2@')]
+        gf = _file(
+            indis={'@I1@': ind},
+            sources={'@S1@': self._src('@S1@'), '@S2@': self._src('@S2@')},
+        )
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        n = fix_merge_sources(str(out), '@S1@', '@S2@')
+        assert n == 1
+        from gedcom_merge.parser import parse_gedcom
+        result = parse_gedcom(str(out))
+        assert result.individuals['@I1@'].citations[0].source_xref == '@S1@'
+
+    def test_remove_xref_deleted(self, tmp_path):
+        """remove_xref source record is deleted from the file."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        from gedcom_merge.parser import parse_gedcom
+        gf = _file(
+            indis={'@I1@': _indi('@I1@')},
+            sources={'@S1@': self._src('@S1@'), '@S2@': self._src('@S2@')},
+        )
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        fix_merge_sources(str(out), '@S1@', '@S2@')
+        result = parse_gedcom(str(out))
+        assert '@S2@' not in result.sources
+        assert '@S1@' in result.sources
+
+    def test_duplicate_citation_collapsed(self, tmp_path):
+        """If a record cites both keep and remove, the duplicate is collapsed."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        from gedcom_merge.parser import parse_gedcom
+        ind = _indi('@I1@')
+        ind.citations = [self._cit('@S1@'), self._cit('@S2@')]
+        gf = _file(
+            indis={'@I1@': ind},
+            sources={'@S1@': self._src('@S1@'), '@S2@': self._src('@S2@')},
+        )
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        fix_merge_sources(str(out), '@S1@', '@S2@')
+        result = parse_gedcom(str(out))
+        assert len(result.individuals['@I1@'].citations) == 1
+
+    def test_invalid_keep_xref_raises(self, tmp_path):
+        """ValueError raised when keep_xref is not in the file."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        gf = _file(sources={'@S1@': self._src('@S1@')})
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        with pytest.raises(ValueError):
+            fix_merge_sources(str(out), '@SXXX@', '@S1@')
+
 
 class TestSortEvents:
     """Tests for scan_unsorted_events and fix_sort_events in gedcom_linter."""

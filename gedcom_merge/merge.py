@@ -1265,13 +1265,15 @@ def deduplicate_merged_sources(
             cb = _canonical(xb)
             if ca == cb:
                 continue
-            # Only compare File-B against File-A — not A vs A or B vs B.
-            # Deduplicating two File-A sources risks removing a source that
-            # was present in the primary tree with distinct data.
+            # Only compare File-B against File-A — not A vs A or B vs B —
+            # UNLESS the titles are near-identical (score ≥ 0.99), which
+            # catches punctuation-only variants like "U.S." vs "U.S.,"
+            # while keeping genuinely distinct same-file sources separate.
             one_is_b = _is_file_b(ca) != _is_file_b(cb)
-            if not one_is_b:
+            score = _score_src_pair(src_a, src_b)
+            if not one_is_b and score < 0.97:
                 continue
-            if _score_src_pair(src_a, src_b) < threshold:
+            if score < threshold:
                 continue
             # Prefer File-A xref as canonical
             if _is_file_b(ca) and not _is_file_b(cb):

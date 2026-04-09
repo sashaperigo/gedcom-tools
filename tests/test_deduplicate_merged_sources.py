@@ -317,6 +317,38 @@ class TestNonCocitedSourcesFullPass:
         assert merged.individuals['@I2@'].citations[0].source_xref == '@S1@'
 
 
+class TestSameFilePairDedup:
+    """File-A vs File-A sources with near-identical titles (score ≥ 0.99) are merged."""
+
+    def test_punctuation_only_difference_merged(self):
+        """'U.S. City Directories' and 'U.S., City Directories' deduplicate."""
+        src_a = _make_src('@S1@', 'U.S. City Directories, 1822-1995')
+        src_b = _make_src('@S2@', 'U.S., City Directories, 1822-1995')
+        ind1 = _make_indi('@I1@', [_make_cit('@S1@')])
+        ind2 = _make_indi('@I2@', [_make_cit('@S2@')])
+        merged = _make_file(
+            individuals={'@I1@': ind1, '@I2@': ind2},
+            sources={'@S1@': src_a, '@S2@': src_b},
+        )
+        removed = deduplicate_merged_sources(merged)
+        assert removed == 1
+        assert len(merged.sources) == 1
+
+    def test_different_file_a_sources_not_merged(self):
+        """Two genuinely different File-A sources (score < 0.99) are left separate."""
+        src_a = _make_src('@S1@', 'U.S. Census, 1900')
+        src_b = _make_src('@S2@', 'U.S. Census, 1880')
+        ind1 = _make_indi('@I1@', [_make_cit('@S1@')])
+        ind2 = _make_indi('@I2@', [_make_cit('@S2@')])
+        merged = _make_file(
+            individuals={'@I1@': ind1, '@I2@': ind2},
+            sources={'@S1@': src_a, '@S2@': src_b},
+        )
+        removed = deduplicate_merged_sources(merged)
+        assert removed == 0
+        assert len(merged.sources) == 2
+
+
 class TestPagePreservation:
     """Different PAGE values on the same source xref are kept as separate citations."""
 
