@@ -10,3 +10,8 @@ build/
 .venv/
 venv/
 *.egg
+
+# Merge tool runtime outputs
+merged.ged
+merge-session.json
+merge-report.txt
