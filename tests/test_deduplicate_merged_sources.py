@@ -295,11 +295,11 @@ class TestEventAndNameCitations:
         assert len(fam_xrefs) == 1
 
 
-class TestNonCocitedSourcesIgnored:
-    """Sources that are never cited together on the same record are not compared."""
+class TestNonCocitedSourcesFullPass:
+    """Sources never cited together are caught by the full title-based pass (Step 5)."""
 
-    def test_similar_sources_on_different_records_not_merged(self):
-        """Two similar sources on different individuals are not co-cited → not merged."""
+    def test_identical_title_sources_on_different_records_are_merged(self):
+        """Two identical-title sources on different individuals are deduped by full pass."""
         title = 'U.S. Census, 1900'
         src_a = _make_src('@S1@', title)
         src_b = _make_src('@S_MERGE_010@', title)
@@ -310,8 +310,11 @@ class TestNonCocitedSourcesIgnored:
             sources={'@S1@': src_a, '@S_MERGE_010@': src_b},
         )
         removed = deduplicate_merged_sources(merged)
-        assert removed == 0
-        assert len(merged.sources) == 2
+        assert removed == 1
+        assert '@S1@' in merged.sources
+        assert '@S_MERGE_010@' not in merged.sources
+        # ind2's citation remapped to canonical @S1@
+        assert merged.individuals['@I2@'].citations[0].source_xref == '@S1@'
 
 
 class TestPagePreservation:

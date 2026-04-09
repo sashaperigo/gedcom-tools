@@ -482,10 +482,17 @@ def _merge_names(
     Union name records. A's primary stays primary.
     If B's primary differs from A's primary, add as AKA.
     """
-    result: list[NameRecord] = list(names_a)
+    # Deduplicate names_a first — the source file may already have duplicates
+    seen_a: set[tuple[str, str]] = set()
+    deduped_a: list[NameRecord] = []
+    for n in names_a:
+        key = (n.given, n.surname)
+        if key not in seen_a:
+            deduped_a.append(n)
+            seen_a.add(key)
+    result: list[NameRecord] = deduped_a
 
-    # Collect set of normalized (given, surname) already in result
-    known: set[tuple[str, str]] = {(n.given, n.surname) for n in names_a}
+    known: set[tuple[str, str]] = set(seen_a)
 
     for name_b in names_b:
         key = (name_b.given, name_b.surname)
@@ -832,10 +839,32 @@ def merge_records(
         else:
             merged_fams[xref_a] = fam_a
 
+    # Build couple index from already-merged families so we can detect
+    # when an unmatched B family maps to a couple that already exists in A.
+    couple_to_merged_xref: dict[tuple[str, str], str] = {
+        (fam.husband_xref or '', fam.wife_xref or ''): xref
+        for xref, fam in merged_fams.items()
+        if fam.husband_xref or fam.wife_xref
+    }
+
     # Add unmatched B families
     for xref_b, fam_b in file_b.families.items():
         disp = decisions.family_disposition.get(xref_b, 'skip')
         if xref_b not in decisions.family_map and disp == 'add':
+            husb_a = _remap(fam_b.husband_xref, id_map)
+            wife_a = _remap(fam_b.wife_xref, id_map)
+            couple_key = (husb_a or '', wife_a or '')
+
+            # If both spouses were matched and their A-side couple already
+            # exists in merged_fams, merge B's content into that family
+            # instead of creating a duplicate shell.
+            if couple_key != ('', '') and couple_key in couple_to_merged_xref:
+                existing_xref = couple_to_merged_xref[couple_key]
+                merged_fams[existing_xref] = _merge_family(
+                    merged_fams[existing_xref], fam_b, id_map, stats
+                )
+                continue
+
             new_xref = id_map.get(xref_b)
             if new_xref:
                 children = [_remap(x, id_map) or x for x in fam_b.child_xrefs]
@@ -848,15 +877,17 @@ def merge_records(
                     )
                     for e in fam_b.events
                 ]
-                merged_fams[new_xref] = Family(
+                new_fam = Family(
                     xref=new_xref,
-                    husband_xref=_remap(fam_b.husband_xref, id_map),
-                    wife_xref=_remap(fam_b.wife_xref, id_map),
+                    husband_xref=husb_a,
+                    wife_xref=wife_a,
                     child_xrefs=children,
                     events=evs,
                     citations=_remap_citations(fam_b.citations, id_map),
                     raw=_remap_raw_node(fam_b.raw, id_map),
                 )
+                merged_fams[new_xref] = new_fam
+                couple_to_merged_xref[couple_key] = new_xref
 
     merged = GedcomFile(
         individuals=merged_indis,
@@ -875,6 +906,180 @@ def merge_records(
 # ---------------------------------------------------------------------------
 # Post-merge empty family shell removal
 # ---------------------------------------------------------------------------
+
+def deduplicate_duplicate_families(merged: GedcomFile) -> int:
+    """
+    Post-merge pass: collapse family pairs that share the same husband+wife.
+
+    When two FAM records in the merged file have identical (husband_xref,
+    wife_xref) couples, one is canonical (preferred) and the other is a
+    duplicate.  The canonical family keeps the richer record — events,
+    children, and citations from both are unioned — and all FAMS pointers
+    on individual records are updated to the canonical xref.
+
+    Preference order for canonical: non-MERGE xref over @F_MERGE_*@ xref;
+    when both are the same type, the one with more content wins.
+
+    Returns the number of duplicate families removed.
+    """
+    from collections import defaultdict
+
+    # Group families by (husband_xref or '', wife_xref or '')
+    couple_groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for xref, fam in merged.families.items():
+        key = (fam.husband_xref or '', fam.wife_xref or '')
+        if key != ('', ''):
+            couple_groups[key].append(xref)
+
+    removed = 0
+    remap: dict[str, str] = {}  # duplicate_xref → canonical_xref
+
+    def _is_merge_fam(xref: str) -> bool:
+        return '_MERGE_' in xref
+
+    def _content_score(fam: Family) -> int:
+        return len(fam.events) + len(fam.child_xrefs) + len(fam.citations)
+
+    for key, xrefs in couple_groups.items():
+        if len(xrefs) < 2:
+            continue
+
+        # Pick canonical: prefer non-MERGE xref; break ties by content richness
+        def _rank(x: str) -> tuple[int, int]:
+            return (1 if _is_merge_fam(x) else 0, -_content_score(merged.families[x]))
+
+        canonical_xref = min(xrefs, key=_rank)
+        duplicates = [x for x in xrefs if x != canonical_xref]
+
+        canonical_fam = merged.families[canonical_xref]
+
+        # Union events, children, citations from duplicates into canonical
+        existing_event_keys = {(e.tag, e.event_type, e.date and e.date.year) for e in canonical_fam.events}
+        existing_children = set(canonical_fam.child_xrefs)
+        existing_cit_keys = {(c.source_xref, c.page or '') for c in canonical_fam.citations}
+
+        for dup_xref in duplicates:
+            dup = merged.families[dup_xref]
+            for ev in dup.events:
+                key_ev = (ev.tag, ev.event_type, ev.date and ev.date.year)
+                if key_ev not in existing_event_keys:
+                    canonical_fam.events.append(ev)
+                    existing_event_keys.add(key_ev)
+            for child in dup.child_xrefs:
+                if child not in existing_children:
+                    canonical_fam.child_xrefs.append(child)
+                    existing_children.add(child)
+            for cit in dup.citations:
+                cit_key = (cit.source_xref, cit.page or '')
+                if cit_key not in existing_cit_keys:
+                    canonical_fam.citations.append(cit)
+                    existing_cit_keys.add(cit_key)
+
+            remap[dup_xref] = canonical_xref
+            del merged.families[dup_xref]
+            removed += 1
+
+    if not remap:
+        return 0
+
+    # Rewrite FAMS and FAMC on individuals
+    for indi in merged.individuals.values():
+        seen_fams: set[str] = set()
+        new_fams: list[str] = []
+        for f in indi.family_spouse:
+            canonical = f
+            while canonical in remap:
+                canonical = remap[canonical]
+            if canonical not in seen_fams:
+                new_fams.append(canonical)
+                seen_fams.add(canonical)
+        indi.family_spouse = new_fams
+
+        seen_famc: set[str] = set()
+        new_famc: list[str] = []
+        for f in indi.family_child:
+            canonical = f
+            while canonical in remap:
+                canonical = remap[canonical]
+            if canonical not in seen_famc:
+                new_famc.append(canonical)
+                seen_famc.add(canonical)
+        indi.family_child = new_famc
+
+    return removed
+
+
+def deduplicate_duplicate_names(merged: GedcomFile) -> int:
+    """
+    Post-merge pass: remove duplicate NAME entries within individual records.
+
+    Two names are considered duplicates when they share the same normalized
+    (given, surname) pair — matching the deduplication key used by
+    _merge_names() at merge time.
+
+    Returns the total number of duplicate NAME entries removed.
+    """
+    removed = 0
+    for indi in merged.individuals.values():
+        seen: set[tuple[str, str]] = set()
+        deduped: list = []
+        for nm in indi.names:
+            key = (nm.given, nm.surname)
+            if key not in seen:
+                deduped.append(nm)
+                seen.add(key)
+            else:
+                removed += 1
+        indi.names = deduped
+    return removed
+
+
+def purge_dangling_xrefs(merged: GedcomFile) -> int:
+    """
+    Post-merge pass: remove cross-references that point to records that no
+    longer exist in the merged file.
+
+    Handles:
+    - FAM CHIL → nonexistent INDI
+    - FAM HUSB / WIFE → nonexistent INDI
+    - INDI FAMS / FAMC → nonexistent FAM
+    - INDI / FAM citations SOUR → nonexistent SOUR
+    - INDI OBJE → nonexistent OBJE
+
+    Returns the total number of dangling pointers removed.
+    """
+    removed = 0
+    indi_xrefs = set(merged.individuals)
+    fam_xrefs = set(merged.families)
+    sour_xrefs = set(merged.sources)
+    obje_xrefs = set(merged.media)
+
+    for fam in merged.families.values():
+        if fam.husband_xref and fam.husband_xref not in indi_xrefs:
+            fam.husband_xref = None
+            removed += 1
+        if fam.wife_xref and fam.wife_xref not in indi_xrefs:
+            fam.wife_xref = None
+            removed += 1
+        before = len(fam.child_xrefs)
+        fam.child_xrefs = [c for c in fam.child_xrefs if c in indi_xrefs]
+        removed += before - len(fam.child_xrefs)
+
+    for indi in merged.individuals.values():
+        before_fams = len(indi.family_spouse)
+        indi.family_spouse = [f for f in indi.family_spouse if f in fam_xrefs]
+        removed += before_fams - len(indi.family_spouse)
+
+        before_famc = len(indi.family_child)
+        indi.family_child = [f for f in indi.family_child if f in fam_xrefs]
+        removed += before_famc - len(indi.family_child)
+
+        before_obje = len(indi.media)
+        indi.media = [o for o in indi.media if o in obje_xrefs]
+        removed += before_obje - len(indi.media)
+
+    return removed
+
 
 def remove_empty_family_shells(merged: GedcomFile) -> int:
     """
@@ -1004,9 +1209,6 @@ def deduplicate_merged_sources(
         else:
             remap[cb] = ca
 
-    if not remap:
-        return 0
-
     # ------------------------------------------------------------------ #
     # Step 3 – rewrite citations in-place                                 #
     # ------------------------------------------------------------------ #
@@ -1044,5 +1246,57 @@ def deduplicate_merged_sources(
     dead = set(remap.keys())
     for xref in dead:
         merged.sources.pop(xref, None)
+
+    # ------------------------------------------------------------------ #
+    # Step 5 – full title-based pass for sources that were never co-cited  #
+    # ------------------------------------------------------------------ #
+    # The co-cited pass above only compares sources appearing together on a
+    # single record.  Duplicate sources that are cited on different
+    # individuals but never together escape that pass.  Run a full O(n²)
+    # comparison limited to remaining (non-dead) sources to catch them.
+
+    live_sources = [(xref, src) for xref, src in merged.sources.items()
+                    if xref not in dead]
+    extra_remap: dict[str, str] = {}
+
+    for i, (xa, src_a) in enumerate(live_sources):
+        for xb, src_b in live_sources[i + 1:]:
+            ca = _canonical(xa)  # may already be remapped from Step 2
+            cb = _canonical(xb)
+            if ca == cb:
+                continue
+            # Only compare File-B against File-A — not A vs A or B vs B.
+            # Deduplicating two File-A sources risks removing a source that
+            # was present in the primary tree with distinct data.
+            one_is_b = _is_file_b(ca) != _is_file_b(cb)
+            if not one_is_b:
+                continue
+            if _score_src_pair(src_a, src_b) < threshold:
+                continue
+            # Prefer File-A xref as canonical
+            if _is_file_b(ca) and not _is_file_b(cb):
+                extra_remap[ca] = cb
+                remap[ca] = cb
+            else:
+                extra_remap[cb] = ca
+                remap[cb] = ca
+
+    if extra_remap:
+        # Rewrite citations for newly identified duplicates
+        for ind in merged.individuals.values():
+            ind.citations = _remap_cit_list(ind.citations)
+            for ev in ind.events:
+                ev.citations = _remap_cit_list(ev.citations)
+            for nm in ind.names:
+                nm.citations = _remap_cit_list(nm.citations)
+        for fam in merged.families.values():
+            fam.citations = _remap_cit_list(fam.citations)
+            for ev in fam.events:
+                ev.citations = _remap_cit_list(ev.citations)
+
+        extra_dead = set(extra_remap.keys())
+        for xref in extra_dead:
+            merged.sources.pop(xref, None)
+        dead |= extra_dead
 
     return len(dead)
