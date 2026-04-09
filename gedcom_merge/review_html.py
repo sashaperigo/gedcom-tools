@@ -901,6 +901,15 @@ function section(label, count, id) {
     'color:var(--text3);margin:16px 0 8px;scroll-margin-top:60px;">' + label + ' (' + count + ')</div>';
 }
 
+/* Sort a match list so undecided items come first */
+function sortUndecidedFirst(list, mapObj, dispObj) {
+  return list.slice().sort(function(a, b) {
+    var da = !!(mapObj[a.xref_b] || dispObj[a.xref_b]);
+    var db = !!(mapObj[b.xref_b] || dispObj[b.xref_b]);
+    return da - db;  // false(0) < true(1) → undecided first
+  });
+}
+
 function jumpNav(sections) {
   return '<div style="display:flex;gap:6px;margin-bottom:12px;">' +
     sections.map(function(s) {
@@ -944,8 +953,8 @@ function renderAuto() {
     : '';
 
   var html = banner + nav;
-  if (ai.length) html += section('Individuals', ai.length, 'auto-indi') + ai.map(indiCard).join('');
-  if (as.length) html += section('Sources', as.length, 'auto-src') + as.map(srcCard).join('');
+  if (ai.length) html += section('Individuals', ai.length, 'auto-indi') + sortUndecidedFirst(ai, D.indi_map, D.indi_disposition).map(indiCard).join('');
+  if (as.length) html += section('Sources', as.length, 'auto-src') + sortUndecidedFirst(as, D.source_map, D.source_disposition).map(srcCard).join('');
   return html;
 }
 
@@ -959,8 +968,8 @@ function renderCandidates() {
     : '';
 
   var html = nav;
-  if (ci.length) html += section('Individuals', ci.length, 'cand-indi') + ci.map(indiCard).join('');
-  if (cs.length) html += section('Sources', cs.length, 'cand-src') + cs.map(srcCard).join('');
+  if (ci.length) html += section('Individuals', ci.length, 'cand-indi') + sortUndecidedFirst(ci, D.indi_map, D.indi_disposition).map(indiCard).join('');
+  if (cs.length) html += section('Sources', cs.length, 'cand-src') + sortUndecidedFirst(cs, D.source_map, D.source_disposition).map(srcCard).join('');
   return html;
 }
 
