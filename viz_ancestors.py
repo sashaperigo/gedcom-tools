@@ -418,6 +418,8 @@ header h1 { font-size: 16px; font-weight: 600; }
 #search-results li:last-child { border-bottom: none; }
 #search-results li:hover, #search-results li.active {
   background: #334155; color: #f1f5f9; }
+#search-results li b { font-weight: 700; color: #f1f5f9; }
+#search-results li .srch-dates { color: #64748b; font-size: 12px; margin-left: 4px; }
 #viewport { overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; }
 #viewport.dragging { cursor: grabbing; }
 #tree { display: block; width: 100%; height: 100%; }
@@ -590,16 +592,97 @@ let _sibSpouseIdx = new Map();
   const list  = document.getElementById('search-results');
   let activeIdx = -1;
 
-  function normName(n) { return (n || '').replace(/\//g, '').replace(/\s+/g, ' ').trim(); }
-  function displayName(n) { const s = normName(n); return s.replace(/\b\w/g, c => c.toUpperCase()); }
+  // Accent-insensitive, lowercase normalization
+  function stripAccents(s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+  function normSearch(s)   { return stripAccents((s || '').toLowerCase()); }
 
-  function renderResults(hits) {
+  // Pre-parse each person's name into searchable fields (lazy, cached)
+  const _parseCache = new Map();
+  function getParsed(p) {
+    if (_parseCache.has(p.id)) return _parseCache.get(p.id);
+    const raw = p.name || '';
+    // Collapse slashes, normalize spaces
+    const flat = raw.replace(/\//g, '').replace(/\s+/g, ' ').trim();
+    // Extract nicknames (text in double quotes)
+    const nicks = [];
+    const noNicks = flat.replace(/"([^"]+)"/g, (_, n) => { nicks.push(n.trim()); return ' '; })
+                        .replace(/\s+/g, ' ').trim();
+    const tokens = noNicks.split(' ').filter(Boolean);
+    // Display: title-case the flat form (keeps quotes visible)
+    const disp = flat.replace(/\b\w/g, c => c.toUpperCase());
+    const normDisp = normSearch(flat);  // same .length as flat (accent strip is length-preserving for NFC)
+    const result = {
+      disp,
+      normDisp,
+      normFirst: normSearch(tokens[0] || ''),
+      normLast:  normSearch(tokens[tokens.length - 1] || ''),
+      normNicks: nicks.map(normSearch),
+    };
+    _parseCache.set(p.id, result);
+    return result;
+  }
+
+  function personMatches(parsed, qNorm) {
+    if (!qNorm) return false;
+    // 1. Plain substring anywhere in name (handles most queries)
+    if (parsed.normDisp.includes(qNorm)) return true;
+    const qToks = qNorm.split(' ').filter(Boolean);
+    if (qToks.length === 1) {
+      // 2. Single token: check nicknames
+      return parsed.normNicks.some(n => n.includes(qToks[0]));
+    }
+    // 3. Multi-token: first+last match skipping middle names
+    //    Query "A B" matches if A is first/nickname and B is last name
+    //    Query "A B C" matches if A is first/nickname, C is last, B appears anywhere
+    const qFirst = qToks[0];
+    const qLast  = qToks[qToks.length - 1];
+    const qMid   = qToks.slice(1, -1);
+    if (!parsed.normLast.startsWith(qLast)) return false;
+    if (!qMid.every(m => parsed.normDisp.includes(m))) return false;
+    return parsed.normFirst.startsWith(qFirst) ||
+           parsed.normNicks.some(n => n.startsWith(qFirst));
+  }
+
+  // Build innerHTML with query tokens bolded in displayStr.
+  // normDispStr and displayStr must have equal .length (guaranteed by our parsing).
+  function highlightName(displayStr, normDispStr, qNorm) {
+    if (!qNorm) return escHtml(displayStr);
+    const qToks = qNorm.split(' ').filter(Boolean);
+    const regions = [];
+    for (const tok of qToks) {
+      let i = 0;
+      while ((i = normDispStr.indexOf(tok, i)) !== -1) {
+        regions.push([i, i + tok.length]);
+        i++;
+      }
+    }
+    regions.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const [s, e] of regions) {
+      if (merged.length && s <= merged[merged.length - 1][1])
+        merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+      else merged.push([s, e]);
+    }
+    let html = '', last = 0;
+    for (const [s, e] of merged) {
+      html += escHtml(displayStr.slice(last, s));
+      html += '<b>' + escHtml(displayStr.slice(s, e)) + '</b>';
+      last = e;
+    }
+    html += escHtml(displayStr.slice(last));
+    return html;
+  }
+
+  function renderResults(hits, qNorm) {
     list.innerHTML = '';
     activeIdx = -1;
     hits.forEach(p => {
+      const parsed = getParsed(p);
       const li = document.createElement('li');
-      const dates = [p.birth_year && `b.\u2009${p.birth_year}`, p.death_year && `d.\u2009${p.death_year}`].filter(Boolean).join(' – ');
-      li.textContent = displayName(p.name) + (dates ? `  (${dates})` : '');
+      const dates = [p.birth_year && `b.\u2009${p.birth_year}`,
+                     p.death_year && `d.\u2009${p.death_year}`].filter(Boolean).join(' \u2013 ');
+      const nameHtml = highlightName(parsed.disp, parsed.normDisp, qNorm);
+      li.innerHTML = nameHtml + (dates ? `<span class="srch-dates">(${escHtml(dates)})</span>` : '');
       li.dataset.id = p.id;
       li.addEventListener('click', () => navigate(p.id));
       list.appendChild(li);
@@ -608,10 +691,10 @@ let _sibSpouseIdx = new Map();
   }
 
   input.addEventListener('input', () => {
-    const q = normName(input.value).toLowerCase();
-    if (!q) { list.classList.remove('open'); list.innerHTML = ''; return; }
-    const hits = ALL_PEOPLE.filter(p => normName(p.name).toLowerCase().includes(q)).slice(0, 20);
-    renderResults(hits);
+    const qNorm = normSearch(input.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
+    if (!qNorm) { list.classList.remove('open'); list.innerHTML = ''; return; }
+    const hits = ALL_PEOPLE.filter(p => personMatches(getParsed(p), qNorm)).slice(0, 20);
+    renderResults(hits, qNorm);
   });
 
   input.addEventListener('keydown', e => {
