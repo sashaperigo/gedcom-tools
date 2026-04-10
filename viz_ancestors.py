@@ -1114,9 +1114,11 @@ function showDetail(xref) {
       if (evt.tag === 'MARR') {
         const yearLabel = evtYear ? `<div class="marr-year">${evtYear}</div>` : '';
         const spXref = evt.spouse_xref;
-        const marrClick = spXref && PARENTS[spXref]
-          ? ` style="cursor:pointer" onclick="changeRoot(${JSON.stringify(spXref)})"` : '';
-        const proseHtml = spXref && PARENTS[spXref]
+        const spClickable = spXref && PARENTS[spXref];
+        const spXrefAttr = spClickable ? escHtml(spXref) : '';
+        const marrClick = spClickable
+          ? ` style="cursor:pointer" data-spouse-xref="${spXrefAttr}" onclick="changeRoot(this.dataset.spouseXref)"` : '';
+        const proseHtml = spClickable
           ? `<div class="marr-prose marr-link">${escHtml(prose)}</div>`
           : `<div class="marr-prose">${escHtml(prose)}</div>`;
         html +=
@@ -1474,7 +1476,7 @@ function computeRelativePositions() {
 }
 
 function hasHiddenParents(k) {
-  return ((2 * k) in TREE || (2 * k + 1) in TREE) &&
+  return ((2 * k) in currentTree || (2 * k + 1) in currentTree) &&
          !visibleKeys.has(2 * k) && !visibleKeys.has(2 * k + 1);
 }
 
@@ -1545,8 +1547,8 @@ function fitAndCenter(focusKey) {
 }
 
 function expandNode(k) {
-  if ((2 * k) in TREE)     visibleKeys.add(2 * k);
-  if ((2 * k + 1) in TREE) visibleKeys.add(2 * k + 1);
+  if ((2 * k) in currentTree)     visibleKeys.add(2 * k);
+  if ((2 * k + 1) in currentTree) visibleKeys.add(2 * k + 1);
   render();
   fitAndCenter();
 }
@@ -1589,15 +1591,13 @@ function render() {
         x1: fx + NODE_W, y1: coupleY, x2: mx, y2: coupleY,
         stroke: '#475569', 'stroke-width': 1.5
       }));
-      // When siblings are expanded the sibling connector draws the vertical + bar.
-      // Otherwise route through midY to avoid diagonal lines.
-      if (!expandedRelatives.has(k)) {
-        const dropX = (fx + NODE_W + mx) / 2;  // midpoint of couple gap
-        const midY  = cy - V_GAP / 2;
-        canvas.appendChild(svgEl('line', {x1: dropX,   y1: coupleY, x2: dropX,   y2: midY,  stroke: '#475569', 'stroke-width': 1.5}));
-        canvas.appendChild(svgEl('line', {x1: dropX,   y1: midY,   x2: childCx, y2: midY,   stroke: '#475569', 'stroke-width': 1.5}));
-        canvas.appendChild(svgEl('line', {x1: childCx, y1: midY,   x2: childCx, y2: cy,     stroke: '#475569', 'stroke-width': 1.5}));
-      }
+      // Route through midY to avoid diagonal lines.
+      // Always draw even when siblings are expanded (sibling connector may overdraw).
+      const dropX = (fx + NODE_W + mx) / 2;  // midpoint of couple gap
+      const midY  = cy - V_GAP / 2;
+      canvas.appendChild(svgEl('line', {x1: dropX,   y1: coupleY, x2: dropX,   y2: midY,  stroke: '#475569', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1: dropX,   y1: midY,   x2: childCx, y2: midY,   stroke: '#475569', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1: childCx, y1: midY,   x2: childCx, y2: cy,     stroke: '#475569', 'stroke-width': 1.5}));
     } else if (hasFather) {
       const { x: fx, y: fy } = nodePos(fk);
       const px   = fx + NODE_W / 2;
@@ -1823,8 +1823,8 @@ function render() {
         } else {
           expandedRelatives.add(k);
           // Auto-expand parents so siblings have a visible shared ancestor
-          if ((2 * k) in TREE) visibleKeys.add(2 * k);
-          if ((2 * k + 1) in TREE) visibleKeys.add(2 * k + 1);
+          if ((2 * k) in currentTree) visibleKeys.add(2 * k);
+          if ((2 * k + 1) in currentTree) visibleKeys.add(2 * k + 1);
           render();
         }
       });
