@@ -154,6 +154,9 @@
 0 @F5@ FAM
 1 HUSB @I12@
 1 WIFE @I1@
+1 MARR
+2 DATE 2015
+2 PLAC Greenwich, Connecticut, USA
 0 @F6@ FAM
 1 HUSB @I10@
 1 CHIL @I6@
