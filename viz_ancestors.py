@@ -1305,7 +1305,7 @@ function _buildSibSlots() {
   const visXrefs = new Set([...visibleKeys].map(k => currentTree[k]).filter(Boolean));
   for (const k of expandedRelatives) {
     if (k === 1) continue;  // root handled separately; no layout slot needed
-    const rels = RELATIVES[String(k)];
+    const rels = RELATIVES[currentTree[k]];
     if (!rels) continue;
     const n = rels.siblings.filter(xref => !visXrefs.has(xref)).length;
     if (n > 0) _sibSlots.set(k, n);
@@ -1418,7 +1418,7 @@ function computeRelativePositions() {
   for (const k of expandedRelatives) {
     if (!_posCache.has(k)) continue;
     const {x, y} = _posCache.get(k);
-    const rels = RELATIVES[String(k)];
+    const rels = RELATIVES[currentTree[k]];
     if (!rels) continue;
     const male = isMaleKey(k);
 
@@ -1617,7 +1617,7 @@ function render() {
 
   // Relative connectors (drawn before nodes so buttons render on top)
   for (const k of expandedRelatives) {
-    const rels = RELATIVES[String(k)];
+    const rels = RELATIVES[currentTree[k]];
     if (!rels) continue;
     const ancEntry = _posCache.get(k);
     if (!ancEntry) continue;
@@ -1805,7 +1805,7 @@ function render() {
     // Relatives toggle button for non-root ancestors that have siblings or spouses.
     // Positioned outside the node on the side where siblings expand:
     // males expand left → button on left; females expand right → button on right.
-    if (k !== 1 && RELATIVES[String(k)]) {
+    if (k !== 1 && RELATIVES[currentTree[k]]) {
       const isExpanded = expandedRelatives.has(k);
       const male = isMaleKey(k);
       const rbw = 16, rbh = 16;
@@ -1974,7 +1974,8 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     safe_name      = html_mod.escape(root_name)
     tree_json      = json.dumps(tree)
     people_json    = json.dumps(people)
-    relatives_json = json.dumps({str(k): v for k, v in relatives.items()})
+    # Key relatives by xref so lookups work after changeRoot() swaps currentTree
+    relatives_json = json.dumps({tree[k]: v for k, v in relatives.items()})
     all_people     = sorted(
         [{"id": xref, "name": info["name"] or "",
           "birth_year": info.get("birth_year") or "",
