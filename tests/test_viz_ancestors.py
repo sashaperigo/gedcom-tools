@@ -328,42 +328,42 @@ class TestRelatives:
         return build_relatives_json(tree, indis, fams)
 
     def test_root_has_siblings(self, relatives):
-        """Key 1 (Rose) has Alice Smith (@I11@) as a sibling."""
-        assert 1 in relatives
-        assert '@I11@' in relatives[1]['siblings']
+        """@I1@ (Rose) has Alice Smith (@I11@) as a sibling."""
+        assert '@I1@' in relatives
+        assert '@I11@' in relatives['@I1@']['siblings']
 
     def test_root_has_spouse(self, relatives):
-        """Key 1 (Rose) has Mark Davis (@I12@) as a spouse."""
-        assert 1 in relatives
-        assert '@I12@' in relatives[1]['spouses']
+        """@I1@ (Rose) has Mark Davis (@I12@) as a spouse."""
+        assert '@I1@' in relatives
+        assert '@I12@' in relatives['@I1@']['spouses']
 
     def test_siblings_are_xref_strings(self, relatives):
         """Siblings list must contain plain xref strings, not objects."""
-        for xref in relatives[1]['siblings']:
+        for xref in relatives['@I1@']['siblings']:
             assert isinstance(xref, str)
             assert xref.startswith('@I')
 
     def test_spouses_are_xref_strings(self, relatives):
-        for xref in relatives[1]['spouses']:
+        for xref in relatives['@I1@']['spouses']:
             assert isinstance(xref, str)
             assert xref.startswith('@I')
 
     def test_father_has_sibling_not_in_tree(self, relatives):
-        """Key 2 (James) has Robert Smith (@I13@) as a sibling."""
-        assert 2 in relatives
-        assert '@I13@' in relatives[2]['siblings']
+        """@I2@ (James) has Robert Smith (@I13@) as a sibling."""
+        assert '@I2@' in relatives
+        assert '@I13@' in relatives['@I2@']['siblings']
 
     def test_spouse_already_in_tree_still_returned(self, relatives):
-        """Key 2 (James) spouse is Clara (@I3@) — still included; dedup is JS-side."""
-        assert '@I3@' in relatives[2]['spouses']
+        """@I2@ (James) spouse is Clara (@I3@) — still included; dedup is JS-side."""
+        assert '@I3@' in relatives['@I2@']['spouses']
 
     def test_person_with_no_relatives_absent(self, relatives):
-        """Key 12 (Thomas Jones) has no FAMC and no spouse → not in relatives dict."""
-        assert 12 not in relatives
+        """@I10@ (Thomas Jones) has no FAMC and no spouse → not in relatives dict."""
+        assert '@I10@' not in relatives
 
     def test_no_self_in_siblings(self, relatives):
         """The anchor person must not appear in their own sibling list."""
-        assert '@I1@' not in relatives[1]['siblings']
+        assert '@I1@' not in relatives['@I1@']['siblings']
 
 
 # ---------------------------------------------------------------------------

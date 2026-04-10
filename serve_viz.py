@@ -153,6 +153,53 @@ def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
     return lines[:event_start] + lines[event_end:], None
 
 
+def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | None, int | None, str | None]:
+    """Return (start, end, err) — line range [start, end) for note at note_idx in xref."""
+    indi_start = next(
+        (i for i, l in enumerate(lines) if l.strip() == f'0 {xref} INDI'), None
+    )
+    if indi_start is None:
+        return None, None, f'Individual {xref} not found'
+    indi_end = next(
+        (i for i in range(indi_start + 1, len(lines)) if lines[i].startswith('0 ')),
+        len(lines),
+    )
+    count = 0
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if not m:
+            continue
+        lvl, tag = int(m.group(1)), m.group(2)
+        if lvl == 1 and tag == 'NOTE':
+            if count == note_idx:
+                j = i + 1
+                while j < indi_end:
+                    sm = _TAG_RE.match(lines[j])
+                    if sm and int(sm.group(1)) == 2 and sm.group(2) in ('CONT', 'CONC'):
+                        j += 1
+                    else:
+                        break
+                return i, j, None
+            count += 1
+    return None, None, f'Note index {note_idx} not found in {xref}'
+
+
+def _encode_note_lines(text: str) -> list[str]:
+    """Encode text into GEDCOM '1 NOTE / 2 CONT' lines (split on newlines)."""
+    parts = text.split('\n')
+    out = [f'1 NOTE {parts[0]}']
+    for part in parts[1:]:
+        out.append(f'2 CONT {part}')
+    return out
+
+
+def _write_gedcom_atomic(lines: list[str]) -> None:
+    """Backup original and write new lines to GED atomically."""
+    backup = GED.with_suffix('.ged.bak')
+    GED.rename(backup)
+    GED.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
 def commit_deletions() -> tuple[int, list[str]]:
     """
     Apply all pending deletions to the GEDCOM file.
@@ -270,6 +317,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             _pending_file().unlink(missing_ok=True)
             regenerate(body.get('current_person'))
             resp = json.dumps({'ok': True}).encode()
+
+        elif parsed.path == '/api/delete_note':
+            xref     = body['xref']
+            note_idx = int(body['note_idx'])
+            lines    = GED.read_text(encoding='utf-8').splitlines()
+            start, end, err = _find_note_block(lines, xref, note_idx)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                new_lines = lines[:start] + lines[end:]
+                _write_gedcom_atomic(new_lines)
+                print(f"[note-delete] {xref} note[{note_idx}] deleted")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/edit_note':
+            xref     = body['xref']
+            note_idx = int(body['note_idx'])
+            new_text = body.get('new_text', '')
+            lines    = GED.read_text(encoding='utf-8').splitlines()
+            start, end, err = _find_note_block(lines, xref, note_idx)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                new_lines = lines[:start] + _encode_note_lines(new_text) + lines[end:]
+                _write_gedcom_atomic(new_lines)
+                print(f"[note-edit] {xref} note[{note_idx}] updated")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         else:
             self.send_error(404)
