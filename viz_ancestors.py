@@ -50,9 +50,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     indis: dict  = {}
     fams: dict   = {}
     sources: dict = {}   # xref -> title
-    ctx           = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
-    current_evt   = None   # current event dict being built
-    current_note  = None   # index into notes[] for CONT assembly
+    ctx               = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
+    current_evt       = None   # current event dict being built
+    current_note      = None   # index into notes[] for CONT assembly
+    current_sour_xref = None   # xref of the 1 SOUR citation currently being parsed
 
     for line in lines:
         m = _INDI_RE.match(line)
@@ -60,7 +61,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             indis[xref] = {
                 'name': None, 'birth_year': None, 'death_year': None,
-                'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [],
+                'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [], 'source_urls': {},
             }
             ctx          = ('indi', xref)
             current_evt  = None
@@ -103,6 +104,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
 
         if ctx[0] == 'indi':
             xref = ctx[1]
+            if lvl == 1 and tag != 'SOUR':
+                current_sour_xref = None
             if lvl == 1 and tag == 'NAME' and indis[xref]['name'] is None:
                 name = re.sub(r'/', '', html_mod.unescape(val))
                 name = re.sub(r'\s+', ' ', name).strip()
@@ -152,7 +155,11 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             elif lvl == 1 and tag == 'SOUR' and val.startswith('@'):
                 if val not in indis[xref]['source_xrefs']:
                     indis[xref]['source_xrefs'].append(val)
+                current_sour_xref = val
                 current_evt = current_note = None
+            elif lvl == 3 and tag == 'WWW' and current_sour_xref is not None:
+                if current_sour_xref not in indis[xref]['source_urls']:
+                    indis[xref]['source_urls'][current_sour_xref] = val
             elif lvl == 1:
                 current_evt = current_note = None
 
@@ -303,12 +310,15 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         info = indis.get(xref)
         if not info:
             continue
-        src_titles = []
+        src_list = []
+        seen_src_titles: set[str] = set()
         if sources:
+            source_urls = info.get('source_urls', {})
             for sxref in info.get('source_xrefs', []):
                 title = sources.get(sxref)
-                if title and title not in src_titles:
-                    src_titles.append(title)
+                if title and title not in seen_src_titles:
+                    seen_src_titles.add(title)
+                    src_list.append({'title': title, 'url': source_urls.get(sxref) or None})
         excl_list = excl_by_xref.get(xref, [])
         events = [
             e for e in info['events']
@@ -330,18 +340,19 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
             'sex':        info['sex'],
             'events':     sort_events(events),
             'notes':      info['notes'],
-            'sources':    src_titles,
+            'sources':    src_list,
         }
     return result
 
 
 def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
     """
-    Return {ahnentafel_key: {siblings: [xref,...], spouses: [xref,...],
-    sib_spouses: {sib_xref: [spouse_xref,...]}}} for all ancestors.
+    Return {xref: {siblings: [xref,...], spouses: [xref,...],
+    sib_spouses: {sib_xref: [spouse_xref,...]}}} for ALL individuals,
+    so lookups work for any person navigated to via search.
     """
     result = {}
-    for key, xref in tree.items():
+    for xref in indis:
         p = indis.get(xref)
         if not p:
             continue
@@ -374,7 +385,7 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
             entry = {'siblings': siblings, 'spouses': spouses}
             if sib_spouses:
                 entry['sib_spouses'] = sib_spouses
-            result[key] = entry
+            result[xref] = entry
     return result
 
 
@@ -470,6 +481,12 @@ header h1 { font-size: 16px; font-weight: 600; }
 .notes-toggle:hover { color: #94a3b8; }
 .notes-toggle-arrow { font-size: 8px; transition: transform 0.2s; }
 .notes-toggle.open .notes-toggle-arrow { transform: rotate(90deg); }
+.note-card-wrap { position: relative; }
+.note-actions { position: absolute; top: 6px; right: 8px; display: none; gap: 4px; }
+.note-card-wrap:hover .note-actions { display: flex; }
+.note-action-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  color: #94a3b8; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 11px; }
+.note-action-btn:hover { background: rgba(255,255,255,0.15); color: #f1f5f9; }
 .note-card { font-size: 13px; color: #f1f5f9; line-height: 1.75;
              white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word;
              padding: 10px 14px;
@@ -477,6 +494,20 @@ header h1 { font-size: 16px; font-weight: 600; }
              border-left: 3px solid rgba(254, 243, 160, 0.35);
              margin-bottom: 10px; }
 .note-card a { color: #fde68a; text-underline-offset: 2px; }
+#note-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#note-modal-overlay.open { display: flex; }
+#note-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 520px; max-width: 90vw; }
+#note-modal h3 { margin: 0 0 12px; font-size: 14px; color: #94a3b8; font-weight: 600; }
+#note-modal textarea { width: 100%; box-sizing: border-box; background: #0f172a;
+  border: 1px solid #334155; color: #f1f5f9; border-radius: 6px; padding: 10px;
+  font-size: 13px; font-family: inherit; line-height: 1.6; resize: vertical; min-height: 120px; }
+.note-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.note-modal-cancel { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  color: #94a3b8; border-radius: 6px; padding: 6px 16px; cursor: pointer; }
+.note-modal-save { background: #3b82f6; border: none; color: #fff;
+  border-radius: 6px; padding: 6px 16px; cursor: pointer; font-weight: 600; }
 .marr-card { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px;
              background: rgba(232, 121, 249, 0.08);
              border-left: 3px solid rgba(232, 121, 249, 0.5); }
@@ -522,6 +553,8 @@ header h1 { font-size: 16px; font-weight: 600; }
 .source-item { font-size: 11px; color: #64748b; line-height: 1.5; padding: 2px 0; }
 .source-list { margin: 4px 0 0 0; padding-left: 18px; }
 .source-list .source-item { padding: 1px 0; }
+.source-link { color: #64748b; text-underline-offset: 2px; text-decoration-color: rgba(100,116,139,0.4); }
+.source-link:hover { color: #93c5fd; text-decoration-color: rgba(147,197,253,0.6); }
 .also-lived-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
   color: #475569; margin-bottom: 10px; margin-top: 16px; display: block; }
 .also-lived-heading:first-child { margin-top: 0; }
@@ -552,6 +585,16 @@ header h1 { font-size: 16px; font-weight: 600; }
 <svg id="tree" xmlns="http://www.w3.org/2000/svg">
   <g id="canvas"></g>
 </svg>
+</div>
+<div id="note-modal-overlay" onclick="if(event.target===this)closeNoteModal()">
+  <div id="note-modal">
+    <h3>Edit Note</h3>
+    <textarea id="note-modal-textarea" rows="6" onkeydown="if(event.key==='Escape')closeNoteModal()"></textarea>
+    <div class="note-modal-actions">
+      <button class="note-modal-cancel" onclick="closeNoteModal()">Cancel</button>
+      <button class="note-modal-save" onclick="submitNoteEdit()">Save</button>
+    </div>
+  </div>
 </div>
 <div id="detail-panel">
   <div id="detail-header">
@@ -780,6 +823,66 @@ async function clearPending() {
       body: JSON.stringify({current_person: window._currentPerson || null}),
     });
     window.location.reload();
+  } catch (e) { alert('Request failed: ' + e); }
+}
+
+// ---------------------------------------------------------------------------
+// Note edit / delete
+// ---------------------------------------------------------------------------
+let _noteEditXref = null, _noteEditIdx = null;
+
+async function deleteNote(xref, noteIdx) {
+  if (!confirm('Delete this note? The GEDCOM file will be updated immediately (a backup will be saved).')) return;
+  try {
+    const resp = await fetch('/api/delete_note', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({xref, note_idx: noteIdx, current_person: window._currentPerson || null}),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
+      _openDetailKey = null;
+      showDetail(xref);
+    } else {
+      alert('Delete failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) { alert('Request failed: ' + e); }
+}
+
+function editNote(xref, noteIdx) {
+  _noteEditXref = xref;
+  _noteEditIdx  = noteIdx;
+  document.getElementById('note-modal-textarea').value = (PEOPLE[xref] && PEOPLE[xref].notes[noteIdx]) || '';
+  document.getElementById('note-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('note-modal-textarea').focus(), 50);
+}
+
+function closeNoteModal() {
+  document.getElementById('note-modal-overlay').classList.remove('open');
+  _noteEditXref = _noteEditIdx = null;
+}
+
+async function submitNoteEdit() {
+  const newText  = document.getElementById('note-modal-textarea').value;
+  const xref     = _noteEditXref;
+  const noteIdx  = _noteEditIdx;
+  closeNoteModal();
+  try {
+    const resp = await fetch('/api/edit_note', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({xref, note_idx: noteIdx, new_text: newText,
+                            current_person: window._currentPerson || null}),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
+      _openDetailKey = null;
+      showDetail(xref);
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
   } catch (e) { alert('Request failed: ' + e); }
 }
 
@@ -1043,9 +1146,15 @@ function showDetail(xref) {
   if (notes.length) {
     const count = notes.length;
     const label = count === 1 ? '1 Note' : `${count} Notes`;
-    const cards = notes.map(n =>
-      `<div class="note-card" style="border-left-color:${accent}">${linkify(n)}</div>`
-    ).join('');
+    const cards = notes.map((n, i) => {
+      const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
+      return `<div class="note-card-wrap">` +
+        `<div class="note-card" style="border-left-color:${accent}">${linkify(n)}</div>` +
+        `<div class="note-actions">` +
+        `<button class="note-action-btn" title="Edit note" onclick="editNote(${xrefQ},${i})">\u270f</button>` +
+        `<button class="note-action-btn" title="Delete note" onclick="deleteNote(${xrefQ},${i})">\u2715</button>` +
+        `</div></div>`;
+    }).join('');
     notesDiv.innerHTML =
       `<button class="notes-toggle open" onclick="this.classList.toggle('open');` +
       `this.nextElementSibling.style.display=this.classList.contains('open')?'block':'none'">` +
@@ -1188,12 +1297,15 @@ function showDetail(xref) {
   alsoLivedDiv.className = bottomHtml ? 'has-content' : '';
 
   const sourcesDiv = document.getElementById('detail-sources');
-  const srcs = (data.sources || []).slice().sort((a, b) => a.localeCompare(b));
+  const srcs = (data.sources || []).slice().sort((a, b) => (a.title||'').localeCompare(b.title||''));
+  const _srcHtml = s => s.url
+    ? `<a href="${escHtml(s.url)}" target="_blank" rel="noopener" class="source-link">${escHtml(s.title)}</a>`
+    : escHtml(s.title);
   sourcesDiv.innerHTML = srcs.length
     ? `<span class="sources-heading">Sources</span>` +
       (srcs.length === 1
-        ? `<div class="source-item">${escHtml(srcs[0])}</div>`
-        : `<ul class="source-list">${srcs.map(s => `<li class="source-item">${escHtml(s)}</li>`).join('')}</ul>`)
+        ? `<div class="source-item">${_srcHtml(srcs[0])}</div>`
+        : `<ul class="source-list">${srcs.map(s => `<li class="source-item">${_srcHtml(s)}</li>`).join('')}</ul>`)
     : '';
 
   panel.classList.add('panel-open');
@@ -1974,8 +2086,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     safe_name      = html_mod.escape(root_name)
     tree_json      = json.dumps(tree)
     people_json    = json.dumps(people)
-    # Key relatives by xref so lookups work after changeRoot() swaps currentTree
-    relatives_json = json.dumps({tree[k]: v for k, v in relatives.items()})
+    relatives_json = json.dumps(relatives)
     all_people     = sorted(
         [{"id": xref, "name": info["name"] or "",
           "birth_year": info.get("birth_year") or "",

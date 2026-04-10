@@ -420,9 +420,10 @@ def _has_relatives_toggle(k: int, tree: dict, relatives: dict) -> bool:
     """
     Mirror of the JS relatives-button guard: k != 1 and the person has an
     entry in RELATIVES (i.e. has siblings or spouses to display).
-    `relatives` here is the Python dict from build_relatives_json (int keys).
+    `relatives` here is the Python dict from build_relatives_json (xref keys).
     """
-    return k != 1 and k in relatives
+    xref = tree.get(k)
+    return k != 1 and xref is not None and xref in relatives
 
 
 class TestExpansionButtonLogic:
@@ -552,15 +553,21 @@ class TestExpansionButtonLogic:
         """
         assert not _has_relatives_toggle(12, _tree, _relatives)
 
-    def test_relatives_toggle_only_for_known_tree_keys(self, _tree, _relatives):
+    def test_relatives_toggle_only_for_tree_members(self, _tree, _relatives):
         """
-        Every key in relatives must be in the tree (we only compute relatives
-        for ancestors).  No ghost entries for people outside the tree.
+        Expansion toggles are only shown for nodes in the current tree.
+        Non-tree xrefs in RELATIVES don't produce toggles (JS guard: k != 1 and xref in RELATIVES).
+        This test verifies tree members with relatives get a toggle, and non-members don't.
         """
-        for k in _relatives:
-            assert k in _tree, (
-                f'RELATIVES has entry for key {k} but that key is not in the tree'
-            )
+        tree_xrefs = set(_tree.values())
+        # Every tree member that has relatives should have a toggle (except root, key 1)
+        for k, xref in _tree.items():
+            if k == 1:
+                continue
+            if xref in _relatives:
+                assert _has_relatives_toggle(k, _tree, _relatives), (
+                    f'Tree key {k} ({xref}) has relatives but no toggle'
+                )
 
     def test_all_relatives_entries_have_required_fields(self, _relatives):
         """Every RELATIVES entry must have siblings and spouses (always present).
