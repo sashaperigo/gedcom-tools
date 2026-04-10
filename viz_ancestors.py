@@ -322,7 +322,7 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     continue
                 spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
                 spouse_name = indis[spouse_xref]['name'] if spouse_xref and spouse_xref in indis else None
-                events.append({**marr, 'spouse': spouse_name})
+                events.append({**marr, 'spouse': spouse_name, 'spouse_xref': spouse_xref})
         result[xref] = {
             'name':       info['name'] or '?',
             'birth_year': info['birth_year'],
@@ -481,6 +481,8 @@ header h1 { font-size: 16px; font-weight: 600; }
 .marr-card .marr-year { font-size: 12px; font-weight: 700; color: #94a3b8;
                         text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
 .marr-card .marr-prose { font-size: 15px; font-weight: 600; color: #f1f5f9; line-height: 1.4; }
+.marr-card .marr-link { color: #93c5fd; text-decoration: underline; text-decoration-color: rgba(147,197,253,0.4); }
+.marr-card:has(.marr-link):hover { background: rgba(219,234,254,0.08); }
 .marr-card .marr-meta { font-size: 12px; color: #94a3b8; margin-top: 4px; }
 .marr-card .evt-note-inline { font-size: 12px; }
 /* ── Timeline ───────────────────────────────────────────── */
@@ -504,6 +506,14 @@ header h1 { font-size: 16px; font-weight: 600; }
 /* ── Also lived in ──────────────────────────────────────── */
 #detail-also-lived { position: relative; padding-left: 28px; }
 #detail-also-lived.has-content { margin-top: 16px; border-top: 1px solid #334155; padding-top: 16px; }
+#detail-facts { margin-top: 16px; }
+#detail-facts.has-content { border-top: 1px solid #334155; padding-top: 14px; }
+.facts-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #475569; margin-bottom: 8px; display: block; }
+.facts-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.facts-pill { font-size: 12px; background: #1c2a1e; border: 1px solid #2d4a31;
+  border-radius: 12px; padding: 3px 10px; color: #6ee37a; }
+.facts-pill .pill-date { color: #3d6642; font-size: 11px; margin-left: 5px; }
 #detail-sources { margin-top: 16px; border-top: 1px solid #334155; padding-top: 14px; }
 .sources-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
   color: #475569; margin-bottom: 8px; display: block; }
@@ -558,6 +568,7 @@ header h1 { font-size: 16px; font-weight: 600; }
       <div id="detail-events"></div>
     </div>
     <div id="detail-also-lived"></div>
+    <div id="detail-facts"></div>
     <div id="detail-sources"></div>
   </div>
 </div>
@@ -566,6 +577,9 @@ const TREE = __TREE_JSON__;
 const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const RELATIVES = __RELATIVES_JSON__;
+const PARENTS = __PARENTS_JSON__;
+const ROOT_XREF = __ROOT_XREF_JSON__;
+let currentTree = Object.assign({}, TREE);
 const expandedRelatives = new Set([1]);
 let _relPosCache = new Map();
 // Maps "${anchorKey}:${sibIdx}" → current spouse index (0-based) for siblings with multiple spouses
@@ -616,7 +630,10 @@ let _sibSpouseIdx = new Map();
   });
 
   function navigate(personId) {
-    window.location.href = '/?person=' + encodeURIComponent(personId) + '&open=1';
+    list.classList.remove('open');
+    list.innerHTML = '';
+    input.value = '';
+    changeRoot(personId);
   }
 })();
 
@@ -895,7 +912,12 @@ let _openDetailKey = null;
 function showDetail(xref) {
   if (_openDetailKey === xref) return;  // already open for this person
   const panelWasOpen = _openDetailKey !== null;
-  const data  = PEOPLE[xref];
+  const data = PEOPLE[xref] || (() => {
+    const p = ALL_PEOPLE.find(x => x.id === xref);
+    return p ? { name: p.name, birth_year: p.birth_year, death_year: p.death_year,
+                 sex: null, events: [], notes: [], sources: [] } : null;
+  })();
+  if (!data) return;
   const panel = document.getElementById('detail-panel');
 
   // Accent color by sex
@@ -950,10 +972,29 @@ function showDetail(xref) {
     notesDiv.innerHTML = '';
   }
 
-  // Timeline events (AKA excluded — shown above; undated RESI shown below)
+  // Timeline events (AKA excluded — shown above; NATI shown in facts; undated RESI shown below)
   const evtDiv  = document.getElementById('detail-events');
   const alsoLivedDiv = document.getElementById('detail-also-lived');
+  const factsDiv = document.getElementById('detail-facts');
+
+  // Nationalities — always shown in facts section, never in the timeline
+  const natiEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
+    .filter(e => e.tag === 'NATI');
+  if (natiEvents.length) {
+    const pills = natiEvents.map(e => {
+      const _pillYr = e.date ? ((_YR_RE.exec(e.date) || [,null])[1]) : null;
+      const dateStr = _pillYr ? `<span class="pill-date">${_pillYr}</span>` : '';
+      return `<span class="facts-pill">${escHtml(e.inline_val || '')}${dateStr}</span>`;
+    }).join('');
+    factsDiv.innerHTML = `<span class="facts-heading">Nationality</span><div class="facts-pills">${pills}</div>`;
+    factsDiv.className = 'has-content';
+  } else {
+    factsDiv.innerHTML = '';
+    factsDiv.className = '';
+  }
+
   const allVisible = (data.events || []).map((e, i) => ({...e, _origIdx: i})).filter(e =>
+    e.tag !== 'NATI' &&
     (e.date || e.place || e.note || e.type || e.cause) &&
     !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
   );
@@ -989,10 +1030,16 @@ function showDetail(xref) {
 
       if (evt.tag === 'MARR') {
         const yearLabel = evtYear ? `<div class="marr-year">${evtYear}</div>` : '';
+        const spXref = evt.spouse_xref;
+        const marrClick = spXref && PARENTS[spXref]
+          ? ` style="cursor:pointer" onclick="changeRoot(${JSON.stringify(spXref)})"` : '';
+        const proseHtml = spXref && PARENTS[spXref]
+          ? `<div class="marr-prose marr-link">${escHtml(prose)}</div>`
+          : `<div class="marr-prose">${escHtml(prose)}</div>`;
         html +=
-          `<div class="marr-card">` +
+          `<div class="marr-card"${marrClick}>` +
           yearLabel +
-          `<div class="marr-prose">${escHtml(prose)}</div>` +
+          proseHtml +
           (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
           noteInl +
           `</div>`;
@@ -1056,7 +1103,7 @@ function showDetail(xref) {
   alsoLivedDiv.className = bottomHtml ? 'has-content' : '';
 
   const sourcesDiv = document.getElementById('detail-sources');
-  const srcs = data.sources || [];
+  const srcs = (data.sources || []).slice().sort((a, b) => a.localeCompare(b));
   sourcesDiv.innerHTML = srcs.length
     ? `<span class="sources-heading">Sources</span>` +
       (srcs.length === 1
@@ -1092,8 +1139,44 @@ function _animateFitAndCenter(duration) {
 }
 
 document.getElementById('detail-close').addEventListener('click', closeDetail);
+
+// Build Ahnentafel map {key: xref} from PARENTS starting at rootXref
+function buildAhnentafel(rootXref) {
+  const result = {};
+  const queue = [[rootXref, 1]];
+  while (queue.length) {
+    const [xref, k] = queue.shift();
+    if (!xref || !PARENTS[xref]) continue;
+    result[k] = xref;
+    const [fatherXref, motherXref] = PARENTS[xref];
+    if (fatherXref) queue.push([fatherXref, 2 * k]);
+    if (motherXref) queue.push([motherXref, 2 * k + 1]);
+  }
+  return result;
+}
+
+function changeRoot(xref) {
+  if (!xref || !PARENTS[xref]) return;
+  currentTree = buildAhnentafel(xref);
+  visibleKeys.clear();
+  _posCache.clear();
+  _relPosCache.clear();
+  expandedRelatives.clear();
+  expandedRelatives.add(1);
+  for (let g = 0; g <= 2; g++) {
+    const start = Math.pow(2, g);
+    const end   = Math.pow(2, g + 1);
+    for (let k = start; k < end; k++) {
+      if (k in currentTree) visibleKeys.add(k);
+    }
+  }
+  render();
+  fitAndCenter();
+  showDetail(xref);
+}
+
 document.getElementById('home-btn').addEventListener('click', () => {
-  window.location.href = '/';
+  changeRoot(ROOT_XREF);
 });
 
 const NODE_W = 175, NODE_H = 60, H_GAP = 10, V_GAP = 80;
@@ -1127,7 +1210,7 @@ let _posCache = new Map();
 
 // True if key k represents a male: even keys (fathers) are male; key 1 uses GEDCOM sex field.
 function isMaleKey(k) {
-  if (k === 1) return PEOPLE[TREE[1]]?.sex === 'M';
+  if (k === 1) return PEOPLE[currentTree[1]]?.sex === 'M';
   return k % 2 === 0;
 }
 
@@ -1136,7 +1219,7 @@ function isMaleKey(k) {
 const _sibSlots = new Map();
 function _buildSibSlots() {
   _sibSlots.clear();
-  const visXrefs = new Set([...visibleKeys].map(k => TREE[k]).filter(Boolean));
+  const visXrefs = new Set([...visibleKeys].map(k => currentTree[k]).filter(Boolean));
   for (const k of expandedRelatives) {
     if (k === 1) continue;  // root handled separately; no layout slot needed
     const rels = RELATIVES[String(k)];
@@ -1245,7 +1328,7 @@ function computeRelativePositions() {
   // Build xref → Ahnentafel key map for all visible ancestors
   const xrefToKey = new Map();
   for (const k of visibleKeys) {
-    const xref = TREE[k];
+    const xref = currentTree[k];
     if (xref) xrefToKey.set(xref, k);
   }
 
@@ -1566,7 +1649,7 @@ function render() {
   // Person nodes
   for (const k of visibleKeys) {
     const { x, y } = nodePos(k);
-    const data   = PEOPLE[TREE[k]];
+    const data   = PEOPLE[currentTree[k]];
     const isRoot = (k === 1);
     const isMale = (k % 2 === 0 && k > 1);
     const fill   = isRoot ? '#2563eb' : (isMale ? '#1e40af' : '#6d28d9');
@@ -1574,7 +1657,7 @@ function render() {
     const nodeG = svgEl('g', { cursor: 'pointer' });
     nodeG.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!didDrag) showDetail(TREE[k]);
+      if (!didDrag) showDetail(currentTree[k]);
     });
 
     const nodeRect = svgEl('rect', {
@@ -1727,7 +1810,7 @@ function init() {
     const start = Math.pow(2, g);
     const end   = Math.pow(2, g + 1);
     for (let k = start; k < end; k++) {
-      if (k in TREE) visibleKeys.add(k);
+      if (k in currentTree) visibleKeys.add(k);
     }
   }
 
@@ -1740,7 +1823,7 @@ function init() {
 
   render();
   fitAndCenter();
-  if (new URLSearchParams(window.location.search).get('open') === '1') showDetail(TREE[1]);
+  if (new URLSearchParams(window.location.search).get('open') === '1') showDetail(currentTree[1]);
   _refreshPendingBar();
 }
 
@@ -1802,7 +1885,8 @@ window.addEventListener('resize', () => {
 """
 
 
-def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis: dict) -> str:
+def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis: dict,
+                fams: dict | None = None, root_xref: str | None = None) -> str:
     """Return a complete self-contained HTML string."""
     safe_name      = html_mod.escape(root_name)
     tree_json      = json.dumps(tree)
@@ -1816,6 +1900,18 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         key=lambda p: p["name"].lower()
     )
     all_people_json = json.dumps(all_people)
+    # Build parent map for JS tree rebuilding
+    parents = {}
+    if fams:
+        for xref, info in indis.items():
+            famc = info.get('famc')
+            if famc and famc in fams:
+                fam = fams[famc]
+                parents[xref] = [fam.get('husb'), fam.get('wife')]
+            else:
+                parents[xref] = [None, None]
+    parents_json  = json.dumps(parents)
+    root_xref_json = json.dumps(root_xref or '')
     return (
         _HTML_TEMPLATE
         .replace('__ROOT_NAME__', safe_name)
@@ -1823,6 +1919,8 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         .replace('__PEOPLE_JSON__', people_json)
         .replace('__ALL_PEOPLE_JSON__', all_people_json)
         .replace('__RELATIVES_JSON__', relatives_json)
+        .replace('__PARENTS_JSON__', parents_json)
+        .replace('__ROOT_XREF_JSON__', root_xref_json)
     )
 
 
@@ -1859,16 +1957,11 @@ def viz_ancestors(path_in: str, person: str, path_out: str,
     tree      = build_tree_json(root_xref, indis, fams)
     relatives = build_relatives_json(tree, indis, fams)
 
-    all_xrefs = set(tree.values())
-    for rels in relatives.values():
-        all_xrefs.update(rels['siblings'])
-        all_xrefs.update(rels['spouses'])
-        for sp_list in rels.get('sib_spouses', {}).values():
-            all_xrefs.update(sp_list)
-    people    = build_people_json(all_xrefs, indis, fams, sources, exclude=exclude)
+    # Build full detail data for everyone so the search panel always shows complete info
+    people    = build_people_json(set(indis.keys()), indis, fams, sources, exclude=exclude)
 
     root_name = people.get(root_xref, {}).get('name', '?')
-    html = render_html(tree, root_name, people, relatives, indis)
+    html = render_html(tree, root_name, people, relatives, indis, fams=fams, root_xref=root_xref)
     with open(path_out, 'w', encoding='utf-8') as f:
         f.write(html)
 
