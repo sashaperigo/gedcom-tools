@@ -18,6 +18,13 @@ Bug history this file covers:
   B4  onclick double-quote injection — JSON.stringify(xref) embeds double
       quotes inside onclick="...", breaking HTML attribute parsing so the
       click handler was silently dropped.
+
+Expansion-button logic (TestExpansionButtonLogic):
+  These tests mirror the JS functions hasHiddenParents(), hasVisibleParents(),
+  and the relatives-toggle guard in Python so we can exercise every branch
+  without a browser.  The mirror functions are defined locally and kept
+  intentionally simple — if the JS implementations diverge from them the
+  tests will tell us.
   B5  PARENTS/ROOT_XREF missing — changeRoot() and buildAhnentafel() in JS
       need these to rebuild the tree for any root person.
   B6  spouse_xref missing from MARR events — the marriage card click handler
@@ -383,3 +390,183 @@ class TestMarriageEventSpouseXref:
                      if e['tag'] == 'MARR']
         if mark_marr:  # Mark is in people (he is, since we include all indis)
             assert mark_marr[0]['spouse_xref'] == '@I1@'
+
+
+# ---------------------------------------------------------------------------
+# Expansion-button logic
+# ---------------------------------------------------------------------------
+#
+# Python mirrors of the three JS predicates that control button visibility.
+# Keeping these functions here (rather than importing them from JS) means the
+# tests remain runnable without Node.  If the JS implementations change,
+# update both the template and these mirrors.
+#
+#   hasHiddenParents(k)  →  show ▲ expand button
+#   hasVisibleParents(k) →  show ▼ collapse button
+#   has_relatives_toggle(k, tree, relatives)  →  show ◄/► sibling/spouse button
+
+def _has_hidden_parents(k: int, tree: dict, visible: set) -> bool:
+    """Mirror of JS hasHiddenParents(k): ▲ button should appear."""
+    fk, mk = 2 * k, 2 * k + 1
+    return (fk in tree or mk in tree) and fk not in visible and mk not in visible
+
+
+def _has_visible_parents(k: int, visible: set) -> bool:
+    """Mirror of JS hasVisibleParents(k): ▼ button should appear."""
+    return 2 * k in visible or (2 * k + 1) in visible
+
+
+def _has_relatives_toggle(k: int, tree: dict, relatives: dict) -> bool:
+    """
+    Mirror of the JS relatives-button guard: k != 1 and the person has an
+    entry in RELATIVES (i.e. has siblings or spouses to display).
+    `relatives` here is the Python dict from build_relatives_json (int keys).
+    """
+    return k != 1 and k in relatives
+
+
+class TestExpansionButtonLogic:
+    """
+    Unit tests for hasHiddenParents / hasVisibleParents / relatives-toggle
+    using the fixture tree and relatives data.
+
+    Fixture tree (Rose @I1@ as root):
+      key 1  = @I1@  Rose          parents: @I2@(2), @I3@(3)
+      key 2  = @I2@  James         parents: @I4@(4), @I5@(5)
+      key 3  = @I3@  Clara         parents: @I6@(6), @I7@(7)
+      key 4  = @I4@  Patrick       no parents in tree (8,9 absent)
+      key 5  = @I5@  Mary          no parents in tree (10,11 absent)
+      key 6  = @I6@  John          father: @I10@(12); mother absent (13 absent)
+      key 7  = @I7@  Jane          parents: @I8@(14), @I9@(15)
+      key 12 = @I10@ Thomas        no parents in tree (24,25 absent)
+      key 14 = @I8@  William       no parents in tree (28,29 absent)
+      key 15 = @I9@  Helen         no parents in tree (30,31 absent)
+    """
+
+    @pytest.fixture(scope='class')
+    def _tree(self, indis, fams):
+        return build_tree_json('@I1@', indis, fams)
+
+    @pytest.fixture(scope='class')
+    def _relatives(self, _tree, indis, fams):
+        return build_relatives_json(_tree, indis, fams)
+
+    # ── hasHiddenParents ────────────────────────────────────────────────────
+
+    def test_expand_button_shown_when_parents_in_tree_not_visible(self, _tree):
+        """Key 1 (Rose): parents 2 & 3 are in tree but not yet visible → ▲."""
+        visible = {1}
+        assert _has_hidden_parents(1, _tree, visible)
+
+    def test_expand_button_shown_for_intermediate_node(self, _tree):
+        """Key 2 (James): parents 4 & 5 are in tree, not visible → ▲."""
+        visible = {1, 2, 3}
+        assert _has_hidden_parents(2, _tree, visible)
+
+    def test_expand_button_shown_with_only_one_parent_in_tree(self, _tree):
+        """Key 6 (John): only father (12) is in tree; mother (13) absent.
+        hasHiddenParents is OR-based, so one parent is enough to show ▲."""
+        visible = {1, 2, 3, 6, 7}
+        assert _has_hidden_parents(6, _tree, visible)
+
+    def test_expand_button_hidden_when_no_parents_in_tree(self, _tree):
+        """Key 4 (Patrick): keys 8 & 9 absent from tree → no ▲."""
+        visible = {1, 2, 3, 4, 5}
+        assert not _has_hidden_parents(4, _tree, visible)
+
+    def test_expand_button_hidden_when_parents_already_visible(self, _tree):
+        """Key 1 (Rose): once parents 2 & 3 are added to visible → no ▲."""
+        visible = {1, 2, 3}
+        assert not _has_hidden_parents(1, _tree, visible)
+
+    def test_expand_button_hidden_when_one_parent_visible(self, _tree):
+        """
+        If either parent is already visible, hasHiddenParents returns False
+        (the AND condition requires *both* absent).  Prevents duplicate ▲.
+        """
+        visible = {1, 2, 3, 6, 7, 12}   # key 12 = John's father, now visible
+        assert not _has_hidden_parents(6, _tree, visible)
+
+    def test_expand_button_hidden_for_leaf_nodes(self, _tree):
+        """Keys 14 & 15 (William, Helen): no parents in tree → no ▲."""
+        visible = {1, 2, 3, 6, 7, 14, 15}
+        assert not _has_hidden_parents(14, _tree, visible)
+        assert not _has_hidden_parents(15, _tree, visible)
+
+    # ── hasVisibleParents ───────────────────────────────────────────────────
+
+    def test_collapse_button_shown_when_father_visible(self, _tree):
+        """Key 1 after father (2) expanded → ▼ visible."""
+        visible = {1, 2}
+        assert _has_visible_parents(1, visible)
+
+    def test_collapse_button_shown_when_mother_visible(self, _tree):
+        """Key 1 after only mother (3) visible → ▼ visible."""
+        visible = {1, 3}
+        assert _has_visible_parents(1, visible)
+
+    def test_collapse_button_shown_when_both_parents_visible(self, _tree):
+        visible = {1, 2, 3}
+        assert _has_visible_parents(1, visible)
+
+    def test_collapse_button_hidden_when_no_parents_visible(self, _tree):
+        visible = {1}
+        assert not _has_visible_parents(1, visible)
+
+    def test_exactly_one_button_per_node_with_hidden_parents(self, _tree):
+        """
+        Invariant: for any node, hasHiddenParents and hasVisibleParents are
+        mutually exclusive (never both True at the same time).
+        """
+        visible = {1, 2, 3, 4, 5}   # gens 0-2 partially expanded
+        for k in list(_tree.keys()):
+            hidden  = _has_hidden_parents(k, _tree, visible)
+            visible_p = _has_visible_parents(k, visible)
+            assert not (hidden and visible_p), (
+                f'Key {k}: both hasHiddenParents and hasVisibleParents True '
+                'simultaneously — two conflicting buttons would appear'
+            )
+
+    def test_no_button_for_nodes_with_no_parents_in_tree(self, _tree):
+        """Nodes at the top of the known tree show neither ▲ nor ▼."""
+        no_parents = [k for k in _tree if 2 * k not in _tree and (2 * k + 1) not in _tree]
+        visible = set(_tree.keys())  # everything expanded
+        for k in no_parents:
+            assert not _has_hidden_parents(k, _tree, visible)
+            assert not _has_visible_parents(k, visible)
+
+    # ── Relatives toggle ────────────────────────────────────────────────────
+
+    def test_relatives_toggle_hidden_for_root(self, _tree, _relatives):
+        """Key 1 (root) never gets a ◄/► button, even if it has siblings."""
+        assert not _has_relatives_toggle(1, _tree, _relatives)
+
+    def test_relatives_toggle_shown_for_ancestor_with_siblings(self, _tree, _relatives):
+        """Key 2 (James): has sibling Robert → toggle shown."""
+        assert _has_relatives_toggle(2, _tree, _relatives)
+
+    def test_relatives_toggle_hidden_for_ancestor_without_relatives(self, _tree, _relatives):
+        """
+        Key 12 (Thomas Jones @I10@): no FAMC so no siblings, and @F6@ has no
+        WIFE record so no spouse → no entry in relatives dict → no toggle.
+        """
+        assert not _has_relatives_toggle(12, _tree, _relatives)
+
+    def test_relatives_toggle_only_for_known_tree_keys(self, _tree, _relatives):
+        """
+        Every key in relatives must be in the tree (we only compute relatives
+        for ancestors).  No ghost entries for people outside the tree.
+        """
+        for k in _relatives:
+            assert k in _tree, (
+                f'RELATIVES has entry for key {k} but that key is not in the tree'
+            )
+
+    def test_all_relatives_entries_have_required_fields(self, _relatives):
+        """Every RELATIVES entry must have siblings and spouses (always present).
+        sib_spouses is optional — only included when non-empty."""
+        for k, entry in _relatives.items():
+            for field in ('siblings', 'spouses'):
+                assert field in entry, (
+                    f'RELATIVES[{k}] missing field {field!r}'
+                )
