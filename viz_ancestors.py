@@ -104,7 +104,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
         if ctx[0] == 'indi':
             xref = ctx[1]
             if lvl == 1 and tag == 'NAME' and indis[xref]['name'] is None:
-                name = re.sub(r'/', '', val)
+                name = re.sub(r'/', '', html_mod.unescape(val))
                 name = re.sub(r'\s+', ' ', name).strip()
                 indis[xref]['name'] = name
                 current_evt = current_note = None
@@ -112,7 +112,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 indis[xref]['sex'] = val
                 current_evt = current_note = None
             elif lvl == 1 and tag in _EVENT_TAGS:
-                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'note': val if val else None}
+                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': html_mod.unescape(val) if val else None, 'inline_val': val if val else None}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
@@ -127,18 +127,22 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                         elif current_evt['tag'] == 'DEAT' and indis[xref]['death_year'] is None:
                             indis[xref]['death_year'] = yr
                 elif tag == 'PLAC':
-                    current_evt['place'] = val
+                    current_evt['place'] = html_mod.unescape(val)
                 elif tag == 'TYPE':
-                    current_evt['type'] = val
+                    current_evt['type'] = html_mod.unescape(val)
+                elif tag == 'CAUS':
+                    current_evt['cause'] = html_mod.unescape(val)
+                elif tag == 'ADDR':
+                    current_evt['addr'] = html_mod.unescape(val)
                 elif tag == 'NOTE':
-                    current_evt['note'] = val
+                    current_evt['note'] = html_mod.unescape(val)
             elif lvl == 1 and tag == 'NOTE':
-                indis[xref]['notes'].append(val)
+                indis[xref]['notes'].append(html_mod.unescape(val))
                 current_note = len(indis[xref]['notes']) - 1
                 current_evt  = None
             elif lvl == 2 and tag in ('CONT', 'CONC') and current_note is not None:
                 sep = '\n' if tag == 'CONT' else ''
-                indis[xref]['notes'][current_note] += sep + val
+                indis[xref]['notes'][current_note] += sep + html_mod.unescape(val)
             elif lvl == 1 and tag == 'FAMC' and indis[xref]['famc'] is None:
                 indis[xref]['famc'] = val
                 current_evt = current_note = None
@@ -249,24 +253,51 @@ def _date_sort_key(date_str: str | None) -> tuple:
 
 
 def sort_events(events: list) -> list:
-    """Sort events chronologically, with BIRT pinned first and DEAT/BURI pinned last."""
+    """Sort events chronologically, with fixed pins:
+       BIRT first, then general events by date, then DEAT, Death Announcement, BURI, PROB."""
     def key(evt):
         tag = evt.get('tag', '')
+        typ = (evt.get('type') or '').lower()
         if tag == 'BIRT':
             order = 0
-        elif tag in ('DEAT', 'BURI'):
+        elif tag == 'DEAT':
             order = 2
+        elif tag == 'EVEN' and ('death announcement' in typ or 'obituar' in typ or 'avis de décès' in typ):
+            order = 3
+        elif tag == 'BURI':
+            order = 4
+        elif tag == 'PROB':
+            order = 5
         else:
             order = 1
         return (order,) + _date_sort_key(evt.get('date'))
     return sorted(events, key=key)
 
 
-def build_people_json(xrefs: set, indis: dict, fams: dict | None = None, sources: dict | None = None) -> dict:
+def _matches_exclusion(evt: dict, excl: dict) -> bool:
+    """Return True if evt matches an exclusion entry (same xref checked by caller)."""
+    if evt.get('tag') != excl.get('tag'):
+        return False
+    for field in ('date', 'place', 'type', 'inline_val'):
+        excl_val = excl.get(field) or None
+        if excl_val is not None and (evt.get(field) or None) != excl_val:
+            return False
+    return True
+
+
+def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
+                      sources: dict | None = None,
+                      exclude: list | None = None) -> dict:
     """
     Build full person data for a set of xrefs.
     Returns {xref: {name, birth_year, death_year, sex, events, notes, sources}}.
+    exclude: list of pending-deletion dicts {xref, tag, date, place, type, inline_val}.
     """
+    # Group exclusions by xref for fast lookup
+    excl_by_xref: dict[str, list] = {}
+    for d in (exclude or []):
+        excl_by_xref.setdefault(d['xref'], []).append(d)
+
     result = {}
     for xref in xrefs:
         info = indis.get(xref)
@@ -278,7 +309,11 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None, sources
                 title = sources.get(sxref)
                 if title and title not in src_titles:
                     src_titles.append(title)
-        events = list(info['events'])
+        excl_list = excl_by_xref.get(xref, [])
+        events = [
+            e for e in info['events']
+            if not any(_matches_exclusion(e, ex) for ex in excl_list)
+        ]
         if fams:
             for fam_xref in info.get('fams', []):
                 fam = fams.get(fam_xref, {})
@@ -452,7 +487,12 @@ header h1 { font-size: 16px; font-weight: 600; }
 #detail-timeline { position: relative; padding-left: 28px; }
 .timeline-spine { position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
   background: linear-gradient(to bottom, #334155 0%, transparent 100%); }
-.evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; }
+.evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; padding-right: 24px; }
+.fact-del { position: absolute; right: 0; top: 2px; background: none; border: none;
+  cursor: pointer; opacity: 0; font-size: 13px; color: #94a3b8; padding: 2px 4px;
+  border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; }
+.evt-entry:hover .fact-del { opacity: 1; }
+.fact-del:hover { color: #ef4444 !important; }
 .evt-dot { position: absolute; left: -24px; top: 5px;
            width: 10px; height: 10px; border-radius: 50%; border: 2px solid #1e293b; }
 .evt-dot.dot-anchor { width: 12px; height: 12px; left: -25px; top: 4px; }
@@ -491,6 +531,11 @@ header h1 { font-size: 16px; font-weight: 600; }
     <ul id="search-results"></ul>
   </div>
 </header>
+<div id="pending-bar" style="display:none;align-items:center;gap:10px;padding:6px 16px;background:#7c3aed;color:#fff;font-size:13px;font-weight:500;">
+  <span id="pending-count"></span>
+  <button onclick="commitDeletions()" style="background:#fff;color:#7c3aed;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-weight:600;font-size:12px;">Commit deletions</button>
+  <button onclick="clearPending()" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;">Discard all</button>
+</div>
 <div id="viewport">
 <svg id="tree" xmlns="http://www.w3.org/2000/svg">
   <g id="canvas"></g>
@@ -587,6 +632,94 @@ const EVENT_LABELS = {
 function escHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// ---------------------------------------------------------------------------
+// Pending-deletions toolbar
+// ---------------------------------------------------------------------------
+async function _refreshPendingBar() {
+  try {
+    const resp = await fetch('/api/pending');
+    const data = await resp.json();
+    const bar = document.getElementById('pending-bar');
+    if (!bar) return;
+    const n = (data.pending || []).length;
+    if (n === 0) {
+      bar.style.display = 'none';
+    } else {
+      bar.style.display = 'flex';
+      document.getElementById('pending-count').textContent =
+        n + ' pending deletion' + (n === 1 ? '' : 's');
+    }
+  } catch (_) {}
+}
+
+async function commitDeletions() {
+  if (!confirm('Write all pending deletions to the GEDCOM file?\\n\\nA backup will be created automatically.')) return;
+  try {
+    const resp = await fetch('/api/commit_deletions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({current_person: window._currentPerson || null}),
+    });
+    const data = await resp.json();
+    if (data.errors && data.errors.length) {
+      alert('Errors:\\n' + data.errors.join('\\n'));
+    } else {
+      alert('Done! ' + data.applied + ' deletion(s) written.');
+    }
+    window.location.reload();
+  } catch (e) { alert('Request failed: ' + e); }
+}
+
+async function clearPending() {
+  if (!confirm('Discard all pending deletions?')) return;
+  try {
+    await fetch('/api/clear_pending', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({current_person: window._currentPerson || null}),
+    });
+    window.location.reload();
+  } catch (e) { alert('Request failed: ' + e); }
+}
+
+async function deleteFact(xref, evt) {
+  const label = (evt.date || '') + (evt.place ? ' · ' + evt.place : '') || evt.tag;
+  if (!confirm('Queue this fact for deletion?\\n\\n' + evt.tag + (label ? ': ' + label : '') + '\\n\\nIt will be hidden immediately and written to disk when you click \\"Commit deletions\\".')) return;
+  try {
+    const resp = await fetch('/api/delete_fact', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        xref,
+        tag: evt.tag,
+        date: evt.date || null,
+        place: evt.place || null,
+        type: evt.type || null,
+        inline_val: evt.inline_val || null,
+        current_person: xref,
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      // Remove the event from PEOPLE in memory so the panel updates without a reload
+      PEOPLE[xref].events = PEOPLE[xref].events.filter(e =>
+        !(e.tag === evt.tag &&
+          (e.date || null) === (evt.date || null) &&
+          (e.place || null) === (evt.place || null) &&
+          (e.type || null) === (evt.type || null) &&
+          (e.inline_val || null) === (evt.inline_val || null))
+      );
+      _openDetailKey = null;  // reset guard so showDetail re-renders
+      showDetail(xref);
+      _refreshPendingBar();
+    } else {
+      alert('Could not queue deletion: ' + (data.msg || ''));
+    }
+  } catch (e) {
+    alert('Request failed: ' + e);
+  }
+}
 function linkify(s) {
   // Match URLs in the raw string before HTML-escaping, so & in query strings isn't truncated
   const URL_RE = /https?:\/\/\S+/g;
@@ -656,7 +789,13 @@ function buildProse(evt) {
   const meta  = () => [full, date].filter(Boolean).join(' \\u00b7 ');
   switch (evt.tag) {
     case 'BIRT': return { prose: short ? `Born in ${short}` : (date ? `Born ${date}` : 'Birth'),          meta: meta() };
-    case 'DEAT': return { prose: short ? `Died in ${short}` : (date ? `Died ${date}` : 'Death'),          meta: meta() };
+    case 'DEAT': {
+      const cause = evt.cause ? `of ${evt.cause}` : '';
+      if (cause && short) return { prose: `Died ${cause} in ${short}`, meta: meta() };
+      if (cause)          return { prose: `Died ${cause}`,             meta: meta() };
+      if (short)          return { prose: `Died in ${short}`,          meta: meta() };
+      return { prose: date ? `Died ${date}` : 'Death', meta: meta() };
+    }
     case 'BURI': return { prose: short ? `Buried in ${short}` : (date ? `Buried ${date}` : 'Burial'),    meta: meta() };
     case 'RESI': return { prose: short ? `Lived in ${short}` : (date ? `Lived ${date}` : 'Residence'),   meta: meta() };
     case 'OCCU': {
@@ -692,6 +831,9 @@ function buildProse(evt) {
         return { prose: short ? `Arrived in ${short}` : (date ? `Arrived ${date}` : 'Arrival'), meta: meta() };
       if (type === 'Departure')
         return { prose: short ? `Departed from ${short}` : (date ? `Departed ${date}` : 'Departure'), meta: meta() };
+      if (type === 'Church') {
+        return { prose: evt.addr || short || 'Church', meta: meta() };
+      }
       return {
         prose: type || (short ? short : (EVENT_LABELS[evt.tag] || evt.tag)),
         meta:  [full, date].filter(Boolean).join(' \\u00b7 ')
@@ -752,6 +894,7 @@ let _openDetailKey = null;
 
 function showDetail(xref) {
   if (_openDetailKey === xref) return;  // already open for this person
+  const panelWasOpen = _openDetailKey !== null;
   const data  = PEOPLE[xref];
   const panel = document.getElementById('detail-panel');
 
@@ -810,13 +953,13 @@ function showDetail(xref) {
   // Timeline events (AKA excluded — shown above; undated RESI shown below)
   const evtDiv  = document.getElementById('detail-events');
   const alsoLivedDiv = document.getElementById('detail-also-lived');
-  const allVisible = (data.events || []).filter(e =>
-    (e.date || e.place || e.note || e.type) &&
+  const allVisible = (data.events || []).map((e, i) => ({...e, _origIdx: i})).filter(e =>
+    (e.date || e.place || e.note || e.type || e.cause) &&
     !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
   );
   const _keepInTimeline = e =>
     e.date ||
-    e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' ||
+    e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'PROB' ||
     e.type === 'Arrival' || e.type === 'Departure';
   const undatedFactoids = allVisible.filter(e => !_keepInTimeline(e));
   const visible = allVisible.filter(_keepInTimeline);
@@ -828,8 +971,11 @@ function showDetail(xref) {
     for (const evt of sorted) {
       let section = 'Life';
       const evtYear = evt.date ? ((_YR_RE.exec(evt.date) || [,0])[1] | 0) : null;
+      const _typ = (evt.type || '').toLowerCase();
+      const _isDeathRelated = evt.tag === 'DEAT' || evt.tag === 'BURI' || evt.tag === 'PROB' ||
+        (evt.tag === 'EVEN' && (_typ.includes('death') || _typ.includes('obituar') || _typ.includes('avis de d') || _typ.includes('probate')));
       if (evt.tag === 'BIRT' || (evtYear && by && evtYear <= by + 18)) section = 'Early Life';
-      else if (evt.tag === 'DEAT' || evt.tag === 'BURI') section = 'Later Life';
+      else if (_isDeathRelated) section = 'Later Life';
 
       if (section !== lastSection) {
         html += `<span class="timeline-section-label">${escHtml(section)}</span>`;
@@ -858,12 +1004,15 @@ function showDetail(xref) {
       const yearStr = evt._yearRange
         ? `<span class="evt-year">${escHtml(evt._yearRange)}</span>`
         : (evtYear ? `<span class="evt-year">${evtYear}</span>` : '');
+      const xrefQ  = JSON.stringify(xref).replace(/"/g, '&quot;');
+      const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
       html +=
         `<div class="evt-entry">` +
         `<div class="${dotCls}" style="background:${color}"></div>` +
         `<div class="evt-prose">${yearStr}${escHtml(prose)}</div>` +
         (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
         noteInl +
+        delBtn +
         `</div>`;
     }
     evtDiv.innerHTML = html;
@@ -875,11 +1024,14 @@ function showDetail(xref) {
       const { prose, meta } = buildProse(evt);
       const color   = dotColor(evt);
       const noteInl = evt.note ? `<div class="evt-note-inline">${escHtml(evt.note)}</div>` : '';
+      const xrefQ  = JSON.stringify(xref).replace(/"/g, '&quot;');
+      const delBtn  = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
       return `<div class="evt-entry">` +
         `<div class="evt-dot" style="background:${color}"></div>` +
         `<div class="evt-prose">${escHtml(prose)}</div>` +
         (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
         noteInl +
+        delBtn +
         `</div>`;
     }).join('');
   }
@@ -917,7 +1069,7 @@ function showDetail(xref) {
   const vp = document.getElementById('viewport');
   vp.style.marginRight = '480px';
   document.getElementById('home-btn').style.right = (480 + 24) + 'px';
-  _animateFitAndCenter(220);
+  if (!panelWasOpen) _animateFitAndCenter(220);
 }
 
 function closeDetail() {
@@ -1005,7 +1157,18 @@ function _subtreeWidth(k, cache) {
   } else {
     const fw = hasFather ? _subtreeWidth(fk, cache) : 0;
     const mw = hasMother ? _subtreeWidth(mk, cache) : 0;
-    w = Math.max(1, fw + mw);
+    // Add 1 gap slot when both sides have visible ancestors so the two parent
+    // groups don't run into each other.
+    const fHasAnc = hasFather && (visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1));
+    const mHasAnc = hasMother && (visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1));
+    // QUICK FIX: inject a fixed 1-slot gap when both sides have ancestors.
+    // This prevents the two parent groups from touching but is too blunt —
+    // it applies the same gap at every level regardless of actual subtree density,
+    // and doesn't handle asymmetric cases (e.g. one side much wider than the other).
+    // A proper fix would use a Reingold-Tilford-style contour algorithm to compute
+    // the minimal separation that avoids overlap at each level.
+    // See: https://github.com/sashaperigo/gedcom-tools/issues/5
+    w = Math.max(1, fw + mw + (fHasAnc && mHasAnc ? 1 : 0));
   }
   // Reserve sibling slots (non-root only; root siblings are placed outside layout bounds)
   w += _sibSlots.get(k) || 0;
@@ -1040,8 +1203,12 @@ function computePositions() {
 
     // Lay out children so parents center above the full sibling group (not just the ancestor subtree).
     // Shifting by sibN/2 slots places parents above the midpoint of the combined anchor+sibling row.
+    const fHasAnc = hasFather && (visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1));
+    const mHasAnc = hasMother && (visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1));
+    const familyGap = (fHasAnc && mHasAnc) ? slotW : 0;
     let offset = xStart + (sibN / 2) * slotW;
     if (hasFather) { const fw = wCache.get(fk) || 1; layout(fk, offset); offset += fw * slotW; }
+    offset += familyGap;
     if (hasMother) { layout(mk, offset); }
   }
   layout(1, MARGIN_X);
@@ -1179,9 +1346,13 @@ function fitAndCenter(focusKey) {
   if (minX === Infinity) minX = 0;
   const treeW = maxX - minX + 2 * MARGIN_X;
   const treeH = maxY + 20;
-  const scaleX = (vp.clientWidth  * 0.96) / treeW;
+  // QUICK FIX: fit to height only, ignoring width. This fills vertical space
+  // but can leave wide trees clipped horizontally. A proper solution would
+  // fit to height as the primary axis and then pan so the focal node is
+  // centered — ensuring it's never out of view even when scaleX < scaleY.
+  // See: https://github.com/sashaperigo/gedcom-tools/issues/6
   const scaleY = (vp.clientHeight * 0.92) / treeH;
-  scale = Math.min(1, scaleX, scaleY);
+  scale = Math.min(1, scaleY);
 
   if (focusKey) {
     // Center horizontally on the midpoint between the focus node's parents;
@@ -1482,13 +1653,13 @@ function render() {
         e.stopPropagation();
         if (expandedRelatives.has(k)) {
           expandedRelatives.delete(k);
-          render(); fitAndCenter();
+          render();
         } else {
           expandedRelatives.add(k);
           // Auto-expand parents so siblings have a visible shared ancestor
           if ((2 * k) in TREE) visibleKeys.add(2 * k);
           if ((2 * k + 1) in TREE) visibleKeys.add(2 * k + 1);
-          render(); fitAndCenter(k);
+          render();
         }
       });
       canvas.appendChild(rbtn);
@@ -1560,15 +1731,17 @@ function init() {
     }
   }
 
-  const vp  = document.getElementById('viewport');
-  const hdr = document.querySelector('header');
-  const hdrH = hdr.offsetHeight;
-  vp.style.height = (window.innerHeight - hdrH) + 'px';
-  document.documentElement.style.setProperty('--header-h', hdrH + 'px');
+  const vp   = document.getElementById('viewport');
+  const hdr  = document.querySelector('header');
+  const pbar = document.getElementById('pending-bar');
+  const topH = hdr.offsetHeight + (pbar && pbar.offsetHeight > 0 ? pbar.offsetHeight : 0);
+  vp.style.height = (window.innerHeight - topH) + 'px';
+  document.documentElement.style.setProperty('--header-h', topH + 'px');
 
   render();
   fitAndCenter();
   if (new URLSearchParams(window.location.search).get('open') === '1') showDetail(TREE[1]);
+  _refreshPendingBar();
 }
 
 // ---- Pinch-to-zoom + two-finger pan (trackpad wheel events) ----
@@ -1616,9 +1789,11 @@ window.addEventListener('mouseup', () => {
 
 window.addEventListener('load', init);
 window.addEventListener('resize', () => {
-  const vp  = document.getElementById('viewport');
-  const hdr = document.querySelector('header');
-  vp.style.height = (window.innerHeight - hdr.offsetHeight) + 'px';
+  const vp   = document.getElementById('viewport');
+  const hdr  = document.querySelector('header');
+  const pbar = document.getElementById('pending-bar');
+  const topH = hdr.offsetHeight + (pbar && pbar.offsetHeight > 0 ? pbar.offsetHeight : 0);
+  vp.style.height = (window.innerHeight - topH) + 'px';
   if (_openDetailKey !== null) vp.style.marginRight = '480px';
 });
 </script>
@@ -1666,7 +1841,8 @@ def _find_person(person: str, indis: dict) -> str | None:
     return None
 
 
-def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
+def viz_ancestors(path_in: str, person: str, path_out: str,
+                  exclude: list | None = None) -> dict:
     """
     Generate an ancestor pedigree HTML chart.
 
@@ -1689,7 +1865,7 @@ def viz_ancestors(path_in: str, person: str, path_out: str) -> dict:
         all_xrefs.update(rels['spouses'])
         for sp_list in rels.get('sib_spouses', {}).values():
             all_xrefs.update(sp_list)
-    people    = build_people_json(all_xrefs, indis, fams, sources)
+    people    = build_people_json(all_xrefs, indis, fams, sources, exclude=exclude)
 
     root_name = people.get(root_xref, {}).get('name', '?')
     html = render_html(tree, root_name, people, relatives, indis)
@@ -1719,13 +1895,22 @@ def main() -> None:
                         help='Starting person: xref (@I123@) or name substring')
     parser.add_argument('--output', '-o', default='ancestors.html',
                         help='Output HTML file (default: ancestors.html)')
+    parser.add_argument('--exclude', default=None,
+                        help='JSON list of pending-deletion dicts to hide from view')
     args = parser.parse_args()
+
+    exclude = None
+    if args.exclude:
+        try:
+            exclude = json.loads(args.exclude)
+        except Exception:
+            sys.exit('Error: --exclude must be a valid JSON list')
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
 
     try:
-        result = viz_ancestors(args.gedfile, args.person, args.output)
+        result = viz_ancestors(args.gedfile, args.person, args.output, exclude=exclude)
     except ValueError as e:
         sys.exit(f'Error: {e}')
 

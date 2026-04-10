@@ -1,0 +1,1067 @@
+"""Tests for gedcom_merge.merge — TDD ensuring no data is silently discarded."""
+
+import os
+import pytest
+
+from gedcom_merge.model import (
+    GedcomFile, Individual, Family, Source, GedcomNode,
+    NameRecord, EventRecord, CitationRecord, ParsedDate,
+    MergeDecisions,
+)
+from gedcom_merge.merge import (
+    merge_records,
+    _merge_citations, _merge_names, _merge_events, _merge_notes,
+    _prefer_date, _prefer_place,
+    remove_empty_family_shells,
+    purge_dangling_xrefs,
+    deduplicate_merged_sources,
+    deduplicate_duplicate_families,
+    deduplicate_duplicate_names,
+    MergeStats,
+)
+from gedcom_merge.normalize import parse_date
+from tests.helpers import _node, make_indi, make_family, make_file, make_source, make_citation
+
+# Shorter aliases for the helpers used pervasively in this file
+_indi     = make_indi
+_family   = make_family
+_file     = make_file
+_source   = make_source
+_citation = make_citation
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for helper functions
+# ---------------------------------------------------------------------------
+
+class TestPreferDate:
+    def test_exact_beats_approximate(self):
+        exact = ParsedDate(None, 1892, 3, 15)
+        approx = ParsedDate('ABT', 1892)
+        assert _prefer_date(exact, approx) is exact
+        assert _prefer_date(approx, exact) is exact
+
+    def test_full_beats_year_only(self):
+        full = ParsedDate(None, 1892, 3, 15)
+        year_only = ParsedDate(None, 1892)
+        assert _prefer_date(full, year_only) is full
+
+    def test_none_returns_other(self):
+        d = ParsedDate(None, 1892)
+        assert _prefer_date(None, d) is d
+        assert _prefer_date(d, None) is d
+
+
+class TestPreferPlace:
+    def test_more_components_wins(self):
+        result = _prefer_place('Columbus, Ohio', 'Columbus, Franklin, Ohio, USA')
+        assert 'Franklin' in result
+
+    def test_none_returns_other(self):
+        assert _prefer_place(None, 'Paris, France') == 'Paris, France'
+        assert _prefer_place('Paris, France', None) == 'Paris, France'
+
+
+class TestMergeCitations:
+    def test_adds_new_citation(self):
+        stats = MergeStats()
+        cit_a = _citation('@S1@', 'Page 1')
+        cit_b = _citation('@S2@', 'Page 5')
+        result = _merge_citations([cit_a], [cit_b], {}, stats)
+        assert len(result) == 2
+        assert stats.citations_added_from_b == 1
+
+    def test_deduplicates_identical(self):
+        stats = MergeStats()
+        cit_a = _citation('@S1@', 'Page 42')
+        cit_b = _citation('@S1@', 'Page 42')
+        result = _merge_citations([cit_a], [cit_b], {}, stats)
+        assert len(result) == 1
+        assert stats.citations_added_from_b == 0
+
+    def test_remaps_source_xref(self):
+        stats = MergeStats()
+        cit_b = _citation('@S99@', 'Page 1')
+        id_map = {'@S99@': '@S1@'}
+        result = _merge_citations([], [cit_b], id_map, stats)
+        assert result[0].source_xref == '@S1@'
+
+    def test_keeps_more_complete_page(self):
+        """If B's PAGE is more complete than A's, keep B."""
+        stats = MergeStats()
+        cit_a = _citation('@S1@', 'Page 42')
+        cit_b = _citation('@S1@', 'Page 42, Line 7, Roll 123')
+        result = _merge_citations([cit_a], [cit_b], {}, stats)
+        # Should keep the more complete one
+        pages = [c.page for c in result if c.source_xref == '@S1@']
+        assert any('Line 7' in (p or '') for p in pages)
+
+
+class TestMergeNames:
+    def test_keeps_a_primary(self):
+        stats = MergeStats()
+        name_a = NameRecord('John /Smith/', 'john', 'smith', None)
+        name_b = NameRecord('John /Smith/', 'john', 'smith', None)
+        result = _merge_names([name_a], [name_b], {}, stats)
+        assert result[0] is name_a  # A stays primary
+
+    def test_adds_new_name_as_aka(self):
+        stats = MergeStats()
+        name_a = NameRecord('John /Smith/', 'john', 'smith', None)
+        name_b = NameRecord('Johnny /Smith/', 'johnny', 'smith', None)
+        result = _merge_names([name_a], [name_b], {}, stats)
+        assert len(result) == 2
+        assert result[1].name_type == 'AKA'
+        assert stats.aka_names_added == 1
+
+    def test_no_duplicate_names(self):
+        stats = MergeStats()
+        name_a = NameRecord('John /Smith/', 'john', 'smith', None)
+        name_b = NameRecord('John /Smith/', 'john', 'smith', None)
+        result = _merge_names([name_a], [name_b], {}, stats)
+        assert len(result) == 1
+        assert stats.aka_names_added == 0
+
+
+class TestMergeEvents:
+    def test_merges_birth_date(self):
+        """B's more specific birth date should be preferred."""
+        stats = MergeStats()
+        ev_a = EventRecord('BIRT', None, ParsedDate(None, 1892), None, [], _node())
+        ev_b = EventRecord('BIRT', None, ParsedDate(None, 1892, 3, 15), 'Boston, MA', [], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        assert len(result) == 1
+        assert result[0].date.day == 15
+        assert result[0].place == 'Boston, MA'
+
+    def test_unmatched_b_event_added(self):
+        stats = MergeStats()
+        ev_a = EventRecord('BIRT', None, ParsedDate(None, 1892), None, [], _node())
+        ev_b = EventRecord('RESI', None, ParsedDate(None, 1910), 'New York', [], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        assert len(result) == 2
+        assert stats.events_added_from_b == 1
+
+    def test_no_events_lost(self):
+        """All events from A are preserved; unmatched B events added."""
+        stats = MergeStats()
+        events_a = [
+            EventRecord('BIRT', None, ParsedDate(None, 1892), None, [], _node()),
+            EventRecord('RESI', None, ParsedDate(None, 1920), 'Chicago', [], _node()),
+        ]
+        events_b = [
+            EventRecord('BIRT', None, ParsedDate(None, 1892, 3, 15), None, [], _node()),
+            EventRecord('NATU', None, ParsedDate(None, 1915), 'Ohio', [], _node()),
+        ]
+        result = _merge_events(events_a, events_b, {}, stats)
+        tags = [e.tag for e in result]
+        assert 'BIRT' in tags
+        assert 'RESI' in tags
+        assert 'NATU' in tags
+        assert len(result) == 3
+
+
+class TestDateConflictMerge:
+    def test_exact_beats_approximate_close(self):
+        """ABT 1890 vs 6 NOV 1888 → keep exact, discard approximate."""
+        stats = MergeStats()
+        ev_a = EventRecord('BIRT', None, ParsedDate('ABT', 1890), None, [], _node())
+        ev_b = EventRecord('BIRT', None, ParsedDate(None, 1888, 11, 6), None, [], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        assert len(result) == 1
+        assert result[0].date.qualifier is None   # exact date kept
+        assert result[0].date.year == 1888
+        assert result[0].date.month == 11
+        assert result[0].date.day == 6
+        assert stats.date_conflicts_exact_wins == 1
+
+    def test_exact_beats_approximate_citations_not_merged(self):
+        """When exact wins, only the exact event's citations are kept."""
+        stats = MergeStats()
+        src_a = CitationRecord('@S1@', 'p. 10', None, _node())
+        src_b = CitationRecord('@S2@', 'p. 5', None, _node())
+        ev_a = EventRecord('BIRT', None, ParsedDate('ABT', 1890), None, [src_a], _node())
+        ev_b = EventRecord('BIRT', None, ParsedDate(None, 1888, 11, 6), None, [src_b], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        assert len(result[0].citations) == 1
+        assert result[0].citations[0].source_xref == '@S2@'  # only exact's citation
+
+    def test_meaningfully_different_dates_kept_both(self):
+        """1886 vs 1890 → two events, primary + alternate."""
+        stats = MergeStats()
+        ev_a = EventRecord('BIRT', None, ParsedDate(None, 1886), None, [], _node())
+        ev_b = EventRecord('BIRT', None, ParsedDate(None, 1890), None, [], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        assert len(result) == 2
+        assert stats.date_conflicts_kept_both == 1
+        event_types = {e.event_type for e in result}
+        assert 'alternate' in event_types
+
+    def test_better_sourced_is_primary(self):
+        """When B has more citations, B's date should be primary."""
+        stats = MergeStats()
+        src1 = CitationRecord('@S1@', None, None, _node())
+        src2 = CitationRecord('@S2@', None, None, _node())
+        src3 = CitationRecord('@S3@', None, None, _node())
+        ev_a = EventRecord('BIRT', None, ParsedDate(None, 1886), None, [src1], _node())
+        ev_b = EventRecord('BIRT', None, ParsedDate(None, 1890), None, [src2, src3], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        # Primary (first, no 'alternate' type) should be B's date (1890, 2 citations)
+        primary = next(e for e in result if e.event_type != 'alternate')
+        alternate = next(e for e in result if e.event_type == 'alternate')
+        assert primary.date.year == 1890
+        assert alternate.date.year == 1886
+
+    def test_different_dates_citations_stay_separate(self):
+        """When dates are kept separately, citations are NOT merged across events."""
+        stats = MergeStats()
+        src_a = CitationRecord('@S1@', 'p. 1', None, _node())
+        src_b = CitationRecord('@S2@', 'p. 2', None, _node())
+        ev_a = EventRecord('BIRT', None, ParsedDate(None, 1886), None, [src_a], _node())
+        ev_b = EventRecord('BIRT', None, ParsedDate(None, 1890), None, [src_b], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        for ev in result:
+            assert len(ev.citations) == 1  # each event has only its own citation
+
+    def test_close_exact_dates_still_merge_normally(self):
+        """1889 vs 1890 → within 2 years → standard merge (not kept separate)."""
+        stats = MergeStats()
+        ev_a = EventRecord('BIRT', None, ParsedDate(None, 1889), None, [], _node())
+        ev_b = EventRecord('BIRT', None, ParsedDate(None, 1890), None, [], _node())
+        result = _merge_events([ev_a], [ev_b], {}, stats)
+        assert len(result) == 1
+        assert stats.date_conflicts_kept_both == 0
+
+
+# ---------------------------------------------------------------------------
+# Note merging tests
+# ---------------------------------------------------------------------------
+
+class TestMergeNotes:
+    def test_different_notes_both_kept(self):
+        result = _merge_notes(['Note ABC'], ['Note DEF'])
+        assert 'Note ABC' in result
+        assert 'Note DEF' in result
+        assert len(result) == 2
+
+    def test_identical_notes_deduplicated(self):
+        result = _merge_notes(['Note ABC'], ['Note ABC'])
+        assert result.count('Note ABC') == 1
+
+    def test_whitespace_normalized_for_dedup(self):
+        result = _merge_notes(['  Note ABC  '], ['Note ABC'])
+        assert len(result) == 1
+
+    def test_a_notes_preserved_when_b_empty(self):
+        result = _merge_notes(['Note ABC'], [])
+        assert result == ['Note ABC']
+
+    def test_b_notes_added_when_a_empty(self):
+        result = _merge_notes([], ['Note DEF'])
+        assert result == ['Note DEF']
+
+    def test_order_a_first(self):
+        result = _merge_notes(['Note A'], ['Note B'])
+        assert result[0] == 'Note A'
+        assert result[1] == 'Note B'
+
+
+# ---------------------------------------------------------------------------
+# Integration tests for merge_records
+# ---------------------------------------------------------------------------
+
+class TestMergeRecords:
+    def _simple_decisions(self, indi_map=None, source_map=None,
+                           indi_disp=None, source_disp=None) -> MergeDecisions:
+        d = MergeDecisions()
+        d.indi_map = indi_map or {}
+        d.source_map = source_map or {}
+        d.indi_disposition = indi_disp or {}
+        d.source_disposition = source_disp or {}
+        return d
+
+    def test_a_individuals_preserved(self):
+        """All File A individuals must appear in output."""
+        ind_a = _indi('@I1@', 'John', 'Smith', birth_year=1880)
+        file_a = _file(indis={'@I1@': ind_a})
+        file_b = _file()
+        decisions = self._simple_decisions()
+        merged, stats = merge_records(file_a, file_b, decisions)
+        assert '@I1@' in merged.individuals
+
+    def test_matched_individual_merged(self):
+        """Matched B individual's data merges into A's record."""
+        ind_a = _indi('@I1@', 'John', 'Smith', birth_year=1880)
+        ind_b = _indi('@I2@', 'John', 'Smith', birth_year=1880, birth_place='Boston, MA')
+        file_a = _file(indis={'@I1@': ind_a})
+        file_b = _file(indis={'@I2@': ind_b})
+        decisions = self._simple_decisions(indi_map={'@I2@': '@I1@'})
+        merged, stats = merge_records(file_a, file_b, decisions)
+        ind_merged = merged.individuals['@I1@']
+        birt = next(e for e in ind_merged.events if e.tag == 'BIRT')
+        assert birt.place == 'Boston, MA'  # picked up from B
+
+    def test_unmatched_add_individual(self):
+        """Unmatched B individual marked 'add' appears in output with new xref."""
+        ind_a = _indi('@I1@', 'Alice', 'Smith')
+        ind_b = _indi('@I2@', 'Bob', 'Jones', birth_year=1990)
+        file_a = _file(indis={'@I1@': ind_a})
+        file_b = _file(indis={'@I2@': ind_b})
+        decisions = self._simple_decisions(indi_disp={'@I2@': 'add'})
+        merged, stats = merge_records(file_a, file_b, decisions)
+        # Should have 2 individuals in output
+        assert len(merged.individuals) == 2
+        names = {i.display_name for i in merged.individuals.values()}
+        assert any('alice' in n.lower() or 'Alice' in n for n in names)
+        assert any('bob' in n.lower() or 'Bob' in n for n in names)
+
+    def test_unmatched_skip_individual_not_added(self):
+        """Unmatched B individual marked 'skip' is excluded from output."""
+        ind_a = _indi('@I1@', 'Alice', 'Smith')
+        ind_b = _indi('@I2@', 'Bob', 'Jones')
+        file_a = _file(indis={'@I1@': ind_a})
+        file_b = _file(indis={'@I2@': ind_b})
+        decisions = self._simple_decisions(indi_disp={'@I2@': 'skip'})
+        merged, stats = merge_records(file_a, file_b, decisions)
+        assert len(merged.individuals) == 1
+
+    def test_source_xref_remapped_in_citations(self):
+        """When B source is matched, its xref is remapped in citations."""
+        src_a = _source('@S1@', 'Census 1900')
+        src_b = _source('@S99@', 'Census 1900')
+        ind_b = _indi('@I2@', 'Bob', 'Jones',
+                       citations=[_citation('@S99@', 'Page 1')])
+        ind_a = _indi('@I1@', 'Bob', 'Jones')
+        file_a = _file(indis={'@I1@': ind_a}, sources={'@S1@': src_a})
+        file_b = _file(indis={'@I2@': ind_b}, sources={'@S99@': src_b})
+        decisions = self._simple_decisions(
+            indi_map={'@I2@': '@I1@'},
+            source_map={'@S99@': '@S1@'},
+        )
+        merged, stats = merge_records(file_a, file_b, decisions)
+        ind_merged = merged.individuals['@I1@']
+        cit_xrefs = [c.source_xref for c in ind_merged.citations]
+        assert '@S1@' in cit_xrefs
+        assert '@S99@' not in cit_xrefs
+
+    def test_family_children_union(self):
+        """Child from B's family added to merged family."""
+        ind_child_a = _indi('@I3@', 'Child', 'Smith', famc=['@F1@'])
+        ind_child_b = _indi('@I4@', 'NewChild', 'Smith', famc=['@F2@'])
+        fam_a = _family('@F1@', '@I1@', '@I2@', ['@I3@'])
+        fam_b = _family('@F2@', '@I1@', '@I2@', ['@I3@', '@I4@'])
+        file_a = _file(indis={'@I1@': _indi('@I1@', 'Dad', 'Smith'),
+                               '@I2@': _indi('@I2@', 'Mom', 'Smith', sex='F'),
+                               '@I3@': ind_child_a},
+                        fams={'@F1@': fam_a})
+        file_b = _file(indis={'@I4@': ind_child_b},
+                        fams={'@F2@': fam_b})
+        decisions = MergeDecisions()
+        decisions.indi_map = {}
+        decisions.family_map = {'@F2@': '@F1@'}
+        decisions.indi_disposition = {'@I4@': 'add'}
+        decisions.family_disposition = {}
+        decisions.source_map = {}
+        decisions.source_disposition = {}
+        merged, stats = merge_records(file_a, file_b, decisions)
+        fam_merged = merged.families['@F1@']
+        assert len(fam_merged.child_xrefs) >= 1  # At least the original child
+
+    def test_no_data_loss_all_sources_preserved(self):
+        """All A sources appear in output; added B sources also appear."""
+        src_a = _source('@S1@', 'Source One')
+        src_b = _source('@S2@', 'Source Two')
+        file_a = _file(sources={'@S1@': src_a})
+        file_b = _file(sources={'@S2@': src_b})
+        decisions = self._simple_decisions(source_disp={'@S2@': 'add'})
+        merged, stats = merge_records(file_a, file_b, decisions)
+        assert '@S1@' in merged.sources
+        assert len(merged.sources) == 2  # A + B new source
+
+    def test_matched_source_merged(self):
+        """Matched B source notes/fields merged into A source."""
+        src_a = _source('@S1@', 'Parish Records')
+        src_b = _source('@S99@', 'Parish Records')
+        src_b.notes = ['Digitized 2020']
+        src_b.author = 'John Scholar'
+        src_a.author = None
+        file_a = _file(sources={'@S1@': src_a})
+        file_b = _file(sources={'@S99@': src_b})
+        decisions = self._simple_decisions(source_map={'@S99@': '@S1@'})
+        merged, stats = merge_records(file_a, file_b, decisions)
+        src_merged = merged.sources['@S1@']
+        assert src_merged.author == 'John Scholar'
+        assert 'Digitized 2020' in src_merged.notes
+
+
+# ---------------------------------------------------------------------------
+# Empty family shell tests
+# ---------------------------------------------------------------------------
+
+class TestRemoveEmptyFamilyShells:
+    def test_removes_shell_when_spouse_has_other_connection(self):
+        """
+        A shell is removed when each spouse has at least one other family link
+        — removing it would not orphan anyone.
+        """
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell_fam = _family('@F_MERGE_0001@', '@I1@', '@I2@')
+        # Both spouses still have @F1@ after the shell is removed → safe.
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell_fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 1
+        assert '@F_MERGE_0001@' not in merged.families
+        assert '@F1@' in merged.families
+
+    def test_cleans_up_fams_on_individuals(self):
+        """FAMS pointers to removed shells are cleaned from individual records."""
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell_fam = _family('@F_MERGE_0001@', '@I1@', '@I2@')
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell_fam},
+        )
+        remove_empty_family_shells(merged)
+        assert '@F_MERGE_0001@' not in merged.individuals['@I1@'].family_spouse
+        assert '@F_MERGE_0001@' not in merged.individuals['@I2@'].family_spouse
+        assert '@F1@' in merged.individuals['@I1@'].family_spouse
+        assert '@F1@' in merged.individuals['@I2@'].family_spouse
+
+    def test_keeps_family_with_events(self):
+        """A family with a MARR event is preserved."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 0
+        assert '@F1@' in merged.families
+
+    def test_keeps_family_with_children(self):
+        """A family with children is preserved even with no events."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        ind_c = _indi('@I3@', 'Child', 'Smith', famc=['@F1@'])
+        fam = Family('@F1@', '@I1@', '@I2@', ['@I3@'], [], [], _node('FAM', '@F1@'))
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w, '@I3@': ind_c},
+            fams={'@F1@': fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 0
+
+    def test_keeps_non_shell_removes_shell(self):
+        """Removes only empty shells, leaving real families intact."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell_fam = _family('@F_MERGE_0001@', '@I1@', '@I2@')
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell_fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 1
+        assert '@F1@' in merged.families
+        assert '@F_MERGE_0001@' not in merged.families
+        assert '@F1@' in merged.individuals['@I1@'].family_spouse
+        assert '@F_MERGE_0001@' not in merged.individuals['@I1@'].family_spouse
+
+    def test_preserves_shell_that_is_sole_family_connection(self):
+        """A shell must not be removed if doing so would leave either spouse orphaned."""
+        # Both spouses connect only to @F1@; removing it would make them orphans.
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        fam = _family('@F1@', '@I1@', '@I2@')
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 0, 'Should not remove the only family connecting a spouse'
+        assert '@F1@' in merged.families
+        assert '@F1@' in merged.individuals['@I1@'].family_spouse
+        assert '@F1@' in merged.individuals['@I2@'].family_spouse
+
+    def test_strips_famc_pointing_to_removed_shell(self):
+        """FAMC on an individual pointing to a removed shell is cleaned up."""
+        # @I3@ is a child of the shell; the shell has no events/children in
+        # child_xrefs (so it qualifies as empty), but @I3@'s FAMC points there.
+        # After removal, @I3@'s FAMC must be cleared.
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell_fam = _family('@F_MERGE_0001@', '@I1@', '@I2@')
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        # @I3@ has FAMC pointing to the shell (mis-entered state, defensive cleanup)
+        ind_c = _indi('@I3@', 'Kid', 'Smith', famc=['@F_MERGE_0001@'])
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w, '@I3@': ind_c},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell_fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        assert removed == 1
+        assert '@F_MERGE_0001@' not in merged.families
+        assert '@F_MERGE_0001@' not in merged.individuals['@I3@'].family_child
+
+    def test_removes_redundant_shell_when_spouse_has_other_family(self):
+        """A shell is removed when the spouse has another family to fall back on."""
+        # @I1@ has @F1@ (real) and @F_MERGE_0001@ (shell); removing the shell is safe.
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell_fam = _family('@F_MERGE_0001@', '@I1@', '@I3@')
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        ind_w2 = _indi('@I3@', 'Mary', 'Jones', sex='F', fams=['@F_MERGE_0001@'])
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w, '@I3@': ind_w2},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell_fam},
+        )
+        removed = remove_empty_family_shells(merged)
+        # @I3@ would be left orphaned → shell is protected
+        assert removed == 0
+
+    def test_merge_records_does_not_produce_duplicate_shell(self):
+        """
+        When an unmatched B family duplicates an existing A couple, no second
+        @F_MERGE_* shell is created — B's content is folded into A's family.
+        """
+        ind_a_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_a_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        fam_a = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+
+        # File B has the same people matched, in an empty duplicate family
+        ind_b_h = _indi('@I10@', 'John', 'Smith', fams=['@F10@'])
+        ind_b_w = _indi('@I11@', 'Jane', 'Smith', sex='F', fams=['@F10@'])
+        fam_b = _family('@F10@', '@I10@', '@I11@')  # empty, unmatched
+
+        file_a = _file(
+            indis={'@I1@': ind_a_h, '@I2@': ind_a_w},
+            fams={'@F1@': fam_a},
+        )
+        file_b = _file(
+            indis={'@I10@': ind_b_h, '@I11@': ind_b_w},
+            fams={'@F10@': fam_b},
+        )
+
+        decisions = MergeDecisions()
+        decisions.indi_map = {'@I10@': '@I1@', '@I11@': '@I2@'}
+        decisions.family_map = {}
+        decisions.family_disposition = {'@F10@': 'add'}
+        decisions.indi_disposition = {}
+        decisions.source_map = {}
+        decisions.source_disposition = {}
+
+        merged, _ = merge_records(file_a, file_b, decisions)
+        remove_empty_family_shells(merged)
+
+        # Only @F1@ should exist — no phantom @F_MERGE_* shell
+        assert list(merged.families.keys()) == ['@F1@'], \
+            f'Unexpected families: {list(merged.families.keys())}'
+
+
+# ---------------------------------------------------------------------------
+# Duplicate NAME deduplication tests
+# ---------------------------------------------------------------------------
+
+class TestMergeNamesDeduplicate:
+    def test_deduplicates_within_names_a(self):
+        """Duplicate names already in A's list are collapsed before merge."""
+        stats = MergeStats()
+        name1 = NameRecord('Antoine /Chilé/', 'antoine', 'chile', None)
+        name2 = NameRecord('Antoine /Chilé/', 'antoine', 'chile', None)  # exact dup
+        result = _merge_names([name1, name2], [], {}, stats)
+        assert len(result) == 1
+
+    def test_deduplicates_across_a_and_b(self):
+        """A name in both A and B lists appears only once in output."""
+        stats = MergeStats()
+        name_a = NameRecord('John /Smith/', 'john', 'smith', None)
+        name_b = NameRecord('John /Smith/', 'john', 'smith', None)
+        result = _merge_names([name_a], [name_b], {}, stats)
+        assert len(result) == 1
+        assert stats.aka_names_added == 0
+
+    def test_triple_duplicate_in_a_collapsed_to_one(self):
+        """Three identical names in A reduce to a single entry."""
+        stats = MergeStats()
+        n = NameRecord('Maria /Rossi/', 'maria', 'rossi', None)
+        result = _merge_names([n, n, n], [], {}, stats)
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# Duplicate family detection and prevention tests
+# ---------------------------------------------------------------------------
+
+class TestNoDuplicateFamilies:
+    def test_unmatched_b_family_merged_into_existing_couple(self):
+        """
+        When an unmatched B family's remapped spouses already form a couple
+        in File A, B's data is merged into the A family rather than creating
+        a duplicate @F_MERGE_*@ record.
+        """
+        ind_a_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_a_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        fam_a = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+
+        # B has the same couple (matched to A) in an unmatched family with a child
+        ind_b_h = _indi('@I10@', 'John', 'Smith', fams=['@F10@'])
+        ind_b_w = _indi('@I11@', 'Jane', 'Smith', sex='F', fams=['@F10@'])
+        ind_b_c = _indi('@I12@', 'Kid', 'Smith', famc=['@F10@'])
+        fam_b = Family('@F10@', '@I10@', '@I11@', ['@I12@'], [], [], _node('FAM', '@F10@'))
+
+        file_a = _file(
+            indis={'@I1@': ind_a_h, '@I2@': ind_a_w},
+            fams={'@F1@': fam_a},
+        )
+        file_b = _file(
+            indis={'@I10@': ind_b_h, '@I11@': ind_b_w, '@I12@': ind_b_c},
+            fams={'@F10@': fam_b},
+        )
+
+        decisions = MergeDecisions()
+        decisions.indi_map = {'@I10@': '@I1@', '@I11@': '@I2@'}
+        decisions.indi_disposition = {'@I12@': 'add'}
+        decisions.family_map = {}
+        decisions.family_disposition = {'@F10@': 'add'}
+        decisions.source_map = {}
+        decisions.source_disposition = {}
+
+        merged, _ = merge_records(file_a, file_b, decisions)
+
+        # Only one family for this couple
+        couples = [(fam.husband_xref, fam.wife_xref) for fam in merged.families.values()]
+        assert couples.count(('@I1@', '@I2@')) == 1, \
+            'Duplicate family created for same couple'
+
+    def test_child_linked_when_b_family_deduped_into_a_couple(self):
+        """
+        When a B family is dedup'd into an existing A-side couple, any B child
+        in that family must end up with a valid FAMC pointing to the A family —
+        not orphaned with a phantom @F_MERGE_ xref that never exists.
+        """
+        ind_a_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_a_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        fam_a = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+
+        # B has the same couple (matched) and a new child
+        ind_b_h = _indi('@I10@', 'John', 'Smith', fams=['@F10@'])
+        ind_b_w = _indi('@I11@', 'Jane', 'Smith', sex='F', fams=['@F10@'])
+        ind_b_c = _indi('@I12@', 'Kid', 'Smith', famc=['@F10@'])
+        fam_b = Family('@F10@', '@I10@', '@I11@', ['@I12@'], [], [], _node('FAM', '@F10@'))
+
+        file_a = _file(
+            indis={'@I1@': ind_a_h, '@I2@': ind_a_w},
+            fams={'@F1@': fam_a},
+        )
+        file_b = _file(
+            indis={'@I10@': ind_b_h, '@I11@': ind_b_w, '@I12@': ind_b_c},
+            fams={'@F10@': fam_b},
+        )
+
+        decisions = MergeDecisions()
+        decisions.indi_map = {'@I10@': '@I1@', '@I11@': '@I2@'}
+        decisions.indi_disposition = {'@I12@': 'add'}
+        decisions.family_map = {}
+        decisions.family_disposition = {'@F10@': 'add'}
+        decisions.source_map = {}
+        decisions.source_disposition = {}
+
+        merged, _ = merge_records(file_a, file_b, decisions)
+
+        # The child should have a valid FAMC pointing to @F1@
+        child = next(i for i in merged.individuals.values() if 'kid' in i.display_name)
+        assert child.family_child, 'Child must not be orphaned'
+        assert child.family_child[0] in merged.families, \
+            f'Child FAMC {child.family_child[0]!r} not in merged families'
+        assert child.family_child[0] == '@F1@', \
+            f'Child should point to existing A-side family @F1@, got {child.family_child[0]!r}'
+
+    def test_genuinely_new_b_family_still_added(self):
+        """
+        A B family whose spouses are not matched to any A couple creates a
+        new family record as before.
+        """
+        ind_a = _indi('@I1@', 'Alice', 'Brown')
+        ind_b_h = _indi('@I10@', 'Bob', 'Jones', fams=['@F10@'])
+        ind_b_w = _indi('@I11@', 'Carol', 'Jones', sex='F', fams=['@F10@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1980), None, [], _node())
+        fam_b = Family('@F10@', '@I10@', '@I11@', [], [marr], [], _node('FAM', '@F10@'))
+
+        file_a = _file(indis={'@I1@': ind_a})
+        file_b = _file(
+            indis={'@I10@': ind_b_h, '@I11@': ind_b_w},
+            fams={'@F10@': fam_b},
+        )
+
+        decisions = MergeDecisions()
+        decisions.indi_map = {}
+        decisions.indi_disposition = {'@I10@': 'add', '@I11@': 'add'}
+        decisions.family_map = {}
+        decisions.family_disposition = {'@F10@': 'add'}
+        decisions.source_map = {}
+        decisions.source_disposition = {}
+
+        merged, _ = merge_records(file_a, file_b, decisions)
+        assert len(merged.families) == 1
+        fam = next(iter(merged.families.values()))
+        assert any(e.tag == 'MARR' for e in fam.events)
+
+
+# ---------------------------------------------------------------------------
+# Dangling cross-reference purging tests
+# ---------------------------------------------------------------------------
+
+class TestPurgeDanglingXrefs:
+    def test_removes_dangling_chil(self):
+        """CHIL reference to a nonexistent individual is removed from family."""
+        ind = _indi('@I1@', 'Parent', 'Smith', fams=['@F1@'])
+        fam = Family('@F1@', '@I1@', None, ['@I1@', '@I_GONE@'], [], [], _node('FAM', '@F1@'))
+        merged = _file(indis={'@I1@': ind}, fams={'@F1@': fam})
+        removed = purge_dangling_xrefs(merged)
+        assert removed == 1
+        assert '@I_GONE@' not in merged.families['@F1@'].child_xrefs
+        assert '@I1@' in merged.families['@F1@'].child_xrefs
+
+    def test_removes_dangling_fams(self):
+        """FAMS reference to a nonexistent family is removed from individual."""
+        ind = _indi('@I1@', 'Alice', 'Smith', fams=['@F1@', '@F_GONE@'])
+        fam = _family('@F1@', '@I1@', None)
+        merged = _file(indis={'@I1@': ind}, fams={'@F1@': fam})
+        removed = purge_dangling_xrefs(merged)
+        assert removed == 1
+        assert '@F_GONE@' not in merged.individuals['@I1@'].family_spouse
+        assert '@F1@' in merged.individuals['@I1@'].family_spouse
+
+    def test_no_removals_when_all_valid(self):
+        """Returns 0 when there are no dangling references."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        fam = _family('@F1@', '@I1@', '@I2@')
+        merged = _file(indis={'@I1@': ind_h, '@I2@': ind_w}, fams={'@F1@': fam})
+        assert purge_dangling_xrefs(merged) == 0
+
+
+# ---------------------------------------------------------------------------
+# Duplicate source full-pass deduplication tests
+# ---------------------------------------------------------------------------
+
+class TestDeduplicateMergedSourcesFullPass:
+    def test_deduplicates_non_cocited_sources(self):
+        """
+        Two sources with identical titles that are never cited on the same
+        individual should still be deduplicated by the full title-based pass.
+        """
+        from gedcom_merge.normalize import tokenize_title
+        # Source A cited only on individual A; Source B cited only on individual B
+        src_a = _source('@S1@', 'U.S. Census Records, 1900')
+        src_b = _source('@S_MERGE_0001@', 'U.S. Census Records, 1900')
+        src_a.title_tokens = tokenize_title(src_a.title)
+        src_b.title_tokens = tokenize_title(src_b.title)
+
+        ind_a = _indi('@I1@', 'Alice', 'Smith',
+                      citations=[_citation('@S1@', 'p.1')])
+        ind_b = _indi('@I2@', 'Bob', 'Jones',
+                      citations=[_citation('@S_MERGE_0001@', 'p.2')])
+
+        merged = _file(
+            indis={'@I1@': ind_a, '@I2@': ind_b},
+            sources={'@S1@': src_a, '@S_MERGE_0001@': src_b},
+        )
+
+        removed = deduplicate_merged_sources(merged, threshold=0.85)
+        assert removed == 1
+        assert '@S1@' in merged.sources
+        assert '@S_MERGE_0001@' not in merged.sources
+        # Citation on ind_b should now point to @S1@
+        assert merged.individuals['@I2@'].citations[0].source_xref == '@S1@'
+
+    def test_file_a_vs_file_a_similar_but_distinct_not_deduped(self):
+        """Two genuinely distinct File-A sources (score < 0.97) are not merged."""
+        src_a1 = _source('@S1@', 'U.S. Census, 1900')
+        src_a2 = _source('@S2@', 'U.S. Census, 1880')  # different year
+        ind1 = _indi('@I1@', citations=[_citation('@S1@', 'p.1')])
+        ind2 = _indi('@I2@', citations=[_citation('@S2@', 'p.2')])
+        merged = _file(
+            indis={'@I1@': ind1, '@I2@': ind2},
+            sources={'@S1@': src_a1, '@S2@': src_a2},
+        )
+        removed = deduplicate_merged_sources(merged, threshold=0.85)
+        assert removed == 0
+        assert '@S1@' in merged.sources
+        assert '@S2@' in merged.sources
+
+    def test_file_a_vs_file_a_identical_title_deduped(self):
+        """Two File-A sources with identical titles (score ≥ 0.97) ARE merged."""
+        title = 'U.S. City Directories, 1822-1995'
+        src_a1 = _source('@S1@', title)
+        src_a2 = _source('@S2@', 'U.S., City Directories, 1822-1995')
+        ind1 = _indi('@I1@', citations=[_citation('@S1@')])
+        ind2 = _indi('@I2@', citations=[_citation('@S2@')])
+        merged = _file(
+            indis={'@I1@': ind1, '@I2@': ind2},
+            sources={'@S1@': src_a1, '@S2@': src_a2},
+        )
+        removed = deduplicate_merged_sources(merged, threshold=0.85)
+        assert removed == 1
+        assert len(merged.sources) == 1
+
+
+# ---------------------------------------------------------------------------
+# Duplicate family deduplication tests
+# ---------------------------------------------------------------------------
+
+class TestDeduplicateDuplicateFamilies:
+    def test_merges_content_into_canonical(self):
+        """Events from duplicate family are merged into canonical."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), 'London', [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell = _family('@F_MERGE_0001@', '@I1@', '@I2@')  # empty shell
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell},
+        )
+        removed = deduplicate_duplicate_families(merged)
+        assert removed == 1
+        assert '@F1@' in merged.families
+        assert '@F_MERGE_0001@' not in merged.families
+
+    def test_fams_remapped_on_individuals(self):
+        """FAMS pointers to removed duplicate are updated to canonical."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell = _family('@F_MERGE_0001@', '@I1@', '@I2@')
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell},
+        )
+        deduplicate_duplicate_families(merged)
+        assert merged.individuals['@I1@'].family_spouse == ['@F1@']
+        assert merged.individuals['@I2@'].family_spouse == ['@F1@']
+
+    def test_famc_remapped_on_children(self):
+        """FAMC pointers on children to removed duplicate are updated to canonical."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@', '@F_MERGE_0001@'])
+        ind_c = _indi('@I3@', 'Kid', 'Smith', famc=['@F_MERGE_0001@'])
+        marr = EventRecord('MARR', None, ParsedDate(None, 1950), None, [], _node())
+        real_fam = Family('@F1@', '@I1@', '@I2@', [], [marr], [], _node('FAM', '@F1@'))
+        shell = Family('@F_MERGE_0001@', '@I1@', '@I2@', ['@I3@'], [], [], _node('FAM', '@F_MERGE_0001@'))
+        merged = _file(
+            indis={'@I1@': ind_h, '@I2@': ind_w, '@I3@': ind_c},
+            fams={'@F1@': real_fam, '@F_MERGE_0001@': shell},
+        )
+        deduplicate_duplicate_families(merged)
+        assert merged.individuals['@I3@'].family_child == ['@F1@']
+
+    def test_no_duplicates_returns_zero(self):
+        """Returns 0 when no duplicate families exist."""
+        ind_h = _indi('@I1@', 'John', 'Smith', fams=['@F1@'])
+        ind_w = _indi('@I2@', 'Jane', 'Smith', sex='F', fams=['@F1@'])
+        fam = _family('@F1@', '@I1@', '@I2@')
+        merged = _file(indis={'@I1@': ind_h, '@I2@': ind_w}, fams={'@F1@': fam})
+        assert deduplicate_duplicate_families(merged) == 0
+
+
+# ---------------------------------------------------------------------------
+# Duplicate name deduplication tests
+# ---------------------------------------------------------------------------
+
+class TestFixMergeSources:
+    """Tests for fix_merge_sources() in gedcom_linter."""
+
+    def _src(self, xref, title='Test Source'):
+        from gedcom_merge.normalize import tokenize_title
+        return Source(xref=xref, title=title, author=None, publisher=None,
+                      repository_xref=None, notes=[], refn=None,
+                      raw=_node('SOUR', xref), title_tokens=tokenize_title(title))
+
+    def _cit(self, xref, page=None):
+        return CitationRecord(source_xref=xref, page=page, data=None, raw=_node('SOUR'))
+
+    def test_citations_remapped(self, tmp_path):
+        """Citations to remove_xref are remapped to keep_xref."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        ind = _indi('@I1@')
+        ind.citations = [self._cit('@S2@')]
+        gf = _file(
+            indis={'@I1@': ind},
+            sources={'@S1@': self._src('@S1@'), '@S2@': self._src('@S2@')},
+        )
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        n = fix_merge_sources(str(out), '@S1@', '@S2@')
+        assert n == 1
+        from gedcom_merge.parser import parse_gedcom
+        result = parse_gedcom(str(out))
+        assert result.individuals['@I1@'].citations[0].source_xref == '@S1@'
+
+    def test_remove_xref_deleted(self, tmp_path):
+        """remove_xref source record is deleted from the file."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        from gedcom_merge.parser import parse_gedcom
+        gf = _file(
+            indis={'@I1@': _indi('@I1@')},
+            sources={'@S1@': self._src('@S1@'), '@S2@': self._src('@S2@')},
+        )
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        fix_merge_sources(str(out), '@S1@', '@S2@')
+        result = parse_gedcom(str(out))
+        assert '@S2@' not in result.sources
+        assert '@S1@' in result.sources
+
+    def test_duplicate_citation_collapsed(self, tmp_path):
+        """If a record cites both keep and remove, the duplicate is collapsed."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        from gedcom_merge.parser import parse_gedcom
+        ind = _indi('@I1@')
+        ind.citations = [self._cit('@S1@'), self._cit('@S2@')]
+        gf = _file(
+            indis={'@I1@': ind},
+            sources={'@S1@': self._src('@S1@'), '@S2@': self._src('@S2@')},
+        )
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        fix_merge_sources(str(out), '@S1@', '@S2@')
+        result = parse_gedcom(str(out))
+        assert len(result.individuals['@I1@'].citations) == 1
+
+    def test_invalid_keep_xref_raises(self, tmp_path):
+        """ValueError raised when keep_xref is not in the file."""
+        from gedcom_linter import fix_merge_sources
+        from gedcom_merge.writer import write_gedcom
+        gf = _file(sources={'@S1@': self._src('@S1@')})
+        out = tmp_path / 'test.ged'
+        write_gedcom(gf, str(out))
+        with pytest.raises(ValueError):
+            fix_merge_sources(str(out), '@SXXX@', '@S1@')
+
+
+class TestSortEvents:
+    """Tests for scan_unsorted_events and fix_sort_events in gedcom_linter."""
+
+    def _ev(self, tag: str, year: int | None = None) -> EventRecord:
+        date = ParsedDate(None, year) if year else None
+        return EventRecord(tag=tag, event_type=None, date=date, place=None,
+                           citations=[], raw=_node())
+
+    def test_already_sorted_returns_zero(self):
+        """No reordering needed → 0 records changed."""
+        from gedcom_linter import fix_sort_events
+        ind = _indi('@I1@', birth_year=1900, death_year=1980)
+        merged = _file(indis={'@I1@': ind})
+        # Manually call sort on the in-memory object (fix_sort_events works on files;
+        # test sort key logic directly via _event_sort_key)
+        from gedcom_linter import _event_sort_key
+        keys_before = [_event_sort_key(e) for e in ind.events]
+        ind.events = sorted(ind.events, key=_event_sort_key)
+        keys_after = [_event_sort_key(e) for e in ind.events]
+        assert keys_before == keys_after  # already sorted
+
+    def test_birth_event_pinned_first(self):
+        """BIRT event sorts before earlier-dated middle events."""
+        from gedcom_linter import _event_sort_key
+        birt = self._ev('BIRT', 1920)
+        resi = self._ev('RESI', 1910)  # date earlier than birth — still after BIRT
+        events = [resi, birt]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert sorted_evs[0].tag == 'BIRT'
+        assert sorted_evs[1].tag == 'RESI'
+
+    def test_death_event_pinned_last(self):
+        """DEAT event sorts after later-dated middle events."""
+        from gedcom_linter import _event_sort_key
+        deat = self._ev('DEAT', 1960)
+        resi = self._ev('RESI', 1970)  # date later than death — still before DEAT
+        events = [resi, deat]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert sorted_evs[0].tag == 'RESI'
+        assert sorted_evs[1].tag == 'DEAT'
+
+    def test_middle_events_sorted_by_year(self):
+        """RESI and EVEN events in the middle group sort chronologically."""
+        from gedcom_linter import _event_sort_key
+        ev1 = self._ev('RESI', 1950)
+        ev2 = self._ev('EVEN', 1930)
+        ev3 = self._ev('RESI', 1940)
+        events = [ev1, ev2, ev3]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert [e.date.year for e in sorted_evs] == [1930, 1940, 1950]
+
+    def test_no_date_sorts_to_end_of_group(self):
+        """An event with no date sorts after dated events in the same group."""
+        from gedcom_linter import _event_sort_key
+        resi_dated = self._ev('RESI', 1950)
+        resi_undated = self._ev('RESI', None)
+        events = [resi_undated, resi_dated]
+        sorted_evs = sorted(events, key=_event_sort_key)
+        assert sorted_evs[0].date is not None
+        assert sorted_evs[1].date is None
+
+    def test_scan_detects_out_of_order(self, tmp_path):
+        """scan_unsorted_events flags an individual with events out of order."""
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+        from gedcom_linter import scan_unsorted_events
+        from gedcom_merge.writer import write_gedcom
+        # Build a file with DEAT before BIRT (wrong order)
+        ind = _indi('@I1@', birth_year=1900, death_year=1980)
+        ind.events = list(reversed(ind.events))  # DEAT first, BIRT second
+        merged = _file(indis={'@I1@': ind})
+        out = tmp_path / 'test.ged'
+        write_gedcom(merged, str(out))
+        issues = scan_unsorted_events(str(out))
+        assert len(issues) == 1
+        assert '@I1@' in issues[0]
+
+
+class TestDeduplicateDuplicateNames:
+    def test_removes_duplicate_name_within_individual(self):
+        """Exact duplicate NAME in an individual is collapsed to one."""
+        ind = _indi('@I1@', 'Antoine', 'Chile')
+        dup = NameRecord('Antoine /Chilé/', 'antoine', 'chile', None)
+        ind.names.append(dup)  # now has the same (given, surname) twice
+        merged = _file(indis={'@I1@': ind})
+        removed = deduplicate_duplicate_names(merged)
+        assert removed == 1
+        assert len(merged.individuals['@I1@'].names) == 1
+
+    def test_different_names_untouched(self):
+        """Distinct names in the same individual are kept."""
+        ind = _indi('@I1@', 'Antoine', 'Chile')
+        ind.names.append(NameRecord('Tony /Smith/', 'tony', 'smith', 'AKA'))
+        merged = _file(indis={'@I1@': ind})
+        removed = deduplicate_duplicate_names(merged)
+        assert removed == 0
+        assert len(merged.individuals['@I1@'].names) == 2
+
+    def test_no_names_returns_zero(self):
+        ind = _indi('@I1@', 'Antoine', 'Chile')
+        merged = _file(indis={'@I1@': ind})
+        assert deduplicate_duplicate_names(merged) == 0

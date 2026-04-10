@@ -871,17 +871,31 @@ DATE_LINE_RE = re.compile(r'^(2 DATE )(.+)$')
 # Trailing-whitespace check and fix
 # ---------------------------------------------------------------------------
 
+_CONC_RE = re.compile(r'^\d+ CONC')
+
+
 def scan_trailing_whitespace(path: str):
     """
     Return list of (lineno, repr(line)) for every line that has trailing
     whitespace (spaces or tabs before the newline).
+
+    Lines whose immediate successor is a CONC tag are excluded: in GEDCOM
+    5.5.1, CONC concatenates with no separator, so a trailing space on the
+    preceding line is the only way to preserve a word boundary in the joined
+    text and must not be treated as an error.
     """
-    violations = []
     with open(path, encoding='utf-8') as f:
-        for lineno, raw in enumerate(f, 1):
-            stripped = raw.rstrip('\n')
-            if stripped != stripped.rstrip():
-                violations.append((lineno, stripped))
+        lines = f.readlines()
+
+    violations = []
+    for i, raw in enumerate(lines):
+        stripped = raw.rstrip('\n')
+        if stripped == stripped.rstrip():
+            continue  # no trailing whitespace
+        next_line = lines[i + 1].strip() if i + 1 < len(lines) else ''
+        if _CONC_RE.match(next_line):
+            continue  # trailing space is semantically required before CONC
+        violations.append((i + 1, stripped))
     return violations
 
 
@@ -889,18 +903,25 @@ def fix_trailing_whitespace(path: str, dry_run: bool = False):
     """
     Strip trailing whitespace from every line in *path*.
     Returns the number of lines changed.
+
+    Lines whose immediate successor is a CONC tag are left untouched: the
+    trailing space is semantically meaningful (see scan_trailing_whitespace).
     """
     with open(path, encoding='utf-8') as f:
         lines_in = f.readlines()
 
     lines_out = []
     changed = 0
-    for lineno, raw in enumerate(lines_in, 1):
+    for i, raw in enumerate(lines_in):
+        next_raw = lines_in[i + 1] if i + 1 < len(lines_in) else ''
+        if _CONC_RE.match(next_raw.strip()):
+            lines_out.append(raw)  # preserve trailing space before CONC
+            continue
         clean = raw.rstrip('\n').rstrip() + '\n'
         if clean != raw:
             changed += 1
             if dry_run:
-                print(f'  line {lineno}: {raw.rstrip(chr(10))!r}')
+                print(f'  line {i + 1}: {raw.rstrip(chr(10))!r}')
         lines_out.append(clean)
 
     if not dry_run and changed:
@@ -1179,6 +1200,206 @@ def fix_plac_address_parts(path: str, dry_run: bool = False) -> int:
     return changed
 
 
+# ---------------------------------------------------------------------------
+# Structural checks (require gedcom_merge parser — lazy imports for speed)
+# ---------------------------------------------------------------------------
+
+def scan_broken_xrefs(path: str) -> list[str]:
+    """
+    Return a list of broken cross-reference error strings.
+    Checks FAM HUSB/WIFE/CHIL, INDI FAMS/FAMC/OBJE, and all SOUR citations.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.analysis import _check_broken_xrefs
+    return _check_broken_xrefs(parse_gedcom(path))
+
+
+def scan_duplicate_families(path: str) -> list[tuple[str, str]]:
+    """
+    Return (xref_a, xref_b) pairs of FAM records sharing the same husband+wife.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.analysis import _find_duplicate_families
+    return _find_duplicate_families(parse_gedcom(path))
+
+
+def scan_duplicate_sources_structural(path: str) -> list[tuple[str, str]]:
+    """
+    Return (xref_a, xref_b) pairs of SOUR records with matching normalized titles.
+    Unlike scan_duplicate_sources() (which checks exact citation blocks), this
+    uses full title similarity across the entire source list.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.analysis import _find_duplicate_sources
+    return _find_duplicate_sources(parse_gedcom(path))
+
+
+def scan_orphaned_individuals(path: str) -> list[str]:
+    """
+    Return xrefs of individuals with no FAMS or FAMC links.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.analysis import _find_orphaned_individuals
+    return _find_orphaned_individuals(parse_gedcom(path))
+
+
+def scan_duplicate_names(path: str) -> dict[str, list[str]]:
+    """
+    Return {xref: [duplicate_name_strings]} for individuals that have the same
+    normalized (given, surname) pair appearing more than once in their NAME list.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.analysis import _find_duplicate_names
+    return _find_duplicate_names(parse_gedcom(path))
+
+
+def fix_broken_xrefs(path: str, dry_run: bool = False) -> int:
+    """
+    Remove dangling cross-references (CHIL/HUSB/WIFE/FAMS/FAMC/OBJE/SOUR
+    pointers to nonexistent records) from the file.
+    Returns the number of references removed.
+    Requires the gedcom_merge parser/writer.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.merge import purge_dangling_xrefs
+    from gedcom_merge.writer import write_gedcom
+    merged = parse_gedcom(path)
+    removed = purge_dangling_xrefs(merged)
+    if removed and not dry_run:
+        write_gedcom(merged, path)
+    return removed
+
+
+def fix_duplicate_families(path: str, dry_run: bool = False) -> int:
+    """
+    Collapse FAM records that share the same husband+wife into a single record,
+    unioning their events/children/citations. Also removes empty shells created
+    by the collapse.
+    Returns the number of duplicate family records removed.
+    Requires the gedcom_merge parser/writer.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.merge import deduplicate_duplicate_families, remove_empty_family_shells
+    from gedcom_merge.writer import write_gedcom
+    merged = parse_gedcom(path)
+    removed = deduplicate_duplicate_families(merged)
+    remove_empty_family_shells(merged)
+    if removed and not dry_run:
+        write_gedcom(merged, path)
+    return removed
+
+
+def fix_duplicate_names(path: str, dry_run: bool = False) -> int:
+    """
+    Remove duplicate NAME entries within individual records (same normalized
+    given+surname appearing more than once).
+    Returns the number of duplicate NAME entries removed.
+    Requires the gedcom_merge parser/writer.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.merge import deduplicate_duplicate_names
+    from gedcom_merge.writer import write_gedcom
+    merged = parse_gedcom(path)
+    removed = deduplicate_duplicate_names(merged)
+    if removed and not dry_run:
+        write_gedcom(merged, path)
+    return removed
+
+
+def fix_merge_sources(path: str, keep_xref: str, remove_xref: str,
+                      dry_run: bool = False) -> int:
+    """
+    Remap all citations from remove_xref to keep_xref, then delete remove_xref.
+    Use this to manually merge source records that the auto-dedup didn't catch.
+    Returns the number of citation records updated (remapped or collapsed).
+    Requires the gedcom_merge parser/writer.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.writer import write_gedcom
+    from gedcom_merge.merge import _apply_citation_remap
+
+    gf = parse_gedcom(path)
+    if keep_xref not in gf.sources:
+        raise ValueError(f'keep xref not found in file: {keep_xref}')
+    if remove_xref not in gf.sources:
+        raise ValueError(f'remove xref not found in file: {remove_xref}')
+
+    updated = _apply_citation_remap(gf, {remove_xref: keep_xref})
+    del gf.sources[remove_xref]
+
+    if not dry_run:
+        write_gedcom(gf, path)
+    return updated
+
+
+def _event_sort_key(ev) -> tuple:
+    """Sort key for a GEDCOM EventRecord.
+
+    Birth-type events (BIRT, CHR, BAPM, ADOP) are always placed first;
+    death-type events (DEAT, BURI, PROB, WILL) are always placed last.
+    All other events are sorted chronologically by date within the middle group.
+    Events with no date sort to the end of their group (year 9999).
+    """
+    FIRST_TAGS = {'BIRT', 'CHR', 'BAPM', 'ADOP'}
+    LAST_TAGS  = {'DEAT', 'BURI', 'PROB', 'WILL'}
+    group = 0 if ev.tag in FIRST_TAGS else (2 if ev.tag in LAST_TAGS else 1)
+    year  = (ev.date.year  or 9999) if ev.date else 9999
+    month = (ev.date.month or 0)    if ev.date else 0
+    day   = (ev.date.day   or 0)    if ev.date else 0
+    return (group, year, month, day)
+
+
+def scan_unsorted_events(path: str) -> list[str]:
+    """
+    Return a list of human-readable strings for individuals and families
+    whose events are not in chronological order.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    gf = parse_gedcom(path)
+    issues: list[str] = []
+    for xref, ind in gf.individuals.items():
+        keys = [_event_sort_key(e) for e in ind.events]
+        if keys != sorted(keys):
+            issues.append(f'{xref}: {len(ind.events)} events are out of chronological order')
+    for xref, fam in gf.families.items():
+        keys = [_event_sort_key(e) for e in fam.events]
+        if keys != sorted(keys):
+            issues.append(f'{xref}: {len(fam.events)} family events are out of chronological order')
+    return issues
+
+
+def fix_sort_events(path: str, dry_run: bool = False) -> int:
+    """
+    Sort events within each individual and family record into chronological
+    order. Birth-type events are pinned first; death-type events are pinned
+    last. Returns the count of records whose event order changed.
+    Requires the gedcom_merge parser/writer.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.writer import write_gedcom
+    gf = parse_gedcom(path)
+    changed = 0
+    for ind in gf.individuals.values():
+        original = [_event_sort_key(e) for e in ind.events]
+        ind.events = sorted(ind.events, key=_event_sort_key)
+        if [_event_sort_key(e) for e in ind.events] != original:
+            changed += 1
+    for fam in gf.families.values():
+        original = [_event_sort_key(e) for e in fam.events]
+        fam.events = sorted(fam.events, key=_event_sort_key)
+        if [_event_sort_key(e) for e in fam.events] != original:
+            changed += 1
+    if not dry_run and changed:
+        write_gedcom(gf, path)
+    return changed
+
+
 def _is_level2_date(line: str) -> bool:
     """Return True if this is a level-2 DATE line (event date, not citation)."""
     return line.startswith('2 DATE ')
@@ -1283,6 +1504,10 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_plac_address_parts(path, dry_run=dry_run)
     dates_fixed, _ = fix_file(path, dry_run=dry_run)
     fixes_applied += dates_fixed
+    fixes_applied += fix_broken_xrefs(path, dry_run=dry_run)
+    fixes_applied += fix_duplicate_families(path, dry_run=dry_run)
+    fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
+    fixes_applied += fix_sort_events(path, dry_run=dry_run)
 
     with open(path, encoding='utf-8') as f:
         lines_after = sum(1 for _ in f)
@@ -1346,6 +1571,27 @@ def main():
         help='Restructure NOTE children of ADDR: venue name leads ADDR, street becomes CONT',
     )
     parser.add_argument(
+        '--fix-broken-xrefs', action='store_true',
+        help='Remove dangling CHIL/HUSB/WIFE/FAMS/FAMC/OBJE/SOUR pointers in-place',
+    )
+    parser.add_argument(
+        '--fix-duplicate-families', action='store_true',
+        help='Collapse FAM records with the same husband+wife into one in-place',
+    )
+    parser.add_argument(
+        '--fix-duplicate-names', action='store_true',
+        help='Remove duplicate NAME entries within individuals in-place',
+    )
+    parser.add_argument(
+        '--fix-sort-events', action='store_true',
+        help='Sort events in each record into chronological order in-place',
+    )
+    parser.add_argument(
+        '--merge-sources', nargs=2, metavar=('KEEP', 'REMOVE'),
+        help='Remap all citations from REMOVE xref to KEEP xref and delete REMOVE. '
+             'Example: --merge-sources @S100@ @S200@',
+    )
+    parser.add_argument(
         '--fix-all', action='store_true',
         help='Run all fix operations in sequence',
     )
@@ -1366,6 +1612,10 @@ def main():
         args.fix_addr_under_plac = True
         args.fix_note_under_plac = True
         args.fix_note_under_addr = True
+        args.fix_broken_xrefs = True
+        args.fix_duplicate_families = True
+        args.fix_duplicate_names = True
+        args.fix_sort_events = True
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
@@ -1451,6 +1701,56 @@ def main():
         else:
             print(f'{changed} PLAC line(s) fixed.')
 
+    if args.fix_broken_xrefs:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Removing dangling cross-references in: {args.gedfile}')
+        removed = fix_broken_xrefs(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {removed} dangling reference(s) would be removed.')
+        else:
+            print(f'  {removed} dangling reference(s) removed.')
+
+    if args.fix_duplicate_families:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Collapsing duplicate families in: {args.gedfile}')
+        removed = fix_duplicate_families(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {removed} duplicate family record(s) would be removed.')
+        else:
+            print(f'  {removed} duplicate family record(s) removed.')
+
+    if args.fix_duplicate_names:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Removing duplicate NAME entries in: {args.gedfile}')
+        removed = fix_duplicate_names(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {removed} duplicate NAME entry/entries would be removed.')
+        else:
+            print(f'  {removed} duplicate NAME entry/entries removed.')
+
+    if args.fix_sort_events:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Sorting events chronologically in: {args.gedfile}')
+        changed = fix_sort_events(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {changed} record(s) would have events reordered.')
+        else:
+            print(f'  {changed} record(s) had events reordered.')
+
+    if args.merge_sources:
+        keep, remove = args.merge_sources
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Merging {remove} → {keep} in: {args.gedfile}')
+        try:
+            n = fix_merge_sources(args.gedfile, keep, remove, dry_run=args.dry_run)
+            if args.dry_run:
+                print(f'  {n} citation(s) would be updated; {remove} would be removed.')
+            else:
+                print(f'  {n} citation(s) updated; {remove} removed.')
+        except ValueError as e:
+            print(f'  Error: {e}', file=sys.stderr)
+            sys.exit(1)
+
     if args.fix_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Normalizing DATE values in: {args.gedfile}')
@@ -1469,7 +1769,10 @@ def main():
     if not any([args.fix_dates, args.fix_whitespace, args.fix_places,
                 args.fix_address_parts, args.fix_names, args.fix_long_lines,
                 args.fix_duplicate_sources, args.fix_addr_under_plac,
-                args.fix_note_under_plac, args.fix_note_under_addr]):
+                args.fix_note_under_plac, args.fix_note_under_addr,
+                args.fix_broken_xrefs, args.fix_duplicate_families,
+                args.fix_duplicate_names, args.fix_sort_events,
+                args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
 
@@ -1641,6 +1944,82 @@ def main():
                 print(f'  ... and {len(bad_format) - 40} more.')
         else:
             print('OK: all level-2 DATE values conform to GEDCOM 5.5.1.')
+
+        # -- Structural checks (require gedcom_merge parser) --
+        try:
+            broken = scan_broken_xrefs(args.gedfile)
+            if broken:
+                errors = True
+                print(f'\n{len(broken)} broken cross-reference(s) '
+                      '(run --fix-broken-xrefs to remove):')
+                for msg in broken[:20]:
+                    print(f'  {msg}')
+                if len(broken) > 20:
+                    print(f'  ... and {len(broken) - 20} more.')
+            else:
+                print('OK: no broken cross-references.')
+
+            dup_fams = scan_duplicate_families(args.gedfile)
+            if dup_fams:
+                errors = True
+                print(f'\n{len(dup_fams)} duplicate family pair(s) (same husband+wife) '
+                      '(run --fix-duplicate-families to collapse):')
+                for xa, xb in dup_fams[:20]:
+                    print(f'  {xa} == {xb}')
+                if len(dup_fams) > 20:
+                    print(f'  ... and {len(dup_fams) - 20} more.')
+            else:
+                print('OK: no duplicate family records.')
+
+            dup_srcs = scan_duplicate_sources_structural(args.gedfile)
+            if dup_srcs:
+                errors = True
+                print(f'\n{len(dup_srcs)} duplicate source pair(s) (same normalized title):')
+                for xa, xb in dup_srcs[:20]:
+                    print(f'  {xa} == {xb}')
+                if len(dup_srcs) > 20:
+                    print(f'  ... and {len(dup_srcs) - 20} more.')
+            else:
+                print('OK: no duplicate source records.')
+
+            orphans = scan_orphaned_individuals(args.gedfile)
+            if orphans:
+                print(f'\n{len(orphans)} orphaned individual(s) (no FAMS or FAMC links):')
+                for xref in orphans[:20]:
+                    print(f'  {xref}')
+                if len(orphans) > 20:
+                    print(f'  ... and {len(orphans) - 20} more.')
+            else:
+                print('OK: no orphaned individuals.')
+
+            dup_names = scan_duplicate_names(args.gedfile)
+            if dup_names:
+                errors = True
+                total = sum(len(v) for v in dup_names.values())
+                print(f'\n{total} duplicate NAME entry/entries across '
+                      f'{len(dup_names)} individual(s) '
+                      '(run --fix-duplicate-names to remove):')
+                for xref, names in list(dup_names.items())[:10]:
+                    print(f'  {xref}: {names}')
+                if len(dup_names) > 10:
+                    print(f'  ... and {len(dup_names) - 10} more individual(s).')
+            else:
+                print('OK: no duplicate NAME entries.')
+
+            unsorted_evs = scan_unsorted_events(args.gedfile)
+            if unsorted_evs:
+                errors = True
+                print(f'\n{len(unsorted_evs)} record(s) with out-of-order events '
+                      '(run --fix-sort-events to sort):')
+                for msg in unsorted_evs[:20]:
+                    print(f'  {msg}')
+                if len(unsorted_evs) > 20:
+                    print(f'  ... and {len(unsorted_evs) - 20} more.')
+            else:
+                print('OK: all events are in chronological order.')
+
+        except ImportError:
+            print('\nNOTE: structural checks skipped (gedcom_merge module not available).')
 
         if errors:
             sys.exit(1)
