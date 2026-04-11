@@ -120,7 +120,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 # will override.  EVEN/FACT carry no inline value and use 2 TYPE exclusively.
                 _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
                 inline_type = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
-                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': html_mod.unescape(val) if val else None, 'inline_val': val if val else None}
+                initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
+                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
@@ -547,11 +548,15 @@ header h1 { font-size: 16px; font-weight: 600; }
 #detail-facts { margin-top: 16px; }
 #detail-facts.has-content { border-top: 1px solid #334155; padding-top: 14px; }
 .facts-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: #475569; margin-bottom: 8px; display: block; }
+  color: #475569; margin-bottom: 10px; display: block; }
+.facts-subheading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #64748b; margin-bottom: 5px; margin-top: 10px; display: block; }
+.facts-subheading:first-of-type { margin-top: 0; }
 .facts-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .facts-pill { font-size: 12px; background: #1c2a1e; border: 1px solid #2d4a31;
   border-radius: 12px; padding: 3px 10px; color: #6ee37a; }
 .facts-pill .pill-date { color: #3d6642; font-size: 11px; margin-left: 5px; }
+.facts-row-value { font-size: 13px; color: #cbd5e1; margin-bottom: 2px; }
 #detail-sources { margin-top: 16px; border-top: 1px solid #334155; padding-top: 14px; }
 .sources-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
   color: #475569; margin-bottom: 8px; display: block; }
@@ -1019,7 +1024,7 @@ function buildProse(evt) {
     case 'BAPM': return { prose: short ? `Baptized in ${short}` : (date ? `Baptized ${date}` : 'Baptism'), meta: meta() };
     case 'CONF': return { prose: short ? `Confirmed in ${short}` : (date ? `Confirmed ${date}` : 'Confirmation'), meta: meta() };
     case 'NATI': return { prose: type ? `Nationality: ${type}` : (short ? `Nationality: ${short}` : 'Nationality'), meta: date };
-    case 'RELI': return { prose: type ? `Religion: ${type}` : 'Religion', meta: date };
+    case 'RELI': return { prose: 'Religion', meta: type || date };
     case 'DIV':  return { prose: date ? `Divorced ${date}` : 'Divorce', meta: short };
     case 'FACT': {
       if (type && type.toUpperCase() === 'AKA')
@@ -1174,7 +1179,7 @@ function showDetail(xref) {
   const alsoLivedDiv = document.getElementById('detail-also-lived');
   const factsDiv = document.getElementById('detail-facts');
 
-  // Nationalities — always shown in facts section, never in the timeline
+  // Nationalities — always shown as pills in facts section, never in the timeline
   const natiEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
     .filter(e => e.tag === 'NATI');
   if (natiEvents.length) {
@@ -1196,9 +1201,10 @@ function showDetail(xref) {
     !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
   );
   const _keepInTimeline = e =>
+    e.tag !== 'RELI' && (
     e.date ||
     e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'PROB' ||
-    e.type === 'Arrival' || e.type === 'Departure';
+    e.type === 'Arrival' || e.type === 'Departure');
   const undatedFactoids = allVisible.filter(e => !_keepInTimeline(e));
   const visible = allVisible.filter(_keepInTimeline);
   const sorted  = collapseResidences(sortEvents(visible));
@@ -1288,6 +1294,7 @@ function showDetail(xref) {
     const groups = new Map();
     for (const e of undatedFactoids) {
       const key = (e.tag === 'RESI') ? 'Also lived in'
+        : (e.tag === 'RELI' || e.tag === 'NATI') ? 'Facts'
         : (e.type && e.tag !== 'FACT') ? e.type
         : (EVENT_LABELS[e.tag] || e.tag);
       if (!groups.has(key)) groups.set(key, []);
