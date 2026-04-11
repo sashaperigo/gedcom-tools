@@ -115,7 +115,12 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 indis[xref]['sex'] = val
                 current_evt = current_note = None
             elif lvl == 1 and tag in _EVENT_TAGS:
-                evt = {'tag': tag, 'type': None, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': html_mod.unescape(val) if val else None, 'inline_val': val if val else None}
+                # For tags where the inline value IS the semantic type (e.g. "1 OCCU Consul",
+                # "1 TITL Knight", "1 NATI French"), seed type from it.  A later 2 TYPE sub-tag
+                # will override.  EVEN/FACT carry no inline value and use 2 TYPE exclusively.
+                _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
+                inline_type = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
+                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': html_mod.unescape(val) if val else None, 'inline_val': val if val else None}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
