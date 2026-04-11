@@ -8,6 +8,7 @@ Covers:
   3. No individual is listed as HUSB when their SEX is F, or WIFE when SEX is M.
   4. No SOUR record is defined but never cited anywhere in the file.
   5. No FAM record has neither a spouse nor any children.
+  6. Every Godfather/Godmother ASSO has a reciprocal Godchild ASSO, and vice versa.
 """
 import os
 import re
@@ -96,6 +97,67 @@ def parse_ged(path: str):
                         records[current][field] = yr
 
     return records, sour_defined, sour_cited
+
+
+ASSO_RE  = re.compile(r"^1 ASSO (@[^@]+@)$")
+RELA_RE  = re.compile(r"^2 RELA (.+)$")
+INDI_RE  = re.compile(r"^0 (@[^@]+@) INDI")
+NAME1_RE = re.compile(r"^1 NAME (.+)$")
+
+
+def parse_asso(path: str) -> tuple[dict, dict]:
+    """
+    Returns:
+      asso_map  – { indi_xref: [(target_xref, rela), ...] }
+      name_map  – { indi_xref: name_str }
+    """
+    asso_map: dict = {}
+    name_map: dict = {}
+    current: str | None = None
+    pending_target: str | None = None   # last seen ASSO target, waiting for RELA
+
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            line = raw.rstrip("\n")
+
+            m = INDI_RE.match(line)
+            if m:
+                current = m.group(1)
+                pending_target = None
+                asso_map.setdefault(current, [])
+                continue
+
+            if line.startswith("0 "):
+                current = None
+                pending_target = None
+                continue
+
+            if current is None:
+                continue
+
+            if line.startswith("1 ") and not line.startswith("1 ASSO "):
+                pending_target = None   # RELA must immediately follow ASSO
+
+            m = NAME1_RE.match(line)
+            if m and current not in name_map:
+                name_map[current] = m.group(1)
+                continue
+
+            m = ASSO_RE.match(line)
+            if m:
+                pending_target = m.group(1)
+                asso_map[current].append((pending_target, None))
+                continue
+
+            m = RELA_RE.match(line)
+            if m and pending_target is not None:
+                rela = m.group(1).strip()
+                # Update the RELA on the last appended tuple
+                lst = asso_map[current]
+                lst[-1] = (lst[-1][0], rela)
+                pending_target = None
+
+    return asso_map, name_map
 
 
 @pytest.fixture(scope="module")
@@ -194,4 +256,40 @@ def test_no_empty_families(records):
     assert empty == [], (
         f"{len(empty)} FAM record(s) with no spouses and no children:\n"
         + "\n".join(f"  {x}" for x in empty)
+    )
+
+
+@pytest.fixture(scope="module")
+def asso_data():
+    return parse_asso(GED_PATH)
+
+
+def test_godparent_associations_are_bidirectional(asso_data):
+    asso_map, name_map = asso_data
+    GODPARENT_RELAS = {"Godfather", "Godmother"}
+    GODCHILD_RELA   = "Godchild"
+
+    bad = []
+    for indi, assos in asso_map.items():
+        name = name_map.get(indi, indi)
+        for target, rela in assos:
+            if rela in GODPARENT_RELAS:
+                reverse_relas = {r for _, r in asso_map.get(target, [])}
+                if GODCHILD_RELA not in reverse_relas:
+                    tname = name_map.get(target, target)
+                    bad.append(
+                        f"  {indi} ({name!r}) has RELA {rela} → {target} ({tname!r}), "
+                        f"but {target} has no Godchild ASSO back"
+                    )
+            elif rela == GODCHILD_RELA:
+                reverse_relas = {r for _, r in asso_map.get(target, [])}
+                if not (reverse_relas & GODPARENT_RELAS):
+                    tname = name_map.get(target, target)
+                    bad.append(
+                        f"  {indi} ({name!r}) has RELA Godchild → {target} ({tname!r}), "
+                        f"but {target} has no Godfather/Godmother ASSO back"
+                    )
+
+    assert bad == [], (
+        f"{len(bad)} one-sided godparent association(s):\n" + "\n".join(bad)
     )
