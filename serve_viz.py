@@ -170,6 +170,96 @@ def _write_gedcom_atomic(lines: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Name editing helper
+# ---------------------------------------------------------------------------
+
+def _edit_name(lines: list[str], xref: str, given_name: str, surname: str) -> tuple[list[str], str | None]:
+    """Rewrite the 1 NAME (and 2 GIVN/2 SURN sub-tags) for an individual."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return lines, err
+
+    full_name = f'{given_name} /{surname}/'.strip()
+
+    # Find existing 1 NAME line
+    name_start = None
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'NAME':
+            name_start = i
+            break
+
+    if name_start is None:
+        # Insert a fresh NAME block just after the INDI header line
+        new_block = [f'1 NAME {full_name}']
+        if given_name:
+            new_block.append(f'2 GIVN {given_name}')
+        if surname:
+            new_block.append(f'2 SURN {surname}')
+        return lines[:indi_start + 1] + new_block + lines[indi_start + 1:], None
+
+    # Find end of existing NAME block (stops at next level ≤ 1)
+    name_end = name_start + 1
+    while name_end < indi_end:
+        sm = _TAG_RE.match(lines[name_end])
+        if sm and int(sm.group(1)) <= 1:
+            break
+        name_end += 1
+
+    # Keep any sub-tags that are not GIVN/SURN (e.g. NICK, NPFX, etc.)
+    kept = [
+        l for l in lines[name_start + 1: name_end]
+        if not (_TAG_RE.match(l) and _TAG_RE.match(l).group(2) in ('GIVN', 'SURN'))
+    ]
+    new_block = [f'1 NAME {full_name}'] + kept
+    if given_name:
+        new_block.append(f'2 GIVN {given_name}')
+    if surname:
+        new_block.append(f'2 SURN {surname}')
+    return lines[:name_start] + new_block + lines[name_end:], None
+
+
+# ---------------------------------------------------------------------------
+# FAM block helpers (for marriage editing)
+# ---------------------------------------------------------------------------
+
+def _find_fam_block(lines: list[str], fam_xref: str) -> tuple[int | None, int | None, str | None]:
+    """Return (fam_start, fam_end, err) for a FAM record."""
+    fam_start = next(
+        (i for i, l in enumerate(lines) if l.strip() == f'0 {fam_xref} FAM'), None
+    )
+    if fam_start is None:
+        return None, None, f'Family {fam_xref} not found'
+    fam_end = next(
+        (i for i in range(fam_start + 1, len(lines)) if lines[i].startswith('0 ')),
+        len(lines),
+    )
+    return fam_start, fam_end, None
+
+
+def _find_fam_event_block(
+    lines: list[str], fam_xref: str, event_tag: str
+) -> tuple[int | None, int | None, str | None]:
+    """Return (start, end, err) for the first occurrence of event_tag in the FAM block."""
+    fam_start, fam_end, err = _find_fam_block(lines, fam_xref)
+    if err:
+        return None, None, err
+    for i in range(fam_start + 1, fam_end):
+        m = _TAG_RE.match(lines[i])
+        if not m:
+            continue
+        if int(m.group(1)) == 1 and m.group(2) == event_tag:
+            j = i + 1
+            while j < fam_end:
+                sm = _TAG_RE.match(lines[j])
+                if sm and int(sm.group(1)) <= 1:
+                    break
+                j += 1
+            return i, j, None
+    return None, None, f'Event {event_tag} not found in family {fam_xref}'
+
+
+# ---------------------------------------------------------------------------
 # Event editing / creation helpers
 # ---------------------------------------------------------------------------
 
@@ -340,16 +430,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == '/api/edit_event':
             xref      = body['xref']
             tag       = body['tag']
-            event_idx = int(body['event_idx'])
+            fam_xref  = body.get('fam_xref') or None
             updates   = body.get('updates', {})
             lines     = GED.read_text(encoding='utf-8').splitlines()
-            start, end, err = _find_event_block(lines, xref, tag, event_idx)
+            if fam_xref:
+                # Marriage events live in FAM records
+                start, end, err = _find_fam_event_block(lines, fam_xref, tag)
+            else:
+                event_idx = int(body['event_idx'])
+                start, end, err = _find_event_block(lines, xref, tag, event_idx)
             if err:
                 resp = json.dumps({'ok': False, 'error': err}).encode()
             else:
                 new_lines = _edit_event_fields(lines, start, end, updates)
                 _write_gedcom_atomic(new_lines)
-                print(f"[event-edit] {xref} {tag}[{event_idx}] updated")
+                print(f"[event-edit] {fam_xref or xref} {tag} updated")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                # For FAM edits return data for both spouses so both panels refresh
+                if fam_xref and fam_xref in fams:
+                    fam = fams[fam_xref]
+                    xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife'), xref) if x}
+                else:
+                    xrefs_to_refresh = {xref}
+                updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/edit_name':
+            xref       = body['xref']
+            given_name = (body.get('given_name') or '').strip()
+            surname    = (body.get('surname') or '').strip()
+            lines      = GED.read_text(encoding='utf-8').splitlines()
+            new_lines, err = _edit_name(lines, xref, given_name, surname)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                _write_gedcom_atomic(new_lines)
+                print(f"[name-edit] {xref} → {given_name} /{surname}/")
                 regenerate(body.get('current_person'))
                 from viz_ancestors import parse_gedcom, build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))

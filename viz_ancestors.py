@@ -346,8 +346,9 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     continue
                 spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
                 spouse_name = indis[spouse_xref]['name'] if spouse_xref and spouse_xref in indis else None
-                # MARR events live in FAM blocks; event_idx=None marks them as non-editable
-                events.append({**marr, 'event_idx': None, 'spouse': spouse_name, 'spouse_xref': spouse_xref})
+                # MARR events live in FAM blocks; event_idx=None marks them as non-editable via INDI
+                events.append({**marr, 'event_idx': None, 'spouse': spouse_name,
+                               'spouse_xref': spouse_xref, 'fam_xref': fam_xref})
         result[xref] = {
             'name':       info['name'] or '?',
             'birth_year': info['birth_year'],
@@ -563,9 +564,33 @@ header h1 { font-size: 16px; font-weight: 600; }
   color: #64748b; padding: 1px 3px; border-radius: 3px; line-height: 1; }
 .facts-pill-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.08); }
 .facts-pill-btn.del:hover { color: #ef4444; }
-.marr-card { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px;
+/* ── Name edit modal ─────────────────────────────────────── */
+#name-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#name-modal-overlay.open { display: flex; }
+#name-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#name-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
+/* ── Name edit button in detail header ───────────────────── */
+.name-edit-btn { background: none; border: none; cursor: pointer; font-size: 12px;
+  color: #475569; padding: 2px 6px; border-radius: 4px; margin-left: 6px;
+  vertical-align: middle; transition: color .15s; }
+.name-edit-btn:hover { color: #3b82f6; }
+/* ── AKA alias action buttons ────────────────────────────── */
+.aka-entry { display: inline-flex; align-items: center; gap: 2px; }
+.aka-btn { background: none; border: none; cursor: pointer; font-size: 10px;
+  color: #475569; padding: 1px 3px; border-radius: 3px; line-height: 1;
+  vertical-align: middle; }
+.aka-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.08); }
+.aka-btn.del:hover { color: #ef4444; }
+.marr-card { position: relative; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px;
              background: rgba(232, 121, 249, 0.08);
              border-left: 3px solid rgba(232, 121, 249, 0.5); }
+.marr-edit-btn { position: absolute; right: 8px; top: 8px; background: none; border: none;
+  cursor: pointer; font-size: 12px; color: #64748b; padding: 2px 4px;
+  border-radius: 4px; opacity: 0; transition: opacity .15s, color .15s; }
+.marr-card:hover .marr-edit-btn { opacity: 1; }
+.marr-edit-btn:hover { color: #3b82f6 !important; }
 .marr-card .marr-year { font-size: 12px; font-weight: 700; color: #94a3b8;
                         text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
 .marr-card .marr-prose { font-size: 15px; font-weight: 600; color: #f1f5f9; line-height: 1.4; }
@@ -699,9 +724,35 @@ header h1 { font-size: 16px; font-weight: 600; }
       <label>Note</label>
       <input type="text" id="event-modal-note" onkeydown="if(event.key==='Escape')closeEventModal()">
     </div>
+    <div class="event-modal-field">
+      <label>Address</label>
+      <input type="text" id="event-modal-addr" list="addr-suggestions"
+             placeholder="e.g. Church name or building"
+             onkeydown="if(event.key==='Escape')closeEventModal()">
+      <datalist id="addr-suggestions"></datalist>
+    </div>
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>
       <button class="event-modal-save" id="event-modal-save-btn" onclick="submitEventModal()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="name-modal-overlay" onclick="if(event.target===this)closeNameModal()">
+  <div id="name-modal">
+    <h3 id="name-modal-title">Edit Name</h3>
+    <div class="event-modal-field">
+      <label>Given Name(s)</label>
+      <input type="text" id="name-modal-given"
+             onkeydown="if(event.key==='Escape')closeNameModal();if(event.key==='Enter')submitNameModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="name-modal-surname"
+             onkeydown="if(event.key==='Escape')closeNameModal();if(event.key==='Enter')submitNameModal()">
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeNameModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitNameModal()">Save</button>
     </div>
   </div>
 </div>
@@ -733,6 +784,7 @@ const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const RELATIVES = __RELATIVES_JSON__;
 const PARENTS = __PARENTS_JSON__;
 const ROOT_XREF = __ROOT_XREF_JSON__;
+const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;
 let currentTree = Object.assign({}, TREE);
 const expandedRelatives = new Set([1]);
 let _relPosCache = new Map();
@@ -953,7 +1005,7 @@ const _INLINE_TYPE_TAGS = new Set(['OCCU','TITL','NATI','RELI','EDUC']);
 // Tags that use a 2 TYPE sub-field for description
 const _TYPE_TAGS = new Set(['EVEN','FACT','OCCU','TITL','EDUC','NATI','RELI']);
 
-let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null;
+let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null, _eventModalFamXref = null;
 
 function _updateEventModalFields(tag) {
   const inlineRow = document.getElementById('event-modal-inline-row');
@@ -969,43 +1021,65 @@ function _updateEventModalFields(tag) {
   typeRow.style.display = _TYPE_TAGS.has(tag) ? '' : 'none';
 }
 
+function _updateAddrSuggestions(place) {
+  const dl = document.getElementById('addr-suggestions');
+  if (!dl) return;
+  dl.innerHTML = '';
+  const suggestions = ADDR_BY_PLACE[place] || [];
+  for (const s of suggestions) {
+    const opt = document.createElement('option');
+    opt.value = s;
+    dl.appendChild(opt);
+  }
+}
+
 function _personName(xref) {
   return (PEOPLE[xref] && PEOPLE[xref].name) ||
     ((ALL_PEOPLE.find(p => p.id === xref) || {}).name) || xref;
 }
 
-function editEvent(xref, eventIdx, tag) {
-  _eventModalXref = xref;
-  _eventModalIdx  = eventIdx;
-  _eventModalTag  = tag;
+function editEvent(xref, eventIdx, tag, famXref) {
+  _eventModalXref    = xref;
+  _eventModalIdx     = eventIdx;
+  _eventModalTag     = tag;
+  _eventModalFamXref = famXref || null;
   document.getElementById('event-modal-title').textContent = 'Edit Event \u2014 ' + _personName(xref);
   document.getElementById('event-modal-save-btn').textContent = 'Save';
   document.getElementById('event-modal-tag-row').style.display = 'none';
   const events = (PEOPLE[xref] && PEOPLE[xref].events) || [];
-  const evt = events.find(e => e.tag === tag && e.event_idx === eventIdx) || {};
+  // For FAM events (MARR), match by fam_xref; otherwise match by tag + event_idx
+  const evt = famXref
+    ? (events.find(e => e.fam_xref === famXref && e.tag === tag) || {})
+    : (events.find(e => e.tag === tag && e.event_idx === eventIdx) || {});
+  const placeVal = evt.place || '';
   document.getElementById('event-modal-inline').value = evt.inline_val || '';
   document.getElementById('event-modal-type').value   = evt.type || '';
   document.getElementById('event-modal-date').value   = evt.date || '';
-  document.getElementById('event-modal-place').value  = evt.place || '';
+  document.getElementById('event-modal-place').value  = placeVal;
   document.getElementById('event-modal-note').value   = evt.note || '';
+  document.getElementById('event-modal-addr').value   = evt.addr || '';
+  _updateAddrSuggestions(placeVal);
   _updateEventModalFields(tag);
   document.getElementById('event-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
 }
 
-function addEvent(xref, defaultTag = 'RESI') {
-  _eventModalXref = xref;
-  _eventModalIdx  = null;
-  _eventModalTag  = null;
+function addEvent(xref, defaultTag = 'RESI', prefillType) {
+  _eventModalXref    = xref;
+  _eventModalIdx     = null;
+  _eventModalTag     = null;
+  _eventModalFamXref = null;
   document.getElementById('event-modal-title').textContent = 'Add Event \u2014 ' + _personName(xref);
   document.getElementById('event-modal-save-btn').textContent = 'Add';
   document.getElementById('event-modal-tag-row').style.display = '';
   document.getElementById('event-modal-tag').value    = defaultTag;
   document.getElementById('event-modal-inline').value = '';
-  document.getElementById('event-modal-type').value   = '';
+  document.getElementById('event-modal-type').value   = prefillType || '';
   document.getElementById('event-modal-date').value   = '';
   document.getElementById('event-modal-place').value  = '';
   document.getElementById('event-modal-note').value   = '';
+  document.getElementById('event-modal-addr').value   = '';
+  _updateAddrSuggestions('');
   _updateEventModalFields(defaultTag);
   document.getElementById('event-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
@@ -1013,25 +1087,31 @@ function addEvent(xref, defaultTag = 'RESI') {
 
 function closeEventModal() {
   document.getElementById('event-modal-overlay').classList.remove('open');
-  _eventModalXref = _eventModalIdx = _eventModalTag = null;
+  _eventModalXref = _eventModalIdx = _eventModalTag = _eventModalFamXref = null;
 }
 
 async function submitEventModal() {
-  const xref  = _eventModalXref;
-  const isAdd = _eventModalIdx === null;
-  const tag   = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
+  const xref     = _eventModalXref;
+  const famXref  = _eventModalFamXref;
+  const isAdd    = _eventModalIdx === null && !famXref;
+  const tag      = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
   const fields = {
     inline_val: document.getElementById('event-modal-inline').value.trim(),
     type:        document.getElementById('event-modal-type').value.trim(),
     DATE:        document.getElementById('event-modal-date').value.trim(),
     PLAC:        document.getElementById('event-modal-place').value.trim(),
     NOTE:        document.getElementById('event-modal-note').value.trim(),
+    ADDR:        document.getElementById('event-modal-addr').value.trim(),
   };
   const endpoint = isAdd ? '/api/add_event' : '/api/edit_event';
-  const body = isAdd
-    ? { xref, tag, fields, current_person: window._currentPerson || null }
-    : { xref, tag, event_idx: _eventModalIdx, updates: fields,
-        current_person: window._currentPerson || null };
+  let body;
+  if (isAdd) {
+    body = { xref, tag, fields, current_person: window._currentPerson || null };
+  } else if (famXref) {
+    body = { xref, tag, fam_xref: famXref, updates: fields, current_person: window._currentPerson || null };
+  } else {
+    body = { xref, tag, event_idx: _eventModalIdx, updates: fields, current_person: window._currentPerson || null };
+  }
   closeEventModal();
   try {
     const resp = await fetch(endpoint, {
@@ -1041,7 +1121,10 @@ async function submitEventModal() {
     });
     const data = await resp.json();
     if (data.ok) {
-      if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
+      // Update all returned people (may include both spouses for marriage edits)
+      if (data.people) {
+        for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      }
       _openDetailKey = null;
       showDetail(xref);
     } else {
@@ -1054,6 +1137,66 @@ async function submitEventModal() {
 document.addEventListener('change', e => {
   if (e.target.id === 'event-modal-tag') _updateEventModalFields(e.target.value);
 });
+// Update ADDR suggestions as the place field changes
+document.addEventListener('input', e => {
+  if (e.target.id === 'event-modal-place') _updateAddrSuggestions(e.target.value.trim());
+});
+
+// ---------------------------------------------------------------------------
+// Name editing
+// ---------------------------------------------------------------------------
+
+let _nameModalXref = null;
+
+function editName(xref) {
+  _nameModalXref = xref;
+  const name = (_personName(xref) || '').trim();
+  // Split "Given /Surname/" or just "Given Surname" into parts
+  const surnameMatch = name.match(/^(.*?)\s*\/([^/]*)\/\s*(.*)$/);
+  let given = '', surname = '';
+  if (surnameMatch) {
+    given   = (surnameMatch[1] + ' ' + (surnameMatch[3] || '')).trim();
+    surname = surnameMatch[2].trim();
+  } else {
+    // Try to split on last word as surname heuristic
+    const parts = name.split(' ');
+    surname = parts.length > 1 ? parts.pop() : '';
+    given   = parts.join(' ');
+  }
+  document.getElementById('name-modal-title').textContent = 'Edit Name \u2014 ' + name;
+  document.getElementById('name-modal-given').value   = given;
+  document.getElementById('name-modal-surname').value = surname;
+  document.getElementById('name-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('name-modal-given').focus(), 50);
+}
+
+function closeNameModal() {
+  document.getElementById('name-modal-overlay').classList.remove('open');
+  _nameModalXref = null;
+}
+
+async function submitNameModal() {
+  const xref      = _nameModalXref;
+  const givenName = document.getElementById('name-modal-given').value.trim();
+  const surname   = document.getElementById('name-modal-surname').value.trim();
+  closeNameModal();
+  try {
+    const resp = await fetch('/api/edit_name', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ xref, given_name: givenName, surname,
+                             current_person: window._currentPerson || null }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
+      _openDetailKey = null;
+      showDetail(xref);
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) { alert('Request failed: ' + e); }
+}
 
 async function deleteFact(xref, evt) {
   const label = (evt.date || '') + (evt.place ? ' · ' + evt.place : '') || evt.tag;
@@ -1271,10 +1414,13 @@ function showDetail(xref) {
   const accent = {'M':'#3b82f6','F':'#a855f7'}[data.sex] || '#475569';
   document.getElementById('detail-accent-bar').style.background = accent;
 
-  // Name + sex symbol
+  // Name + sex symbol + edit button
   const sexSym = {'M':'\\u2642','F':'\\u2640'}[data.sex] || '';
+  const xrefQN  = JSON.stringify(xref).replace(/"/g, '&quot;');
   document.getElementById('detail-name').innerHTML =
-    escHtml(data.name) + (sexSym ? `<span class="sex-sym">${sexSym}</span>` : '');
+    escHtml(data.name) +
+    (sexSym ? `<span class="sex-sym">${sexSym}</span>` : '') +
+    `<button class="name-edit-btn" title="Edit name" onclick="editName(${xrefQN})">\u270f</button>`;
 
   // Lifespan bar
   const by = data.birth_year ? parseInt(data.birth_year) : null;
@@ -1296,10 +1442,24 @@ function showDetail(xref) {
 
   // AKA aliases — shown under the name, not in the timeline
   const akaDiv = document.getElementById('detail-aka');
-  const akaNames = (data.events || [])
-    .filter(e => e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA' && e.note)
-    .map(e => escHtml(e.note));
-  akaDiv.innerHTML = akaNames.length ? akaNames.join(' \xb7 ') : '';
+  {
+    const xrefQA = JSON.stringify(xref).replace(/"/g, '&quot;');
+    const akaEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
+      .filter(e => e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA' && e.note);
+    const addAkaBtn = `<button class="aka-btn" title="Add alias" style="font-size:11px;color:#475569;margin-left:4px" onclick="addEvent(${xrefQA},'FACT','AKA')">&#43; alias</button>`;
+    if (akaEvents.length) {
+      const entries = akaEvents.map(e => {
+        const editBtn = e.event_idx !== null && e.event_idx !== undefined
+          ? `<button class="aka-btn" title="Edit alias" onclick="editEvent(${xrefQA},${e.event_idx},'FACT')">\u270f</button>`
+          : '';
+        const delBtn = `<button class="aka-btn del" title="Delete alias" onclick="deleteFact(${xrefQA},PEOPLE[${xrefQA}].events[${e._origIdx}])">\u2715</button>`;
+        return `<span class="aka-entry"><span style="font-style:italic">${escHtml(e.note)}</span>${editBtn}${delBtn}</span>`;
+      }).join(' \xb7 ');
+      akaDiv.innerHTML = entries + addAkaBtn;
+    } else {
+      akaDiv.innerHTML = addAkaBtn;
+    }
+  }
 
   // Notes — collapsible
   const notesDiv = document.getElementById('detail-notes');
@@ -1402,8 +1562,13 @@ function showDetail(xref) {
         const proseHtml = spClickable
           ? `<div class="marr-prose marr-link">${escHtml(prose)}</div>`
           : `<div class="marr-prose">${escHtml(prose)}</div>`;
+        const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
+        const marrEditBtn = evt.fam_xref
+          ? `<button class="marr-edit-btn" title="Edit marriage" onclick="event.stopPropagation();editEvent(${xrefQ},null,'MARR',${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')})">\u270f</button>`
+          : '';
         html +=
           `<div class="marr-card"${marrClick}>` +
+          marrEditBtn +
           yearLabel +
           proseHtml +
           (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
@@ -2258,6 +2423,18 @@ window.addEventListener('resize', () => {
 """
 
 
+def build_addr_by_place(indis: dict) -> dict:
+    """Return {place: [sorted unique addr values]} for ADDR auto-complete in the event modal."""
+    result: dict[str, set] = {}
+    for info in indis.values():
+        for evt in info['events']:
+            place = evt.get('place') or ''
+            addr  = evt.get('addr')  or ''
+            if place and addr:
+                result.setdefault(place, set()).add(addr)
+    return {k: sorted(v) for k, v in result.items()}
+
+
 def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis: dict,
                 fams: dict | None = None, root_xref: str | None = None) -> str:
     """Return a complete self-contained HTML string."""
@@ -2283,8 +2460,9 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
                 parents[xref] = [fam.get('husb'), fam.get('wife')]
             else:
                 parents[xref] = [None, None]
-    parents_json  = json.dumps(parents)
-    root_xref_json = json.dumps(root_xref or '')
+    parents_json        = json.dumps(parents)
+    root_xref_json      = json.dumps(root_xref or '')
+    addr_by_place_json  = json.dumps(build_addr_by_place(indis))
     return (
         _HTML_TEMPLATE
         .replace('__ROOT_NAME__', safe_name)
@@ -2294,6 +2472,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         .replace('__RELATIVES_JSON__', relatives_json)
         .replace('__PARENTS_JSON__', parents_json)
         .replace('__ROOT_XREF_JSON__', root_xref_json)
+        .replace('__ADDR_BY_PLACE_JSON__', addr_by_place_json)
     )
 
 
