@@ -723,3 +723,58 @@ class TestMarriageAddr:
             f"MARR addr={marr.get('addr')!r} when no ADDR in GEDCOM — "
             "expected None or empty"
         )
+
+
+# ---------------------------------------------------------------------------
+# Facts section rendering — single heading, EDUC format, sorted
+# ---------------------------------------------------------------------------
+
+class TestFactsSectionRendering:
+    """
+    Guards the three visual fixes applied to the undated facts section:
+      1. Single 'Facts' heading for the whole section (no per-event headings).
+      2. EDUC rendered like RELI: prose='Education', meta=institution name.
+      3. Facts sorted by tag so same-type facts are adjacent.
+    """
+
+    def test_educ_prose_is_education_not_colon_format(self):
+        """
+        Regression: buildProse for EDUC must return prose='Education' (not
+        'Education: Institution Name') so the institution appears as the meta
+        line below, matching the visual style of Religion facts.
+        """
+        # The JS template must NOT have 'Education: ' as a prose prefix
+        assert "`Education: ${type}`" not in _HTML_TEMPLATE, \
+            "EDUC prose must not use 'Education: X' format — use 'Education' + meta instead"
+        assert "'Education'" in _HTML_TEMPLATE or '"Education"' in _HTML_TEMPLATE, \
+            "EDUC case must return prose='Education'"
+
+    def test_single_facts_heading_in_template(self):
+        """
+        Regression: the facts section must emit one 'Facts' heading for the
+        whole block, not a heading per group.  The old grouping loop emitted
+        institution names ('English College, Shelton') and tag labels ('FACT')
+        as headings for every group.
+        """
+        assert '>Facts<' in _HTML_TEMPLATE, \
+            "Template must emit a single 'Facts' heading for the facts section"
+        assert 'for (const [heading, evts] of groups)' not in _HTML_TEMPLATE, \
+            "Per-group heading loop must be removed; use a single 'Facts' heading instead"
+
+    def test_facts_sorted_by_tag(self):
+        """
+        Regression: otherFacts must be sorted before rendering so same-type
+        events (e.g. multiple EDUC events) appear adjacent.
+        """
+        assert 'otherFacts.sort(' in _HTML_TEMPLATE, \
+            "otherFacts must be sorted so same-type facts appear together"
+
+    def test_resi_separated_from_other_facts(self):
+        """
+        Undated RESI events keep their own 'Also lived in' label; they must
+        not be mixed into the 'Facts' section.
+        """
+        assert "e.tag !== 'RESI'" in _HTML_TEMPLATE or "e.tag === 'RESI'" in _HTML_TEMPLATE, \
+            "RESI events must be filtered separately from other facts"
+        assert '>Also lived in<' in _HTML_TEMPLATE, \
+            "RESI section must keep its 'Also lived in' label"

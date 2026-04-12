@@ -1580,7 +1580,7 @@ function buildProse(evt) {
     case 'IMMI': return { prose: short ? `Immigrated to ${short}` : (date ? `Immigrated ${date}` : 'Immigration'), meta: meta() };
     case 'NATU': return { prose: short ? `Naturalized in ${short}` : (date ? `Naturalized ${date}` : 'Naturalization'), meta: meta() };
     case 'ADOP': return { prose: date ? `Adopted ${date}` : 'Adoption', meta: short };
-    case 'EDUC': return { prose: type ? `Education: ${type}` : (short ? `Studied at ${short}` : 'Education'), meta: meta() };
+    case 'EDUC': return { prose: 'Education', meta: type || meta() };
     case 'RETI': return { prose: date ? `Retired ${date}` : 'Retirement', meta: short };
     case 'TITL': return { prose: type ? `Held title: ${type}` : 'Title', meta: date };
     case 'CHR':  return { prose: short ? `Christened in ${short}` : (date ? `Christened ${date}` : 'Christening'), meta: meta() };
@@ -1901,18 +1901,19 @@ function showDetail(xref) {
 
   let bottomHtml = '';
   if (undatedFactoids.length) {
-    // Group by tag (using type for EVEN/FACT, falling back to EVENT_LABELS)
-    const groups = new Map();
-    for (const e of undatedFactoids) {
-      const key = (e.tag === 'RESI') ? 'Also lived in'
-        : (e.tag === 'RELI' || e.tag === 'NATI') ? 'Facts'
-        : (e.type && e.tag !== 'FACT') ? e.type
-        : (EVENT_LABELS[e.tag] || e.tag);
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(e);
+    const residences = undatedFactoids.filter(e => e.tag === 'RESI');
+    const otherFacts = undatedFactoids.filter(e => e.tag !== 'RESI');
+    // Sort so same-type facts appear together (e.g. all Education events adjacent)
+    otherFacts.sort((a, b) => {
+      const tagCmp = (a.tag || '').localeCompare(b.tag || '');
+      if (tagCmp !== 0) return tagCmp;
+      return (a.type || a.inline_val || '').localeCompare(b.type || b.inline_val || '');
+    });
+    if (residences.length) {
+      bottomHtml += `<span class="also-lived-heading">Also lived in</span>` + undatedRows(residences);
     }
-    for (const [heading, evts] of groups) {
-      bottomHtml += `<span class="also-lived-heading">${escHtml(heading)}</span>` + undatedRows(evts);
+    if (otherFacts.length) {
+      bottomHtml += `<span class="also-lived-heading">Facts</span>` + undatedRows(otherFacts);
     }
   }
 
