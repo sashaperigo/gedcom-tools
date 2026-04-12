@@ -2504,6 +2504,51 @@ def scan_duplicate_resi(path: str) -> list[tuple[str, str, str]]:
     return issues
 
 
+def fix_bare_events(path: str, dry_run: bool = False) -> int:
+    """
+    Append 'Y' to bare level-1 BIRT/CHR/DEAT lines that have no value and no
+    children, converting e.g. '1 BIRT' → '1 BIRT Y'.
+
+    GEDCOM 5.5.1 requires 'Y' on a bare event tag to assert the event occurred
+    with no further details available.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    out = []
+    count = 0
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.rstrip('\n')
+        m = re.match(r'^1 ([A-Z]+)$', stripped)
+        if m and m.group(1) in _BARE_EVENT_TAGS:
+            # Check for children
+            j = i + 1
+            has_children = False
+            while j < len(lines):
+                cl = lines[j].rstrip('\n')
+                cm = re.match(r'^(\d+)', cl)
+                if cm:
+                    if int(cm.group(1)) >= 2:
+                        has_children = True
+                    break
+                j += 1
+            if not has_children:
+                eol = '\n' if line.endswith('\n') else ''
+                out.append(f'1 {m.group(1)} Y{eol}')
+                count += 1
+                i += 1
+                continue
+        out.append(line)
+        i += 1
+
+    if count and not dry_run:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(out)
+    return count
+
+
 def fix_duplicate_resi(path: str, dry_run: bool = False) -> int:
     """
     Remove duplicate RESI events (same date and place) from individual records,
@@ -2876,7 +2921,11 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_duplicate_families(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_resi(path, dry_run=dry_run)
+    fixes_applied += fix_bare_events(path, dry_run=dry_run)
     fixes_applied += fix_sort_events(path, dry_run=dry_run)
+    # Run whitespace strip again — some fixers (e.g. fix_name_pieces) can
+    # introduce trailing whitespace on blank CONT lines.
+    fixes_applied += fix_trailing_whitespace(path, dry_run=dry_run)
 
     with open(path, encoding='utf-8') as f:
         lines_after = sum(1 for _ in f)
@@ -2980,6 +3029,10 @@ def main():
         help='Merge duplicate RESI events (same date+place) within individual records',
     )
     parser.add_argument(
+        '--fix-bare-events', action='store_true',
+        help='Append Y to bare BIRT/CHR/DEAT tags with no value and no children',
+    )
+    parser.add_argument(
         '--merge-sources', nargs=2, metavar=('KEEP', 'REMOVE'),
         help='Remap all citations from REMOVE xref to KEEP xref and delete REMOVE. '
              'Example: --merge-sources @S100@ @S200@',
@@ -3014,6 +3067,7 @@ def main():
         args.fix_duplicate_families = True
         args.fix_duplicate_names = True
         args.fix_duplicate_resi = True
+        args.fix_bare_events = True
         args.fix_sort_events = True
 
     if not os.path.isfile(args.gedfile):
@@ -3190,6 +3244,15 @@ def main():
         else:
             print(f'  {removed} duplicate RESI event(s) removed.')
 
+    if args.fix_bare_events:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Appending Y to bare event tags in: {args.gedfile}')
+        fixed = fix_bare_events(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {fixed} bare event tag(s) would be updated.')
+        else:
+            print(f'  {fixed} bare event tag(s) updated.')
+
     if args.merge_sources:
         keep, remove = args.merge_sources
         mode = 'DRY RUN' if args.dry_run else 'FIX'
@@ -3219,6 +3282,11 @@ def main():
                 print(f'  line {ln}: {val!r}')
         else:
             print('No remaining violations.')
+    # Final whitespace pass: some fixers (e.g. fix_name_pieces) can introduce
+    # trailing whitespace on blank CONT lines; strip it after all other fixes.
+    if args.fix_all:
+        fix_trailing_whitespace(args.gedfile, dry_run=args.dry_run)
+
     if not any([args.fix_dates, args.fix_whitespace, args.fix_places,
                 args.fix_address_parts, args.fix_names, args.fix_long_lines,
                 args.fix_duplicate_sources, args.fix_addr_under_plac,
@@ -3227,7 +3295,7 @@ def main():
                 args.fix_dateless_dates, args.fix_aka_facts,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
-                args.fix_sort_events, args.merge_sources]):
+                args.fix_bare_events, args.fix_sort_events, args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
         # counters for summary statistics
