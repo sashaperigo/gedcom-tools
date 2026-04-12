@@ -7,6 +7,7 @@ Fact and note deletions are written to disk immediately (with an atomic backup).
 Event edits and additions are also written immediately.
 """
 import http.server
+import importlib
 import json
 import os
 import re
@@ -17,6 +18,22 @@ import threading
 import time
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
+
+import viz_ancestors as _viz_mod
+_viz_mtime: float | None = None
+
+
+def _viz():
+    """Return viz_ancestors module, reloading it if the file has changed on disk."""
+    global _viz_mtime
+    try:
+        mtime = VIZ.stat().st_mtime
+    except FileNotFoundError:
+        return _viz_mod
+    if _viz_mtime != mtime:
+        importlib.reload(_viz_mod)
+        _viz_mtime = mtime
+    return _viz_mod
 
 _DEFAULT_GED = Path(__file__).parent / "../smyrna-diaspora-family-tree/Smyrna-Diaspora-Family-Tree.ged"
 _ged_env = os.environ.get("GED_FILE", "")
@@ -470,7 +487,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[fact-delete] {xref} {body['tag']} deleted")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
@@ -487,7 +504,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[note-delete] {xref} note[{note_idx}] deleted")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
@@ -505,7 +522,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[note-edit] {xref} note[{note_idx}] updated")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
@@ -529,7 +546,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[event-edit] {fam_xref or xref} {tag} updated")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 # For FAM edits return data for both spouses so both panels refresh
                 if fam_xref and fam_xref in fams:
@@ -552,7 +569,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[alias-add] {xref} NAME {name!r} TYPE {name_type}")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
@@ -570,7 +587,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[alias-edit] {xref} NAME[{name_occurrence}] → {name!r}")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
@@ -587,7 +604,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[alias-delete] {xref} NAME[{name_occurrence}]")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
@@ -604,7 +621,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[name-edit] {xref} → {given_name} /{surname}/")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
@@ -621,7 +638,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
                 print(f"[event-add] {xref} {tag} added")
                 regenerate(body.get('current_person'))
-                from viz_ancestors import parse_gedcom, build_people_json
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
