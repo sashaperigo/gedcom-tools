@@ -26,7 +26,10 @@ os.environ.setdefault('GED_FILE', _FIXTURE_GED)
 from serve_viz import (          # noqa: E402  (after env var is set)
     _apply_deletion,
     _edit_event_fields,
+    _edit_name,
     _find_event_block,
+    _find_fam_block,
+    _find_fam_event_block,
     _find_indi_block,
     _insert_new_event,
 )
@@ -499,3 +502,171 @@ class TestTemplateUIElements:
 
     def test_no_clear_pending_in_template(self):
         assert 'clearPending' not in _HTML_TEMPLATE
+
+    def test_addr_field_in_event_modal(self):
+        """ADDR input must be present in the event modal."""
+        assert 'event-modal-addr' in _HTML_TEMPLATE
+
+    def test_addr_suggestions_datalist_present(self):
+        assert 'addr-suggestions' in _HTML_TEMPLATE
+
+    def test_name_modal_present(self):
+        assert 'name-modal-overlay' in _HTML_TEMPLATE
+
+    def test_name_edit_button_rendered(self):
+        assert 'editName(' in _HTML_TEMPLATE
+
+    def test_api_edit_name_referenced(self):
+        assert '/api/edit_name' in _HTML_TEMPLATE
+
+    def test_marr_edit_button_rendered(self):
+        assert 'marr-edit-btn' in _HTML_TEMPLATE
+
+    def test_aka_add_button_rendered(self):
+        assert 'Add alias' in _HTML_TEMPLATE or '+ alias' in _HTML_TEMPLATE
+
+    def test_fam_xref_in_submit_modal(self):
+        assert 'fam_xref' in _HTML_TEMPLATE
+
+    def test_addr_by_place_constant(self):
+        assert 'ADDR_BY_PLACE' in _HTML_TEMPLATE
+
+
+# ---------------------------------------------------------------------------
+# _edit_name tests
+# ---------------------------------------------------------------------------
+
+SIMPLE_NAME_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5
+0 @I1@ INDI
+1 NAME John /Smith/
+2 GIVN John
+2 SURN Smith
+1 BIRT
+2 DATE 1900
+0 TRLR""".splitlines()
+
+FAM_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5
+0 @I1@ INDI
+1 NAME John /Smith/
+2 GIVN John
+2 SURN Smith
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Mary /Jones/
+2 GIVN Mary
+2 SURN Jones
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1 JAN 1925
+2 PLAC London, England
+0 TRLR""".splitlines()
+
+
+class TestEditName:
+    def test_rename_given_and_surname(self):
+        new_lines, err = _edit_name(SIMPLE_NAME_GED, '@I1@', 'James', 'Brown')
+        assert err is None
+        name_line = next(l for l in new_lines if '1 NAME' in l)
+        assert 'James /Brown/' in name_line
+
+    def test_givn_surn_subtags_updated(self):
+        new_lines, err = _edit_name(SIMPLE_NAME_GED, '@I1@', 'James', 'Brown')
+        assert err is None
+        givn = next(l for l in new_lines if '2 GIVN' in l)
+        surn = next(l for l in new_lines if '2 SURN' in l)
+        assert 'James' in givn
+        assert 'Brown' in surn
+
+    def test_no_extra_name_lines(self):
+        new_lines, err = _edit_name(SIMPLE_NAME_GED, '@I1@', 'James', 'Brown')
+        assert err is None
+        assert sum(1 for l in new_lines if '1 NAME' in l) == 1
+        assert sum(1 for l in new_lines if '2 GIVN' in l) == 1
+        assert sum(1 for l in new_lines if '2 SURN' in l) == 1
+
+    def test_empty_surname(self):
+        new_lines, err = _edit_name(SIMPLE_NAME_GED, '@I1@', 'Madonna', '')
+        assert err is None
+        name_line = next(l for l in new_lines if '1 NAME' in l)
+        assert 'Madonna' in name_line
+        # SURN sub-tag should be absent when surname is empty
+        assert not any('2 SURN' in l for l in new_lines)
+
+    def test_missing_xref_returns_error(self):
+        _, err = _edit_name(SIMPLE_NAME_GED, '@I99@', 'X', 'Y')
+        assert err is not None
+
+    def test_line_count_stable(self):
+        """Renaming should not change the total line count (same NAME block size)."""
+        new_lines, err = _edit_name(SIMPLE_NAME_GED, '@I1@', 'James', 'Brown')
+        assert err is None
+        assert len(new_lines) == len(SIMPLE_NAME_GED)
+
+
+class TestFamBlock:
+    def test_find_fam_block_found(self):
+        start, end, err = _find_fam_block(FAM_GED, '@F1@')
+        assert err is None
+        assert start is not None
+        assert end is not None
+        assert 'FAM' in FAM_GED[start]
+
+    def test_find_fam_block_missing(self):
+        _, _, err = _find_fam_block(FAM_GED, '@F99@')
+        assert err is not None
+
+    def test_find_fam_event_block_marr(self):
+        start, end, err = _find_fam_event_block(FAM_GED, '@F1@', 'MARR')
+        assert err is None
+        assert '1 MARR' in FAM_GED[start]
+        # Block should include DATE and PLAC
+        block = FAM_GED[start:end]
+        assert any('DATE' in l for l in block)
+        assert any('PLAC' in l for l in block)
+
+    def test_find_fam_event_block_missing_tag(self):
+        _, _, err = _find_fam_event_block(FAM_GED, '@F1@', 'DIV')
+        assert err is not None
+
+    def test_edit_marr_date_via_fam_block(self):
+        start, end, err = _find_fam_event_block(FAM_GED, '@F1@', 'MARR')
+        assert err is None
+        new_lines = _edit_event_fields(FAM_GED, start, end, {'DATE': '5 MAR 1930'})
+        marr_idx = next(i for i, l in enumerate(new_lines) if '1 MARR' in l)
+        block = new_lines[marr_idx:marr_idx + 5]
+        assert any('5 MAR 1930' in l for l in block)
+
+    def test_edit_marr_add_note_via_fam_block(self):
+        start, end, err = _find_fam_event_block(FAM_GED, '@F1@', 'MARR')
+        assert err is None
+        new_lines = _edit_event_fields(FAM_GED, start, end, {'NOTE': 'Civil ceremony'})
+        assert any('Civil ceremony' in l for l in new_lines)
+
+
+class TestBuildPeopleJsonFamXref:
+    """fam_xref must be present on MARR events in build_people_json output."""
+
+    def test_marr_has_fam_xref(self, parsed):
+        indis, fams, sources = parsed
+        # Find someone with a FAMS link
+        xref = next(
+            x for x, info in indis.items()
+            if info.get('fams') and any(
+                fams.get(f, {}).get('marr') for f in info['fams']
+            )
+        )
+        people = build_people_json({xref}, indis, fams=fams, sources=sources)
+        marr_evts = [e for e in people[xref]['events'] if e['tag'] == 'MARR']
+        assert marr_evts, 'Expected at least one MARR event'
+        for e in marr_evts:
+            assert 'fam_xref' in e
+            assert e['fam_xref'] is not None
