@@ -270,6 +270,30 @@ class TestEditEventEndpoint:
         assert '@I1@' in people, 'wife (@I1@) missing from people response'
         assert '@I12@' in people, 'husband (@I12@) missing from people response'
 
+    def test_family_event_addr_written_to_ged(self, live_server):
+        """Regression: adding ADDR to a MARR event must write '2 ADDR' into the GED file."""
+        ged, post, _, _ = live_server
+        post('/api/edit_event', {
+            'xref': '@I1@', 'tag': 'MARR', 'fam_xref': '@F5@',
+            'updates': {'ADDR': 'St. Paul Cathedral'},
+        })
+        text = _ged_text(ged)
+        assert '2 ADDR St. Paul Cathedral' in text, \
+            'ADDR sub-tag must be written under 1 MARR in the FAM block'
+
+    def test_family_event_addr_in_people_json(self, live_server):
+        """Regression: after adding ADDR to a MARR event the response people JSON must include it."""
+        ged, post, _, _ = live_server
+        resp = post('/api/edit_event', {
+            'xref': '@I1@', 'tag': 'MARR', 'fam_xref': '@F5@',
+            'updates': {'ADDR': 'St. Paul Cathedral'},
+        })
+        assert resp['ok'] is True
+        marr_evts = [e for e in resp['people']['@I1@']['events'] if e['tag'] == 'MARR']
+        assert marr_evts, 'Expected a MARR event in the response'
+        assert marr_evts[0].get('addr') == 'St. Paul Cathedral', \
+            'addr field must be present and correct in the returned MARR event'
+
     def test_individual_event_unknown_xref_returns_error(self, live_server):
         ged, post, _, _ = live_server
         resp = post('/api/edit_event', {

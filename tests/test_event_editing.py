@@ -572,6 +572,39 @@ class TestTemplateUIElements:
     def test_addr_by_place_constant(self):
         assert 'ADDR_BY_PLACE' in _HTML_TEMPLATE
 
+    def test_allvisible_filter_includes_marr_tag(self):
+        """
+        Regression: MARR events must pass the allVisible filter even when they have no
+        date/place/note/type/cause — the filter must short-circuit on e.tag === 'MARR'.
+        Without this fix a bare 1 MARR (or one with only ADDR) is invisible and has no
+        edit button, so the user cannot add ADDR via the UI.
+        """
+        assert "e.tag === 'MARR'" in _HTML_TEMPLATE
+
+    def test_keep_in_timeline_includes_marr_tag(self):
+        """
+        Regression: undated MARR events must stay in the timeline (not fall into
+        undatedFactoids where they render without an edit button).
+        """
+        # The keepInTimeline predicate must include MARR so the MARR card (with its
+        # edit button) is rendered even for marriages with no date.
+        assert "e.tag === 'MARR'" in _HTML_TEMPLATE
+
+    def test_type_field_uses_uppercase_key(self):
+        """
+        Regression: the TYPE key sent to the server must be uppercase so that
+        _edit_event_fields (which checks _MANAGED_SUBTAGS with uppercase 'TYPE') can
+        update / add a 2 TYPE sub-tag.  Sending lowercase 'type' silently dropped the
+        value.
+        """
+        assert "fields.TYPE" in _HTML_TEMPLATE
+
+    def test_type_only_sent_when_row_visible(self):
+        """TYPE must only be included in fields when the type row is visible, so that
+        existing 2 TYPE sub-tags are not deleted for events (like MARR) where the
+        type row is hidden."""
+        assert "typeRow.style.display !== 'none'" in _HTML_TEMPLATE
+
 
 # ---------------------------------------------------------------------------
 # _edit_name tests
@@ -691,6 +724,70 @@ class TestFamBlock:
         assert err is None
         new_lines = _edit_event_fields(FAM_GED, start, end, {'NOTE': 'Civil ceremony'})
         assert any('Civil ceremony' in l for l in new_lines)
+
+    def test_edit_marr_add_addr_via_fam_block(self):
+        """Regression: adding ADDR to a MARR event must write '2 ADDR' into the FAM block."""
+        start, end, err = _find_fam_event_block(FAM_GED, '@F1@', 'MARR')
+        assert err is None
+        new_lines = _edit_event_fields(FAM_GED, start, end, {'ADDR': 'St. Paul Cathedral'})
+        marr_idx = next(i for i, l in enumerate(new_lines) if '1 MARR' in l)
+        block = new_lines[marr_idx:marr_idx + 6]
+        assert any('2 ADDR St. Paul Cathedral' in l for l in block), \
+            'ADDR must appear as a sub-tag of MARR'
+
+    def test_edit_marr_replace_existing_addr(self):
+        """Editing an existing ADDR sub-tag on a MARR event must replace the value."""
+        ged_with_addr = FAM_GED + [
+            '0 @F2@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE 1 JAN 1900',
+            '2 PLAC London, England',
+            '2 ADDR Old Church',
+            '0 TRLR',
+        ]
+        # Remove original TRLR from FAM_GED before appending
+        ged = [l for l in FAM_GED if l != '0 TRLR'] + [
+            '0 @F2@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE 1 JAN 1900',
+            '2 PLAC London, England',
+            '2 ADDR Old Church',
+            '0 TRLR',
+        ]
+        start, end, err = _find_fam_event_block(ged, '@F2@', 'MARR')
+        assert err is None
+        new_lines = _edit_event_fields(ged, start, end, {'ADDR': 'New Venue'})
+        assert any('2 ADDR New Venue' in l for l in new_lines), 'ADDR must be replaced'
+        assert not any('Old Church' in l for l in new_lines), 'old ADDR must be gone'
+
+    def test_edit_marr_addr_preserved_in_marr_event_dict(self, tmp_path):
+        """After adding ADDR, parse_gedcom must read it back into the MARR event dict."""
+        ged = tmp_path / 'addr_marr.ged'
+        new_lines, err = None, None
+        # Start with FAM_GED, add ADDR to the MARR block
+        start, end, e = _find_fam_event_block(FAM_GED, '@F1@', 'MARR')
+        assert e is None
+        new_lines = _edit_event_fields(FAM_GED, start, end, {'ADDR': 'St. Paul Cathedral'})
+        ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged))
+        assert fams['@F1@']['marr']['addr'] == 'St. Paul Cathedral'
+
+    def test_build_people_json_includes_marr_addr(self, tmp_path):
+        """build_people_json must include the ADDR field in MARR events."""
+        ged = tmp_path / 'addr_marr2.ged'
+        start, end, e = _find_fam_event_block(FAM_GED, '@F1@', 'MARR')
+        assert e is None
+        new_lines = _edit_event_fields(FAM_GED, start, end, {'ADDR': 'St. Paul Cathedral'})
+        ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged))
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        marr_evts = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
+        assert marr_evts, 'Expected a MARR event'
+        assert marr_evts[0]['addr'] == 'St. Paul Cathedral'
 
 
 class TestBuildPeopleJsonFamXref:
