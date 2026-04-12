@@ -887,3 +887,158 @@ class TestDuplicateMarrBlock:
         marr = fams['@F1@']['marr']
         assert marr['date'] == '1 JAN 1925'
         assert marr['place'] == 'London, England'
+
+
+# ---------------------------------------------------------------------------
+# MARR ADDR round-trip: write via _edit_event_fields → parse → build_people_json
+# ---------------------------------------------------------------------------
+
+# Realistic FAM GED with SOUR/DATA/WWW sub-records under MARR subtags, matching
+# real-world structure (this is what caused the addr to be invisible in the UI
+# even after _edit_event_fields correctly wrote it to disk).
+MARR_WITH_SOURCES_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SEX M
+1 BIRT
+2 DATE 1880
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Mary /Jones/
+1 SEX F
+1 BIRT
+2 DATE 1882
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1 JAN 1910
+2 PLAC London, England
+2 SOUR @S1@
+3 PAGE Marriage register
+3 DATA
+4 DATE 1910
+2 SOUR @S2@
+3 PAGE Witness testimony
+0 TRLR""".splitlines()
+
+
+class TestMarrAddrRoundTrip:
+    """
+    Verify the complete path: edit → GED write → parse → build_people_json.
+
+    The test uses a realistic FAM structure with SOUR/DATA sub-records to ensure
+    the parser isn't confused by citations interleaved with MARR sub-tags.
+    """
+
+    def test_addr_survives_parse_after_edit(self, tmp_path):
+        """
+        _edit_event_fields writes ADDR; re-parsing the GED must return it in fams.
+        This is the exact sequence that failed: ADDR written but parse_gedcom
+        lost it (in production due to a duplicate 1 MARR, here we test the parser
+        correctly reads ADDR even when SOUR/DATA records follow).
+        """
+        ged = tmp_path / 'round_trip.ged'
+        ged.write_text('\n'.join(MARR_WITH_SOURCES_GED) + '\n', encoding='utf-8')
+
+        lines = ged.read_text(encoding='utf-8').splitlines()
+        start, end, err = _find_fam_event_block(lines, '@F1@', 'MARR')
+        assert err is None
+
+        new_lines = _edit_event_fields(lines, start, end, {'ADDR': 'St. Paul Cathedral'})
+        ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
+
+        # Re-parse from disk (same as serve_viz does after _write_gedcom_atomic)
+        _, fams, _ = parse_gedcom(str(ged))
+        assert fams['@F1@']['marr']['addr'] == 'St. Paul Cathedral', \
+            'ADDR must survive write → disk → re-parse'
+
+    def test_addr_present_in_build_people_json_after_edit(self, tmp_path):
+        """
+        After editing ADDR, build_people_json must include it in the MARR event
+        for both spouses — this is what populates PEOPLE[xref] on the client.
+        """
+        ged = tmp_path / 'round_trip2.ged'
+        ged.write_text('\n'.join(MARR_WITH_SOURCES_GED) + '\n', encoding='utf-8')
+
+        lines = ged.read_text(encoding='utf-8').splitlines()
+        start, end, err = _find_fam_event_block(lines, '@F1@', 'MARR')
+        assert err is None
+        new_lines = _edit_event_fields(lines, start, end, {'ADDR': 'St. Paul Cathedral'})
+        ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
+
+        indis, fams, sources = parse_gedcom(str(ged))
+        people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
+
+        for xref in ('@I1@', '@I2@'):
+            marr_evts = [e for e in people[xref]['events'] if e['tag'] == 'MARR']
+            assert marr_evts, f'{xref} must have a MARR event'
+            assert marr_evts[0].get('addr') == 'St. Paul Cathedral', \
+                f'addr must be in MARR event for {xref} after edit → parse → build_people_json'
+
+    def test_existing_addr_visible_on_initial_load(self, tmp_path):
+        """
+        When the GED already has ADDR on a MARR, build_people_json must include
+        it without any edit — i.e. the initial page load shows the addr.
+        """
+        ged_with_addr = MARR_WITH_SOURCES_GED[:]
+        # Inject a 2 ADDR line right after 2 PLAC in the MARR block
+        insert_after = next(
+            i for i, l in enumerate(ged_with_addr) if l == '2 PLAC London, England'
+        )
+        ged_with_addr = (
+            ged_with_addr[:insert_after + 1]
+            + ['2 ADDR St. Paul Cathedral']
+            + ged_with_addr[insert_after + 1:]
+        )
+        ged = tmp_path / 'initial_load.ged'
+        ged.write_text('\n'.join(ged_with_addr) + '\n', encoding='utf-8')
+
+        indis, fams, sources = parse_gedcom(str(ged))
+        assert fams['@F1@']['marr']['addr'] == 'St. Paul Cathedral'
+
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        marr_evts = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
+        assert marr_evts and marr_evts[0].get('addr') == 'St. Paul Cathedral', \
+            'Pre-existing ADDR must appear in MARR event on initial page load'
+
+    def test_addr_not_lost_when_sour_follows_addr(self, tmp_path):
+        """
+        Regression guard: SOUR/DATA/WWW lines after 2 ADDR must not interfere
+        with the parsed addr value.
+        """
+        ged_lines = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME John /Smith/
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Mary /Jones/
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1 JAN 1910
+2 PLAC London, England
+2 ADDR Notre Dame Cathedral
+2 SOUR @S1@
+3 DATA
+4 WWW https://example.com/source
+2 SOUR @S2@
+3 PAGE p. 42
+3 DATA
+4 DATE 1910
+0 TRLR""".splitlines()
+        ged = tmp_path / 'sour_after_addr.ged'
+        ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
+
+        _, fams, _ = parse_gedcom(str(ged))
+        assert fams['@F1@']['marr']['addr'] == 'Notre Dame Cathedral', \
+            'ADDR must be preserved even when SOUR/DATA/WWW sub-records follow it'
