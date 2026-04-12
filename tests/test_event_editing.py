@@ -264,6 +264,47 @@ class TestEditEventFields:
         assert new_lines[:start] == lines[:start]
         assert new_lines[end:] == lines[end:]
 
+    def test_update_note_drops_stale_cont_lines(self):
+        """Replacing a 2 NOTE that has 2 CONT lines must not leave stale CONT lines."""
+        # Build a GEDCOM with an event whose NOTE has continuation lines
+        ged = """\
+0 HEAD
+0 @I1@ INDI
+1 NAME Test /Person/
+1 BIRT
+2 DATE 1900
+2 NOTE Original first line
+2 CONT Original second line
+2 CONT Original third line
+0 TRLR""".splitlines()
+        start, end, err = _find_event_block(ged, '@I1@', 'BIRT', 0)
+        assert err is None
+        new_lines = _edit_event_fields(ged, start, end, {'NOTE': 'Replacement note'})
+        block = new_lines[start:end]
+        assert any('Replacement note' in l for l in block), 'new NOTE must be present'
+        assert not any('2 CONT' in l for l in block), \
+            'stale CONT lines from old NOTE must be removed'
+        assert not any('Original' in l for l in block), \
+            'no content from old NOTE should remain'
+
+    def test_delete_note_also_drops_cont_lines(self):
+        """Setting NOTE to empty must also remove any following CONT lines."""
+        ged = """\
+0 HEAD
+0 @I1@ INDI
+1 NAME Test /Person/
+1 BIRT
+2 DATE 1900
+2 NOTE First line
+2 CONT Second line
+0 TRLR""".splitlines()
+        start, end, err = _find_event_block(ged, '@I1@', 'BIRT', 0)
+        assert err is None
+        new_lines = _edit_event_fields(ged, start, end, {'NOTE': ''})
+        block = new_lines[start:end]
+        assert not any('2 NOTE' in l for l in block)
+        assert not any('2 CONT' in l for l in block)
+
 
 # ---------------------------------------------------------------------------
 # TestInsertNewEvent
