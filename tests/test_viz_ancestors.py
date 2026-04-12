@@ -497,33 +497,49 @@ class TestOutput:
 # ---------------------------------------------------------------------------
 
 class TestDateSortKey:
+    """_date_sort_key returns (year, month, day, adjust).
+    adjust: -1 for BEF (sorts before), +1 for AFT (sorts after), 0 otherwise."""
 
     def test_full_dmy(self):
-        assert _date_sort_key('13 MAR 1942') == (1942, 3, 13)
+        assert _date_sort_key('13 MAR 1942') == (1942, 3, 13, 0)
 
     def test_month_year(self):
-        assert _date_sort_key('MAR 1942') == (1942, 3, 0)
+        assert _date_sort_key('MAR 1942') == (1942, 3, 0, 0)
 
     def test_year_only(self):
-        assert _date_sort_key('1942') == (1942, 0, 0)
+        assert _date_sort_key('1942') == (1942, 0, 0, 0)
 
     def test_none(self):
-        assert _date_sort_key(None) == (0, 0, 0)
+        assert _date_sort_key(None) == (0, 0, 0, 0)
 
     def test_empty(self):
-        assert _date_sort_key('') == (0, 0, 0)
+        assert _date_sort_key('') == (0, 0, 0, 0)
 
     def test_abt_qualifier(self):
-        assert _date_sort_key('ABT 21 MAR 1942') == (1942, 3, 21)
+        assert _date_sort_key('ABT 21 MAR 1942') == (1942, 3, 21, 0)
 
     def test_bef_qualifier(self):
-        assert _date_sort_key('BEF 1 JAN 1900') == (1900, 1, 1)
+        # BEF sorts just before the date
+        assert _date_sort_key('BEF 1 JAN 1900') == (1900, 1, 1, -1)
 
     def test_aft_qualifier(self):
-        assert _date_sort_key('AFT DEC 1941') == (1941, 12, 0)
+        # AFT sorts just after the date
+        assert _date_sort_key('AFT DEC 1941') == (1941, 12, 0, 1)
 
     def test_bet_uses_first_date(self):
-        assert _date_sort_key('BET 1 MAY 1942 AND 2 MAY 1942') == (1942, 5, 1)
+        assert _date_sort_key('BET 1 MAY 1942 AND 2 MAY 1942') == (1942, 5, 1, 0)
+
+    def test_bef_sorts_before_same_year(self):
+        # BEF 1850 should come before 1850 with no qualifier
+        assert _date_sort_key('BEF 1850') < _date_sort_key('1850')
+
+    def test_aft_sorts_after_same_year(self):
+        # AFT 1850 should come after 1850 with no qualifier
+        assert _date_sort_key('AFT 1850') > _date_sort_key('1850')
+
+    def test_bef_aft_ordering(self):
+        # BEF 1850 < 1850 < AFT 1850
+        assert _date_sort_key('BEF 1850') < _date_sort_key('1850') < _date_sort_key('AFT 1850')
 
     def test_ordering(self):
         dates = ['12 MAY 1942', '9 MAY 1942', '1 MAY 1942', 'ABT 21 MAR 1942',
