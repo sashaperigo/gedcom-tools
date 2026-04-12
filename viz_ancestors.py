@@ -54,6 +54,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     current_evt       = None   # current event dict being built
     current_note      = None   # index into notes[] for CONT assembly
     current_sour_xref = None   # xref of the 1 SOUR citation currently being parsed
+    secondary_name_n  = 0      # counter for secondary NAME records within current INDI
 
     for line in lines:
         m = _INDI_RE.match(line)
@@ -63,9 +64,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 'name': None, 'birth_year': None, 'death_year': None,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [], 'source_urls': {},
             }
-            ctx          = ('indi', xref)
-            current_evt  = None
-            current_note = None
+            ctx                = ('indi', xref)
+            current_evt        = None
+            current_note       = None
+            secondary_name_n   = 0
             continue
 
         m = _FAM_RE.match(line)
@@ -111,6 +113,17 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 name = re.sub(r'\s+', ' ', name).strip()
                 indis[xref]['name'] = name
                 current_evt = current_note = None
+            elif lvl == 1 and tag == 'NAME' and indis[xref]['name'] is not None:
+                # Secondary NAME record — treat as an AKA alias (FACT/AKA)
+                alias = re.sub(r'/', '', html_mod.unescape(val))
+                alias = re.sub(r'\s+', ' ', alias).strip()
+                evt = {'tag': 'FACT', 'type': 'AKA', 'date': None, 'place': None,
+                       'cause': None, 'addr': None, 'note': alias, 'inline_val': None,
+                       '_name_record': True, '_name_occurrence': secondary_name_n}
+                secondary_name_n += 1
+                indis[xref]['events'].append(evt)
+                current_evt  = evt
+                current_note = None
             elif lvl == 1 and tag == 'SEX':
                 indis[xref]['sex'] = val
                 current_evt = current_note = None
@@ -471,10 +484,16 @@ header h1 { font-size: 16px; font-weight: 600; }
 .sex-sym { font-size: 13px; color: #64748b; margin-left: 5px; }
 #detail-aka { font-size: 12px; color: #64748b; font-style: italic;
               margin-bottom: 10px; line-height: 1.5; }
+#detail-header-btns { display: flex; flex-direction: column; align-items: center;
+                      flex-shrink: 0; align-self: flex-start; padding: 10px 10px 10px 4px; gap: 6px; }
 #detail-close { background: none; border: none; color: #475569;
-                font-size: 20px; cursor: pointer; padding: 14px 14px 14px 4px;
-                line-height: 1; flex-shrink: 0; align-self: flex-start; }
+                font-size: 20px; cursor: pointer; padding: 2px;
+                line-height: 1; }
 #detail-close:hover { color: #f1f5f9; }
+#detail-set-root-btn { background: none; border: 1px solid #334155; border-radius: 5px;
+                       color: #475569; font-size: 13px; cursor: pointer; padding: 3px 6px;
+                       line-height: 1; white-space: nowrap; }
+#detail-set-root-btn:hover { border-color: #3b82f6; color: #3b82f6; }
 #home-btn { background: none; border: 1px solid #334155; border-radius: 50%;
             width: 34px; height: 34px; display: flex; align-items: center;
             justify-content: center; cursor: pointer; color: #94a3b8;
@@ -598,6 +617,13 @@ header h1 { font-size: 16px; font-weight: 600; }
 .marr-card:has(.marr-link):hover { background: rgba(219,234,254,0.08); }
 .marr-card .marr-meta { font-size: 12px; color: #94a3b8; margin-top: 4px; }
 .marr-card .evt-note-inline { font-size: 12px; }
+/* ── Alias modal ─────────────────────────────────────────── */
+#alias-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#alias-modal-overlay.open { display: flex; }
+#alias-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#alias-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 /* ── Timeline ───────────────────────────────────────────── */
 #detail-timeline { position: relative; padding-left: 28px; }
 .timeline-spine { position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
@@ -737,6 +763,32 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
+<div id="alias-modal-overlay" onclick="if(event.target===this)closeAliasModal()">
+  <div id="alias-modal">
+    <h3 id="alias-modal-title">Add Secondary Name</h3>
+    <div class="event-modal-field">
+      <label>Name</label>
+      <input type="text" id="alias-modal-name" placeholder="e.g. Paul Kemerli"
+             onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Name Type</label>
+      <select id="alias-modal-type" onkeydown="if(event.key==='Escape')closeAliasModal()">
+        <option value="AKA">AKA (Also Known As)</option>
+        <option value="Birth">Birth Name</option>
+        <option value="Immigrant">Immigrant Name</option>
+        <option value="Maiden">Maiden Name</option>
+        <option value="Married">Married Name</option>
+        <option value="Nickname">Nickname</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAliasModal()">Cancel</button>
+      <button class="event-modal-save" id="alias-modal-save-btn" onclick="submitAliasModal()">Add</button>
+    </div>
+  </div>
+</div>
 <div id="name-modal-overlay" onclick="if(event.target===this)closeNameModal()">
   <div id="name-modal">
     <h3 id="name-modal-title">Edit Name</h3>
@@ -764,7 +816,10 @@ header h1 { font-size: 16px; font-weight: 600; }
       <div id="detail-aka"></div>
       <div id="detail-lifespan-row"></div>
     </div>
-    <button id="detail-close" title="Close">&#x2715;</button>
+    <div id="detail-header-btns">
+      <button id="detail-close" title="Close">&#x2715;</button>
+      <button id="detail-set-root-btn" title="Browse tree with this person as root">&#x2302;</button>
+    </div>
   </div>
   <div id="detail-body">
     <div id="detail-notes"></div>
@@ -1143,6 +1198,89 @@ document.addEventListener('input', e => {
 });
 
 // ---------------------------------------------------------------------------
+// Alias (secondary name) add / edit / delete
+// ---------------------------------------------------------------------------
+
+let _aliasModalXref = null, _aliasModalNameOccurrence = null, _aliasModalIsNameRecord = false;
+
+function openAliasModal(xref, nameOccurrence, currentName, currentType, isNameRecord) {
+  _aliasModalXref            = xref;
+  _aliasModalNameOccurrence  = nameOccurrence;   // null = add mode
+  _aliasModalIsNameRecord    = !!isNameRecord;
+  const isAdd = nameOccurrence === null || nameOccurrence === undefined;
+  document.getElementById('alias-modal-title').textContent =
+    (isAdd ? 'Add Secondary Name \u2014 ' : 'Edit Name \u2014 ') + _personName(xref);
+  document.getElementById('alias-modal-save-btn').textContent = isAdd ? 'Add' : 'Save';
+  document.getElementById('alias-modal-name').value = currentName || '';
+  // Set the dropdown; fall back to AKA if the value isn't in the list
+  const sel = document.getElementById('alias-modal-type');
+  const opt = [...sel.options].find(o => o.value === (currentType || 'AKA'));
+  sel.value = opt ? opt.value : 'AKA';
+  document.getElementById('alias-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('alias-modal-name').focus(), 50);
+}
+
+function closeAliasModal() {
+  document.getElementById('alias-modal-overlay').classList.remove('open');
+  _aliasModalXref = _aliasModalNameOccurrence = null;
+}
+
+async function deleteAlias(xref, evt) {
+  const label = evt.note || evt.inline_val || '';
+  if (!confirm('Delete this name? The GEDCOM file will be updated immediately.\n\n' + label)) return;
+  let endpoint, body;
+  if (evt._name_record) {
+    endpoint = '/api/delete_secondary_name';
+    body = { xref, name_occurrence: evt._name_occurrence, current_person: window._currentPerson || null };
+  } else {
+    // FACT-based AKA — use existing delete_fact
+    endpoint = '/api/delete_fact';
+    body = { xref, tag: evt.tag, date: evt.date || null, place: evt.place || null,
+             type: evt.type || null, inline_val: evt.inline_val || null,
+             current_person: xref };
+  }
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      _openDetailKey = null; showDetail(xref);
+    } else { alert('Delete failed: ' + (data.error || 'unknown error')); }
+  } catch (e) { alert('Request failed: ' + e); }
+}
+
+async function submitAliasModal() {
+  const xref      = _aliasModalXref;
+  const nameOcc   = _aliasModalNameOccurrence;
+  const isAdd     = nameOcc === null || nameOcc === undefined;
+  const name      = document.getElementById('alias-modal-name').value.trim();
+  const nameType  = document.getElementById('alias-modal-type').value;
+  if (!name) { alert('Please enter a name.'); return; }
+  closeAliasModal();
+  let endpoint, body;
+  if (isAdd) {
+    endpoint = '/api/add_secondary_name';
+    body = { xref, name, name_type: nameType, current_person: window._currentPerson || null };
+  } else {
+    endpoint = '/api/edit_secondary_name';
+    body = { xref, name_occurrence: nameOcc, name, name_type: nameType,
+             current_person: window._currentPerson || null };
+  }
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      _openDetailKey = null; showDetail(xref);
+    } else { alert('Save failed: ' + (data.error || 'unknown error')); }
+  } catch (e) { alert('Request failed: ' + e); }
+}
+
+// ---------------------------------------------------------------------------
 // Name editing
 // ---------------------------------------------------------------------------
 
@@ -1446,13 +1584,17 @@ function showDetail(xref) {
     const xrefQA = JSON.stringify(xref).replace(/"/g, '&quot;');
     const akaEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
       .filter(e => e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA' && e.note);
-    const addAkaBtn = `<button class="aka-btn" title="Add alias" style="font-size:11px;color:#475569;margin-left:4px" onclick="addEvent(${xrefQA},'FACT','AKA')">&#43; alias</button>`;
+    const addAkaBtn = `<button class="aka-btn" title="Add secondary name" style="font-size:11px;color:#475569;margin-left:4px" onclick="openAliasModal(${xrefQA},null,'','AKA',true)">&#43; alias</button>`;
     if (akaEvents.length) {
       const entries = akaEvents.map(e => {
-        const editBtn = e.event_idx !== null && e.event_idx !== undefined
-          ? `<button class="aka-btn" title="Edit alias" onclick="editEvent(${xrefQA},${e.event_idx},'FACT')">\u270f</button>`
-          : '';
-        const delBtn = `<button class="aka-btn del" title="Delete alias" onclick="deleteFact(${xrefQA},PEOPLE[${xrefQA}].events[${e._origIdx}])">\u2715</button>`;
+        // NAME-based records have _name_occurrence; FACT-based have event_idx
+        const isNameRec = e._name_record === true;
+        const editBtn = isNameRec
+          ? `<button class="aka-btn" title="Edit name" onclick="openAliasModal(${xrefQA},${e._name_occurrence},${JSON.stringify(e.note).replace(/"/g,'&quot;')},${JSON.stringify(e.type || 'AKA').replace(/"/g,'&quot;')},true)">\u270f</button>`
+          : (e.event_idx !== null && e.event_idx !== undefined
+            ? `<button class="aka-btn" title="Edit alias" onclick="editEvent(${xrefQA},${e.event_idx},'FACT')">\u270f</button>`
+            : '');
+        const delBtn = `<button class="aka-btn del" title="Delete name" onclick="deleteAlias(${xrefQA},PEOPLE[${xrefQA}].events[${e._origIdx}])">\u2715</button>`;
         return `<span class="aka-entry"><span style="font-style:italic">${escHtml(e.note)}</span>${editBtn}${delBtn}</span>`;
       }).join(' \xb7 ');
       akaDiv.innerHTML = entries + addAkaBtn;
@@ -1683,6 +1825,9 @@ function _animateFitAndCenter(duration) {
 }
 
 document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('detail-set-root-btn').addEventListener('click', () => {
+  if (_openDetailKey) changeRoot(_openDetailKey);
+});
 
 // Build Ahnentafel map {key: xref} from PARENTS starting at rootXref
 function buildAhnentafel(rootXref) {
