@@ -1526,9 +1526,8 @@ function buildProse(evt) {
   const place = evt.place || '';
   const short = fmtPlace(place);
   const type  = evt.type || '';
-  const full  = place !== short ? place : '';
   const addr  = evt.addr || '';
-  const meta  = () => [full, date, addr].filter(Boolean).join(' \\u00b7 ');
+  const meta  = () => [addr, place, date].filter(Boolean).join(' \\u00b7 ');
   switch (evt.tag) {
     case 'BIRT': return { prose: short ? `Born in ${short}` : (date ? `Born ${date}` : 'Birth'),          meta: meta() };
     case 'DEAT': {
