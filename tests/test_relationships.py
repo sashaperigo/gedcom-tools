@@ -221,7 +221,13 @@ def test_no_posthumous_births(records):
 
 
 def test_husb_wife_sex_consistency(records):
+    # Same-sex couples: GEDCOM 5.5.1 has no native support, so one partner is
+    # arbitrarily assigned HUSB and the other WIFE.  Exempt those families but
+    # emit a warning so accidental misclassifications stay visible.
+    same_sex_fams = {"@F1169@"}
+
     bad = []
+    warned = []
     for xref, rec in records.items():
         if rec["type"] != "FAM":
             continue
@@ -230,7 +236,23 @@ def test_husb_wife_sex_consistency(records):
             if not p or p not in records:
                 continue
             if records[p]["sex"] == wrong_sex:
-                bad.append((xref, records[p]["name"], role, wrong_sex))
+                if xref in same_sex_fams:
+                    warned.append((xref, records[p]["name"], role, wrong_sex))
+                else:
+                    bad.append((xref, records[p]["name"], role, wrong_sex))
+
+    if warned:
+        import warnings
+        warnings.warn(
+            f"{len(warned)} known same-sex FAM(s) with HUSB/WIFE role mismatch "
+            f"(verify these are genuinely same-sex couples):\n"
+            + "\n".join(
+                f"  FAM {f}: {n!r} is {role} but SEX={s}" for f, n, role, s in warned
+            ),
+            UserWarning,
+            stacklevel=1,
+        )
+
     assert bad == [], (
         f"{len(bad)} FAM record(s) where HUSB/WIFE role contradicts SEX tag:\n"
         + "\n".join(
