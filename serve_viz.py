@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
 
+from gedcom_linter import normalize_date, GEDCOM_DATE_RE
+
 import viz_ancestors as _viz_mod
 _viz_mtime: float | None = None
 
@@ -409,18 +411,26 @@ def _edit_event_fields(
 
     new_block = [header]
     handled: set[str] = set()
+    skip_cont = False  # True after replacing/removing a NOTE — drop its CONT/CONC lines
     for line in lines[block_start + 1: block_end]:
         m = _TAG_RE.match(line)
         if not m:
             new_block.append(line)
+            skip_cont = False
             continue
         lvl, tag = int(m.group(1)), m.group(2)
+        # Drop stale continuation lines that belonged to a NOTE we just replaced/deleted
+        if skip_cont and lvl == 2 and tag in ('CONT', 'CONC'):
+            continue
+        skip_cont = False
         if lvl == 2 and tag in _MANAGED_SUBTAGS and tag in updates:
             handled.add(tag)
             new_val = (updates[tag] or '').strip()
             if new_val:
                 new_block.append(f'2 {tag} {new_val}')
             # else: omit (delete the sub-field)
+            if tag == 'NOTE':
+                skip_cont = True  # drop any following CONT/CONC for the old NOTE
         else:
             new_block.append(line)
 
@@ -452,6 +462,27 @@ def _insert_new_event(
         if val:
             new_block.append(f'2 {subtag} {val}')
     return lines[:indi_end] + new_block + lines[indi_end:], None
+
+
+# ---------------------------------------------------------------------------
+# Input validation / normalization
+# ---------------------------------------------------------------------------
+
+def _normalize_event_date(value: str) -> tuple[str, str | None]:
+    """
+    Normalize a user-supplied date string to GEDCOM 5.5.1 format.
+    Returns (normalized_value, error_or_None).
+    Empty/None input is returned as-is — deleting a date is valid.
+    """
+    if not value or not value.strip():
+        return value, None
+    normalized = normalize_date(value.strip())
+    if not GEDCOM_DATE_RE.match(normalized):
+        return value, (
+            f'Invalid date: "{value}". Use GEDCOM format, e.g. '
+            f'"5 JAN 1900", "ABT 1850", "BET 1900 AND 1910".'
+        )
+    return normalized, None
 
 
 # ---------------------------------------------------------------------------
@@ -532,30 +563,37 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             tag       = body['tag']
             fam_xref  = body.get('fam_xref') or None
             updates   = body.get('updates', {})
-            lines     = GED.read_text(encoding='utf-8').splitlines()
-            if fam_xref:
-                # Marriage events live in FAM records
-                start, end, err = _find_fam_event_block(lines, fam_xref, tag)
+            if 'DATE' in updates:
+                updates['DATE'], _date_err = _normalize_event_date(updates['DATE'])
             else:
-                event_idx = int(body['event_idx'])
-                start, end, err = _find_event_block(lines, xref, tag, event_idx)
-            if err:
-                resp = json.dumps({'ok': False, 'error': err}).encode()
+                _date_err = None
+            if _date_err:
+                resp = json.dumps({'ok': False, 'error': _date_err}).encode()
             else:
-                new_lines = _edit_event_fields(lines, start, end, updates)
-                _write_gedcom_atomic(new_lines)
-                print(f"[event-edit] {fam_xref or xref} {tag} updated")
-                regenerate(body.get('current_person'))
-                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
-                # For FAM edits return data for both spouses so both panels refresh
-                if fam_xref and fam_xref in fams:
-                    fam = fams[fam_xref]
-                    xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife'), xref) if x}
+                lines = GED.read_text(encoding='utf-8').splitlines()
+                if fam_xref:
+                    # Marriage events live in FAM records
+                    start, end, err = _find_fam_event_block(lines, fam_xref, tag)
                 else:
-                    xrefs_to_refresh = {xref}
-                updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
-                resp = json.dumps({'ok': True, 'people': updated}).encode()
+                    event_idx = int(body['event_idx'])
+                    start, end, err = _find_event_block(lines, xref, tag, event_idx)
+                if err:
+                    resp = json.dumps({'ok': False, 'error': err}).encode()
+                else:
+                    new_lines = _edit_event_fields(lines, start, end, updates)
+                    _write_gedcom_atomic(new_lines)
+                    print(f"[event-edit] {fam_xref or xref} {tag} updated")
+                    regenerate(body.get('current_person'))
+                    viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                    indis, fams, sources = parse_gedcom(str(GED))
+                    # For FAM edits return data for both spouses so both panels refresh
+                    if fam_xref and fam_xref in fams:
+                        fam = fams[fam_xref]
+                        xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife'), xref) if x}
+                    else:
+                        xrefs_to_refresh = {xref}
+                    updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
+                    resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/add_secondary_name':
             xref      = body['xref']
@@ -630,18 +668,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             xref   = body['xref']
             tag    = body['tag']
             fields = body.get('fields', {})
-            lines  = GED.read_text(encoding='utf-8').splitlines()
-            new_lines, err = _insert_new_event(lines, xref, tag, fields)
-            if err:
-                resp = json.dumps({'ok': False, 'error': err}).encode()
+            if 'DATE' in fields:
+                fields['DATE'], _date_err = _normalize_event_date(fields['DATE'])
             else:
-                _write_gedcom_atomic(new_lines)
-                print(f"[event-add] {xref} {tag} added")
-                regenerate(body.get('current_person'))
-                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
-                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
-                resp = json.dumps({'ok': True, 'people': updated}).encode()
+                _date_err = None
+            if _date_err:
+                resp = json.dumps({'ok': False, 'error': _date_err}).encode()
+            else:
+                lines  = GED.read_text(encoding='utf-8').splitlines()
+                new_lines, err = _insert_new_event(lines, xref, tag, fields)
+                if err:
+                    resp = json.dumps({'ok': False, 'error': err}).encode()
+                else:
+                    _write_gedcom_atomic(new_lines)
+                    print(f"[event-add] {xref} {tag} added")
+                    regenerate(body.get('current_person'))
+                    viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                    indis, fams, sources = parse_gedcom(str(GED))
+                    updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                    resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         else:
             self.send_error(404)
