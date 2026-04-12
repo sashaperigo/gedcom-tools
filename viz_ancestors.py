@@ -1269,7 +1269,9 @@ async function submitEventModal() {
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
-  } catch (e) { alert('Request failed: ' + e); }
+  } catch (e) {
+    alert('Request failed: ' + e);
+  }
 }
 
 const _NOTE_MAX_CHARS = 248;  // GEDCOM line limit (255) minus "2 NOTE " prefix (7)
@@ -1661,26 +1663,16 @@ function collapseResidences(events) {
 let _openDetailKey = null;
 
 function showDetail(xref) {
-  console.log('[showDetail] called with', xref, '| _openDetailKey=', _openDetailKey);
   if (_openDetailKey === xref) {
-    console.log('[showDetail] early return: already open');
     return;  // already open for this person
   }
   const panelWasOpen = _openDetailKey !== null;
-  const inPeople = xref in PEOPLE;
   const data = PEOPLE[xref] || (() => {
     const p = ALL_PEOPLE.find(x => x.id === xref);
     return p ? { name: p.name, birth_year: p.birth_year, death_year: p.death_year,
                  sex: null, events: [], notes: [], sources: [] } : null;
   })();
-  if (!data) {
-    console.warn('[showDetail] no data found for', xref);
-    return;
-  }
-  console.log('[showDetail] rendering', xref, data.name,
-    '| in PEOPLE:', inPeople,
-    '| events:', data.events.length,
-    '| NATI:', data.events.filter(e => e.tag === 'NATI').map(e => e.inline_val));
+  if (!data) return;
   const panel = document.getElementById('detail-panel');
 
   try {
@@ -1771,7 +1763,6 @@ function showDetail(xref) {
   // Nationalities — always shown as pills in facts section, never in the timeline
   const natiEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
     .filter(e => e.tag === 'NATI');
-  console.log('[showDetail] natiEvents:', natiEvents.length, natiEvents.map(e => e.inline_val));
   {
     const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
     const addNatiBtn = `<button class="add-event-btn" onclick="addEvent(${xrefQ},'NATI')">&#43; Add nationality</button>`;
@@ -1934,9 +1925,8 @@ function showDetail(xref) {
         : `<ul class="source-list">${srcs.map(s => `<li class="source-item">${_srcHtml(s)}</li>`).join('')}</ul>`)
     : '';
 
-  console.log('[showDetail] done rendering', xref, '| factsDiv.innerHTML length:', factsDiv.innerHTML.length);
   } catch (err) {
-    console.error('[showDetail] EXCEPTION rendering', xref, err);
+    console.error('[showDetail] error rendering', xref, err);
     return;
   }
   panel.classList.add('panel-open');
