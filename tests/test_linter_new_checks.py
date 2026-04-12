@@ -35,6 +35,8 @@ from gedcom_linter import (
     scan_same_sour_multiple_cites,
     scan_name_piece_order,
     fix_name_piece_order,
+    scan_event_source_order,
+    fix_event_source_order,
     normalize_date,
 )
 
@@ -1208,3 +1210,234 @@ class TestFixNamePieceOrder:
         type_pos = content.index('2 TYPE')
         nsfx_pos = content.index('2 NSFX')
         assert nsfx_pos < type_pos
+
+
+# ===========================================================================
+# scan_event_source_order / fix_event_source_order
+# ===========================================================================
+
+class TestScanEventSourceOrder:
+    def test_sour_before_other_flagged(self, tmp_path):
+        """SOUR appearing before DATE in a DEAT block is a violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            2 DATE 6 SEP 1922
+            2 PLAC Smyrna, Turkey
+            0 TRLR
+        """)
+        violations = scan_event_source_order(str(p))
+        assert len(violations) == 1
+        assert violations[0][1] == 'DEAT'
+
+    def test_note_before_sour_flagged(self, tmp_path):
+        """NOTE appearing before SOUR is a violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1 JAN 1900
+            2 NOTE Born at home
+            2 SOUR @S1@
+            0 TRLR
+        """)
+        violations = scan_event_source_order(str(p))
+        assert len(violations) == 1
+        assert violations[0][1] == 'BIRT'
+
+    def test_note_before_other_flagged(self, tmp_path):
+        """NOTE appearing before DATE is a violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 MARR
+            2 NOTE Wedding in church
+            2 DATE 15 JUN 1950
+            0 TRLR
+        """)
+        violations = scan_event_source_order(str(p))
+        assert len(violations) == 1
+        assert violations[0][1] == 'MARR'
+
+    def test_correct_order_not_flagged(self, tmp_path):
+        """DATE → PLAC → ADDR → SOUR → NOTE is the correct order."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 DEAT
+            2 DATE 6 SEP 1922
+            2 PLAC Smyrna, Izmir, Turkey
+            2 ADDR Notre Dame du Rosaire Church
+            2 SOUR @S1@
+            3 PAGE Death record
+            2 NOTE died a week before Smyrna was burned
+            0 TRLR
+        """)
+        violations = scan_event_source_order(str(p))
+        assert violations == []
+
+    def test_no_sour_or_note_not_flagged(self, tmp_path):
+        """Event with only DATE and PLAC is fine."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1885
+            2 PLAC Greece
+            0 TRLR
+        """)
+        violations = scan_event_source_order(str(p))
+        assert violations == []
+
+    def test_name_block_not_affected(self, tmp_path):
+        """NAME blocks are governed by name_piece_order, not this check."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            2 SOUR @S1@
+            2 GIVN John
+            2 SURN Smith
+            0 TRLR
+        """)
+        violations = scan_event_source_order(str(p))
+        assert violations == []
+
+    def test_multiple_events_only_bad_ones_flagged(self, tmp_path):
+        """Only events with wrong order are flagged; correct events are not."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1 JAN 1900
+            2 PLAC Paris, France
+            1 DEAT
+            2 SOUR @S1@
+            2 DATE 6 SEP 1922
+            0 TRLR
+        """)
+        violations = scan_event_source_order(str(p))
+        assert len(violations) == 1
+        assert violations[0][1] == 'DEAT'
+
+
+class TestFixEventSourceOrder:
+    def test_moves_sour_after_details(self, tmp_path):
+        """SOUR appearing before DATE is moved to after DATE and PLAC."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            2 DATE 6 SEP 1922
+            2 PLAC Smyrna, Turkey
+            0 TRLR
+        """)
+        count = fix_event_source_order(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert count == 1
+        date_pos = content.index('2 DATE')
+        sour_pos = content.index('2 SOUR')
+        assert date_pos < sour_pos
+
+    def test_moves_note_last(self, tmp_path):
+        """NOTE appearing before SOUR is moved to after SOUR."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1 JAN 1900
+            2 NOTE Born at home
+            2 SOUR @S1@
+            0 TRLR
+        """)
+        count = fix_event_source_order(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert count == 1
+        sour_pos = content.index('2 SOUR')
+        note_pos = content.index('2 NOTE')
+        assert sour_pos < note_pos
+
+    def test_preserves_sour_children(self, tmp_path):
+        """PAGE and DATA children of SOUR stay attached to their SOUR."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 PAGE Death record p.42
+            3 DATA
+            4 DATE 1922
+            2 DATE 6 SEP 1922
+            2 ADDR Notre Dame du Rosaire
+            0 TRLR
+        """)
+        fix_event_source_order(str(p))
+        content = p.read_text(encoding='utf-8')
+        # PAGE must still follow its SOUR
+        sour_pos = content.index('2 SOUR')
+        page_pos = content.index('3 PAGE')
+        date_pos = content.index('2 DATE')
+        assert date_pos < sour_pos
+        assert sour_pos < page_pos
+
+    def test_full_example_reorder(self, tmp_path):
+        """Reproduces the exact incorrect→correct example from the spec."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 DEAT
+            2 DATE 6 SEP 1922
+            2 PLAC Smyrna, Izmir, Turkey
+            2 SOUR @S1@
+            2 SOUR @S2@
+            3 PAGE Death record
+            3 DATA
+            4 DATE 1922
+            2 NOTE died a week before Smyrna was burned to the ground
+            2 ADDR Notre Dame du Rosaire Church
+            0 TRLR
+        """)
+        count = fix_event_source_order(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert count == 1
+        addr_pos = content.index('2 ADDR')
+        sour_pos = content.index('2 SOUR')
+        note_pos = content.index('2 NOTE')
+        assert addr_pos < sour_pos
+        assert sour_pos < note_pos
+
+    def test_already_correct_unchanged(self, tmp_path):
+        """Correctly ordered event returns count=0 and file unchanged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 DEAT
+            2 DATE 6 SEP 1922
+            2 PLAC Smyrna, Izmir, Turkey
+            2 ADDR Notre Dame du Rosaire Church
+            2 SOUR @S1@
+            2 NOTE died a week before Smyrna was burned
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        count = fix_event_source_order(str(p))
+        assert count == 0
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_dry_run_no_write(self, tmp_path):
+        """dry_run=True computes changes but does not write the file."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            2 DATE 1 JAN 1900
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        count = fix_event_source_order(str(p), dry_run=True)
+        assert count == 1
+        assert p.read_text(encoding='utf-8') == original
