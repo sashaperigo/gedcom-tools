@@ -33,6 +33,8 @@ from gedcom_linter import (
     fix_aka_facts,
     scan_place_consistency,
     scan_same_sour_multiple_cites,
+    scan_name_piece_order,
+    fix_name_piece_order,
     normalize_date,
 )
 
@@ -1037,3 +1039,172 @@ class TestScanSameSourMultipleCites:
             0 TRLR
         """)
         assert scan_same_sour_multiple_cites(str(p)) == []
+
+
+# ===========================================================================
+# scan_name_piece_order / fix_name_piece_order
+# ===========================================================================
+
+class TestScanNamePieceOrder:
+    def test_type_before_givn_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Sasha N /Perigo/
+            2 TYPE AKA
+            2 SOUR @S1@
+            2 GIVN Sasha N
+            2 SURN Perigo
+            0 TRLR
+        """)
+        result = scan_name_piece_order(str(p))
+        assert len(result) == 1
+        assert 'Sasha N /Perigo/' in result[0][1]
+
+    def test_type_before_surn_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            2 GIVN John
+            2 TYPE AKA
+            2 SURN Smith
+            0 TRLR
+        """)
+        result = scan_name_piece_order(str(p))
+        assert len(result) == 1
+
+    def test_correct_order_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Sasha N /Perigo/
+            2 GIVN Sasha N
+            2 SURN Perigo
+            2 TYPE AKA
+            2 SOUR @S1@
+            0 TRLR
+        """)
+        assert scan_name_piece_order(str(p)) == []
+
+    def test_no_type_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            2 SOUR @S1@
+            2 GIVN John
+            2 SURN Smith
+            0 TRLR
+        """)
+        assert scan_name_piece_order(str(p)) == []
+
+    def test_multiple_names_only_bad_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            2 GIVN John
+            2 SURN Smith
+            2 TYPE birth
+            1 NAME Johnny /Smith/
+            2 TYPE AKA
+            2 GIVN Johnny
+            2 SURN Smith
+            0 TRLR
+        """)
+        result = scan_name_piece_order(str(p))
+        assert len(result) == 1
+        assert 'Johnny /Smith/' in result[0][1]
+
+
+class TestFixNamePieceOrder:
+    def test_moves_givn_surn_before_type(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Sasha N /Perigo/
+            2 TYPE AKA
+            2 SOUR @S1496244647@
+            2 GIVN Sasha N
+            2 SURN Perigo
+            0 TRLR
+        """)
+        count = fix_name_piece_order(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert count == 1
+        givn_pos = content.index('2 GIVN')
+        surn_pos = content.index('2 SURN')
+        type_pos = content.index('2 TYPE')
+        sour_pos = content.index('2 SOUR')
+        assert givn_pos < type_pos
+        assert surn_pos < type_pos
+        assert type_pos < sour_pos
+
+    def test_preserves_sour_children(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Sasha N /Perigo/
+            2 TYPE AKA
+            2 SOUR @S1@
+            3 PAGE Some page reference
+            2 GIVN Sasha N
+            2 SURN Perigo
+            0 TRLR
+        """)
+        fix_name_piece_order(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '3 PAGE Some page reference' in content
+        # PAGE must still follow its SOUR
+        sour_pos = content.index('2 SOUR')
+        page_pos = content.index('3 PAGE')
+        assert sour_pos < page_pos
+
+    def test_already_correct_order_unchanged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            2 GIVN John
+            2 SURN Smith
+            2 TYPE AKA
+            2 SOUR @S1@
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        count = fix_name_piece_order(str(p))
+        assert count == 0
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_dry_run_no_write(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Sasha N /Perigo/
+            2 TYPE AKA
+            2 GIVN Sasha N
+            2 SURN Perigo
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        fix_name_piece_order(str(p), dry_run=True)
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_nsfx_treated_as_name_piece(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/ Jr.
+            2 TYPE AKA
+            2 GIVN John
+            2 SURN Smith
+            2 NSFX Jr.
+            0 TRLR
+        """)
+        count = fix_name_piece_order(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert count == 1
+        type_pos = content.index('2 TYPE')
+        nsfx_pos = content.index('2 NSFX')
+        assert nsfx_pos < type_pos
