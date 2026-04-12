@@ -577,3 +577,149 @@ class TestExpansionButtonLogic:
                 assert field in entry, (
                     f'RELATIVES[{k}] missing field {field!r}'
                 )
+
+
+# ---------------------------------------------------------------------------
+# B7  buildProse stale `full` variable — ReferenceError in default switch branch
+# ---------------------------------------------------------------------------
+
+class TestBuildProseStaleFullVariable:
+    """
+    B7: When the meta line in buildProse was reordered from [full, date, addr]
+    to [addr, place, date], the `full` variable declaration was removed but one
+    stale reference survived in the default switch case:
+
+        meta: [full, date].filter(Boolean).join(' · ')
+
+    This caused a ReferenceError whenever showDetail() rendered any event that
+    fell through to the default branch (bare EVEN tags, unknown types, etc.).
+    Symptoms: panel didn't open on first click; stale content shown on second
+    click because the exception fired after the name was set but before
+    panel.classList.add('panel-open').
+    """
+
+    def test_no_stale_full_variable_in_buildprose(self):
+        """
+        The identifier `full` must not appear anywhere in the buildProse
+        function body.  It was removed when the meta ordering changed; any
+        surviving reference causes a ReferenceError at runtime.
+        """
+        fn_start = _HTML_TEMPLATE.index('function buildProse')
+        # Find the closing brace of buildProse (next top-level `\n}` after the open)
+        fn_end = _HTML_TEMPLATE.index('\n}', fn_start) + 2
+        fn_body = _HTML_TEMPLATE[fn_start:fn_end]
+        import re
+        stale_refs = re.findall(r'\bfull\b', fn_body)
+        assert not stale_refs, (
+            f'Found {len(stale_refs)} reference(s) to `full` in buildProse — '
+            'this variable was removed when meta ordering changed; stale '
+            'references cause ReferenceError in showDetail() for events that '
+            'fall through to the default switch branch'
+        )
+
+    def test_meta_closure_used_in_default_branch(self):
+        """
+        The default switch case in buildProse must call meta() rather than
+        building an inline array expression.  Using an inline expression risks
+        referencing removed variables (the bug that caused B7).
+        """
+        fn_start = _HTML_TEMPLATE.index('function buildProse')
+        fn_end = _HTML_TEMPLATE.index('\n}', fn_start) + 2
+        fn_body = _HTML_TEMPLATE[fn_start:fn_end]
+        # Find the default: branch
+        default_start = fn_body.rfind('default:')
+        assert default_start != -1, 'No default: branch found in buildProse'
+        default_body = fn_body[default_start:]
+        # Should call meta(), not reference `full`
+        assert 'meta()' in default_body, (
+            "default: branch does not call meta() — it may build an inline "
+            "array that references removed variables"
+        )
+
+
+# ---------------------------------------------------------------------------
+# B8  Marriage ADDR parsing from FAM blocks
+# ---------------------------------------------------------------------------
+
+class TestMarriageAddr:
+    """
+    B8: The FAM block parser only handled DATE, PLAC, and NOTE under MARR —
+    it did not handle ADDR.  Additionally the MARR event dict did not
+    initialise an `addr` key.
+
+    Consequence: saving an ADDR via the event modal wrote the tag correctly
+    to the GEDCOM file, but the next parse_gedcom() call silently dropped it.
+    The UI showed no ADDR on the marriage card and the edit modal always opened
+    with a blank Address field even after saving.
+    """
+
+    GEDCOM_WITH_MARR_ADDR = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME Rose /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Mark /Davis/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 2015
+2 PLAC Greenwich, Connecticut, USA
+2 ADDR St Mary's Church
+0 TRLR
+"""
+
+    @pytest.fixture(scope='class')
+    def parsed_with_addr(self, tmp_path_factory):
+        ged = tmp_path_factory.mktemp('marr_addr') / 'test.ged'
+        ged.write_text(self.GEDCOM_WITH_MARR_ADDR, encoding='utf-8')
+        return parse_gedcom(str(ged))
+
+    def test_marr_addr_field_initialised(self, parsed_with_addr):
+        """MARR event dict must always have an `addr` key (even when absent from GEDCOM)."""
+        _, fams, _ = parsed_with_addr
+        marr = fams['@F1@']['marr']
+        assert 'addr' in marr, (
+            "MARR event dict has no 'addr' key — the key is not initialised "
+            "in parse_gedcom, so addr can never be set or returned"
+        )
+
+    def test_marr_addr_parsed_from_fam_block(self, parsed_with_addr):
+        """ADDR sub-tag under MARR must be read into the event dict."""
+        _, fams, _ = parsed_with_addr
+        marr = fams['@F1@']['marr']
+        assert marr.get('addr') == "St Mary's Church", (
+            f"MARR addr={marr.get('addr')!r}; expected \"St Mary's Church\". "
+            "The FAM-context level-2 handler didn't include an ADDR branch."
+        )
+
+    def test_marr_addr_in_people_json(self, parsed_with_addr):
+        """build_people_json must propagate ADDR from the MARR event to PEOPLE."""
+        indis, fams, sources = parsed_with_addr
+        people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
+        rose_marr = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
+        assert rose_marr, '@I1@ has no MARR events'
+        assert rose_marr[0].get('addr') == "St Mary's Church", (
+            f"MARR event in PEOPLE has addr={rose_marr[0].get('addr')!r}; "
+            "expected the address to propagate from FAM parse to PEOPLE JSON"
+        )
+
+    def test_marr_addr_absent_when_not_in_gedcom(self):
+        """When MARR has no ADDR sub-tag the field must exist but be None/falsy."""
+        _, fams, _ = parse_gedcom(str(FIXTURE))
+        marr = fams.get('@F5@', {}).get('marr')
+        if marr is None:
+            return  # fixture has no @F5@ MARR — skip
+        # addr key must exist (initialised to None) even when absent from GEDCOM
+        assert 'addr' in marr, "MARR event dict missing 'addr' key"
+        assert not marr.get('addr'), (
+            f"MARR addr={marr.get('addr')!r} when no ADDR in GEDCOM — "
+            "expected None or empty"
+        )

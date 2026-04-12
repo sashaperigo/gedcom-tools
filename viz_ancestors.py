@@ -196,7 +196,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 fams[xref]['chil'].append(val)
                 current_evt = None
             elif lvl == 1 and tag == 'MARR':
-                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None}
+                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None}
                 fams[xref]['marr'] = evt
                 current_evt = evt
             elif lvl == 2 and current_evt is not None:
@@ -204,6 +204,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['date'] = val
                 elif tag == 'PLAC':
                     current_evt['place'] = val
+                elif tag == 'ADDR':
+                    current_evt['addr'] = val
                 elif tag == 'NOTE':
                     current_evt['note'] = val
             elif lvl == 1:
