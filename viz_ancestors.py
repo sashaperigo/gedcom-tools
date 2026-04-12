@@ -797,7 +797,9 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
     <div class="event-modal-field">
       <label>Place</label>
-      <input type="text" id="event-modal-place" onkeydown="if(event.key==='Escape')closeEventModal()">
+      <input type="text" id="event-modal-place" list="plac-suggestions"
+             onkeydown="if(event.key==='Escape')closeEventModal()">
+      <datalist id="plac-suggestions"></datalist>
     </div>
     <div class="event-modal-field">
       <label>Address</label>
@@ -904,6 +906,7 @@ const RELATIVES = __RELATIVES_JSON__;
 const PARENTS = __PARENTS_JSON__;
 const ROOT_XREF = __ROOT_XREF_JSON__;
 const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;
+const ALL_PLACES = __ALL_PLACES_JSON__;
 let currentTree = Object.assign({}, TREE);
 const expandedRelatives = new Set([1]);
 let _relPosCache = new Map();
@@ -1151,6 +1154,16 @@ function _updateAddrSuggestions(place) {
     dl.appendChild(opt);
   }
 }
+
+(function() {
+  const dl = document.getElementById('plac-suggestions');
+  if (!dl) return;
+  for (const p of ALL_PLACES) {
+    const opt = document.createElement('option');
+    opt.value = p;
+    dl.appendChild(opt);
+  }
+})();
 
 function _personName(xref) {
   return (PEOPLE[xref] && PEOPLE[xref].name) ||
@@ -2696,6 +2709,22 @@ window.addEventListener('resize', () => {
 """
 
 
+def build_all_places(indis: dict, fams: dict | None = None) -> list[str]:
+    """Return sorted unique PLAC values from all events for PLAC auto-complete in the event modal."""
+    places: set[str] = set()
+    for info in indis.values():
+        for evt in info.get('events', []):
+            if evt.get('place'):
+                places.add(evt['place'])
+    if fams:
+        for fam in fams.values():
+            for key in ('marr', 'div'):
+                evt = fam.get(key)
+                if isinstance(evt, dict) and evt.get('place'):
+                    places.add(evt['place'])
+    return sorted(places)
+
+
 def build_addr_by_place(indis: dict) -> dict:
     """Return {place: [sorted unique addr values]} for ADDR auto-complete in the event modal."""
     result: dict[str, set] = {}
@@ -2736,6 +2765,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     parents_json        = json.dumps(parents)
     root_xref_json      = json.dumps(root_xref or '')
     addr_by_place_json  = json.dumps(build_addr_by_place(indis))
+    all_places_json     = json.dumps(build_all_places(indis, fams))
     return (
         _HTML_TEMPLATE
         .replace('__ROOT_NAME__', safe_name)
@@ -2746,6 +2776,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         .replace('__PARENTS_JSON__', parents_json)
         .replace('__ROOT_XREF_JSON__', root_xref_json)
         .replace('__ADDR_BY_PLACE_JSON__', addr_by_place_json)
+        .replace('__ALL_PLACES_JSON__', all_places_json)
     )
 
 
