@@ -523,7 +523,7 @@ class TestTemplateUIElements:
         assert 'marr-edit-btn' in _HTML_TEMPLATE
 
     def test_aka_add_button_rendered(self):
-        assert 'Add alias' in _HTML_TEMPLATE or '+ alias' in _HTML_TEMPLATE
+        assert 'openAliasModal' in _HTML_TEMPLATE
 
     def test_fam_xref_in_submit_modal(self):
         assert 'fam_xref' in _HTML_TEMPLATE

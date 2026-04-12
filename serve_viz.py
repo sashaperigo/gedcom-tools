@@ -220,6 +220,75 @@ def _edit_name(lines: list[str], xref: str, given_name: str, surname: str) -> tu
 
 
 # ---------------------------------------------------------------------------
+# Secondary NAME record helpers (alias add / edit / delete)
+# ---------------------------------------------------------------------------
+
+def _find_secondary_name_block(
+    lines: list[str], xref: str, n: int
+) -> tuple[int | None, int | None, str | None]:
+    """Return (start, end, err) for the nth (0-based) secondary NAME record in xref's INDI block."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None, None, err
+    primary_seen = False
+    count = 0
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if not m or int(m.group(1)) != 1 or m.group(2) != 'NAME':
+            continue
+        if not primary_seen:
+            primary_seen = True
+            continue  # skip primary name
+        if count == n:
+            j = i + 1
+            while j < indi_end:
+                sm = _TAG_RE.match(lines[j])
+                if sm and int(sm.group(1)) <= 1:
+                    break
+                j += 1
+            return i, j, None
+        count += 1
+    return None, None, f'Secondary name [{n}] not found in {xref}'
+
+
+def _add_secondary_name(
+    lines: list[str], xref: str, name: str, name_type: str
+) -> tuple[list[str], str | None]:
+    """Append a new secondary NAME record just before indi_end."""
+    _, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return lines, err
+    full_name = name.strip()
+    # Wrap surname in slashes if not already wrapped and looks like "Given Surname"
+    if full_name and '/' not in full_name:
+        parts = full_name.rsplit(' ', 1)
+        if len(parts) == 2:
+            full_name = f'{parts[0]} /{parts[1]}/'
+    new_block = [f'1 NAME {full_name}']
+    if name_type:
+        new_block.append(f'2 TYPE {name_type.strip()}')
+    return lines[:indi_end] + new_block + lines[indi_end:], None
+
+
+def _edit_secondary_name(
+    lines: list[str], xref: str, n: int, name: str, name_type: str
+) -> tuple[list[str], str | None]:
+    """Replace the nth secondary NAME block with an updated name and type."""
+    start, end, err = _find_secondary_name_block(lines, xref, n)
+    if err:
+        return lines, err
+    full_name = name.strip()
+    if full_name and '/' not in full_name:
+        parts = full_name.rsplit(' ', 1)
+        if len(parts) == 2:
+            full_name = f'{parts[0]} /{parts[1]}/'
+    new_block = [f'1 NAME {full_name}']
+    if name_type:
+        new_block.append(f'2 TYPE {name_type.strip()}')
+    return lines[:start] + new_block + lines[end:], None
+
+
+# ---------------------------------------------------------------------------
 # FAM block helpers (for marriage editing)
 # ---------------------------------------------------------------------------
 
@@ -455,6 +524,58 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 else:
                     xrefs_to_refresh = {xref}
                 updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/add_secondary_name':
+            xref      = body['xref']
+            name      = (body.get('name') or '').strip()
+            name_type = (body.get('name_type') or 'AKA').strip()
+            lines     = GED.read_text(encoding='utf-8').splitlines()
+            new_lines, err = _add_secondary_name(lines, xref, name, name_type)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                _write_gedcom_atomic(new_lines)
+                print(f"[alias-add] {xref} NAME {name!r} TYPE {name_type}")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/edit_secondary_name':
+            xref             = body['xref']
+            name_occurrence  = int(body['name_occurrence'])
+            name             = (body.get('name') or '').strip()
+            name_type        = (body.get('name_type') or 'AKA').strip()
+            lines            = GED.read_text(encoding='utf-8').splitlines()
+            new_lines, err = _edit_secondary_name(lines, xref, name_occurrence, name, name_type)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                _write_gedcom_atomic(new_lines)
+                print(f"[alias-edit] {xref} NAME[{name_occurrence}] → {name!r}")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/delete_secondary_name':
+            xref            = body['xref']
+            name_occurrence = int(body['name_occurrence'])
+            lines           = GED.read_text(encoding='utf-8').splitlines()
+            start, end, err = _find_secondary_name_block(lines, xref, name_occurrence)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                new_lines = lines[:start] + lines[end:]
+                _write_gedcom_atomic(new_lines)
+                print(f"[alias-delete] {xref} NAME[{name_occurrence}]")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/edit_name':
