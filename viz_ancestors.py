@@ -1584,7 +1584,7 @@ function buildProse(evt) {
       }
       return {
         prose: type || (short ? short : (EVENT_LABELS[evt.tag] || evt.tag)),
-        meta:  [full, date].filter(Boolean).join(' \\u00b7 ')
+        meta:  meta()
       };
     }
   }
@@ -1641,7 +1641,11 @@ function collapseResidences(events) {
 let _openDetailKey = null;
 
 function showDetail(xref) {
-  if (_openDetailKey === xref) return;  // already open for this person
+  console.log('[showDetail] called with', xref, '| _openDetailKey=', _openDetailKey);
+  if (_openDetailKey === xref) {
+    console.log('[showDetail] early return: already open');
+    return;  // already open for this person
+  }
   const panelWasOpen = _openDetailKey !== null;
   const inPeople = xref in PEOPLE;
   const data = PEOPLE[xref] || (() => {
@@ -1649,13 +1653,17 @@ function showDetail(xref) {
     return p ? { name: p.name, birth_year: p.birth_year, death_year: p.death_year,
                  sex: null, events: [], notes: [], sources: [] } : null;
   })();
-  if (!data) return;
-  console.log('[showDetail]', xref, data.name,
+  if (!data) {
+    console.warn('[showDetail] no data found for', xref);
+    return;
+  }
+  console.log('[showDetail] rendering', xref, data.name,
     '| in PEOPLE:', inPeople,
     '| events:', data.events.length,
     '| NATI:', data.events.filter(e => e.tag === 'NATI').map(e => e.inline_val));
   const panel = document.getElementById('detail-panel');
 
+  try {
   // Accent color by sex
   const accent = {'M':'#3b82f6','F':'#a855f7'}[data.sex] || '#475569';
   document.getElementById('detail-accent-bar').style.background = accent;
@@ -1907,6 +1915,10 @@ function showDetail(xref) {
     : '';
 
   console.log('[showDetail] done rendering', xref, '| factsDiv.innerHTML length:', factsDiv.innerHTML.length);
+  } catch (err) {
+    console.error('[showDetail] EXCEPTION rendering', xref, err);
+    return;
+  }
   panel.classList.add('panel-open');
   _openDetailKey = xref;
   const vp = document.getElementById('viewport');
@@ -1955,7 +1967,7 @@ function buildAhnentafel(rootXref) {
 }
 
 function changeRoot(xref) {
-  if (!xref || !PARENTS[xref]) return;
+  if (!xref || !PARENTS[xref] || !PARENTS[xref].some(p => p)) return;
   currentTree = buildAhnentafel(xref);
   visibleKeys.clear();
   _posCache.clear();
@@ -2454,7 +2466,9 @@ function render() {
     const nodeG = svgEl('g', { cursor: 'pointer' });
     nodeG.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!didDrag) showDetail(currentTree[k]);
+      const _xref = currentTree[k];
+      console.log('[nodeG click] k=', k, 'xref=', _xref, 'didDrag=', didDrag);
+      if (!didDrag) showDetail(_xref);
     });
 
     const nodeRect = svgEl('rect', {
@@ -2498,7 +2512,7 @@ function render() {
       const bx = x + NODE_W / 2 - 8;
       const by = y - BTN_ZONE + 4;
       const btn = svgEl('rect', {x: bx, y: by, width: 16, height: 16, rx: 4, fill: '#059669', cursor: 'pointer'});
-      btn.addEventListener('click', (e) => { e.stopPropagation(); expandNode(k); });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); console.log('[expandBtn click] k=', k, 'xref=', currentTree[k]); expandNode(k); });
       canvas.appendChild(btn);
       canvas.appendChild(svgEl('polygon', {
         points: `${bx+4},${by+11} ${bx+8},${by+5} ${bx+12},${by+11}`,
@@ -2531,6 +2545,7 @@ function render() {
       });
       rbtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        console.log('[relToggle click] k=', k, 'xref=', currentTree[k]);
         if (expandedRelatives.has(k)) {
           expandedRelatives.delete(k);
           render();
@@ -2562,6 +2577,7 @@ function render() {
     const rg = svgEl('g', { cursor: 'pointer' });
     rg.addEventListener('click', (e) => {
       e.stopPropagation();
+      console.log('[relNode click] xref=', xref, 'didDrag=', didDrag);
       if (!didDrag) showDetail(xref);
     });
     rg.appendChild(svgEl('rect', { x: rx, y: ry, width: NODE_W, height: NODE_H, rx: 8, fill, opacity: 0.85 }));
