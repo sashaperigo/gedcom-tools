@@ -829,3 +829,61 @@ class TestBuildPeopleJsonFamXref:
         for e in marr_evts:
             assert 'fam_xref' in e
             assert e['fam_xref'] is not None
+
+
+# ---------------------------------------------------------------------------
+# Duplicate 1 MARR in FAM block — parse_gedcom must not overwrite first block
+# ---------------------------------------------------------------------------
+
+DUPLICATE_MARR_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME John /Smith/
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Mary /Jones/
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1 JAN 1925
+2 PLAC London, England
+2 ADDR St. Paul Cathedral
+2 SOUR @S1@
+3 DATA
+1 MARR
+2 DATE 1 JAN 1925
+2 PLAC London, England
+2 SOUR @S2@
+0 TRLR""".splitlines()
+
+
+class TestDuplicateMarrBlock:
+
+    def test_addr_from_first_marr_preserved(self, tmp_path):
+        """
+        Regression: when a FAM record contains two '1 MARR' blocks (a merge
+        artifact), parse_gedcom must keep the sub-tags from the first block
+        rather than overwriting with the bare second block.
+
+        Without the fix, the second '1 MARR' replaced fams[xref]['marr'] with a
+        fresh empty dict, silently discarding the ADDR written to the first block.
+        """
+        ged = tmp_path / 'dup_marr.ged'
+        ged.write_text('\n'.join(DUPLICATE_MARR_GED) + '\n', encoding='utf-8')
+        _, fams, _ = parse_gedcom(str(ged))
+        marr = fams['@F1@']['marr']
+        assert marr['addr'] == 'St. Paul Cathedral', \
+            'ADDR from first MARR block must survive a duplicate bare 1 MARR line'
+
+    def test_date_and_place_still_present(self, tmp_path):
+        """DATE and PLAC from the first block must also be preserved."""
+        ged = tmp_path / 'dup_marr2.ged'
+        ged.write_text('\n'.join(DUPLICATE_MARR_GED) + '\n', encoding='utf-8')
+        _, fams, _ = parse_gedcom(str(ged))
+        marr = fams['@F1@']['marr']
+        assert marr['date'] == '1 JAN 1925'
+        assert marr['place'] == 'London, England'
