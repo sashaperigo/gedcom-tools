@@ -1042,3 +1042,90 @@ class TestMarrAddrRoundTrip:
         _, fams, _ = parse_gedcom(str(ged))
         assert fams['@F1@']['marr']['addr'] == 'Notre Dame Cathedral', \
             'ADDR must be preserved even when SOUR/DATA/WWW sub-records follow it'
+
+
+# ---------------------------------------------------------------------------
+# ADDR parsing on INDI events (BIRT, DEAT, RESI, etc.)
+# ---------------------------------------------------------------------------
+
+INDI_ADDR_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SEX M
+1 BIRT
+2 DATE 1 JAN 1880
+2 PLAC London, England
+2 ADDR St. Bart's Hospital
+1 DEAT
+2 DATE 15 MAR 1950
+2 PLAC Paris, France
+2 ADDR Hôpital Lariboisière
+2 SOUR @S1@
+3 DATA
+4 DATE 1950
+1 RESI
+2 DATE 1920
+2 PLAC New York, NY
+2 ADDR 123 Main Street
+2 SOUR @S2@
+3 PAGE Death register
+0 TRLR""".splitlines()
+
+
+class TestIndiEventAddrParsing:
+    """
+    ADDR on individual events (BIRT, DEAT, RESI, etc.) must be parsed and
+    surfaced through build_people_json just like MARR addr.
+    """
+
+    def test_birt_addr_parsed(self, tmp_path):
+        ged = tmp_path / 'indi_addr.ged'
+        ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
+        indis, _, _ = parse_gedcom(str(ged))
+        birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
+        assert birt['addr'] == "St. Bart's Hospital"
+
+    def test_deat_addr_parsed_with_sour_following(self, tmp_path):
+        """ADDR must survive when SOUR/DATA sub-records follow it on a DEAT event."""
+        ged = tmp_path / 'indi_addr.ged'
+        ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
+        indis, _, _ = parse_gedcom(str(ged))
+        deat = next(e for e in indis['@I1@']['events'] if e['tag'] == 'DEAT')
+        assert deat['addr'] == 'Hôpital Lariboisière'
+
+    def test_resi_addr_parsed(self, tmp_path):
+        ged = tmp_path / 'indi_addr.ged'
+        ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
+        indis, _, _ = parse_gedcom(str(ged))
+        resi = next(e for e in indis['@I1@']['events'] if e['tag'] == 'RESI')
+        assert resi['addr'] == '123 Main Street'
+
+    def test_addr_in_build_people_json(self, tmp_path):
+        """addr must flow through build_people_json into the events list."""
+        ged = tmp_path / 'indi_addr.ged'
+        ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged))
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        events = {e['tag']: e for e in people['@I1@']['events']}
+        assert events['BIRT']['addr'] == "St. Bart's Hospital"
+        assert events['DEAT']['addr'] == 'Hôpital Lariboisière'
+        assert events['RESI']['addr'] == '123 Main Street'
+
+    def test_edit_deat_addr_round_trip(self, tmp_path):
+        """Edit ADDR on a DEAT event → write → re-parse → verify in events."""
+        ged = tmp_path / 'indi_edit.ged'
+        ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
+
+        lines = ged.read_text(encoding='utf-8').splitlines()
+        start, end, err = _find_event_block(lines, '@I1@', 'DEAT', 0)
+        assert err is None
+        new_lines = _edit_event_fields(lines, start, end, {'ADDR': 'Père Lachaise Cemetery'})
+        ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
+
+        indis, fams, sources = parse_gedcom(str(ged))
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        deat = next(e for e in people['@I1@']['events'] if e['tag'] == 'DEAT')
+        assert deat['addr'] == 'Père Lachaise Cemetery'
