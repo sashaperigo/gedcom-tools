@@ -59,6 +59,8 @@ import argparse
 import os
 import re
 import sys
+import unicodedata
+from collections import defaultdict
 
 # ---------------------------------------------------------------------------
 # Month-name lookup (English, German, French, Spanish/Portuguese abbrevs)
@@ -112,6 +114,25 @@ GEDCOM_DATE_RE = re.compile(
 )
 
 YEAR_RE = re.compile(r"\b\d{3,4}\b")
+
+# Matches 3-letter GEDCOM month abbreviations (case-insensitive).
+# Used by scan_date_month_caps / fix_date_caps and normalize_date.
+_ABBREV_MONTH_RE = re.compile(
+    r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b',
+    re.IGNORECASE,
+)
+
+# AGE tag value grammar per GEDCOM 5.5.1
+_AGE_RE = re.compile(
+    r'^[<>]?'
+    r'(?:'
+    r'\d+y(?:\s+\d+m)?(?:\s+\d+d)?'
+    r'|\d+m(?:\s+\d+d)?'
+    r'|\d+d'
+    r'|CHILD|INFANT|STILLBORN'
+    r')$',
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # Normalization rules (applied in order)
@@ -176,6 +197,9 @@ def normalize_date(val: str) -> str:
 
     # Normalize month names to 3-letter GEDCOM abbreviations
     v = MONTH_RE.sub(replace_month, v)
+
+    # Uppercase any remaining 3-letter month abbreviations (e.g. 'Feb' → 'FEB')
+    v = _ABBREV_MONTH_RE.sub(lambda x: x.group(0).upper(), v)
 
     # Collapse extra whitespace
     v = re.sub(r'\s{2,}', ' ', v).strip()
@@ -1469,6 +1493,1345 @@ def fix_file(path: str, dry_run: bool = False):
 
 
 # ---------------------------------------------------------------------------
+# Severity-level constants
+# ---------------------------------------------------------------------------
+
+_ERR  = '[ERROR]'
+_WARN = '[WARNING]'
+_INFO = '[INFO]'
+
+
+# ---------------------------------------------------------------------------
+# Date month-capitalization check and fix  (spec 2.1)
+# ---------------------------------------------------------------------------
+
+def scan_date_month_caps(path: str) -> list[tuple[int, str]]:
+    """
+    Return list of (lineno, value) for DATE lines where a month abbreviation
+    is not fully uppercase (e.g. 'Feb', 'apr', 'jan').
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = re.match(r'^\d+ DATE (.+)$', line)
+            if not m:
+                continue
+            val = m.group(1).strip()
+            for match in _ABBREV_MONTH_RE.finditer(val):
+                if match.group(0) != match.group(0).upper():
+                    violations.append((lineno, val))
+                    break
+    return violations
+
+
+def fix_date_caps(path: str, dry_run: bool = False) -> int:
+    """
+    Normalize month abbreviations in DATE lines to uppercase.
+    Returns number of lines changed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    for lineno, raw in enumerate(lines_in, 1):
+        line = raw.rstrip('\n')
+        m = re.match(r'^(\d+ DATE )(.+)$', line)
+        if m:
+            val = m.group(2).strip()
+            fixed = _ABBREV_MONTH_RE.sub(lambda x: x.group(0).upper(), val)
+            if fixed != val:
+                changed += 1
+                if dry_run:
+                    print(f'  line {lineno}: {val!r}  →  {fixed!r}')
+                line = m.group(1) + fixed
+        lines_out.append(line + '\n')
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# Header required-field validation  (spec 1.1)
+# ---------------------------------------------------------------------------
+
+def scan_header_required_fields(path: str) -> list[str]:
+    """
+    Return a list of description strings for required HEAD structures that are absent.
+
+    Checks:
+      1 SOUR   — approved system ID (required)
+      1 SUBM   — submitter reference (required)
+      1 GEDC   — with subordinate 2 VERS and 2 FORM LINEAGE-LINKED (required)
+      1 CHAR   — character set (required)
+    """
+    in_head = False
+    has_sour = False
+    has_subm = False
+    has_gedc = False
+    has_gedc_vers = False
+    has_gedc_form = False
+    has_char = False
+    in_gedc = False
+
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.rstrip('\n')
+            if line.startswith('0 HEAD'):
+                in_head = True
+                continue
+            if in_head and line.startswith('0 '):
+                break
+            if not in_head:
+                continue
+            if re.match(r'^1 SOUR\b', line):
+                has_sour = True
+            if re.match(r'^1 SUBM ', line):
+                has_subm = True
+            if line == '1 GEDC':
+                has_gedc = True
+                in_gedc = True
+            elif in_gedc and line.startswith('1 '):
+                in_gedc = False
+            if re.match(r'^1 CHAR\b', line):
+                has_char = True
+            if in_gedc:
+                if re.match(r'^2 VERS ', line):
+                    has_gedc_vers = True
+                if re.match(r'^2 FORM LINEAGE-LINKED', line, re.IGNORECASE):
+                    has_gedc_form = True
+
+    missing = []
+    if not has_sour:
+        missing.append('1 SOUR (approved system ID) is absent from HEAD')
+    if not has_subm:
+        missing.append('1 SUBM (submitter reference) is absent from HEAD')
+    if not has_gedc:
+        missing.append('1 GEDC block is absent from HEAD')
+    else:
+        if not has_gedc_vers:
+            missing.append('2 VERS is absent from the HEAD GEDC block')
+        if not has_gedc_form:
+            missing.append('2 FORM LINEAGE-LINKED is absent from the HEAD GEDC block')
+    if not has_char:
+        missing.append('1 CHAR (character set) is absent from HEAD')
+    return missing
+
+
+# ---------------------------------------------------------------------------
+# Bare DEAT/BIRT without assertion  (spec 1.2)
+# ---------------------------------------------------------------------------
+
+_BARE_EVENT_TAGS = frozenset({'BIRT', 'CHR', 'DEAT'})
+
+
+def scan_bare_event_tags(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, tag) for level-1 BIRT/CHR/DEAT lines that have no value
+    and no level-2 or deeper children.
+
+    A bare tag like '1 DEAT' (no 'Y' and no subordinate DATE/PLAC/etc.)
+    violates GEDCOM 5.5.1 which requires '1 DEAT Y' to assert a known death
+    with no details.  Tags with subordinate children are valid (the data implies
+    the event happened).
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        m = re.match(r'^1 ([A-Z]+)(.*)', line)
+        if m and m.group(1) in _BARE_EVENT_TAGS:
+            tag = m.group(1)
+            val = m.group(2).strip()
+            # Skip if value is present (including 'Y')
+            if val:
+                i += 1
+                continue
+            # Check for children (any level-2+ line before next level-0/1)
+            j = i + 1
+            has_children = False
+            while j < len(lines):
+                cl = lines[j].rstrip('\n')
+                cm = re.match(r'^(\d+)', cl)
+                if cm:
+                    lvl = int(cm.group(1))
+                    if lvl >= 2:
+                        has_children = True
+                        break
+                    else:
+                        break
+                j += 1
+            if not has_children:
+                violations.append((i + 1, tag))
+        i += 1
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# EVEN / FACT / IDNO without TYPE  (spec 1.3)
+# ---------------------------------------------------------------------------
+
+_TYPED_EVENT_TAGS = frozenset({'EVEN', 'FACT', 'IDNO'})
+
+
+def scan_untyped_events(path: str) -> list[tuple[int, str, str]]:
+    """
+    Return (lineno, tag, xref) for level-1 EVEN/FACT/IDNO lines that have no
+    subordinate 2 TYPE child.
+    """
+    violations: list[tuple[int, str, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    current_xref = ''
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        m0 = re.match(r'^0 (@[^@]+@) ', line)
+        if m0:
+            current_xref = m0.group(1)
+            i += 1
+            continue
+        m = re.match(r'^1 ([A-Z]+)', line)
+        if m and m.group(1) in _TYPED_EVENT_TAGS:
+            tag = m.group(1)
+            lineno = i + 1
+            j = i + 1
+            has_type = False
+            while j < len(lines):
+                cl = lines[j].rstrip('\n')
+                cm = re.match(r'^(\d+) ([A-Z]+)', cl)
+                if cm:
+                    lvl = int(cm.group(1))
+                    if lvl == 2 and cm.group(2) == 'TYPE':
+                        has_type = True
+                        break
+                    elif lvl <= 1:
+                        break
+                j += 1
+            if not has_type:
+                violations.append((lineno, tag, current_xref))
+        i += 1
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Missing SEX tag  (spec 1.10)
+# ---------------------------------------------------------------------------
+
+def scan_missing_sex(path: str) -> list[str]:
+    """
+    Return xrefs of INDI records that have no 1 SEX tag at all.
+    (The existing scan_sex_values checks for *invalid* values; this checks
+    for *absence*.)
+    """
+    violations: list[str] = []
+    current_xref: str | None = None
+    in_indi = False
+    has_sex = False
+
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.rstrip('\n')
+            m = re.match(r'^0 (@[^@]+@) INDI', line)
+            if m:
+                if in_indi and current_xref and not has_sex:
+                    violations.append(current_xref)
+                current_xref = m.group(1)
+                in_indi = True
+                has_sex = False
+                continue
+            if in_indi and line.startswith('0 '):
+                if current_xref and not has_sex:
+                    violations.append(current_xref)
+                in_indi = False
+                current_xref = None
+                continue
+            if in_indi and re.match(r'^1 SEX\b', line):
+                has_sex = True
+
+    if in_indi and current_xref and not has_sex:
+        violations.append(current_xref)
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# AGE value validation  (spec 1.4)
+# ---------------------------------------------------------------------------
+
+def scan_age_values(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, value) for AGE tag lines whose value does not conform to the
+    GEDCOM 5.5.1 grammar: optional '<'/'>' prefix, followed by one of
+    YYy [MMm [DDd]], MMm [DDd], DDd, or the keywords CHILD / INFANT / STILLBORN.
+    Maximum 12 characters.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            m = re.match(r'^\d+ AGE (.+)$', raw.rstrip('\n'))
+            if m:
+                val = m.group(1).strip()
+                if len(val) > 12 or not _AGE_RE.match(val):
+                    violations.append((lineno, val))
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# RESN value validation  (spec 1.7)
+# ---------------------------------------------------------------------------
+
+_VALID_RESN = frozenset({'confidential', 'locked', 'privacy'})
+
+
+def scan_resn_values(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, value) for RESN lines whose value is not in
+    {confidential, locked, privacy}.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            m = re.match(r'^\d+ RESN (.+)$', raw.rstrip('\n'))
+            if m:
+                val = m.group(1).strip()
+                if val.lower() not in _VALID_RESN:
+                    violations.append((lineno, val))
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# PEDI value validation  (spec 1.8)
+# ---------------------------------------------------------------------------
+
+_VALID_PEDI = frozenset({'adopted', 'birth', 'foster', 'sealing'})
+
+
+def scan_pedi_values(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, value) for PEDI lines whose value is not in
+    {adopted, birth, foster, sealing}.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            m = re.match(r'^\d+ PEDI (.+)$', raw.rstrip('\n'))
+            if m:
+                val = m.group(1).strip()
+                if val.lower() not in _VALID_PEDI:
+                    violations.append((lineno, val))
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Non-standard tag inventory  (spec 1.9)
+# ---------------------------------------------------------------------------
+
+_NONSTANDARD_TAG_SUGGESTIONS: dict[str, str] = {
+    '_FREL': 'PEDI (under FAMC, father relationship)',
+    '_MREL': 'PEDI (under FAMC, mother relationship)',
+    '_SREL': 'NOTE on FAM record, or 1 EVEN with 2 TYPE Partnership',
+    '_FSID': 'No standard equivalent — FamilySearch-specific identifier',
+    '_UID':  'No standard equivalent — application-specific unique ID',
+}
+
+
+def scan_nonstandard_tags(path: str) -> dict[str, int]:
+    """
+    Return {tag: count} for all underscore-prefixed tags found in the file.
+    These are vendor extensions not defined in GEDCOM 5.5.1.
+    """
+    counts: dict[str, int] = {}
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            m = re.match(r'^\d+ (_[A-Z0-9_]+)', raw.rstrip('\n'))
+            if m:
+                tag = m.group(1)
+                counts[tag] = counts.get(tag, 0) + 1
+    return counts
+
+
+# ---------------------------------------------------------------------------
+# OCCU length warning  (spec 3.3)
+# ---------------------------------------------------------------------------
+
+def scan_occu_length(path: str, threshold: int = 120) -> list[tuple[int, int]]:
+    """
+    Return (lineno, length) for OCCU values exceeding *threshold* characters.
+    Long OCCU values likely contain narrative text that should be split into a
+    short value with a subordinate NOTE.
+    """
+    violations: list[tuple[int, int]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            m = re.match(r'^\d+ OCCU (.+)$', raw.rstrip('\n'))
+            if m:
+                val = m.group(1)
+                if len(val) > threshold:
+                    violations.append((lineno, len(val)))
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Source quality report  (spec 1.11)
+# ---------------------------------------------------------------------------
+
+def scan_source_quality(path: str) -> dict:
+    """
+    Return a dict with three keys:
+      'no_title'     : list of xrefs for SOUR records with no TITL
+      'no_authority' : list of (xref, title) for SOUR records with TITL but no AUTH/PUBL/REPO
+      'no_page'      : list of (lineno, sour_xref) for source citations with no PAGE child
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    no_title: list[str] = []
+    no_authority: list[tuple[str, str]] = []
+    no_page: list[tuple[int, str]] = []
+
+    # ── Scan SOUR definition records ─────────────────────────────────────────
+    i = 0
+    current_xref: str | None = None
+    in_sour_rec = False
+    has_titl = False
+    has_authority = False
+    sour_title = ''
+
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        m0 = re.match(r'^0 (@S[^@]+@) SOUR', line)
+        if m0:
+            if in_sour_rec and current_xref:
+                if not has_titl:
+                    no_title.append(current_xref)
+                elif not has_authority:
+                    no_authority.append((current_xref, sour_title))
+            current_xref = m0.group(1)
+            in_sour_rec = True
+            has_titl = False
+            has_authority = False
+            sour_title = ''
+            i += 1
+            continue
+        if in_sour_rec and line.startswith('0 '):
+            if current_xref:
+                if not has_titl:
+                    no_title.append(current_xref)
+                elif not has_authority:
+                    no_authority.append((current_xref, sour_title))
+            in_sour_rec = False
+            current_xref = None
+        if in_sour_rec:
+            mt = re.match(r'^1 TITL (.+)', line)
+            if mt:
+                has_titl = True
+                sour_title = mt.group(1).strip()
+            elif re.match(r'^1 (AUTH|PUBL|REPO)\b', line):
+                has_authority = True
+        i += 1
+
+    if in_sour_rec and current_xref:
+        if not has_titl:
+            no_title.append(current_xref)
+        elif not has_authority:
+            no_authority.append((current_xref, sour_title))
+
+    # ── Scan source citations for PAGE ───────────────────────────────────────
+    cite_re = re.compile(r'^(\d+) SOUR (@[^@]+@)$')
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        m = cite_re.match(line)
+        if m:
+            cite_level = int(m.group(1))
+            cite_xref = m.group(2)
+            j = i + 1
+            has_page = False
+            while j < len(lines):
+                cl = lines[j].rstrip('\n')
+                cm = re.match(r'^(\d+) ([A-Z]+)', cl)
+                if cm:
+                    if int(cm.group(1)) > cite_level:
+                        if cm.group(2) == 'PAGE':
+                            has_page = True
+                            break
+                    else:
+                        break
+                j += 1
+            if not has_page:
+                no_page.append((i + 1, cite_xref))
+        i += 1
+
+    return {'no_title': no_title, 'no_authority': no_authority, 'no_page': no_page}
+
+
+# ---------------------------------------------------------------------------
+# CONC / CONT validation  (spec 1.5)
+# ---------------------------------------------------------------------------
+
+def scan_conc_cont(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, description) for CONC/CONT anomalies:
+      - Level is not exactly one greater than the most recent non-CONC/CONT line
+      - CONC value begins with a leading space (would be included literally in
+        the reassembled text)
+    """
+    violations: list[tuple[int, str]] = []
+    last_parent_level: int | None = None
+
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = re.match(r'^(\d+) (CONC|CONT)(.*)', line)
+            if m:
+                level = int(m.group(1))
+                tag = m.group(2)
+                rest = m.group(3)
+                if last_parent_level is not None and level != last_parent_level + 1:
+                    violations.append((
+                        lineno,
+                        f'{tag} at level {level} but parent is at level '
+                        f'{last_parent_level} (expected level {last_parent_level + 1})',
+                    ))
+                if tag == 'CONC' and rest.startswith('  '):
+                    violations.append((lineno, 'CONC value begins with a leading space'))
+                # CONC/CONT lines don't update last_parent_level
+            else:
+                m2 = re.match(r'^(\d+)', line)
+                if m2:
+                    last_parent_level = int(m2.group(1))
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# Nickname extraction  (spec 2.2)
+# ---------------------------------------------------------------------------
+
+_NICKNAME_RE = re.compile(r'"([^"]+)"')
+
+
+def scan_name_nicknames(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, value) for NAME lines that contain a quoted nickname in the
+    given-name portion (e.g. 'Adelaide "Edla" /Dellatolla/').
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = NAME_LINE_RE.match(line)
+            if not m:
+                continue
+            val = m.group(3)
+            given_part = val[:val.index('/')] if '/' in val else val
+            if _NICKNAME_RE.search(given_part):
+                violations.append((lineno, val))
+    return violations
+
+
+def fix_nicknames(path: str, dry_run: bool = False) -> int:
+    """
+    Extract quoted nicknames from NAME values and insert as subordinate NICK tags.
+
+    For each NAME line like '1 NAME Adelaide "Edla" /Dellatolla/':
+      1. Remove the quoted nickname (and quotes) from the NAME value.
+      2. Insert a '2 NICK Edla' line immediately after the NAME line.
+         If a 2 NICK already exists, append the nickname if not already present.
+
+    Returns the number of NAME lines changed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = list(lines_in)
+    changed = 0
+    i = 0
+    while i < len(lines_out):
+        line = lines_out[i].rstrip('\n')
+        m = NAME_LINE_RE.match(line)
+        if m:
+            name_level = int(m.group(2))
+            val = m.group(3)
+            given_part = val[:val.index('/')] if '/' in val else val
+            rest = val[val.index('/'):] if '/' in val else ''
+            nick_match = _NICKNAME_RE.search(given_part)
+            if nick_match:
+                nickname = nick_match.group(1)
+                new_given = _NICKNAME_RE.sub('', given_part)
+                new_given = re.sub(r'\s{2,}', ' ', new_given).strip()
+                new_val = (new_given + (' ' if new_given and rest else '') + rest).strip()
+                new_name_line = m.group(1) + new_val
+
+                nick_level = name_level + 1
+                nick_prefix = f'{nick_level} NICK'
+
+                # Locate existing NICK child if any
+                existing_nick_idx: int | None = None
+                j = i + 1
+                while j < len(lines_out):
+                    cl = lines_out[j].rstrip('\n')
+                    cm = re.match(r'^(\d+)', cl)
+                    if cm:
+                        if int(cm.group(1)) <= name_level:
+                            break
+                        if cl.startswith(nick_prefix):
+                            existing_nick_idx = j
+                            break
+                    j += 1
+
+                if dry_run:
+                    print(f'  line {i + 1}: {val!r}  →  {new_val!r}')
+                    if existing_nick_idx is not None:
+                        print(f'    append to existing NICK: {nickname!r}')
+                    else:
+                        print(f'    insert: {nick_prefix} {nickname!r}')
+                else:
+                    lines_out[i] = new_name_line + '\n'
+                    if existing_nick_idx is not None:
+                        existing_nick = lines_out[existing_nick_idx].rstrip('\n')
+                        existing_val = existing_nick[len(nick_prefix):].strip()
+                        if nickname not in existing_val:
+                            lines_out[existing_nick_idx] = (
+                                f'{nick_prefix} {existing_val}; {nickname}\n'
+                            )
+                    else:
+                        lines_out.insert(i + 1, f'{nick_prefix} {nickname}\n')
+                        i += 1
+                changed += 1
+        i += 1
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# GIVN / SURN name-piece generation  (spec 2.5)
+# ---------------------------------------------------------------------------
+
+def scan_name_pieces(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, value) for NAME lines that have no subordinate GIVN or SURN
+    tag, but do contain at least one slash (i.e. have a parseable surname block).
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        m = NAME_LINE_RE.match(line)
+        if m:
+            name_level = int(m.group(2))
+            val = m.group(3)
+            if '/' not in val:
+                i += 1
+                continue
+            has_givn = False
+            has_surn = False
+            j = i + 1
+            while j < len(lines):
+                cl = lines[j].rstrip('\n')
+                cm = re.match(r'^(\d+) ([A-Z]+)', cl)
+                if cm:
+                    if int(cm.group(1)) <= name_level:
+                        break
+                    if cm.group(2) == 'GIVN':
+                        has_givn = True
+                    elif cm.group(2) == 'SURN':
+                        has_surn = True
+                j += 1
+            if not has_givn or not has_surn:
+                violations.append((i + 1, val))
+        i += 1
+    return violations
+
+
+def _parse_name_pieces(val: str) -> tuple[str, str, str]:
+    """Parse a GEDCOM NAME value into (given, surname, suffix) using slash convention."""
+    if '/' not in val:
+        return val.strip(), '', ''
+    parts = val.split('/')
+    given = parts[0].strip()
+    surname = parts[1].strip() if len(parts) >= 2 else ''
+    suffix = parts[2].strip() if len(parts) >= 3 else ''
+    return given, surname, suffix
+
+
+def fix_name_pieces(path: str, dry_run: bool = False) -> int:
+    """
+    Insert missing GIVN/SURN/NSFX subordinate tags for NAME lines that lack them.
+    Only processes NAME lines containing at least one slash.
+    Does not overwrite existing name pieces.
+    Returns the number of NAME lines changed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = list(lines_in)
+    changed = 0
+    i = 0
+    while i < len(lines_out):
+        line = lines_out[i].rstrip('\n')
+        m = NAME_LINE_RE.match(line)
+        if m:
+            name_level = int(m.group(2))
+            val = m.group(3)
+            if '/' not in val:
+                i += 1
+                continue
+
+            given, surname, suffix = _parse_name_pieces(val)
+
+            has_givn = False
+            has_surn = False
+            has_nsfx = False
+            insert_after = i
+            j = i + 1
+            while j < len(lines_out):
+                cl = lines_out[j].rstrip('\n')
+                cm = re.match(r'^(\d+) ([A-Z]+)', cl)
+                if cm:
+                    if int(cm.group(1)) <= name_level:
+                        break
+                    tag = cm.group(2)
+                    if tag == 'GIVN':
+                        has_givn = True
+                    elif tag == 'SURN':
+                        has_surn = True
+                    elif tag == 'NSFX':
+                        has_nsfx = True
+                    insert_after = j
+                j += 1
+
+            child_level = name_level + 1
+            to_insert = []
+            if not has_givn and given:
+                to_insert.append(f'{child_level} GIVN {given}')
+            if not has_surn and surname:
+                to_insert.append(f'{child_level} SURN {surname}')
+            if not has_nsfx and suffix:
+                to_insert.append(f'{child_level} NSFX {suffix}')
+
+            if to_insert:
+                changed += 1
+                if dry_run:
+                    print(f'  line {i + 1}: NAME {val!r}')
+                    for piece in to_insert:
+                        print(f'    insert: {piece!r}')
+                else:
+                    for offset, piece in enumerate(to_insert):
+                        lines_out.insert(insert_after + 1 + offset, piece + '\n')
+                    i += len(to_insert)
+        i += 1
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# Day-month-only dates → date phrases  (spec 2.6)
+# ---------------------------------------------------------------------------
+
+_DATELESS_DATE_RE = re.compile(
+    r'^(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$',
+    re.IGNORECASE,
+)
+
+
+def scan_dateless_dates(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, value) for DATE lines that have a day+month but no year
+    (e.g. '31 Jan' or '13 OCT').
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = re.match(r'^\d+ DATE (.+)$', line)
+            if m and _DATELESS_DATE_RE.match(m.group(1).strip()):
+                violations.append((lineno, m.group(1).strip()))
+    return violations
+
+
+def fix_dateless_dates(path: str, dry_run: bool = False) -> int:
+    """
+    Wrap day+month-only DATE values as parenthesised date phrases per the spec.
+    '31 Jan' → '(31 JAN, year unknown)'
+    Returns the number of lines changed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    for lineno, raw in enumerate(lines_in, 1):
+        line = raw.rstrip('\n')
+        m = re.match(r'^(\d+ DATE )(.+)$', line)
+        if m:
+            val = m.group(2).strip()
+            dm = _DATELESS_DATE_RE.match(val)
+            if dm:
+                fixed = f'({dm.group(1)} {dm.group(2).upper()}, year unknown)'
+                changed += 1
+                if dry_run:
+                    print(f'  line {lineno}: {val!r}  →  {fixed!r}')
+                line = m.group(1) + fixed
+        lines_out.append(line + '\n')
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# Date logical consistency  (spec 1.6)
+# ---------------------------------------------------------------------------
+
+def scan_date_consistency(path: str) -> list[str]:
+    """
+    Return list of human-readable strings for logical date inconsistencies.
+
+    Checks within individuals:
+      - Birth year should precede death year
+      - Christening/baptism year should be on or after birth year
+      - Burial year should be on or after death year
+
+    Checks within families:
+      - Marriage year should be after both spouses' birth years (if known)
+      - Children's birth years should be after parents' birth years
+
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    gf = parse_gedcom(path)
+    issues: list[str] = []
+
+    def _year(date_obj) -> int | None:
+        return date_obj.year if date_obj and getattr(date_obj, 'year', None) else None
+
+    for xref, ind in gf.individuals.items():
+        birth_year = death_year = chr_year = buri_year = None
+        for ev in ind.events:
+            y = _year(ev.date)
+            if not y:
+                continue
+            if ev.tag == 'BIRT':
+                birth_year = y
+            elif ev.tag == 'DEAT':
+                death_year = y
+            elif ev.tag in ('CHR', 'BAPM'):
+                chr_year = y
+            elif ev.tag == 'BURI':
+                buri_year = y
+
+        if birth_year and death_year and birth_year > death_year:
+            issues.append(f'{xref}: birth year {birth_year} is after death year {death_year}')
+        if birth_year and chr_year and chr_year < birth_year:
+            issues.append(f'{xref}: christening/baptism year {chr_year} is before birth year {birth_year}')
+        if death_year and buri_year and buri_year < death_year:
+            issues.append(f'{xref}: burial year {buri_year} is before death year {death_year}')
+
+    for fam_xref, fam in gf.families.items():
+        marr_year = None
+        for ev in fam.events:
+            y = _year(ev.date)
+            if ev.tag == 'MARR' and y:
+                marr_year = y
+                break
+
+        husb = gf.individuals.get(fam.husband_xref) if fam.husband_xref else None
+        wife = gf.individuals.get(fam.wife_xref) if fam.wife_xref else None
+
+        for spouse, label in [(husb, 'husband'), (wife, 'wife')]:
+            if not spouse:
+                continue
+            spouse_birth = None
+            for ev in spouse.events:
+                y = _year(ev.date)
+                if ev.tag == 'BIRT' and y:
+                    spouse_birth = y
+                    break
+            if marr_year and spouse_birth and marr_year < spouse_birth:
+                issues.append(
+                    f'{fam_xref}: marriage year {marr_year} is before '
+                    f'{label} ({spouse.xref}) birth year {spouse_birth}'
+                )
+
+        for child_xref in fam.child_xrefs:
+            child = gf.individuals.get(child_xref)
+            if not child:
+                continue
+            child_birth = None
+            for ev in child.events:
+                y = _year(ev.date)
+                if ev.tag == 'BIRT' and y:
+                    child_birth = y
+                    break
+            if not child_birth:
+                continue
+            for parent, label in [(husb, 'father'), (wife, 'mother')]:
+                if not parent:
+                    continue
+                parent_birth = parent_death = None
+                for ev in parent.events:
+                    y = _year(ev.date)
+                    if ev.tag == 'BIRT' and y:
+                        parent_birth = y
+                    elif ev.tag == 'DEAT' and y:
+                        parent_death = y
+                if parent_birth and child_birth <= parent_birth:
+                    issues.append(
+                        f'{child_xref}: birth year {child_birth} is not after '
+                        f'{label} ({parent.xref}) birth year {parent_birth}'
+                    )
+                if parent_death and child_birth > parent_death + 1:
+                    issues.append(
+                        f'{child_xref}: birth year {child_birth} is after '
+                        f'{label} ({parent.xref}) death year {parent_death}'
+                    )
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Bidirectional pointer consistency  (spec 1.13)
+# ---------------------------------------------------------------------------
+
+def scan_bidirectional_pointers(path: str) -> list[str]:
+    """
+    Return error strings for family–individual pointer reciprocity issues.
+
+    Unlike scan_broken_xrefs (which checks that referenced records exist),
+    this checks that every pointer is mirrored in the other direction:
+      - FAM HUSB/WIFE → INDI must have FAMS back to that FAM
+      - FAM CHIL → INDI must have FAMC back to that FAM
+      - INDI FAMS → FAM must list that INDI as HUSB or WIFE
+      - INDI FAMC → FAM must list that INDI as CHIL
+
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    gf = parse_gedcom(path)
+    issues: list[str] = []
+
+    for fam_xref, fam in gf.families.items():
+        for spouse_xref in filter(None, [fam.husband_xref, fam.wife_xref]):
+            ind = gf.individuals.get(spouse_xref)
+            if ind and fam_xref not in ind.family_spouse:
+                issues.append(
+                    f'FAM {fam_xref} lists {spouse_xref} as spouse, '
+                    f'but INDI {spouse_xref} has no FAMS @{fam_xref}@'
+                )
+        for child_xref in fam.child_xrefs:
+            ind = gf.individuals.get(child_xref)
+            if ind and fam_xref not in ind.family_child:
+                issues.append(
+                    f'FAM {fam_xref} lists {child_xref} as child, '
+                    f'but INDI {child_xref} has no FAMC @{fam_xref}@'
+                )
+
+    for ind_xref, ind in gf.individuals.items():
+        for fam_xref in ind.family_spouse:
+            fam = gf.families.get(fam_xref)
+            if fam and ind_xref not in filter(None, [fam.husband_xref, fam.wife_xref]):
+                issues.append(
+                    f'INDI {ind_xref} has FAMS @{fam_xref}@, '
+                    f'but FAM {fam_xref} does not list them as HUSB or WIFE'
+                )
+        for fam_xref in ind.family_child:
+            fam = gf.families.get(fam_xref)
+            if fam and ind_xref not in fam.child_xrefs:
+                issues.append(
+                    f'INDI {ind_xref} has FAMC @{fam_xref}@, '
+                    f'but FAM {fam_xref} does not list them as CHIL'
+                )
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Duplicate RESI consolidation  (spec 2.4)
+# ---------------------------------------------------------------------------
+
+def scan_duplicate_resi(path: str) -> list[tuple[str, str, str]]:
+    """
+    Return (xref, date_str, place_str) for individuals with more than one RESI
+    event sharing the same date and place.
+    Requires the gedcom_merge parser.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    gf = parse_gedcom(path)
+    issues: list[tuple[str, str, str]] = []
+
+    for xref, ind in gf.individuals.items():
+        resi_events = [ev for ev in ind.events if ev.tag == 'RESI']
+        seen: set[tuple[str, str]] = set()
+        for ev in resi_events:
+            date_str = str(ev.date) if ev.date else ''
+            place_str = ev.place or ''
+            key = (date_str, place_str)
+            if key in seen:
+                issues.append((xref, date_str, place_str))
+            else:
+                seen.add(key)
+
+    return issues
+
+
+def fix_duplicate_resi(path: str, dry_run: bool = False) -> int:
+    """
+    Remove duplicate RESI events (same date and place) from individual records,
+    merging their unique source citations into the surviving event.
+    Returns the number of duplicate RESI events removed.
+    Requires the gedcom_merge parser/writer.
+    """
+    from gedcom_merge.parser import parse_gedcom
+    from gedcom_merge.writer import write_gedcom
+    gf = parse_gedcom(path)
+
+    removed = 0
+    for ind in gf.individuals.values():
+        resi_keep: dict[tuple[str, str], object] = {}
+        keep_events = []
+
+        for ev in ind.events:
+            if ev.tag != 'RESI':
+                keep_events.append(ev)
+                continue
+            date_str = str(ev.date) if ev.date else ''
+            place_str = ev.place or ''
+            key = (date_str, place_str)
+            if key not in resi_keep:
+                resi_keep[key] = ev
+                keep_events.append(ev)
+            else:
+                primary = resi_keep[key]
+                existing_keys = {
+                    (c.source_xref, c.page) for c in primary.citations
+                }
+                for cit in ev.citations:
+                    ck = (cit.source_xref, cit.page)
+                    if ck not in existing_keys:
+                        primary.citations.append(cit)
+                        existing_keys.add(ck)
+                removed += 1
+                if dry_run:
+                    print(
+                        f'  {ind.xref}: duplicate RESI '
+                        f'date={date_str!r} place={place_str!r}'
+                    )
+
+        if removed:
+            ind.events = keep_events
+
+    if removed and not dry_run:
+        write_gedcom(gf, path)
+
+    return removed
+
+
+# ---------------------------------------------------------------------------
+# FACT AKA → proper NAME tag  (spec 2.3)
+# ---------------------------------------------------------------------------
+
+def scan_fact_aka(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, note_value) for FACT blocks that have both a TYPE AKA
+    and a NOTE child — these should be converted to proper NAME records.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        if re.match(r'^1 FACT\b', line):
+            has_aka = False
+            note_val: str | None = None
+            j = i + 1
+            while j < len(lines):
+                cl = lines[j].rstrip('\n')
+                cm = re.match(r'^(\d+) ([A-Z]+)(.*)', cl)
+                if cm:
+                    if int(cm.group(1)) <= 1:
+                        break
+                    if cm.group(2) == 'TYPE' and cm.group(3).strip().upper() == 'AKA':
+                        has_aka = True
+                    elif cm.group(2) == 'NOTE':
+                        note_val = cm.group(3).strip()
+                j += 1
+            if has_aka and note_val:
+                violations.append((i + 1, note_val))
+        i += 1
+    return violations
+
+
+def fix_aka_facts(path: str, dry_run: bool = False) -> int:
+    """
+    Convert FACT / TYPE AKA / NOTE <name> blocks to proper NAME records.
+
+    Heuristic: the last whitespace-separated word in the NOTE value is treated
+    as the surname (wrapped in slashes). Single-word values are wrapped as a
+    pure surname. The resulting record is:
+
+        1 NAME <given> /<surname>/
+        2 TYPE aka
+
+    Returns the number of blocks converted.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = list(lines_in)
+    changed = 0
+    i = 0
+    while i < len(lines_out):
+        line = lines_out[i].rstrip('\n')
+        if re.match(r'^1 FACT\b', line):
+            has_aka = False
+            note_val: str | None = None
+            block_end = i + 1
+            j = i + 1
+            while j < len(lines_out):
+                cl = lines_out[j].rstrip('\n')
+                cm = re.match(r'^(\d+) ([A-Z]+)(.*)', cl)
+                if cm:
+                    if int(cm.group(1)) <= 1:
+                        break
+                    if cm.group(2) == 'TYPE' and cm.group(3).strip().upper() == 'AKA':
+                        has_aka = True
+                    elif cm.group(2) == 'NOTE':
+                        note_val = cm.group(3).strip()
+                    block_end = j + 1
+                j += 1
+
+            if has_aka and note_val:
+                words = note_val.split()
+                if len(words) == 1:
+                    name_val = f'/{words[0]}/'
+                else:
+                    surname = words[-1]
+                    given = ' '.join(words[:-1])
+                    name_val = f'{given} /{surname}/'
+
+                new_name_line = f'1 NAME {name_val}'
+                new_type_line = '2 TYPE aka'
+
+                if dry_run:
+                    print(f'  line {i + 1}: FACT/AKA/NOTE {note_val!r}')
+                    print(f'    → {new_name_line!r}')
+                    print(f'    → {new_type_line!r}')
+                else:
+                    del lines_out[i:block_end]
+                    lines_out.insert(i, new_type_line + '\n')
+                    lines_out.insert(i, new_name_line + '\n')
+
+                changed += 1
+                if not dry_run:
+                    i += 2
+                    continue
+        i += 1
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# Place consistency report  (spec 1.12)
+# ---------------------------------------------------------------------------
+
+def _normalize_place_str(val: str) -> str:
+    """Lowercase, strip diacritics, collapse whitespace."""
+    nfkd = unicodedata.normalize('NFKD', val.lower())
+    stripped = ''.join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r'\s+', ' ', stripped).strip()
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Compute the Levenshtein edit distance between two strings."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i]
+        for j, cb in enumerate(b, 1):
+            cost = 0 if ca == cb else 1
+            curr.append(min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost))
+        prev = curr
+    return prev[-1]
+
+
+_COUNTRY_ALIASES: dict[str, str] = {
+    'usa': 'united states',
+    'u.s.a.': 'united states',
+    'united states of america': 'united states',
+    'england': 'united kingdom',
+    'great britain': 'united kingdom',
+    'scotland': 'united kingdom',
+    'wales': 'united kingdom',
+}
+
+
+def scan_place_consistency(path: str) -> dict:
+    """
+    Return a summary of potential place-name inconsistencies:
+
+      'similar_places'          : list of (plac_a, plac_b) pairs that likely
+                                  refer to the same location but are spelled
+                                  differently (city-level Levenshtein ≤ 2 within
+                                  the same region/country group)
+      'country_inconsistencies' : list of (raw_a, raw_b) country-name pairs
+                                  that normalise to the same canonical country
+                                  but are spelled/abbreviated differently
+                                  (e.g. 'USA' vs 'United States')
+      'bare_countries'          : list of PLAC values with no comma (likely
+                                  just a country name with no subdivision)
+    """
+    plac_values: list[str] = []
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.rstrip('\n')
+            m = PLAC_RE.match(line)
+            if m:
+                plac_values.append(m.group(2).strip())
+
+    bare_countries = [v for v in plac_values if ',' not in v]
+
+    # Group by normalised (country, region) key
+    by_region: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for val in plac_values:
+        parts = [p.strip() for p in val.split(',')]
+        if len(parts) >= 2:
+            country_key = _normalize_place_str(parts[-1])
+            region_key = _normalize_place_str(parts[-2]) if len(parts) >= 2 else ''
+            by_region[(country_key, region_key)].append(val)
+
+    similar_places: list[tuple[str, str]] = []
+    for _region, vals in by_region.items():
+        unique_vals = list(dict.fromkeys(vals))
+        for j in range(len(unique_vals)):
+            for k in range(j + 1, len(unique_vals)):
+                a, b = unique_vals[j], unique_vals[k]
+                city_a = _normalize_place_str(a.split(',')[0])
+                city_b = _normalize_place_str(b.split(',')[0])
+                if city_a == city_b:
+                    continue
+                if (city_a in city_b or city_b in city_a or
+                        _levenshtein(city_a, city_b) <= 2):
+                    similar_places.append((a, b))
+
+    # Detect country-name inconsistencies
+    country_groups: dict[str, set[str]] = defaultdict(set)
+    for val in plac_values:
+        parts = [p.strip() for p in val.split(',')]
+        if parts:
+            raw_country = parts[-1].strip()
+            norm = _normalize_place_str(raw_country)
+            canonical = _COUNTRY_ALIASES.get(norm, norm)
+            country_groups[canonical].add(raw_country)
+
+    country_inconsistencies: list[tuple[str, str]] = []
+    for _canonical, raw_set in country_groups.items():
+        raw_list = sorted(raw_set)
+        if len(raw_list) > 1:
+            for j in range(len(raw_list)):
+                for k in range(j + 1, len(raw_list)):
+                    country_inconsistencies.append((raw_list[j], raw_list[k]))
+
+    return {
+        'similar_places': similar_places,
+        'country_inconsistencies': country_inconsistencies,
+        'bare_countries': bare_countries,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Same-source multiple-citation check  (spec 3.2 — "potential duplicates")
+# ---------------------------------------------------------------------------
+
+def scan_same_sour_multiple_cites(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, xref) for source citations that reference the same @SOUR@
+    more than once on the same individual/event, even when their child lines
+    differ (e.g. one has a PAGE, one doesn't).
+
+    These are 'potential duplicates' and are reported separately from the
+    exact-duplicate blocks detected by scan_duplicate_sources().
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    violations: list[tuple[int, str]] = []
+    current_rec: str | None = None
+    current_event: int | None = None
+    seen: dict[tuple[str | None, int | None], dict[str, int]] = {}
+
+    defn_re = re.compile(r'^0 ')
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        if defn_re.match(line):
+            current_rec = line
+            current_event = None
+            seen = {}
+            i += 1
+            continue
+        if line.startswith('1 '):
+            current_event = i
+            i += 1
+            continue
+        m = SOUR_CITE_LINE_RE.match(line)
+        if m and current_rec is not None:
+            xref = m.group(2)
+            key = (current_rec, current_event)
+            if key not in seen:
+                seen[key] = {}
+            if xref in seen[key]:
+                violations.append((i + 1, xref))
+            else:
+                seen[key][xref] = i
+        i += 1
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Programmatic all-fixes API
 # ---------------------------------------------------------------------------
 
@@ -1504,9 +2867,15 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_plac_address_parts(path, dry_run=dry_run)
     dates_fixed, _ = fix_file(path, dry_run=dry_run)
     fixes_applied += dates_fixed
+    fixes_applied += fix_date_caps(path, dry_run=dry_run)
+    fixes_applied += fix_nicknames(path, dry_run=dry_run)
+    fixes_applied += fix_name_pieces(path, dry_run=dry_run)
+    fixes_applied += fix_dateless_dates(path, dry_run=dry_run)
+    fixes_applied += fix_aka_facts(path, dry_run=dry_run)
     fixes_applied += fix_broken_xrefs(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_families(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
+    fixes_applied += fix_duplicate_resi(path, dry_run=dry_run)
     fixes_applied += fix_sort_events(path, dry_run=dry_run)
 
     with open(path, encoding='utf-8') as f:
@@ -1587,6 +2956,30 @@ def main():
         help='Sort events in each record into chronological order in-place',
     )
     parser.add_argument(
+        '--fix-date-caps', action='store_true',
+        help='Normalize month abbreviations in DATE lines to uppercase in-place',
+    )
+    parser.add_argument(
+        '--fix-nicknames', action='store_true',
+        help='Extract quoted nicknames from NAME values and insert 2 NICK subordinates',
+    )
+    parser.add_argument(
+        '--fix-name-pieces', action='store_true',
+        help='Insert missing GIVN/SURN/NSFX subordinates for NAME lines in-place',
+    )
+    parser.add_argument(
+        '--fix-dateless-dates', action='store_true',
+        help='Wrap day+month-only DATE values as date phrases in-place',
+    )
+    parser.add_argument(
+        '--fix-aka-facts', action='store_true',
+        help='Convert FACT/TYPE AKA/NOTE blocks to proper NAME records in-place',
+    )
+    parser.add_argument(
+        '--fix-duplicate-resi', action='store_true',
+        help='Merge duplicate RESI events (same date+place) within individual records',
+    )
+    parser.add_argument(
         '--merge-sources', nargs=2, metavar=('KEEP', 'REMOVE'),
         help='Remap all citations from REMOVE xref to KEEP xref and delete REMOVE. '
              'Example: --merge-sources @S100@ @S200@',
@@ -1612,9 +3005,15 @@ def main():
         args.fix_addr_under_plac = True
         args.fix_note_under_plac = True
         args.fix_note_under_addr = True
+        args.fix_date_caps = True
+        args.fix_nicknames = True
+        args.fix_name_pieces = True
+        args.fix_dateless_dates = True
+        args.fix_aka_facts = True
         args.fix_broken_xrefs = True
         args.fix_duplicate_families = True
         args.fix_duplicate_names = True
+        args.fix_duplicate_resi = True
         args.fix_sort_events = True
 
     if not os.path.isfile(args.gedfile):
@@ -1737,6 +3136,60 @@ def main():
         else:
             print(f'  {changed} record(s) had events reordered.')
 
+    if args.fix_date_caps:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Normalizing DATE month-abbreviation capitalization in: {args.gedfile}')
+        changed = fix_date_caps(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} line(s) would be changed.')
+        else:
+            print(f'{changed} DATE line(s) fixed.')
+
+    if args.fix_nicknames:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Extracting quoted nicknames from NAME values in: {args.gedfile}')
+        changed = fix_nicknames(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} NAME line(s) would be changed.')
+        else:
+            print(f'{changed} NAME line(s) changed; NICK tags inserted.')
+
+    if args.fix_name_pieces:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Inserting missing GIVN/SURN subordinates in: {args.gedfile}')
+        changed = fix_name_pieces(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} NAME line(s) would gain new subordinates.')
+        else:
+            print(f'{changed} NAME line(s) updated with GIVN/SURN/NSFX.')
+
+    if args.fix_dateless_dates:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Wrapping day+month-only DATE values in: {args.gedfile}')
+        changed = fix_dateless_dates(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} DATE line(s) would be wrapped.')
+        else:
+            print(f'{changed} DATE line(s) wrapped as date phrases.')
+
+    if args.fix_aka_facts:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Converting FACT/AKA/NOTE blocks to NAME records in: {args.gedfile}')
+        changed = fix_aka_facts(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} FACT/AKA block(s) would be converted.')
+        else:
+            print(f'{changed} FACT/AKA block(s) converted to NAME records.')
+
+    if args.fix_duplicate_resi:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Merging duplicate RESI events in: {args.gedfile}')
+        removed = fix_duplicate_resi(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {removed} duplicate RESI event(s) would be removed.')
+        else:
+            print(f'  {removed} duplicate RESI event(s) removed.')
+
     if args.merge_sources:
         keep, remove = args.merge_sources
         mode = 'DRY RUN' if args.dry_run else 'FIX'
@@ -1770,11 +3223,17 @@ def main():
                 args.fix_address_parts, args.fix_names, args.fix_long_lines,
                 args.fix_duplicate_sources, args.fix_addr_under_plac,
                 args.fix_note_under_plac, args.fix_note_under_addr,
+                args.fix_date_caps, args.fix_nicknames, args.fix_name_pieces,
+                args.fix_dateless_dates, args.fix_aka_facts,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
-                args.fix_duplicate_names, args.fix_sort_events,
-                args.merge_sources]):
+                args.fix_duplicate_names, args.fix_duplicate_resi,
+                args.fix_sort_events, args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
+        # counters for summary statistics
+        _err_count: dict[str, int] = {}
+        _warn_count: dict[str, int] = {}
+        _info_count: dict[str, int] = {}
 
         trailing = scan_trailing_whitespace(args.gedfile)
         if trailing:
@@ -1945,6 +3404,229 @@ def main():
         else:
             print('OK: all level-2 DATE values conform to GEDCOM 5.5.1.')
 
+        # ── New line-level checks ────────────────────────────────────────────
+
+        header_issues = scan_header_required_fields(args.gedfile)
+        if header_issues:
+            errors = True
+            print(f'\n{_ERR} {len(header_issues)} required HEAD field(s) missing:')
+            for msg in header_issues:
+                print(f'  {msg}')
+        else:
+            print('OK: HEAD block contains all required fields.')
+
+        date_caps_issues = scan_date_month_caps(args.gedfile)
+        if date_caps_issues:
+            errors = True
+            print(f'\n{_ERR} {len(date_caps_issues)} DATE value(s) with non-uppercase month '
+                  'abbreviations (run --fix-date-caps to normalize):')
+            for ln, val in date_caps_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(date_caps_issues) > 20:
+                print(f'  ... and {len(date_caps_issues) - 20} more.')
+        else:
+            print('OK: all DATE month abbreviations are uppercase.')
+
+        bare_events = scan_bare_event_tags(args.gedfile)
+        if bare_events:
+            print(f'\n{_WARN} {len(bare_events)} bare event tag(s) with no value and no '
+                  "children (add 'Y' to assert or add subordinate data):")
+            for ln, tag in bare_events[:20]:
+                print(f'  line {ln}: 1 {tag}')
+            if len(bare_events) > 20:
+                print(f'  ... and {len(bare_events) - 20} more.')
+        else:
+            print('OK: no bare BIRT/CHR/DEAT tags without assertion.')
+
+        untyped_events = scan_untyped_events(args.gedfile)
+        if untyped_events:
+            print(f'\n{_WARN} {len(untyped_events)} EVEN/FACT/IDNO tag(s) without a TYPE '
+                  'child (required per GEDCOM 5.5.1):')
+            for ln, tag, xref in untyped_events[:20]:
+                print(f'  line {ln}: {xref} — 1 {tag} has no 2 TYPE')
+            if len(untyped_events) > 20:
+                print(f'  ... and {len(untyped_events) - 20} more.')
+        else:
+            print('OK: all EVEN/FACT/IDNO tags have a TYPE subordinate.')
+
+        missing_sex = scan_missing_sex(args.gedfile)
+        if missing_sex:
+            print(f'\n{_INFO} {len(missing_sex)} individual(s) with no SEX tag:')
+            for xref in missing_sex[:20]:
+                print(f'  {xref}')
+            if len(missing_sex) > 20:
+                print(f'  ... and {len(missing_sex) - 20} more.')
+        else:
+            print('OK: all individuals have a SEX tag.')
+
+        age_issues = scan_age_values(args.gedfile)
+        if age_issues:
+            errors = True
+            print(f'\n{_ERR} {len(age_issues)} AGE value(s) not conforming to GEDCOM 5.5.1:')
+            for ln, val in age_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(age_issues) > 20:
+                print(f'  ... and {len(age_issues) - 20} more.')
+        else:
+            print('OK: all AGE values conform to GEDCOM 5.5.1.')
+
+        resn_issues = scan_resn_values(args.gedfile)
+        if resn_issues:
+            errors = True
+            print(f'\n{_ERR} {len(resn_issues)} RESN value(s) not in '
+                  '{confidential, locked, privacy}:')
+            for ln, val in resn_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(resn_issues) > 20:
+                print(f'  ... and {len(resn_issues) - 20} more.')
+        else:
+            print('OK: all RESN values are valid.')
+
+        pedi_issues = scan_pedi_values(args.gedfile)
+        if pedi_issues:
+            errors = True
+            print(f'\n{_ERR} {len(pedi_issues)} PEDI value(s) not in '
+                  '{adopted, birth, foster, sealing}:')
+            for ln, val in pedi_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(pedi_issues) > 20:
+                print(f'  ... and {len(pedi_issues) - 20} more.')
+        else:
+            print('OK: all PEDI values are valid.')
+
+        conc_issues = scan_conc_cont(args.gedfile)
+        if conc_issues:
+            print(f'\n{_WARN} {len(conc_issues)} CONC/CONT anomaly/anomalies:')
+            for ln, desc in conc_issues[:20]:
+                print(f'  line {ln}: {desc}')
+            if len(conc_issues) > 20:
+                print(f'  ... and {len(conc_issues) - 20} more.')
+        else:
+            print('OK: no CONC/CONT structure anomalies.')
+
+        nickname_issues = scan_name_nicknames(args.gedfile)
+        if nickname_issues:
+            print(f'\n{_INFO} {len(nickname_issues)} NAME value(s) with quoted nicknames '
+                  '(run --fix-nicknames to extract to NICK tags):')
+            for ln, val in nickname_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(nickname_issues) > 20:
+                print(f'  ... and {len(nickname_issues) - 20} more.')
+        else:
+            print('OK: no quoted nicknames found in NAME values.')
+
+        name_piece_issues = scan_name_pieces(args.gedfile)
+        if name_piece_issues:
+            print(f'\n{_INFO} {len(name_piece_issues)} NAME value(s) missing GIVN or SURN '
+                  'subordinates (run --fix-name-pieces to generate):')
+            for ln, val in name_piece_issues[:10]:
+                print(f'  line {ln}: {val!r}')
+            if len(name_piece_issues) > 10:
+                print(f'  ... and {len(name_piece_issues) - 10} more.')
+        else:
+            print('OK: all NAME values with slashes have GIVN/SURN subordinates.')
+
+        dateless_issues = scan_dateless_dates(args.gedfile)
+        if dateless_issues:
+            errors = True
+            print(f'\n{_ERR} {len(dateless_issues)} DATE value(s) with day+month but no year '
+                  '(run --fix-dateless-dates to wrap as date phrases):')
+            for ln, val in dateless_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(dateless_issues) > 20:
+                print(f'  ... and {len(dateless_issues) - 20} more.')
+        else:
+            print('OK: no day+month-only DATE values found.')
+
+        occu_issues = scan_occu_length(args.gedfile)
+        if occu_issues:
+            print(f'\n{_INFO} {len(occu_issues)} OCCU value(s) exceeding 120 characters '
+                  '(likely narrative — consider splitting to OCCU + NOTE):')
+            for ln, length in occu_issues[:10]:
+                print(f'  line {ln}: {length} characters')
+            if len(occu_issues) > 10:
+                print(f'  ... and {len(occu_issues) - 10} more.')
+        else:
+            print('OK: no overly long OCCU values.')
+
+        nonstd_tags = scan_nonstandard_tags(args.gedfile)
+        if nonstd_tags:
+            total_nonstd = sum(nonstd_tags.values())
+            print(f'\n{_INFO} {total_nonstd} non-standard (underscore-prefixed) tag(s) '
+                  f'across {len(nonstd_tags)} distinct tag(s):')
+            for tag, count in sorted(nonstd_tags.items(), key=lambda x: -x[1]):
+                suggestion = _NONSTANDARD_TAG_SUGGESTIONS.get(tag, 'no known standard equivalent')
+                print(f'  {tag}: {count} occurrence(s)  →  {suggestion}')
+        else:
+            print('OK: no non-standard underscore-prefixed tags found.')
+
+        aka_issues = scan_fact_aka(args.gedfile)
+        if aka_issues:
+            print(f'\n{_WARN} {len(aka_issues)} FACT/AKA/NOTE block(s) that should be proper '
+                  'NAME records (run --fix-aka-facts to convert):')
+            for ln, note_val in aka_issues[:20]:
+                print(f'  line {ln}: NOTE {note_val!r}')
+            if len(aka_issues) > 20:
+                print(f'  ... and {len(aka_issues) - 20} more.')
+        else:
+            print('OK: no FACT/AKA blocks needing conversion.')
+
+        src_quality = scan_source_quality(args.gedfile)
+        if src_quality['no_title']:
+            print(f'\n{_INFO} {len(src_quality["no_title"])} source record(s) with no TITL:')
+            for xref in src_quality['no_title'][:10]:
+                print(f'  {xref}')
+            if len(src_quality['no_title']) > 10:
+                print(f'  ... and {len(src_quality["no_title"]) - 10} more.')
+        if src_quality['no_authority']:
+            print(f'\n{_INFO} {len(src_quality["no_authority"])} source record(s) with TITL '
+                  'but no AUTH/PUBL/REPO:')
+            for xref, title in src_quality['no_authority'][:10]:
+                print(f'  {xref}: {title!r}')
+            if len(src_quality['no_authority']) > 10:
+                print(f'  ... and {len(src_quality["no_authority"]) - 10} more.')
+        if src_quality['no_page']:
+            print(f'\n{_INFO} {len(src_quality["no_page"])} source citation(s) with no PAGE '
+                  'subordinate:')
+            for ln, xref in src_quality['no_page'][:5]:
+                print(f'  line {ln}: {xref}')
+            if len(src_quality['no_page']) > 5:
+                print(f'  ... and {len(src_quality["no_page"]) - 5} more.')
+        if not any(src_quality.values()):
+            print('OK: all source records have TITL and citations have PAGE.')
+
+        same_sour_dupes = scan_same_sour_multiple_cites(args.gedfile)
+        if same_sour_dupes:
+            print(f'\n{_WARN} {len(same_sour_dupes)} potential-duplicate source citation(s) '
+                  '(same SOUR xref cited twice on same event, child lines differ):')
+            for ln, xref in same_sour_dupes[:20]:
+                print(f'  line {ln}: {xref}')
+            if len(same_sour_dupes) > 20:
+                print(f'  ... and {len(same_sour_dupes) - 20} more.')
+        else:
+            print('OK: no same-source double-citations detected.')
+
+        place_report = scan_place_consistency(args.gedfile)
+        if place_report['similar_places']:
+            print(f'\n{_INFO} {len(place_report["similar_places"])} likely-duplicate place '
+                  'name pair(s) (similar spelling, same region/country):')
+            for a, b in place_report['similar_places'][:10]:
+                print(f'  {a!r}  ~  {b!r}')
+            if len(place_report['similar_places']) > 10:
+                print(f'  ... and {len(place_report["similar_places"]) - 10} more.')
+        if place_report['country_inconsistencies']:
+            print(f'\n{_INFO} {len(place_report["country_inconsistencies"])} country-name '
+                  'inconsistency pair(s):')
+            for a, b in place_report['country_inconsistencies'][:10]:
+                print(f'  {a!r}  vs  {b!r}')
+        if place_report['bare_countries']:
+            bc = place_report['bare_countries']
+            print(f'\n{_INFO} {len(bc)} bare country-name PLAC value(s) (no subdivision):')
+            for val in sorted(set(bc))[:10]:
+                print(f'  {val!r}')
+        if not any(place_report.values()):
+            print('OK: no place-name inconsistencies detected.')
+
         # -- Structural checks (require gedcom_merge parser) --
         try:
             broken = scan_broken_xrefs(args.gedfile)
@@ -2017,6 +3699,102 @@ def main():
                     print(f'  ... and {len(unsorted_evs) - 20} more.')
             else:
                 print('OK: all events are in chronological order.')
+
+            # ── New structural checks ────────────────────────────────────────
+
+            dup_resi = scan_duplicate_resi(args.gedfile)
+            if dup_resi:
+                print(f'\n{_WARN} {len(dup_resi)} duplicate RESI event(s) '
+                      '(same date+place on same individual — run --fix-duplicate-resi):')
+                for xref, date_str, place_str in dup_resi[:20]:
+                    print(f'  {xref}: date={date_str!r} place={place_str!r}')
+                if len(dup_resi) > 20:
+                    print(f'  ... and {len(dup_resi) - 20} more.')
+            else:
+                print('OK: no duplicate RESI events.')
+
+            bidir_issues = scan_bidirectional_pointers(args.gedfile)
+            if bidir_issues:
+                print(f'\n{_WARN} {len(bidir_issues)} bidirectional pointer inconsistency/ies:')
+                for msg in bidir_issues[:20]:
+                    print(f'  {msg}')
+                if len(bidir_issues) > 20:
+                    print(f'  ... and {len(bidir_issues) - 20} more.')
+            else:
+                print('OK: all family–individual pointers are consistent in both directions.')
+
+            date_logic = scan_date_consistency(args.gedfile)
+            if date_logic:
+                print(f'\n{_WARN} {len(date_logic)} date logical inconsistency/ies:')
+                for msg in date_logic[:20]:
+                    print(f'  {msg}')
+                if len(date_logic) > 20:
+                    print(f'  ... and {len(date_logic) - 20} more.')
+            else:
+                print('OK: no date logical inconsistencies detected.')
+
+            # ── Summary statistics ───────────────────────────────────────────
+            try:
+                from gedcom_merge.parser import parse_gedcom
+                gf = parse_gedcom(args.gedfile)
+                n_indi = len(gf.individuals)
+                n_fam  = len(gf.families)
+                n_sour = len(gf.sources)
+            except Exception:
+                n_indi = n_fam = n_sour = 0
+
+            # Gather top issues for the summary
+            _issue_rows = []
+            if src_quality['no_page']:
+                _issue_rows.append((len(src_quality['no_page']),
+                                    'source citations without PAGE', _INFO))
+            if dupe_sources:
+                _issue_rows.append((len(dupe_sources),
+                                    'exact-duplicate source citations', _WARN))
+            if same_sour_dupes:
+                _issue_rows.append((len(same_sour_dupes),
+                                    'same-source double citations (potential)', _WARN))
+            if name_piece_issues:
+                _issue_rows.append((len(name_piece_issues),
+                                    'NAME values missing GIVN/SURN', _INFO))
+            if nickname_issues:
+                _issue_rows.append((len(nickname_issues),
+                                    'NAME values with quoted nicknames', _INFO))
+            if place_report['bare_countries']:
+                _issue_rows.append((len(place_report['bare_countries']),
+                                    'bare country-name PLAC values', _INFO))
+            if aka_issues:
+                _issue_rows.append((len(aka_issues),
+                                    'FACT/AKA blocks to convert', _WARN))
+            if addr_plac_issues:
+                _issue_rows.append((len(addr_plac_issues),
+                                    'ADDR nested under PLAC', _ERR))
+            if long_lines:
+                _issue_rows.append((len(long_lines),
+                                    'lines over 255 characters', _ERR))
+            if no_year:
+                _issue_rows.append((len(no_year),
+                                    'DATE values with no year', _ERR))
+            if bad_format:
+                _issue_rows.append((len(bad_format),
+                                    'DATE values with invalid format', _ERR))
+            _issue_rows.sort(key=lambda r: -r[0])
+
+            _total_errors   = sum(1 for _, _, sev in _issue_rows if sev == _ERR)
+            _total_warnings = sum(1 for _, _, sev in _issue_rows if sev == _WARN)
+            _total_infos    = sum(1 for _, _, sev in _issue_rows if sev == _INFO)
+
+            print('\n=== SUMMARY ===')
+            if n_indi or n_fam or n_sour:
+                print(f'Records: {n_indi:,} individuals, '
+                      f'{n_fam:,} families, {n_sour:,} sources')
+            print(f'Errors:   {sum(r[0] for r in _issue_rows if r[2] == _ERR)}')
+            print(f'Warnings: {sum(r[0] for r in _issue_rows if r[2] == _WARN)}')
+            print(f'Info:     {sum(r[0] for r in _issue_rows if r[2] == _INFO)}')
+            if _issue_rows:
+                print('\nTop issues:')
+                for count, label, sev in _issue_rows[:10]:
+                    print(f'  {count:>6,}  {label} ({sev})')
 
         except ImportError:
             print('\nNOTE: structural checks skipped (gedcom_merge module not available).')
