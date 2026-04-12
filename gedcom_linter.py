@@ -2877,6 +2877,141 @@ def scan_same_sour_multiple_cites(path: str) -> list[tuple[int, str]]:
 
 
 # ---------------------------------------------------------------------------
+# NAME sub-tag ordering  (GIVN/SURN/NSFX before TYPE before everything else)
+# ---------------------------------------------------------------------------
+
+# Tags that are "name pieces" and must appear before TYPE in a NAME block.
+_NAME_PIECE_TAGS = {'GIVN', 'SURN', 'NSFX', 'NPFX'}
+
+
+def _name_child_chunks(lines: list[str], start: int, name_level: int):
+    """
+    Yield (tag, chunk_lines) for each immediate child block of the NAME line
+    at index *start*.  Each chunk includes the child line plus any deeper
+    descendants that belong to it.
+    """
+    child_level = name_level + 1
+    i = start + 1
+    while i < len(lines):
+        m = re.match(r'^(\d+)\s+(\S+)', lines[i])
+        if not m:
+            i += 1
+            continue
+        level = int(m.group(1))
+        if level < child_level:
+            break
+        if level == child_level:
+            tag = m.group(2)
+            chunk = [lines[i]]
+            j = i + 1
+            while j < len(lines):
+                dm = re.match(r'^(\d+)', lines[j])
+                if dm and int(dm.group(1)) <= child_level:
+                    break
+                chunk.append(lines[j])
+                j += 1
+            yield tag, chunk, i          # tag, lines, start-index in `lines`
+            i = j
+        else:
+            i += 1
+
+
+def _name_piece_sort_key(tag: str) -> int:
+    """0 = name piece (GIVN/SURN/NSFX/NPFX), 1 = TYPE, 2 = everything else."""
+    if tag in _NAME_PIECE_TAGS:
+        return 0
+    if tag == 'TYPE':
+        return 1
+    return 2
+
+
+def scan_name_piece_order(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, name_value) for NAME records where TYPE appears before
+    any of GIVN, SURN, NSFX, or NPFX in the subordinate tags.
+
+    Desired order: GIVN/SURN/NSFX/NPFX → TYPE → everything else.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+        m = NAME_LINE_RE.match(lines[i].rstrip('\n'))
+        if m:
+            name_level = int(m.group(2))
+            name_val = m.group(3)
+            name_lineno = i + 1
+            seen_type = False
+            flagged = False
+            for tag, _chunk, _idx in _name_child_chunks(lines, i, name_level):
+                if tag == 'TYPE':
+                    seen_type = True
+                elif tag in _NAME_PIECE_TAGS and seen_type:
+                    flagged = True
+                    break
+            if flagged:
+                violations.append((name_lineno, name_val))
+        i += 1
+
+    return violations
+
+
+def fix_name_piece_order(path: str, dry_run: bool = False) -> int:
+    """
+    Reorder sub-tags within each NAME block so GIVN/SURN/NSFX/NPFX come
+    first, then TYPE, then everything else (preserving relative order within
+    each group).  Returns the count of NAME blocks that were reordered.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    out = list(lines)
+    changed = 0
+    i = 0
+
+    while i < len(out):
+        m = NAME_LINE_RE.match(out[i].rstrip('\n'))
+        if not m:
+            i += 1
+            continue
+
+        name_level = int(m.group(2))
+        chunks = list(_name_child_chunks(out, i, name_level))
+
+        if not chunks:
+            i += 1
+            continue
+
+        # Stable sort: group 0 (name pieces) → 1 (TYPE) → 2 (other)
+        sorted_chunks = sorted(chunks, key=lambda c: _name_piece_sort_key(c[0]))
+
+        original_tags = [c[0] for c in chunks]
+        sorted_tags   = [c[0] for c in sorted_chunks]
+
+        if original_tags != sorted_tags:
+            changed += 1
+            if not dry_run:
+                # Splice the reordered lines back in place
+                start = chunks[0][2]                          # line index of first child
+                end   = chunks[-1][2] + len(chunks[-1][1])   # line index after last child
+                new_block = [line for _, chunk_lines, _ in sorted_chunks
+                             for line in chunk_lines]
+                out[start:end] = new_block
+                # Adjust i: the NAME line index hasn't changed
+        i += 1
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
 # Programmatic all-fixes API
 # ---------------------------------------------------------------------------
 
@@ -2915,6 +3050,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_date_caps(path, dry_run=dry_run)
     fixes_applied += fix_nicknames(path, dry_run=dry_run)
     fixes_applied += fix_name_pieces(path, dry_run=dry_run)
+    fixes_applied += fix_name_piece_order(path, dry_run=dry_run)
     fixes_applied += fix_dateless_dates(path, dry_run=dry_run)
     fixes_applied += fix_aka_facts(path, dry_run=dry_run)
     fixes_applied += fix_broken_xrefs(path, dry_run=dry_run)
@@ -3017,6 +3153,10 @@ def main():
         help='Insert missing GIVN/SURN/NSFX subordinates for NAME lines in-place',
     )
     parser.add_argument(
+        '--fix-name-piece-order', action='store_true',
+        help='Reorder NAME sub-tags so GIVN/SURN/NSFX come before TYPE in-place',
+    )
+    parser.add_argument(
         '--fix-dateless-dates', action='store_true',
         help='Wrap day+month-only DATE values as date phrases in-place',
     )
@@ -3061,6 +3201,7 @@ def main():
         args.fix_date_caps = True
         args.fix_nicknames = True
         args.fix_name_pieces = True
+        args.fix_name_piece_order = True
         args.fix_dateless_dates = True
         args.fix_aka_facts = True
         args.fix_broken_xrefs = True
@@ -3217,6 +3358,15 @@ def main():
         else:
             print(f'{changed} NAME line(s) updated with GIVN/SURN/NSFX.')
 
+    if args.fix_name_piece_order:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Reordering NAME sub-tags (GIVN/SURN before TYPE) in: {args.gedfile}')
+        changed = fix_name_piece_order(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} NAME block(s) would be reordered.')
+        else:
+            print(f'{changed} NAME block(s) reordered.')
+
     if args.fix_dateless_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Wrapping day+month-only DATE values in: {args.gedfile}')
@@ -3292,7 +3442,7 @@ def main():
                 args.fix_duplicate_sources, args.fix_addr_under_plac,
                 args.fix_note_under_plac, args.fix_note_under_addr,
                 args.fix_date_caps, args.fix_nicknames, args.fix_name_pieces,
-                args.fix_dateless_dates, args.fix_aka_facts,
+                args.fix_name_piece_order, args.fix_dateless_dates, args.fix_aka_facts,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
                 args.fix_bare_events, args.fix_sort_events, args.merge_sources]):
