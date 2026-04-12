@@ -1229,14 +1229,19 @@ async function submitEventModal() {
   const famXref  = _eventModalFamXref;
   const isAdd    = _eventModalIdx === null && !famXref;
   const tag      = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
+  const typeRow = document.getElementById('event-modal-type-row');
   const fields = {
     inline_val: document.getElementById('event-modal-inline').value.trim(),
-    type:        document.getElementById('event-modal-type').value.trim(),
     DATE:        document.getElementById('event-modal-date').value.trim(),
     PLAC:        document.getElementById('event-modal-place').value.trim(),
     NOTE:        document.getElementById('event-modal-note').value.trim(),
     ADDR:        document.getElementById('event-modal-addr').value.trim(),
   };
+  // Only include TYPE when the row is visible; omitting it preserves existing 2 TYPE sub-tags
+  // for events (like MARR) where the type row is hidden.
+  if (typeRow && typeRow.style.display !== 'none') {
+    fields.TYPE = document.getElementById('event-modal-type').value.trim();
+  }
   const endpoint = isAdd ? '/api/add_event' : '/api/edit_event';
   let body;
   if (isAdd) {
@@ -1791,13 +1796,13 @@ function showDetail(xref) {
 
   const allVisible = (data.events || []).map((e, i) => ({...e, _origIdx: i})).filter(e =>
     e.tag !== 'NATI' &&
-    (e.date || e.place || e.note || e.type || e.cause) &&
+    (e.tag === 'MARR' || e.date || e.place || e.note || e.type || e.cause || e.addr) &&
     !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
   );
   const _keepInTimeline = e =>
     e.tag !== 'RELI' && (
     e.date ||
-    e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'PROB' ||
+    e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'PROB' || e.tag === 'MARR' ||
     e.type === 'Arrival' || e.type === 'Departure');
   const undatedFactoids = allVisible.filter(e => !_keepInTimeline(e));
   const visible = allVisible.filter(_keepInTimeline);
