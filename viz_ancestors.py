@@ -196,8 +196,14 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 fams[xref]['chil'].append(val)
                 current_evt = None
             elif lvl == 1 and tag == 'MARR':
-                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None}
-                fams[xref]['marr'] = evt
+                # If a MARR block was already parsed, keep it rather than overwriting with a
+                # bare duplicate (duplicate 1 MARR lines can appear after a merge and would
+                # otherwise silently lose sub-tags like ADDR from the original block).
+                if fams[xref].get('marr') is None:
+                    evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None}
+                    fams[xref]['marr'] = evt
+                else:
+                    evt = fams[xref]['marr']
                 current_evt = evt
             elif lvl == 2 and current_evt is not None:
                 if tag == 'DATE':
