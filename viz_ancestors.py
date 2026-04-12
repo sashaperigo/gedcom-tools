@@ -871,6 +871,12 @@ header h1 { font-size: 16px; font-weight: 600; }
   </div>
 </div>
 <script>
+window.addEventListener('error', e => {
+  console.error('[UNCAUGHT ERROR]', e.message, 'at', e.filename + ':' + e.lineno);
+});
+window.addEventListener('unhandledrejection', e => {
+  console.error('[UNHANDLED REJECTION]', e.reason);
+});
 const TREE = __TREE_JSON__;
 const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
@@ -1601,12 +1607,17 @@ let _openDetailKey = null;
 function showDetail(xref) {
   if (_openDetailKey === xref) return;  // already open for this person
   const panelWasOpen = _openDetailKey !== null;
+  const inPeople = xref in PEOPLE;
   const data = PEOPLE[xref] || (() => {
     const p = ALL_PEOPLE.find(x => x.id === xref);
     return p ? { name: p.name, birth_year: p.birth_year, death_year: p.death_year,
                  sex: null, events: [], notes: [], sources: [] } : null;
   })();
   if (!data) return;
+  console.log('[showDetail]', xref, data.name,
+    '| in PEOPLE:', inPeople,
+    '| events:', data.events.length,
+    '| NATI:', data.events.filter(e => e.tag === 'NATI').map(e => e.inline_val));
   const panel = document.getElementById('detail-panel');
 
   // Accent color by sex
@@ -1696,6 +1707,7 @@ function showDetail(xref) {
   // Nationalities — always shown as pills in facts section, never in the timeline
   const natiEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
     .filter(e => e.tag === 'NATI');
+  console.log('[showDetail] natiEvents:', natiEvents.length, natiEvents.map(e => e.inline_val));
   {
     const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
     const addNatiBtn = `<button class="add-event-btn" style="margin-top:8px" onclick="addEvent(${xrefQ},'NATI')">&#43; Add nationality</button>`;
@@ -1858,6 +1870,7 @@ function showDetail(xref) {
         : `<ul class="source-list">${srcs.map(s => `<li class="source-item">${_srcHtml(s)}</li>`).join('')}</ul>`)
     : '';
 
+  console.log('[showDetail] done rendering', xref, '| factsDiv.innerHTML length:', factsDiv.innerHTML.length);
   panel.classList.add('panel-open');
   _openDetailKey = xref;
   const vp = document.getElementById('viewport');
