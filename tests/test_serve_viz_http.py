@@ -294,6 +294,28 @@ class TestEditEventEndpoint:
         assert marr_evts[0].get('addr') == 'St. Paul Cathedral', \
             'addr field must be present and correct in the returned MARR event'
 
+    def test_family_event_edit_returns_both_spouses(self, live_server):
+        """
+        Regression: editing a marriage event must return updated data for BOTH spouses
+        so the caller can refresh the panel for the currently-open person.
+
+        Without this fix: if xref=@I1@ edits @F5@ MARR, the response only contained
+        @I1@'s data.  When the JS calls showDetail(@I1@) after updating PEOPLE, Saverio's
+        entry (the other spouse) would be stale — so his panel still showed the old MARR
+        card without the newly-added ADDR.
+
+        @F5@ has HUSB @I12@ and WIFE @I1@; both must appear in people.
+        """
+        ged, post, _, _ = live_server
+        resp = post('/api/edit_event', {
+            'xref': '@I1@', 'tag': 'MARR', 'fam_xref': '@F5@',
+            'updates': {'PLAC': 'New York, NY'},
+        })
+        assert resp['ok'] is True
+        assert '@I1@' in resp['people'], 'Wife xref must be in the response'
+        assert '@I12@' in resp['people'], \
+            'Husband xref must also be in the response so his panel can be refreshed'
+
     def test_individual_event_unknown_xref_returns_error(self, live_server):
         ged, post, _, _ = live_server
         resp = post('/api/edit_event', {
