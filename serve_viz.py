@@ -48,14 +48,24 @@ def regenerate(person=None):
 # ---------------------------------------------------------------------------
 
 def watch():
-    last_mtime = None
+    last_viz_mtime = None
+    last_ged_mtime = None
     while True:
         try:
-            mtime = VIZ.stat().st_mtime
-            if last_mtime is None:
-                last_mtime = mtime
-            elif mtime != last_mtime:
-                last_mtime = mtime
+            viz_mtime = VIZ.stat().st_mtime
+            if last_viz_mtime is None:
+                last_viz_mtime = viz_mtime
+            elif viz_mtime != last_viz_mtime:
+                last_viz_mtime = viz_mtime
+                regenerate()
+        except FileNotFoundError:
+            pass
+        try:
+            ged_mtime = GED.stat().st_mtime
+            if last_ged_mtime is None:
+                last_ged_mtime = ged_mtime
+            elif ged_mtime != last_ged_mtime:
+                last_ged_mtime = ged_mtime
                 regenerate()
         except FileNotFoundError:
             pass
@@ -642,6 +652,6 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, _shutdown_handler)
     regenerate()
     threading.Thread(target=watch, daemon=True).start()
-    print(f"Serving on http://localhost:{PORT}/viz.html  (watching viz_ancestors.py for changes)")
+    print(f"Serving on http://localhost:{PORT}/viz.html  (watching viz_ancestors.py and {GED.name} for changes)")
     with http.server.HTTPServer(('', PORT), Handler) as httpd:
         httpd.serve_forever()

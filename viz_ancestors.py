@@ -119,7 +119,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 alias = re.sub(r'\s+', ' ', alias).strip()
                 evt = {'tag': 'FACT', 'type': 'AKA', 'date': None, 'place': None,
                        'cause': None, 'addr': None, 'note': alias, 'inline_val': None,
-                       '_name_record': True, '_name_occurrence': secondary_name_n}
+                       'age': None, '_name_record': True, '_name_occurrence': secondary_name_n}
                 secondary_name_n += 1
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
@@ -134,7 +134,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
                 inline_type = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
                 initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
-                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None}
+                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None, 'age': None}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
@@ -158,6 +158,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['addr'] = html_mod.unescape(val)
                 elif tag == 'NOTE':
                     current_evt['note'] = html_mod.unescape(val)
+                elif tag == 'AGE':
+                    current_evt['age'] = val
             elif lvl == 1 and tag == 'NOTE':
                 indis[xref]['notes'].append(html_mod.unescape(val))
                 current_note = len(indis[xref]['notes']) - 1
@@ -194,7 +196,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 fams[xref]['chil'].append(val)
                 current_evt = None
             elif lvl == 1 and tag == 'MARR':
-                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None}
+                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None}
                 fams[xref]['marr'] = evt
                 current_evt = evt
             elif lvl == 2 and current_evt is not None:
@@ -253,29 +255,65 @@ _MONTH_NUM = {
     'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12,
 }
 
+# GEDCOM AGE tag validation
+# Format: [<|>] ( YYy [MMm [DDDd]] | MMm [DDDd] | DDDd | CHILD | INFANT | STILLBORN )
+# Maximum 12 characters.
+_AGE_RE = re.compile(
+    r'^[<>]?(?:'
+    r'\d+y(?:\s+\d+m(?:\s+\d+d)?|\s+\d+d)?'  # years (+ optional months/days)
+    r'|\d+m(?:\s+\d+d)?'                        # months (+ optional days)
+    r'|\d+d'                                     # days only
+    r'|CHILD|INFANT|STILLBORN'
+    r')$',
+    re.IGNORECASE,
+)
+
+
+def is_valid_age(s: str) -> bool:
+    """Return True if s is a valid GEDCOM AGE tag value.
+
+    Valid examples: '55y', '6m', '14d', '4y 8m 10d', '>55y', '<1y',
+                    'INFANT', 'STILLBORN', 'CHILD', '>CHILD'.
+    Invalid: 'ABT 55', '55', '55 years', 'BET 50y AND 60y', '4y, 8m', '8m 4y'.
+    Maximum field width is 12 characters.
+    """
+    if not s or len(s.strip()) > 12:
+        return False
+    return bool(_AGE_RE.match(s.strip()))
+
+
 def _date_sort_key(date_str: str | None) -> tuple:
-    """Return (year, month, day) tuple for chronological sorting.
-    Unknown components default to 0. Handles GEDCOM qualifiers and BET ranges."""
+    """Return (year, month, day, adjust) tuple for chronological sorting.
+    Unknown components default to 0.  BEF sorts just before the date (-1),
+    AFT sorts just after (+1).  Handles GEDCOM qualifiers and BET ranges."""
     if not date_str:
-        return (0, 0, 0)
+        return (0, 0, 0, 0)
     s = date_str.strip().upper()
-    for prefix in ('ABT ', 'BEF ', 'AFT ', 'CAL ', 'EST '):
+    adjust = 0
+    for prefix in ('ABT ', 'CAL ', 'EST '):
         if s.startswith(prefix):
             s = s[4:]
             break
+    else:
+        if s.startswith('BEF '):
+            s = s[4:]
+            adjust = -1
+        elif s.startswith('AFT '):
+            s = s[4:]
+            adjust = 1
     bet = re.match(r'^BET\s+(.+?)\s+AND\s+(.+)$', s)
     if bet:
         s = bet.group(1)
     dmy = re.match(r'^(\d{1,2})\s+([A-Z]{3})\s+(\d{4})$', s)
     if dmy:
-        return (int(dmy.group(3)), _MONTH_NUM.get(dmy.group(2), 0), int(dmy.group(1)))
+        return (int(dmy.group(3)), _MONTH_NUM.get(dmy.group(2), 0), int(dmy.group(1)), adjust)
     my = re.match(r'^([A-Z]{3})\s+(\d{4})$', s)
     if my:
-        return (int(my.group(2)), _MONTH_NUM.get(my.group(1), 0), 0)
+        return (int(my.group(2)), _MONTH_NUM.get(my.group(1), 0), 0, adjust)
     yr = re.match(r'^(\d{4})$', s)
     if yr:
-        return (int(yr.group(1)), 0, 0)
-    return (0, 0, 0)
+        return (int(yr.group(1)), 0, 0, adjust)
+    return (0, 0, 0, 0)
 
 
 def sort_events(events: list) -> list:
@@ -861,14 +899,14 @@ let _sibSpouseIdx = new Map();
     if (_parseCache.has(p.id)) return _parseCache.get(p.id);
     const raw = p.name || '';
     // Collapse slashes, normalize spaces
-    const flat = raw.replace(/\//g, '').replace(/\s+/g, ' ').trim();
+    const flat = raw.replace(/\\//g, '').replace(/\\s+/g, ' ').trim();
     // Extract nicknames (text in double quotes)
     const nicks = [];
     const noNicks = flat.replace(/"([^"]+)"/g, (_, n) => { nicks.push(n.trim()); return ' '; })
-                        .replace(/\s+/g, ' ').trim();
+                        .replace(/\\s+/g, ' ').trim();
     const tokens = noNicks.split(' ').filter(Boolean);
     // Display: title-case the flat form (keeps quotes visible)
-    const disp = flat.replace(/\b\w/g, c => c.toUpperCase());
+    const disp = flat.replace(/\\b\\w/g, c => c.toUpperCase());
     const normDisp = normSearch(flat);  // same .length as flat (accent strip is length-preserving for NFC)
     const result = {
       disp,
@@ -950,7 +988,7 @@ let _sibSpouseIdx = new Map();
   }
 
   input.addEventListener('input', () => {
-    const qNorm = normSearch(input.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
+    const qNorm = normSearch(input.value.replace(/\\//g, '').replace(/\\s+/g, ' ').trim());
     if (!qNorm) { list.classList.remove('open'); list.innerHTML = ''; return; }
     const hits = ALL_PEOPLE.filter(p => personMatches(getParsed(p), qNorm)).slice(0, 20);
     renderResults(hits, qNorm);
@@ -1227,7 +1265,7 @@ function closeAliasModal() {
 
 async function deleteAlias(xref, evt) {
   const label = evt.note || evt.inline_val || '';
-  if (!confirm('Delete this name? The GEDCOM file will be updated immediately.\n\n' + label)) return;
+  if (!confirm('Delete this name? The GEDCOM file will be updated immediately.\\n\\n' + label)) return;
   let endpoint, body;
   if (evt._name_record) {
     endpoint = '/api/delete_secondary_name';
@@ -1290,7 +1328,7 @@ function editName(xref) {
   _nameModalXref = xref;
   const name = (_personName(xref) || '').trim();
   // Split "Given /Surname/" or just "Given Surname" into parts
-  const surnameMatch = name.match(/^(.*?)\s*\/([^/]*)\/\s*(.*)$/);
+  const surnameMatch = name.match(/^(.*?)\\s*\\/([^/]*)\\/\\s*(.*)$/);
   let given = '', surname = '';
   if (surnameMatch) {
     given   = (surnameMatch[1] + ' ' + (surnameMatch[3] || '')).trim();
@@ -1367,7 +1405,7 @@ async function deleteFact(xref, evt) {
 }
 function linkify(s) {
   // Match URLs in the raw string before HTML-escaping, so & in query strings isn't truncated
-  const URL_RE = /https?:\/\/\S+/g;
+  const URL_RE = /https?:\\/\\/\\S+/g;
   let result = '', last = 0, m;
   while ((m = URL_RE.exec(s)) !== null) {
     result += escHtml(s.slice(last, m.index));
@@ -1424,6 +1462,22 @@ function fmtPlace(raw) {
   return parts.length === 2 ? parts.join(', ') : parts[0] + ', ' + last;
 }
 
+// ── AGE formatting ────────────────────────────────────────────────────────────
+function fmtAge(raw) {
+  if (!raw) return '';
+  const s = raw.trim();
+  const uc = s.toUpperCase().replace(/^[<>]/, '');
+  if (uc === 'INFANT')    return 'in infancy';
+  if (uc === 'STILLBORN') return 'stillborn';
+  if (uc === 'CHILD')     return 'in childhood';
+  const prefix = s.startsWith('>') ? 'over ' : s.startsWith('<') ? 'under ' : '';
+  let r = s.replace(/^[<>]/, '');
+  r = r.replace(/(\\d+)y\\b/g, (_, n) => `${n} year${n === '1' ? '' : 's'}`);
+  r = r.replace(/(\\d+)m\\b/g, (_, n) => `${n} month${n === '1' ? '' : 's'}`);
+  r = r.replace(/(\\d+)d\\b/g, (_, n) => `${n} day${n === '1' ? '' : 's'}`);
+  return (prefix + r.trim().replace(/\\s+/g, ' ')).trim();
+}
+
 // ── Per-event prose + meta ───────────────────────────────────────────────────
 function buildProse(evt) {
   const date  = fmtDate(evt.date);
@@ -1436,15 +1490,22 @@ function buildProse(evt) {
     case 'BIRT': return { prose: short ? `Born in ${short}` : (date ? `Born ${date}` : 'Birth'),          meta: meta() };
     case 'DEAT': {
       const cause = evt.cause ? `of ${evt.cause}` : '';
+      const age   = evt.age  || '';
       if (cause && short) return { prose: `Died ${cause} in ${short}`, meta: meta() };
       if (cause)          return { prose: `Died ${cause}`,             meta: meta() };
       if (short)          return { prose: `Died in ${short}`,          meta: meta() };
+      if (!date && age) {
+        const ageUC = age.toUpperCase().replace(/^[<>]/, '');
+        if (ageUC === 'STILLBORN') return { prose: 'Stillborn',                   meta: meta() };
+        return { prose: `Died ${fmtAge(age)}`, meta: meta() };
+      }
       return { prose: date ? `Died ${date}` : 'Death', meta: meta() };
     }
     case 'BURI': return { prose: short ? `Buried in ${short}` : (date ? `Buried ${date}` : 'Burial'),    meta: meta() };
     case 'RESI': return { prose: short ? `Lived in ${short}` : (date ? `Lived ${date}` : 'Residence'),   meta: meta() };
     case 'OCCU': {
-      return { prose: type ? `Worked as ${type}` : 'Occupation', meta: meta() };
+      const jobTitle = evt.inline_val || '';
+      return { prose: jobTitle ? `Worked as ${jobTitle}` : (short ? `Worked in ${short}` : 'Occupation'), meta: meta() };
     }
     case 'IMMI': return { prose: short ? `Immigrated to ${short}` : (date ? `Immigrated ${date}` : 'Immigration'), meta: meta() };
     case 'NATU': return { prose: short ? `Naturalized in ${short}` : (date ? `Naturalized ${date}` : 'Naturalization'), meta: meta() };

@@ -225,12 +225,26 @@ def _find_duplicate_sources(merged: GedcomFile) -> list[tuple[str, str]]:
 
 
 def _find_orphaned_individuals(merged: GedcomFile) -> list[str]:
-    """Return xrefs of individuals with no FAMS and no FAMC links."""
-    return [
-        xref
-        for xref, indi in merged.individuals.items()
-        if not indi.family_spouse and not indi.family_child
-    ]
+    """Return xrefs of individuals who are disconnected from the rest of the tree.
+
+    An individual is considered connected if they have at least one of:
+      - FAMS (spouse link to a family record)
+      - FAMC (child link to a family record)
+      - ASSOC (association to another individual, e.g. godparent, witness)
+
+    ASSOC links are checked via the raw GedcomNode because they are not
+    promoted into Individual fields — they express relationships (godparent,
+    witness, etc.) that do not create a family record but do tie the person
+    to someone else in the tree.
+    """
+    result = []
+    for xref, indi in merged.individuals.items():
+        if indi.family_spouse or indi.family_child:
+            continue
+        if indi.raw.all_children('ASSOC'):
+            continue
+        result.append(xref)
+    return result
 
 
 def _find_duplicate_names(merged: GedcomFile) -> dict[str, list[str]]:
