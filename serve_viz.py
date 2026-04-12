@@ -408,7 +408,7 @@ def _edit_event_fields(
             new_block.append(line)
 
     # Append new sub-tags not already in the block
-    for tag in ('DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS'):
+    for tag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS'):
         if tag in updates and tag not in handled:
             new_val = (updates[tag] or '').strip()
             if new_val:
@@ -430,7 +430,7 @@ def _insert_new_event(
     else:
         header = f'1 {event_tag}'
     new_block = [header]
-    for subtag in ('DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS'):
+    for subtag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS'):
         val = (fields.get(subtag) or '').strip()
         if val:
             new_block.append(f'2 {subtag} {val}')
