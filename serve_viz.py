@@ -18,10 +18,14 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
 
+_DEFAULT_GED = Path(__file__).parent / "../smyrna-diaspora-family-tree/Smyrna-Diaspora-Family-Tree.ged"
 _ged_env = os.environ.get("GED_FILE", "")
-if not _ged_env:
+if _ged_env:
+    GED = Path(_ged_env)
+elif _DEFAULT_GED.exists():
+    GED = _DEFAULT_GED.resolve()
+else:
     sys.exit("Error: set the GED_FILE environment variable to the path of your .ged file")
-GED = Path(_ged_env)
 VIZ = Path(__file__).parent / "viz_ancestors.py"
 OUT = Path(os.environ.get("VIZ_OUT", "/tmp/viz.html"))
 PORT = 8080
