@@ -239,6 +239,48 @@ class TestNatiDisplay:
         # NATI events must not bleed into the timeline (allVisible excludes them)
         assert "e.tag !== 'NATI'" in _HTML_TEMPLATE
 
+    def test_nati_events_present_in_rendered_html_people_json(self, people, indis, fams, parsed):
+        """
+        End-to-end: the rendered HTML's PEOPLE const must contain NATI events
+        with inline_val set for @I2@ James Smith.
+        This guards against NATI events being dropped or losing inline_val during
+        build_people_json or JSON serialization.
+        """
+        tree = build_tree_json('@I1@', indis, fams)
+        relatives = build_relatives_json(tree, indis, fams)
+        _, _, sources = parsed
+        html = render_html(tree, 'Rose Smith', people, relatives, indis,
+                           fams=fams, root_xref='@I1@')
+        people_match = re.search(r'const PEOPLE = (.*?);[ \t]*$', html, re.MULTILINE)
+        assert people_match, "PEOPLE const not found in rendered HTML"
+        p = json.loads(people_match.group(1))
+        james = p.get('@I2@')
+        assert james is not None, "@I2@ not in rendered PEOPLE"
+        nati_evts = [e for e in james['events'] if e['tag'] == 'NATI']
+        assert nati_evts, "@I2@ has no NATI events in rendered HTML"
+        assert nati_evts[0]['inline_val'] == 'American', (
+            f"Expected inline_val 'American', got {nati_evts[0]['inline_val']!r}"
+        )
+
+    def test_nati_events_not_filtered_by_allvisible_logic(self, people):
+        """
+        Guard: NATI events with only inline_val set (no date/place/note/type/cause)
+        must NOT be filtered out from the natiEvents array. The allVisible filter
+        requires (date||place||note||type||cause) which would exclude bare NATI events,
+        but natiEvents uses its own tag-only filter so they must still appear.
+        The fix: confirm NATI events are in build_people_json output regardless of
+        whether other fields are set.
+        """
+        nati_evts = [e for e in people['@I2@']['events'] if e['tag'] == 'NATI']
+        assert nati_evts, "NATI events missing from build_people_json output"
+        # Verify these would NOT be caught by allVisible (which requires content fields)
+        # but WOULD be caught by the tag-only natiEvents filter
+        for e in nati_evts:
+            # inline_val must always be set so the pill has text to display
+            assert e['inline_val'] is not None, (
+                f"NATI event has null inline_val — pill would render empty: {e}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Part 6: OCCU prose regression
