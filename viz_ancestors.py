@@ -1746,7 +1746,7 @@ function showDetail(xref) {
   console.log('[showDetail] natiEvents:', natiEvents.length, natiEvents.map(e => e.inline_val));
   {
     const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
-    const addNatiBtn = `<button class="add-event-btn" style="margin-top:8px" onclick="addEvent(${xrefQ},'NATI')">&#43; Add nationality</button>`;
+    const addNatiBtn = `<button class="add-event-btn" onclick="addEvent(${xrefQ},'NATI')">&#43; Add nationality</button>`;
     if (natiEvents.length) {
       const pills = natiEvents.map(e => {
         const _pillYr = e.date ? ((_YR_RE.exec(e.date) || [,null])[1]) : null;
@@ -1758,7 +1758,7 @@ function showDetail(xref) {
         const actions = `<span class="facts-pill-actions">${editBtn}${delBtn}</span>`;
         return `<span class="facts-pill-wrap"><span class="facts-pill">${escHtml(e.inline_val || '')}${dateStr}</span>${actions}</span>`;
       }).join('');
-      factsDiv.innerHTML = `<span class="facts-heading">Nationality</span><div class="facts-pills">${pills}</div>${addNatiBtn}`;
+      factsDiv.innerHTML = `<span class="facts-heading">Nationality</span><div class="facts-pills">${pills}${addNatiBtn}</div>`;
       factsDiv.className = 'has-content';
     } else {
       factsDiv.innerHTML = addNatiBtn;
