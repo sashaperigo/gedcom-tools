@@ -326,8 +326,16 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     seen_src_titles.add(title)
                     src_list.append({'title': title, 'url': source_urls.get(sxref) or None})
         excl_list = excl_by_xref.get(xref, [])
+        # Assign per-tag occurrence index before exclusion filtering
+        tag_counters: dict[str, int] = {}
+        tagged_events = []
+        for e in info['events']:
+            t = e['tag']
+            occ = tag_counters.get(t, 0)
+            tag_counters[t] = occ + 1
+            tagged_events.append({**e, 'event_idx': occ})
         events = [
-            e for e in info['events']
+            e for e in tagged_events
             if not any(_matches_exclusion(e, ex) for ex in excl_list)
         ]
         if fams:
@@ -338,7 +346,8 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     continue
                 spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
                 spouse_name = indis[spouse_xref]['name'] if spouse_xref and spouse_xref in indis else None
-                events.append({**marr, 'spouse': spouse_name, 'spouse_xref': spouse_xref})
+                # MARR events live in FAM blocks; event_idx=None marks them as non-editable
+                events.append({**marr, 'event_idx': None, 'spouse': spouse_name, 'spouse_xref': spouse_xref})
         result[xref] = {
             'name':       info['name'] or '?',
             'birth_year': info['birth_year'],
@@ -514,6 +523,46 @@ header h1 { font-size: 16px; font-weight: 600; }
   color: #94a3b8; border-radius: 6px; padding: 6px 16px; cursor: pointer; }
 .note-modal-save { background: #3b82f6; border: none; color: #fff;
   border-radius: 6px; padding: 6px 16px; cursor: pointer; font-weight: 600; }
+/* ── Event edit/add modal ────────────────────────────────── */
+#event-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#event-modal-overlay.open { display: flex; }
+#event-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+#event-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
+.event-modal-field { margin-bottom: 12px; }
+.event-modal-field label { display: block; font-size: 11px; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.event-modal-field input, .event-modal-field select {
+  width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid #334155;
+  color: #f1f5f9; border-radius: 6px; padding: 8px 10px;
+  font-size: 13px; font-family: inherit; outline: none; }
+.event-modal-field input:focus, .event-modal-field select:focus { border-color: #3b82f6; }
+.event-modal-field select option { background: #1e293b; }
+.event-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.event-modal-cancel { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  color: #94a3b8; border-radius: 6px; padding: 6px 16px; cursor: pointer; }
+.event-modal-save { background: #3b82f6; border: none; color: #fff;
+  border-radius: 6px; padding: 6px 16px; cursor: pointer; font-weight: 600; }
+.evt-edit-btn { position: absolute; right: 22px; top: 2px; background: none; border: none;
+  cursor: pointer; opacity: 0; font-size: 12px; color: #94a3b8; padding: 2px 4px;
+  border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; }
+.evt-entry:hover .evt-edit-btn { opacity: 1; }
+.evt-edit-btn:hover { color: #3b82f6 !important; }
+.add-event-btn { display: flex; align-items: center; gap: 5px; background: none;
+  border: 1px dashed #334155; border-radius: 6px; color: #475569; font-size: 12px;
+  padding: 5px 12px; cursor: pointer; margin-top: 12px; }
+.add-event-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+/* ── Nationality pill actions ─────────────────────────────── */
+.facts-pill-wrap { position: relative; display: inline-flex; align-items: center; }
+.facts-pill-actions { display: none; position: absolute; right: -2px; top: 50%;
+  transform: translateY(-50%); gap: 2px; background: #1e293b;
+  border: 1px solid #334155; border-radius: 4px; padding: 1px 2px; }
+.facts-pill-wrap:hover .facts-pill-actions { display: flex; }
+.facts-pill-btn { background: none; border: none; cursor: pointer; font-size: 10px;
+  color: #64748b; padding: 1px 3px; border-radius: 3px; line-height: 1; }
+.facts-pill-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.08); }
+.facts-pill-btn.del:hover { color: #ef4444; }
 .marr-card { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px;
              background: rgba(232, 121, 249, 0.08);
              border-left: 3px solid rgba(232, 121, 249, 0.5); }
@@ -528,7 +577,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 #detail-timeline { position: relative; padding-left: 28px; }
 .timeline-spine { position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
   background: linear-gradient(to bottom, #334155 0%, transparent 100%); }
-.evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; padding-right: 24px; }
+.evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; padding-right: 48px; }
 .fact-del { position: absolute; right: 0; top: 2px; background: none; border: none;
   cursor: pointer; opacity: 0; font-size: 13px; color: #94a3b8; padding: 2px 4px;
   border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; }
@@ -586,11 +635,6 @@ header h1 { font-size: 16px; font-weight: 600; }
     <ul id="search-results"></ul>
   </div>
 </header>
-<div id="pending-bar" style="display:none;align-items:center;gap:10px;padding:6px 16px;background:#7c3aed;color:#fff;font-size:13px;font-weight:500;">
-  <span id="pending-count"></span>
-  <button onclick="commitDeletions()" style="background:#fff;color:#7c3aed;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-weight:600;font-size:12px;">Commit deletions</button>
-  <button onclick="clearPending()" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;">Discard all</button>
-</div>
 <div id="viewport">
 <svg id="tree" xmlns="http://www.w3.org/2000/svg">
   <g id="canvas"></g>
@@ -603,6 +647,61 @@ header h1 { font-size: 16px; font-weight: 600; }
     <div class="note-modal-actions">
       <button class="note-modal-cancel" onclick="closeNoteModal()">Cancel</button>
       <button class="note-modal-save" onclick="submitNoteEdit()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="event-modal-overlay" onclick="if(event.target===this)closeEventModal()">
+  <div id="event-modal">
+    <h3 id="event-modal-title">Edit Event</h3>
+    <div class="event-modal-field" id="event-modal-tag-row">
+      <label>Event Type</label>
+      <select id="event-modal-tag" onkeydown="if(event.key==='Escape')closeEventModal()">
+        <option value="BIRT">Birth</option>
+        <option value="DEAT">Death</option>
+        <option value="BURI">Burial</option>
+        <option value="RESI">Residence</option>
+        <option value="OCCU">Occupation</option>
+        <option value="CHR">Christening</option>
+        <option value="BAPM">Baptism</option>
+        <option value="NATU">Naturalization</option>
+        <option value="IMMI">Immigration</option>
+        <option value="EMIG">Emigration</option>
+        <option value="EVEN">Event</option>
+        <option value="FACT">Fact</option>
+        <option value="NATI">Nationality</option>
+        <option value="RELI">Religion</option>
+        <option value="TITL">Title</option>
+        <option value="ADOP">Adoption</option>
+        <option value="EDUC">Education</option>
+        <option value="RETI">Retirement</option>
+        <option value="DIV">Divorce</option>
+        <option value="CONF">Confirmation</option>
+        <option value="PROB">Probate</option>
+      </select>
+    </div>
+    <div class="event-modal-field" id="event-modal-inline-row">
+      <label id="event-modal-inline-label">Value</label>
+      <input type="text" id="event-modal-inline" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field" id="event-modal-type-row">
+      <label>Type / Description</label>
+      <input type="text" id="event-modal-type" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Date</label>
+      <input type="text" id="event-modal-date" placeholder="e.g. 26 FEB 1785" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Place</label>
+      <input type="text" id="event-modal-place" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Note</label>
+      <input type="text" id="event-modal-note" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>
+      <button class="event-modal-save" id="event-modal-save-btn" onclick="submitEventModal()">Save</button>
     </div>
   </div>
 </div>
@@ -787,56 +886,6 @@ function escHtml(s) {
 }
 
 // ---------------------------------------------------------------------------
-// Pending-deletions toolbar
-// ---------------------------------------------------------------------------
-async function _refreshPendingBar() {
-  try {
-    const resp = await fetch('/api/pending');
-    const data = await resp.json();
-    const bar = document.getElementById('pending-bar');
-    if (!bar) return;
-    const n = (data.pending || []).length;
-    if (n === 0) {
-      bar.style.display = 'none';
-    } else {
-      bar.style.display = 'flex';
-      document.getElementById('pending-count').textContent =
-        n + ' pending deletion' + (n === 1 ? '' : 's');
-    }
-  } catch (_) {}
-}
-
-async function commitDeletions() {
-  if (!confirm('Write all pending deletions to the GEDCOM file?\\n\\nA backup will be created automatically.')) return;
-  try {
-    const resp = await fetch('/api/commit_deletions', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({current_person: window._currentPerson || null}),
-    });
-    const data = await resp.json();
-    if (data.errors && data.errors.length) {
-      alert('Errors:\\n' + data.errors.join('\\n'));
-    } else {
-      alert('Done! ' + data.applied + ' deletion(s) written.');
-    }
-    window.location.reload();
-  } catch (e) { alert('Request failed: ' + e); }
-}
-
-async function clearPending() {
-  if (!confirm('Discard all pending deletions?')) return;
-  try {
-    await fetch('/api/clear_pending', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({current_person: window._currentPerson || null}),
-    });
-    window.location.reload();
-  } catch (e) { alert('Request failed: ' + e); }
-}
-
-// ---------------------------------------------------------------------------
 // Note edit / delete
 // ---------------------------------------------------------------------------
 let _noteEditXref = null, _noteEditIdx = null;
@@ -896,9 +945,119 @@ async function submitNoteEdit() {
   } catch (e) { alert('Request failed: ' + e); }
 }
 
+// ---------------------------------------------------------------------------
+// Event edit / add
+// ---------------------------------------------------------------------------
+// Tags whose level-1 line carries an inline value (e.g. "1 OCCU Consul")
+const _INLINE_TYPE_TAGS = new Set(['OCCU','TITL','NATI','RELI','EDUC']);
+// Tags that use a 2 TYPE sub-field for description
+const _TYPE_TAGS = new Set(['EVEN','FACT','OCCU','TITL','EDUC','NATI','RELI']);
+
+let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null;
+
+function _updateEventModalFields(tag) {
+  const inlineRow = document.getElementById('event-modal-inline-row');
+  const inlineLbl = document.getElementById('event-modal-inline-label');
+  const typeRow   = document.getElementById('event-modal-type-row');
+  if (_INLINE_TYPE_TAGS.has(tag)) {
+    inlineRow.style.display = '';
+    const labelMap = {OCCU:'Occupation',TITL:'Title',NATI:'Nationality',RELI:'Religion',EDUC:'Education'};
+    inlineLbl.textContent = labelMap[tag] || 'Value';
+  } else {
+    inlineRow.style.display = 'none';
+  }
+  typeRow.style.display = _TYPE_TAGS.has(tag) ? '' : 'none';
+}
+
+function _personName(xref) {
+  return (PEOPLE[xref] && PEOPLE[xref].name) ||
+    ((ALL_PEOPLE.find(p => p.id === xref) || {}).name) || xref;
+}
+
+function editEvent(xref, eventIdx, tag) {
+  _eventModalXref = xref;
+  _eventModalIdx  = eventIdx;
+  _eventModalTag  = tag;
+  document.getElementById('event-modal-title').textContent = 'Edit Event \u2014 ' + _personName(xref);
+  document.getElementById('event-modal-save-btn').textContent = 'Save';
+  document.getElementById('event-modal-tag-row').style.display = 'none';
+  const events = (PEOPLE[xref] && PEOPLE[xref].events) || [];
+  const evt = events.find(e => e.tag === tag && e.event_idx === eventIdx) || {};
+  document.getElementById('event-modal-inline').value = evt.inline_val || '';
+  document.getElementById('event-modal-type').value   = evt.type || '';
+  document.getElementById('event-modal-date').value   = evt.date || '';
+  document.getElementById('event-modal-place').value  = evt.place || '';
+  document.getElementById('event-modal-note').value   = evt.note || '';
+  _updateEventModalFields(tag);
+  document.getElementById('event-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
+}
+
+function addEvent(xref, defaultTag = 'RESI') {
+  _eventModalXref = xref;
+  _eventModalIdx  = null;
+  _eventModalTag  = null;
+  document.getElementById('event-modal-title').textContent = 'Add Event \u2014 ' + _personName(xref);
+  document.getElementById('event-modal-save-btn').textContent = 'Add';
+  document.getElementById('event-modal-tag-row').style.display = '';
+  document.getElementById('event-modal-tag').value    = defaultTag;
+  document.getElementById('event-modal-inline').value = '';
+  document.getElementById('event-modal-type').value   = '';
+  document.getElementById('event-modal-date').value   = '';
+  document.getElementById('event-modal-place').value  = '';
+  document.getElementById('event-modal-note').value   = '';
+  _updateEventModalFields(defaultTag);
+  document.getElementById('event-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
+}
+
+function closeEventModal() {
+  document.getElementById('event-modal-overlay').classList.remove('open');
+  _eventModalXref = _eventModalIdx = _eventModalTag = null;
+}
+
+async function submitEventModal() {
+  const xref  = _eventModalXref;
+  const isAdd = _eventModalIdx === null;
+  const tag   = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
+  const fields = {
+    inline_val: document.getElementById('event-modal-inline').value.trim(),
+    type:        document.getElementById('event-modal-type').value.trim(),
+    DATE:        document.getElementById('event-modal-date').value.trim(),
+    PLAC:        document.getElementById('event-modal-place').value.trim(),
+    NOTE:        document.getElementById('event-modal-note').value.trim(),
+  };
+  const endpoint = isAdd ? '/api/add_event' : '/api/edit_event';
+  const body = isAdd
+    ? { xref, tag, fields, current_person: window._currentPerson || null }
+    : { xref, tag, event_idx: _eventModalIdx, updates: fields,
+        current_person: window._currentPerson || null };
+  closeEventModal();
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
+      _openDetailKey = null;
+      showDetail(xref);
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) { alert('Request failed: ' + e); }
+}
+
+// Update field visibility when the tag selector changes (add mode only)
+document.addEventListener('change', e => {
+  if (e.target.id === 'event-modal-tag') _updateEventModalFields(e.target.value);
+});
+
 async function deleteFact(xref, evt) {
   const label = (evt.date || '') + (evt.place ? ' · ' + evt.place : '') || evt.tag;
-  if (!confirm('Queue this fact for deletion?\\n\\n' + evt.tag + (label ? ': ' + label : '') + '\\n\\nIt will be hidden immediately and written to disk when you click \\"Commit deletions\\".')) return;
+  if (!confirm('Delete this fact? The GEDCOM file will be updated immediately (a backup will be saved).\\n\\n' + evt.tag + (label ? ': ' + label : ''))) return;
   try {
     const resp = await fetch('/api/delete_fact', {
       method: 'POST',
@@ -915,19 +1074,11 @@ async function deleteFact(xref, evt) {
     });
     const data = await resp.json();
     if (data.ok) {
-      // Remove the event from PEOPLE in memory so the panel updates without a reload
-      PEOPLE[xref].events = PEOPLE[xref].events.filter(e =>
-        !(e.tag === evt.tag &&
-          (e.date || null) === (evt.date || null) &&
-          (e.place || null) === (evt.place || null) &&
-          (e.type || null) === (evt.type || null) &&
-          (e.inline_val || null) === (evt.inline_val || null))
-      );
-      _openDetailKey = null;  // reset guard so showDetail re-renders
+      if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
+      _openDetailKey = null;
       showDetail(xref);
-      _refreshPendingBar();
     } else {
-      alert('Could not queue deletion: ' + (data.msg || ''));
+      alert('Delete failed: ' + (data.error || 'unknown error'));
     }
   } catch (e) {
     alert('Request failed: ' + e);
@@ -1182,17 +1333,26 @@ function showDetail(xref) {
   // Nationalities — always shown as pills in facts section, never in the timeline
   const natiEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
     .filter(e => e.tag === 'NATI');
-  if (natiEvents.length) {
-    const pills = natiEvents.map(e => {
-      const _pillYr = e.date ? ((_YR_RE.exec(e.date) || [,null])[1]) : null;
-      const dateStr = _pillYr ? `<span class="pill-date">${_pillYr}</span>` : '';
-      return `<span class="facts-pill">${escHtml(e.inline_val || '')}${dateStr}</span>`;
-    }).join('');
-    factsDiv.innerHTML = `<span class="facts-heading">Nationality</span><div class="facts-pills">${pills}</div>`;
-    factsDiv.className = 'has-content';
-  } else {
-    factsDiv.innerHTML = '';
-    factsDiv.className = '';
+  {
+    const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
+    const addNatiBtn = `<button class="add-event-btn" style="margin-top:8px" onclick="addEvent(${xrefQ},'NATI')">&#43; Add nationality</button>`;
+    if (natiEvents.length) {
+      const pills = natiEvents.map(e => {
+        const _pillYr = e.date ? ((_YR_RE.exec(e.date) || [,null])[1]) : null;
+        const dateStr = _pillYr ? `<span class="pill-date">${_pillYr}</span>` : '';
+        const editBtn = e.event_idx !== null && e.event_idx !== undefined
+          ? `<button class="facts-pill-btn" title="Edit" onclick="editEvent(${xrefQ},${e.event_idx},'NATI')">\u270f</button>`
+          : '';
+        const delBtn = `<button class="facts-pill-btn del" title="Delete" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${e._origIdx}])">\u2715</button>`;
+        const actions = `<span class="facts-pill-actions">${editBtn}${delBtn}</span>`;
+        return `<span class="facts-pill-wrap"><span class="facts-pill">${escHtml(e.inline_val || '')}${dateStr}</span>${actions}</span>`;
+      }).join('');
+      factsDiv.innerHTML = `<span class="facts-heading">Nationality</span><div class="facts-pills">${pills}</div>${addNatiBtn}`;
+      factsDiv.className = 'has-content';
+    } else {
+      factsDiv.innerHTML = addNatiBtn;
+      factsDiv.className = 'has-content';
+    }
   }
 
   const allVisible = (data.events || []).map((e, i) => ({...e, _origIdx: i})).filter(e =>
@@ -1209,7 +1369,8 @@ function showDetail(xref) {
   const visible = allVisible.filter(_keepInTimeline);
   const sorted  = collapseResidences(sortEvents(visible));
 
-  if (!sorted.length) { evtDiv.innerHTML = ''; }
+  const _addEvtBtn = `<button class="add-event-btn" onclick="addEvent(${JSON.stringify(xref).replace(/"/g,'&quot;')})">&#43; Add event</button>`;
+  if (!sorted.length) { evtDiv.innerHTML = _addEvtBtn; }
   else {
     let html = '', lastSection = '';
     for (const evt of sorted) {
@@ -1256,17 +1417,22 @@ function showDetail(xref) {
       const yearStr = evt._yearRange
         ? `<span class="evt-year">${escHtml(evt._yearRange)}</span>`
         : (evtYear ? `<span class="evt-year">${evtYear}</span>` : '');
-      const xrefQ  = JSON.stringify(xref).replace(/"/g, '&quot;');
-      const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
+      const xrefQ   = JSON.stringify(xref).replace(/"/g, '&quot;');
+      const delBtn  = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
+      const editBtn = evt.event_idx !== null && evt.event_idx !== undefined
+        ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>`
+        : '';
       html +=
         `<div class="evt-entry">` +
         `<div class="${dotCls}" style="background:${color}"></div>` +
         `<div class="evt-prose">${yearStr}${escHtml(prose)}</div>` +
         (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
         noteInl +
+        editBtn +
         delBtn +
         `</div>`;
     }
+    html += _addEvtBtn;
     evtDiv.innerHTML = html;
   }
 
@@ -1276,13 +1442,17 @@ function showDetail(xref) {
       const { prose, meta } = buildProse(evt);
       const color   = dotColor(evt);
       const noteInl = evt.note ? `<div class="evt-note-inline">${escHtml(evt.note)}</div>` : '';
-      const xrefQ  = JSON.stringify(xref).replace(/"/g, '&quot;');
+      const xrefQ   = JSON.stringify(xref).replace(/"/g, '&quot;');
       const delBtn  = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
+      const editBtn = evt.event_idx !== null && evt.event_idx !== undefined
+        ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>`
+        : '';
       return `<div class="evt-entry">` +
         `<div class="evt-dot" style="background:${color}"></div>` +
         `<div class="evt-prose">${escHtml(prose)}</div>` +
         (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
         noteInl +
+        editBtn +
         delBtn +
         `</div>`;
     }).join('');
@@ -2023,15 +2193,13 @@ function init() {
 
   const vp   = document.getElementById('viewport');
   const hdr  = document.querySelector('header');
-  const pbar = document.getElementById('pending-bar');
-  const topH = hdr.offsetHeight + (pbar && pbar.offsetHeight > 0 ? pbar.offsetHeight : 0);
+  const topH = hdr.offsetHeight;
   vp.style.height = (window.innerHeight - topH) + 'px';
   document.documentElement.style.setProperty('--header-h', topH + 'px');
 
   render();
   fitAndCenter();
   if (new URLSearchParams(window.location.search).get('open') === '1') showDetail(currentTree[1]);
-  _refreshPendingBar();
 }
 
 // ---- Pinch-to-zoom + two-finger pan (trackpad wheel events) ----
@@ -2081,9 +2249,7 @@ window.addEventListener('load', init);
 window.addEventListener('resize', () => {
   const vp   = document.getElementById('viewport');
   const hdr  = document.querySelector('header');
-  const pbar = document.getElementById('pending-bar');
-  const topH = hdr.offsetHeight + (pbar && pbar.offsetHeight > 0 ? pbar.offsetHeight : 0);
-  vp.style.height = (window.innerHeight - topH) + 'px';
+  vp.style.height = (window.innerHeight - hdr.offsetHeight) + 'px';
   if (_openDetailKey !== null) vp.style.marginRight = '480px';
 });
 </script>

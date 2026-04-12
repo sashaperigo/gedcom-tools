@@ -3,10 +3,8 @@
 Dev server: watches viz_ancestors.py for changes, regenerates the HTML,
 and serves it on http://localhost:8080/viz.html
 
-Fact deletion is staged: deletions are queued in memory during the session and
-written to disk only when you click "Commit deletions" (or run with --commit).
-Before writing, the result is validated with the GEDCOM linter so no pointers
-are broken.
+Fact and note deletions are written to disk immediately (with an atomic backup).
+Event edits and additions are also written immediately.
 """
 import http.server
 import json
@@ -31,33 +29,6 @@ PORT = 8080
 _TAG_RE = re.compile(r'^(\d+) (\w+)(?: (.+))?$')
 
 # ---------------------------------------------------------------------------
-# Pending deletions — staged, not written to disk until committed
-# ---------------------------------------------------------------------------
-_pending: list[dict] = []   # [{xref, tag, date, place, type, inline_val, label}]
-_pending_lock = threading.Lock()
-
-
-def _pending_file() -> Path:
-    return GED.with_suffix('.deletions.json')
-
-
-def _save_pending():
-    with _pending_lock:
-        _pending_file().write_text(json.dumps(_pending, indent=2), encoding='utf-8')
-
-
-def _load_pending():
-    global _pending
-    p = _pending_file()
-    if p.exists():
-        try:
-            _pending = json.loads(p.read_text(encoding='utf-8'))
-            print(f"[resumed] {len(_pending)} pending deletion(s) from {p.name}")
-        except Exception:
-            _pending = []
-
-
-# ---------------------------------------------------------------------------
 # HTML regeneration
 # ---------------------------------------------------------------------------
 
@@ -65,12 +36,9 @@ def regenerate(person=None):
     if person is None:
         person = sys.argv[1] if len(sys.argv) > 1 else "@I380071267816@"
     args = ["python3", str(VIZ), str(GED), "--person", person, "-o", str(OUT)]
-    with _pending_lock:
-        if _pending:
-            args += ["--exclude", json.dumps(_pending)]
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode == 0:
-        print(f"[rebuilt] {OUT} (person={person}, {len(_pending)} pending deletion(s))")
+        print(f"[rebuilt] {OUT} (person={person})")
     else:
         print(f"[error] {result.stderr.strip()}")
 
@@ -98,6 +66,20 @@ def watch():
 # Commit: apply pending deletions to disk with validation
 # ---------------------------------------------------------------------------
 
+def _find_indi_block(lines: list[str], xref: str) -> tuple[int | None, int | None, str | None]:
+    """Return (indi_start, indi_end, err) for the individual's GEDCOM block."""
+    indi_start = next(
+        (i for i, l in enumerate(lines) if l.strip() == f'0 {xref} INDI'), None
+    )
+    if indi_start is None:
+        return None, None, f'Individual {xref} not found'
+    indi_end = next(
+        (i for i in range(indi_start + 1, len(lines)) if lines[i].startswith('0 ')),
+        len(lines),
+    )
+    return indi_start, indi_end, None
+
+
 def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
     """Remove one fact from lines. Returns (new_lines, error_or_None)."""
     xref = d['xref']
@@ -107,16 +89,9 @@ def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
     fact_type = d.get('type') or None
     inline_val = d.get('inline_val') or None
 
-    indi_start = next(
-        (i for i, l in enumerate(lines) if l.strip() == f'0 {xref} INDI'), None
-    )
-    if indi_start is None:
-        return lines, f'Individual {xref} not found'
-
-    indi_end = next(
-        (i for i in range(indi_start + 1, len(lines)) if lines[i].startswith('0 ')),
-        len(lines),
-    )
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return lines, err
 
     event_start = event_end = None
     for i in range(indi_start + 1, indi_end):
@@ -155,15 +130,9 @@ def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
 
 def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | None, int | None, str | None]:
     """Return (start, end, err) — line range [start, end) for note at note_idx in xref."""
-    indi_start = next(
-        (i for i, l in enumerate(lines) if l.strip() == f'0 {xref} INDI'), None
-    )
-    if indi_start is None:
-        return None, None, f'Individual {xref} not found'
-    indi_end = next(
-        (i for i in range(indi_start + 1, len(lines)) if lines[i].startswith('0 ')),
-        len(lines),
-    )
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None, None, err
     count = 0
     for i in range(indi_start + 1, indi_end):
         m = _TAG_RE.match(lines[i])
@@ -200,62 +169,99 @@ def _write_gedcom_atomic(lines: list[str]) -> None:
     GED.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
-def commit_deletions() -> tuple[int, list[str]]:
-    """
-    Apply all pending deletions to the GEDCOM file.
-    Validates the result before writing.
-    Returns (count_applied, list_of_errors).
-    """
-    global _pending
-    with _pending_lock:
-        if not _pending:
-            return 0, []
-        batch = list(_pending)
+# ---------------------------------------------------------------------------
+# Event editing / creation helpers
+# ---------------------------------------------------------------------------
 
-    lines = GED.read_text(encoding='utf-8').splitlines()
-    errors: list[str] = []
-    applied = 0
+_MANAGED_SUBTAGS = frozenset({'DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS', 'ADDR'})
+_INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
 
-    for d in batch:
-        new_lines, err = _apply_deletion(lines, d)
-        if err:
-            errors.append(err)
+
+def _find_event_block(
+    lines: list[str], xref: str, event_tag: str, occurrence_n: int
+) -> tuple[int | None, int | None, str | None]:
+    """Return (start, end, err) for the Nth (0-based) occurrence of event_tag in xref's INDI block."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None, None, err
+    count = 0
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if not m:
+            continue
+        if int(m.group(1)) == 1 and m.group(2) == event_tag:
+            if count == occurrence_n:
+                j = i + 1
+                while j < indi_end:
+                    sm = _TAG_RE.match(lines[j])
+                    if sm and int(sm.group(1)) <= 1:
+                        break
+                    j += 1
+                return i, j, None
+            count += 1
+    return None, None, f'Event {event_tag}[{occurrence_n}] not found in {xref}'
+
+
+def _edit_event_fields(
+    lines: list[str], block_start: int, block_end: int, updates: dict
+) -> list[str]:
+    """
+    Apply field updates to an event block.
+    updates keys: DATE, PLAC, TYPE, NOTE, CAUS, inline_val.
+    Empty/None value = remove that sub-field.
+    inline_val rewrites the level-1 header line.
+    """
+    header = lines[block_start]
+    if 'inline_val' in updates:
+        m = _TAG_RE.match(header)
+        new_iv = (updates['inline_val'] or '').strip()
+        header = f"{m.group(1)} {m.group(2)}" + (f" {new_iv}" if new_iv else "")
+
+    new_block = [header]
+    handled: set[str] = set()
+    for line in lines[block_start + 1: block_end]:
+        m = _TAG_RE.match(line)
+        if not m:
+            new_block.append(line)
+            continue
+        lvl, tag = int(m.group(1)), m.group(2)
+        if lvl == 2 and tag in _MANAGED_SUBTAGS and tag in updates:
+            handled.add(tag)
+            new_val = (updates[tag] or '').strip()
+            if new_val:
+                new_block.append(f'2 {tag} {new_val}')
+            # else: omit (delete the sub-field)
         else:
-            lines = new_lines
-            applied += 1
+            new_block.append(line)
 
-    if not applied:
-        return 0, errors
+    # Append new sub-tags not already in the block
+    for tag in ('DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS'):
+        if tag in updates and tag not in handled:
+            new_val = (updates[tag] or '').strip()
+            if new_val:
+                new_block.append(f'2 {tag} {new_val}')
 
-    # Validate before writing
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.ged',
-                                     encoding='utf-8', delete=False) as tmp:
-        tmp.write('\n'.join(lines) + '\n')
-        tmp_path = tmp.name
+    return lines[:block_start] + new_block + lines[block_end:]
 
-    linter = Path(__file__).parent / 'gedcom_linter.py'
-    result = subprocess.run(
-        ['python3', str(linter), tmp_path],
-        capture_output=True, text=True
-    )
-    Path(tmp_path).unlink(missing_ok=True)
 
-    if result.returncode != 0 and 'ERROR' in (result.stdout + result.stderr):
-        errors.append('Validation failed — no changes written:\n' + result.stdout)
-        return 0, errors
-
-    # Write atomically: backup original, replace
-    backup = GED.with_suffix('.ged.bak')
-    GED.rename(backup)
-    GED.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    print(f"[committed] {applied} deletion(s) written to {GED.name} (backup: {backup.name})")
-
-    with _pending_lock:
-        _pending = []
-    _pending_file().unlink(missing_ok=True)
-
-    return applied, errors
+def _insert_new_event(
+    lines: list[str], xref: str, event_tag: str, fields: dict
+) -> tuple[list[str], str | None]:
+    """Insert a new event block just before the end of xref's INDI record."""
+    _, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return lines, err
+    inline_val = (fields.get('inline_val') or '').strip()
+    if event_tag in _INLINE_TYPE_TAGS and inline_val:
+        header = f'1 {event_tag} {inline_val}'
+    else:
+        header = f'1 {event_tag}'
+    new_block = [header]
+    for subtag in ('DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS'):
+        val = (fields.get(subtag) or '').strip()
+        if val:
+            new_block.append(f'2 {subtag} {val}')
+    return lines[:indi_end] + new_block + lines[indi_end:], None
 
 
 # ---------------------------------------------------------------------------
@@ -274,15 +280,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.path = OUT.name
             self.directory = str(OUT.parent)
             return http.server.SimpleHTTPRequestHandler.do_GET(self)
-        if parsed.path == '/api/pending':
-            with _pending_lock:
-                resp = json.dumps({'pending': _pending}).encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', len(resp))
-            self.end_headers()
-            self.wfile.write(resp)
-            return
         self.send_error(404)
 
     def do_POST(self):
@@ -291,32 +288,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         body = json.loads(self.rfile.read(length)) if length else {}
 
         if parsed.path == '/api/delete_fact':
-            entry = {
-                'xref':       body['xref'],
-                'tag':        body['tag'],
-                'date':       body.get('date') or None,
-                'place':      body.get('place') or None,
-                'type':       body.get('type') or None,
-                'inline_val': body.get('inline_val') or None,
-                'label':      body.get('label') or body['tag'],
-            }
-            with _pending_lock:
-                _pending.append(entry)
-            _save_pending()
-            regenerate(body.get('current_person'))
-            resp = json.dumps({'ok': True, 'pending': len(_pending)}).encode()
-
-        elif parsed.path == '/api/commit_deletions':
-            count, errors = commit_deletions()
-            regenerate(body.get('current_person'))
-            resp = json.dumps({'ok': not errors, 'applied': count, 'errors': errors}).encode()
-
-        elif parsed.path == '/api/clear_pending':
-            with _pending_lock:
-                _pending.clear()
-            _pending_file().unlink(missing_ok=True)
-            regenerate(body.get('current_person'))
-            resp = json.dumps({'ok': True}).encode()
+            xref = body['xref']
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            new_lines, err = _apply_deletion(lines, body)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                _write_gedcom_atomic(new_lines)
+                print(f"[fact-delete] {xref} {body['tag']} deleted")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/delete_note':
             xref     = body['xref']
@@ -353,6 +337,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
+        elif parsed.path == '/api/edit_event':
+            xref      = body['xref']
+            tag       = body['tag']
+            event_idx = int(body['event_idx'])
+            updates   = body.get('updates', {})
+            lines     = GED.read_text(encoding='utf-8').splitlines()
+            start, end, err = _find_event_block(lines, xref, tag, event_idx)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                new_lines = _edit_event_fields(lines, start, end, updates)
+                _write_gedcom_atomic(new_lines)
+                print(f"[event-edit] {xref} {tag}[{event_idx}] updated")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/add_event':
+            xref   = body['xref']
+            tag    = body['tag']
+            fields = body.get('fields', {})
+            lines  = GED.read_text(encoding='utf-8').splitlines()
+            new_lines, err = _insert_new_event(lines, xref, tag, fields)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                _write_gedcom_atomic(new_lines)
+                print(f"[event-add] {xref} {tag} added")
+                regenerate(body.get('current_person'))
+                from viz_ancestors import parse_gedcom, build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
         else:
             self.send_error(404)
             return
@@ -376,15 +396,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def _shutdown_handler(sig, frame):
-    with _pending_lock:
-        n = len(_pending)
-    if n:
-        print(f"\n[shutdown] {n} pending deletion(s) — run 'Commit deletions' in the UI or restart to resume.")
     sys.exit(0)
 
 
 if __name__ == '__main__':
-    _load_pending()
     signal.signal(signal.SIGINT, _shutdown_handler)
     regenerate()
     threading.Thread(target=watch, daemon=True).start()
