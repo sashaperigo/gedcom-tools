@@ -588,15 +588,25 @@ header h1 { font-size: 16px; font-weight: 600; }
 #event-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
 #event-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
+#event-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+#event-modal-header h3 { margin: 0; font-size: 14px; color: #94a3b8; font-weight: 600; }
+#event-modal-close { background: none; border: none; color: #64748b; font-size: 18px; cursor: pointer;
+  padding: 2px 6px; border-radius: 4px; line-height: 1; }
+#event-modal-close:hover { color: #f1f5f9; background: rgba(255,255,255,0.08); }
 .event-modal-field { margin-bottom: 12px; }
 .event-modal-field label { display: block; font-size: 11px; color: #64748b;
   text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-.event-modal-field input, .event-modal-field select {
+.event-modal-field input, .event-modal-field select, .event-modal-field textarea {
   width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid #334155;
   color: #f1f5f9; border-radius: 6px; padding: 8px 10px;
   font-size: 13px; font-family: inherit; outline: none; }
-.event-modal-field input:focus, .event-modal-field select:focus { border-color: #3b82f6; }
+.event-modal-field input:focus, .event-modal-field select:focus,
+.event-modal-field textarea:focus { border-color: #3b82f6; }
 .event-modal-field select option { background: #1e293b; }
+.event-modal-field textarea { resize: vertical; min-height: 60px; }
+.event-modal-note-footer { display: flex; justify-content: flex-end; margin-top: 3px; }
+#event-modal-note-count { font-size: 10px; color: #64748b; }
+#event-modal-note-count.at-limit { color: #ef4444; font-weight: 600; }
 .event-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .event-modal-cancel { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
   color: #94a3b8; border-radius: 6px; padding: 6px 16px; cursor: pointer; }
@@ -739,9 +749,12 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="event-modal-overlay" onclick="if(event.target===this)closeEventModal()">
+<div id="event-modal-overlay">
   <div id="event-modal">
-    <h3 id="event-modal-title">Edit Event</h3>
+    <div id="event-modal-header">
+      <h3 id="event-modal-title">Edit Event</h3>
+      <button id="event-modal-close" onclick="closeEventModal()" title="Close">&times;</button>
+    </div>
     <div class="event-modal-field" id="event-modal-tag-row">
       <label>Event Type</label>
       <select id="event-modal-tag" onkeydown="if(event.key==='Escape')closeEventModal()">
@@ -785,15 +798,20 @@ header h1 { font-size: 16px; font-weight: 600; }
       <input type="text" id="event-modal-place" onkeydown="if(event.key==='Escape')closeEventModal()">
     </div>
     <div class="event-modal-field">
-      <label>Note</label>
-      <input type="text" id="event-modal-note" onkeydown="if(event.key==='Escape')closeEventModal()">
-    </div>
-    <div class="event-modal-field">
       <label>Address</label>
       <input type="text" id="event-modal-addr" list="addr-suggestions"
              placeholder="e.g. Church name or building"
              onkeydown="if(event.key==='Escape')closeEventModal()">
       <datalist id="addr-suggestions"></datalist>
+    </div>
+    <div class="event-modal-field">
+      <label>Note</label>
+      <textarea id="event-modal-note" rows="3"
+                onkeydown="if(event.key==='Escape')closeEventModal()"
+                oninput="_updateNoteCount()"></textarea>
+      <div class="event-modal-note-footer">
+        <span id="event-modal-note-count"></span>
+      </div>
     </div>
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>
@@ -1158,6 +1176,7 @@ function editEvent(xref, eventIdx, tag, famXref) {
   document.getElementById('event-modal-note').value   = evt.note || '';
   document.getElementById('event-modal-addr').value   = evt.addr || '';
   _updateAddrSuggestions(placeVal);
+  _updateNoteCount();
   _updateEventModalFields(tag);
   document.getElementById('event-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
@@ -1179,6 +1198,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   document.getElementById('event-modal-note').value   = '';
   document.getElementById('event-modal-addr').value   = '';
   _updateAddrSuggestions('');
+  _updateNoteCount();
   _updateEventModalFields(defaultTag);
   document.getElementById('event-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
@@ -1230,6 +1250,22 @@ async function submitEventModal() {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
   } catch (e) { alert('Request failed: ' + e); }
+}
+
+const _NOTE_MAX_CHARS = 248;  // GEDCOM line limit (255) minus "2 NOTE " prefix (7)
+
+function _updateNoteCount() {
+  const textarea = document.getElementById('event-modal-note');
+  const countEl  = document.getElementById('event-modal-note-count');
+  if (!textarea || !countEl) return;
+  const len = textarea.value.length;
+  const remaining = _NOTE_MAX_CHARS - len;
+  countEl.textContent = remaining + ' characters remaining';
+  countEl.classList.toggle('at-limit', remaining <= 0);
+  // Prevent input beyond the limit
+  if (len > _NOTE_MAX_CHARS) {
+    textarea.value = textarea.value.slice(0, _NOTE_MAX_CHARS);
+  }
 }
 
 // Update field visibility when the tag selector changes (add mode only)
@@ -1503,7 +1539,7 @@ function buildProse(evt) {
       if (!date && age) {
         const ageUC = age.toUpperCase().replace(/^[<>]/, '');
         if (ageUC === 'STILLBORN') return { prose: 'Stillborn',                   meta: meta() };
-        return { prose: `Died ${fmtAge(age)}`, meta: meta() };
+        return { prose: `Died at ${fmtAge(age)}`, meta: meta() };
       }
       return { prose: date ? `Died ${date}` : 'Death', meta: meta() };
     }
