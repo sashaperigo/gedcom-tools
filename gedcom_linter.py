@@ -3106,6 +3106,300 @@ def fix_event_source_order(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Citation quality: redundant PAGE and repeated TEXT
+# ---------------------------------------------------------------------------
+
+def _build_source_titles(lines: list[str]) -> dict[str, str]:
+    """Return {xref: normalized_titl} parsed from level-0 SOUR records."""
+    sources: dict[str, str] = {}
+    current: str | None = None
+    for line in lines:
+        stripped = line.rstrip('\n')
+        m0 = re.match(r'^0\s+(@[^@]+@)\s+SOUR', stripped)
+        if m0:
+            current = m0.group(1)
+            continue
+        if stripped.startswith('0 '):
+            current = None
+            continue
+        if current:
+            m1 = re.match(r'^1\s+TITL\s+(.*)', stripped)
+            if m1:
+                sources[current] = m1.group(1).strip().lower()
+    return sources
+
+
+def _collect_sour_text_blocks(lines: list[str], source_titles: dict[str, str]):
+    """
+    Yield (xref, text_key, text_start_idx, text_end_idx_exclusive, sour_level)
+    for each inline SOUR citation that contains a TEXT block nested inside its
+    DATA sub-block.
+
+    text_key is a tuple of ('TEXT'/'CONT'/'CONC', value) tuples representing
+    the full text content for deduplication.
+    """
+    i = 0
+    while i < len(lines):
+        m = re.match(r'^(\d+)\s+SOUR\s+(@[^@]+@)', lines[i].rstrip('\n'))
+        if m and int(m.group(1)) >= 1 and m.group(2) in source_titles:
+            sour_level = int(m.group(1))
+            xref = m.group(2)
+            text_level = sour_level + 2   # TEXT is inside DATA (sour+1), so sour+2
+            cont_level = sour_level + 3
+
+            j = i + 1
+            while j < len(lines):
+                child = lines[j].rstrip('\n')
+                cm = re.match(r'^(\d+)', child)
+                if not cm:
+                    j += 1
+                    continue
+                cl = int(cm.group(1))
+                if cl <= sour_level:
+                    break                 # Left the SOUR block
+
+                tm = re.match(r'^(\d+)\s+TEXT\s*(.*)', child)
+                if tm and int(tm.group(1)) == text_level:
+                    text_start = j
+                    parts: list[tuple[str, str]] = [('TEXT', tm.group(2))]
+
+                    k = j + 1
+                    while k < len(lines):
+                        cont = lines[k].rstrip('\n')
+                        ccm = re.match(r'^(\d+)\s+(CONT|CONC)\s*(.*)', cont)
+                        if ccm and int(ccm.group(1)) == cont_level:
+                            parts.append((ccm.group(2), ccm.group(3)))
+                            k += 1
+                        else:
+                            dm = re.match(r'^(\d+)', cont)
+                            if dm and int(dm.group(1)) > cont_level:
+                                k += 1
+                                continue
+                            break
+
+                    yield (xref, tuple(parts), text_start, k, sour_level)
+                    j = k
+                    continue
+                j += 1
+            i = j
+            continue
+        i += 1
+
+
+def _norm_page_titl(s: str) -> str:
+    """Lowercase, strip whitespace, and remove a trailing 's' for plural normalisation."""
+    s = s.lower().strip()
+    if s.endswith('s'):
+        s = s[:-1]
+    return s
+
+
+def scan_redundant_citation_page(path: str) -> list[tuple[int, str, str]]:
+    """
+    Return (lineno, source_xref, page_value) for inline SOUR citations where the
+    PAGE value matches the cited source's TITL (case-insensitive, singular/plural
+    normalised).
+
+    These PAGE lines add no information and should be removed.
+    """
+    violations: list[tuple[int, str, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    source_titles = _build_source_titles(lines)
+
+    i = 0
+    while i < len(lines):
+        m = re.match(r'^(\d+)\s+SOUR\s+(@[^@]+@)', lines[i].rstrip('\n'))
+        if m and int(m.group(1)) >= 1 and m.group(2) in source_titles:
+            sour_level = int(m.group(1))
+            xref = m.group(2)
+            norm_titl = _norm_page_titl(source_titles[xref])
+
+            # Scan immediate children of SOUR for PAGE
+            for tag, chunk, idx in _name_child_chunks(lines, i, sour_level):
+                if tag == 'PAGE':
+                    pm = re.match(r'^\d+\s+PAGE\s+(.*)', chunk[0].rstrip('\n'))
+                    if pm:
+                        page_val = pm.group(1).strip()
+                        if _norm_page_titl(page_val) == norm_titl:
+                            violations.append((idx + 1, xref, page_val))
+        i += 1
+
+    return violations
+
+
+def fix_redundant_citation_page(path: str, dry_run: bool = False) -> int:
+    """
+    Remove PAGE lines from inline SOUR citations where the PAGE value equals
+    the source's own TITL (i.e., adds no information).
+    Returns the number of PAGE lines removed.
+    """
+    violations = scan_redundant_citation_page(path)
+    if not violations:
+        return 0
+
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    # Collect line indices to remove (0-based).  PAGE children (CONT/CONC) are
+    # collected too, though in practice citation PAGE values are single-line.
+    remove_indices: set[int] = set()
+    for lineno, xref, page_val in violations:
+        idx = lineno - 1
+        remove_indices.add(idx)
+        # Remove any continuation lines that belong to this PAGE
+        m = re.match(r'^(\d+)', lines[idx])
+        if m:
+            page_level = int(m.group(1))
+            j = idx + 1
+            while j < len(lines):
+                dm = re.match(r'^(\d+)', lines[j])
+                if dm:
+                    if int(dm.group(1)) <= page_level:
+                        break
+                    remove_indices.add(j)
+                j += 1
+
+    if not dry_run:
+        out = [line for i, line in enumerate(lines) if i not in remove_indices]
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(out)
+        os.replace(tmp, path)
+
+    return len(violations)
+
+
+def scan_repeated_citation_text(path: str) -> list[tuple[str, str, int]]:
+    """
+    Return (source_xref, text_preview, count) for sources where ≥ 2 citations
+    contain identical TEXT blocks.  These texts are narrative/essay content that
+    belongs in the source record, not repeated in every citation.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    source_titles = _build_source_titles(lines)
+    groups: dict[tuple, list] = defaultdict(list)
+
+    for xref, text_key, text_start, text_end, _ in _collect_sour_text_blocks(lines, source_titles):
+        groups[(xref, text_key)].append((text_start, text_end))
+
+    results = []
+    for (xref, text_key), occurrences in groups.items():
+        if len(occurrences) >= 2:
+            preview = text_key[0][1][:60] if text_key else ''
+            results.append((xref, preview, len(occurrences)))
+
+    return results
+
+
+def fix_repeated_citation_text(path: str, dry_run: bool = False) -> int:
+    """
+    For each source whose citations share ≥ 2 identical TEXT blocks, move the
+    text to the source record (as a level-1 TEXT block) and remove it from all
+    citations.  Returns the total number of citation TEXT blocks removed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    source_titles = _build_source_titles(lines)
+    groups: dict[tuple, list] = defaultdict(list)
+
+    for xref, text_key, text_start, text_end, _ in _collect_sour_text_blocks(lines, source_titles):
+        groups[(xref, text_key)].append((text_start, text_end))
+
+    to_process = {k: v for k, v in groups.items() if len(v) >= 2}
+    if not to_process:
+        return 0
+
+    # ── Lines to remove from citations ───────────────────────────────────────
+    remove_indices: set[int] = set()
+    total_removed = 0
+    for (_xref, _text_key), occurrences in to_process.items():
+        for text_start, text_end in occurrences:
+            for idx in range(text_start, text_end):
+                remove_indices.add(idx)
+            total_removed += 1
+
+    # ── Lines to inject into source records ──────────────────────────────────
+    # Build {xref: [text_lines_at_level_1]} for each source that needs injection.
+    # A source may have multiple distinct repeated-text blocks; add all of them.
+    injections: dict[str, list[str]] = defaultdict(list)
+    seen_keys: set[tuple] = set()
+    for (xref, text_key), occurrences in to_process.items():
+        if (xref, text_key) in seen_keys:
+            continue
+        seen_keys.add((xref, text_key))
+        text_lines: list[str] = []
+        first = True
+        for tag, val in text_key:
+            if first:
+                text_lines.append(f'1 TEXT {val}\n')
+                first = False
+            elif tag == 'CONT':
+                text_lines.append(f'2 CONT {val}\n')
+            elif tag == 'CONC':
+                text_lines.append(f'2 CONC {val}\n')
+        injections[xref].extend(text_lines)
+
+    # Find end-of-record line index for each source that needs injection.
+    # "End" = the first '0 ' line after the source record starts.
+    injection_points: dict[int, list[str]] = {}   # line_idx → lines to insert before it
+    current_xref: str | None = None
+    for i, line in enumerate(lines):
+        m0 = re.match(r'^0\s+(@[^@]+@)\s+SOUR', line.rstrip('\n'))
+        if m0:
+            current_xref = m0.group(1)
+            continue
+        if line.startswith('0 ') and current_xref:
+            if current_xref in injections:
+                injection_points[i] = injections.pop(current_xref)
+            current_xref = None
+    # Handle source record at end of file (before TRLR or EOF)
+    if current_xref and current_xref in injections:
+        injection_points[len(lines)] = injections.pop(current_xref)
+
+    if dry_run:
+        return total_removed
+
+    # ── Build output ─────────────────────────────────────────────────────────
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        if i in injection_points:
+            out.extend(injection_points[i])
+        if i not in remove_indices:
+            out.append(line)
+
+    # ── Remove DATA lines that became childless after TEXT removal ────────────
+    clean: list[str] = []
+    for i, line in enumerate(out):
+        m = re.match(r'^(\d+)\s+DATA\s*$', line.rstrip('\n'))
+        if m:
+            data_level = int(m.group(1))
+            # Check whether the very next non-blank content line is at data_level or lower
+            has_child = False
+            j = i + 1
+            while j < len(out):
+                nm = re.match(r'^(\d+)', out[j].rstrip('\n'))
+                if nm:
+                    has_child = int(nm.group(1)) > data_level
+                    break
+                j += 1
+            if not has_child:
+                continue            # skip the bare DATA line
+        clean.append(line)
+
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.writelines(clean)
+    os.replace(tmp, path)
+
+    return total_removed
+
+
+# ---------------------------------------------------------------------------
 # Programmatic all-fixes API
 # ---------------------------------------------------------------------------
 
@@ -3146,6 +3440,8 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_name_pieces(path, dry_run=dry_run)
     fixes_applied += fix_name_piece_order(path, dry_run=dry_run)
     fixes_applied += fix_event_source_order(path, dry_run=dry_run)
+    fixes_applied += fix_redundant_citation_page(path, dry_run=dry_run)
+    fixes_applied += fix_repeated_citation_text(path, dry_run=dry_run)
     fixes_applied += fix_dateless_dates(path, dry_run=dry_run)
     fixes_applied += fix_aka_facts(path, dry_run=dry_run)
     fixes_applied += fix_broken_xrefs(path, dry_run=dry_run)
@@ -3256,6 +3552,14 @@ def main():
         help='Reorder event sub-tags so SOUR comes before NOTE and after other details',
     )
     parser.add_argument(
+        '--fix-redundant-citation-page', action='store_true',
+        help='Remove citation PAGE lines that just repeat the source TITL verbatim',
+    )
+    parser.add_argument(
+        '--fix-repeated-citation-text', action='store_true',
+        help='Move repeated TEXT blocks from citations into their source records',
+    )
+    parser.add_argument(
         '--fix-dateless-dates', action='store_true',
         help='Wrap day+month-only DATE values as date phrases in-place',
     )
@@ -3302,6 +3606,8 @@ def main():
         args.fix_name_pieces = True
         args.fix_name_piece_order = True
         args.fix_event_source_order = True
+        args.fix_redundant_citation_page = True
+        args.fix_repeated_citation_text = True
         args.fix_dateless_dates = True
         args.fix_aka_facts = True
         args.fix_broken_xrefs = True
@@ -3476,6 +3782,24 @@ def main():
         else:
             print(f'{changed} event block(s) reordered.')
 
+    if args.fix_redundant_citation_page:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Removing redundant citation PAGE values in: {args.gedfile}')
+        changed = fix_redundant_citation_page(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} redundant PAGE line(s) would be removed.')
+        else:
+            print(f'{changed} redundant PAGE line(s) removed.')
+
+    if args.fix_repeated_citation_text:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Moving repeated citation TEXT to source records in: {args.gedfile}')
+        changed = fix_repeated_citation_text(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} repeated citation TEXT block(s) would be moved.')
+        else:
+            print(f'{changed} repeated citation TEXT block(s) moved to source records.')
+
     if args.fix_dateless_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Wrapping day+month-only DATE values in: {args.gedfile}')
@@ -3552,6 +3876,7 @@ def main():
                 args.fix_note_under_plac, args.fix_note_under_addr,
                 args.fix_date_caps, args.fix_nicknames, args.fix_name_pieces,
                 args.fix_name_piece_order, args.fix_event_source_order,
+                args.fix_redundant_citation_page, args.fix_repeated_citation_text,
                 args.fix_dateless_dates, args.fix_aka_facts,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,

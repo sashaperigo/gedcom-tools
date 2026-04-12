@@ -37,6 +37,10 @@ from gedcom_linter import (
     fix_name_piece_order,
     scan_event_source_order,
     fix_event_source_order,
+    scan_redundant_citation_page,
+    fix_redundant_citation_page,
+    scan_repeated_citation_text,
+    fix_repeated_citation_text,
     normalize_date,
 )
 
@@ -1440,4 +1444,406 @@ class TestFixEventSourceOrder:
         original = p.read_text(encoding='utf-8')
         count = fix_event_source_order(str(p), dry_run=True)
         assert count == 1
+        assert p.read_text(encoding='utf-8') == original
+
+
+# ===========================================================================
+# scan_redundant_citation_page / fix_redundant_citation_page
+# ===========================================================================
+
+class TestScanRedundantCitationPage:
+    def test_page_matching_titl_flagged(self, tmp_path):
+        """PAGE value identical to source TITL is a violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Trees
+            0 TRLR
+        """)
+        violations = scan_redundant_citation_page(str(p))
+        assert len(violations) == 1
+        assert violations[0][1] == '@S1@'
+
+    def test_page_different_from_titl_not_flagged(self, tmp_path):
+        """PAGE with actual locator info is not flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Page 42
+            0 TRLR
+        """)
+        assert scan_redundant_citation_page(str(p)) == []
+
+    def test_no_page_not_flagged(self, tmp_path):
+        """Bare citation with no PAGE is not flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            0 TRLR
+        """)
+        assert scan_redundant_citation_page(str(p)) == []
+
+    def test_case_insensitive_match(self, tmp_path):
+        """Match is case-insensitive."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE ancestry family trees
+            0 TRLR
+        """)
+        assert len(scan_redundant_citation_page(str(p))) == 1
+
+    def test_plural_singular_normalised(self, tmp_path):
+        """PAGE 'Ancestry Family Tree' matches TITL 'Ancestry Family Trees'."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Tree
+            0 TRLR
+        """)
+        violations = scan_redundant_citation_page(str(p))
+        assert len(violations) == 1
+
+    def test_only_matching_source_flagged(self, tmp_path):
+        """Two sources; only the one whose PAGE matches its TITL is flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @S2@ SOUR
+            1 TITL Other Source
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Trees
+            2 SOUR @S2@
+            3 PAGE Page 7
+            0 TRLR
+        """)
+        violations = scan_redundant_citation_page(str(p))
+        assert len(violations) == 1
+        assert violations[0][1] == '@S1@'
+
+
+class TestFixRedundantCitationPage:
+    def test_removes_redundant_page_line(self, tmp_path):
+        """The matching PAGE line is deleted from the citation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Trees
+            0 TRLR
+        """)
+        count = fix_redundant_citation_page(str(p))
+        assert count == 1
+        assert '3 PAGE Ancestry Family Trees' not in p.read_text(encoding='utf-8')
+
+    def test_preserves_informative_page(self, tmp_path):
+        """PAGE with an actual locator is not touched; count=0, file unchanged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Page 42
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        count = fix_redundant_citation_page(str(p))
+        assert count == 0
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_preserves_data_and_note_in_citation(self, tmp_path):
+        """Other citation sub-tags (DATA, NOTE) survive the fix."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Trees
+            3 DATA
+            4 DATE 1900
+            2 NOTE Some note
+            0 TRLR
+        """)
+        fix_redundant_citation_page(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '4 DATE 1900' in content
+        assert '2 NOTE Some note' in content
+
+    def test_dry_run_no_write(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Trees
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        fix_redundant_citation_page(str(p), dry_run=True)
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_multiple_redundant_pages_all_removed(self, tmp_path):
+        """All matching PAGE lines across multiple citations are removed."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Ancestry Family Trees
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Trees
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 PAGE Ancestry Family Trees
+            0 TRLR
+        """)
+        count = fix_redundant_citation_page(str(p))
+        assert count == 2
+        assert p.read_text(encoding='utf-8').count('PAGE Ancestry Family Trees') == 0
+
+
+# ===========================================================================
+# scan_repeated_citation_text / fix_repeated_citation_text
+# ===========================================================================
+
+class TestScanRepeatedCitationText:
+    def test_two_identical_texts_same_source_flagged(self, tmp_path):
+        """Same TEXT in ≥2 citations to the same source → violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Some Essay
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Family history narrative here.
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Family history narrative here.
+            0 TRLR
+        """)
+        violations = scan_repeated_citation_text(str(p))
+        assert len(violations) == 1
+        assert violations[0][0] == '@S1@'
+        assert violations[0][2] == 2
+
+    def test_different_texts_same_source_not_flagged(self, tmp_path):
+        """Different TEXT values for the same source are not flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Some Essay
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Unique text for person one.
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Different text for person two.
+            0 TRLR
+        """)
+        assert scan_repeated_citation_text(str(p)) == []
+
+    def test_single_occurrence_not_flagged(self, tmp_path):
+        """TEXT appearing only once is not flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Some Essay
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Only appears once.
+            0 TRLR
+        """)
+        assert scan_repeated_citation_text(str(p)) == []
+
+    def test_same_text_different_sources_not_grouped(self, tmp_path):
+        """Same TEXT in citations to DIFFERENT sources is not a violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Source One
+            0 @S2@ SOUR
+            1 TITL Source Two
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Same narrative text.
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S2@
+            3 DATA
+            4 TEXT Same narrative text.
+            0 TRLR
+        """)
+        assert scan_repeated_citation_text(str(p)) == []
+
+
+class TestFixRepeatedCitationText:
+    def test_text_moved_to_source_record(self, tmp_path):
+        """TEXT that repeats in citations is injected into the source record."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Some Essay
+            1 AUTH Someone
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Family history narrative.
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Family history narrative.
+            0 TRLR
+        """)
+        count = fix_repeated_citation_text(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert count == 2
+        assert '1 TEXT Family history narrative.' in content
+
+    def test_text_removed_from_citations(self, tmp_path):
+        """After the fix, inline citations no longer carry the repeated TEXT."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Some Essay
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Family history narrative.
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Family history narrative.
+            0 TRLR
+        """)
+        fix_repeated_citation_text(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert content.count('4 TEXT Family history narrative.') == 0
+
+    def test_preserves_other_citation_content(self, tmp_path):
+        """PAGE, DATA/DATE, and WWW lines are preserved after TEXT removal."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Essay Source
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 PAGE pages 11-39
+            3 DATA
+            4 DATE 1993
+            4 TEXT Family narrative.
+            4 WWW https://example.com
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 PAGE pages 11-39
+            3 DATA
+            4 DATE 1993
+            4 TEXT Family narrative.
+            4 WWW https://example.com
+            0 TRLR
+        """)
+        fix_repeated_citation_text(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert content.count('3 PAGE pages 11-39') == 2
+        assert content.count('4 DATE 1993') == 2
+        assert content.count('4 WWW https://example.com') == 2
+
+    def test_cont_lines_moved_correctly(self, tmp_path):
+        """Multi-line TEXT with CONT lines is moved with CONT → level 2 CONT."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Essay
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT First line of text.
+            5 CONT Second line.
+            5 CONT Third line.
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT First line of text.
+            5 CONT Second line.
+            5 CONT Third line.
+            0 TRLR
+        """)
+        fix_repeated_citation_text(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '1 TEXT First line of text.' in content
+        assert '2 CONT Second line.' in content
+        assert '2 CONT Third line.' in content
+        assert '5 CONT Second line.' not in content
+
+    def test_dry_run_no_write(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Some Essay
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Narrative.
+            0 @I2@ INDI
+            1 DEAT
+            2 SOUR @S1@
+            3 DATA
+            4 TEXT Narrative.
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        fix_repeated_citation_text(str(p), dry_run=True)
         assert p.read_text(encoding='utf-8') == original
