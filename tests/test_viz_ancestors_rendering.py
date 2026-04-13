@@ -685,7 +685,7 @@ class TestMarriageAddr:
     def test_marr_addr_field_initialised(self, parsed_with_addr):
         """MARR event dict must always have an `addr` key (even when absent from GEDCOM)."""
         _, fams, _ = parsed_with_addr
-        marr = fams['@F1@']['marr']
+        marr = fams['@F1@']['marrs'][0]
         assert 'addr' in marr, (
             "MARR event dict has no 'addr' key — the key is not initialised "
             "in parse_gedcom, so addr can never be set or returned"
@@ -694,7 +694,7 @@ class TestMarriageAddr:
     def test_marr_addr_parsed_from_fam_block(self, parsed_with_addr):
         """ADDR sub-tag under MARR must be read into the event dict."""
         _, fams, _ = parsed_with_addr
-        marr = fams['@F1@']['marr']
+        marr = fams['@F1@']['marrs'][0]
         assert marr.get('addr') == "St Mary's Church", (
             f"MARR addr={marr.get('addr')!r}; expected \"St Mary's Church\". "
             "The FAM-context level-2 handler didn't include an ADDR branch."
@@ -714,9 +714,10 @@ class TestMarriageAddr:
     def test_marr_addr_absent_when_not_in_gedcom(self):
         """When MARR has no ADDR sub-tag the field must exist but be None/falsy."""
         _, fams, _ = parse_gedcom(str(FIXTURE))
-        marr = fams.get('@F5@', {}).get('marr')
-        if marr is None:
+        marrs = fams.get('@F5@', {}).get('marrs', [])
+        if not marrs:
             return  # fixture has no @F5@ MARR — skip
+        marr = marrs[0]
         # addr key must exist (initialised to None) even when absent from GEDCOM
         assert 'addr' in marr, "MARR event dict missing 'addr' key"
         assert not marr.get('addr'), (
