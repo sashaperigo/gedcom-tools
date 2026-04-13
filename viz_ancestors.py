@@ -158,13 +158,17 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['addr'] = html_mod.unescape(val)
                 elif tag == 'NOTE':
                     current_evt['note'] = html_mod.unescape(val)
+                    current_note = 'event'   # sentinel: subsequent CONT/CONC at lvl 3 belong here
                 elif tag == 'AGE':
                     current_evt['age'] = val
+            elif lvl == 3 and tag in ('CONT', 'CONC') and current_note == 'event':
+                sep = '\n' if tag == 'CONT' else ''
+                current_evt['note'] += sep + html_mod.unescape(val)
             elif lvl == 1 and tag == 'NOTE':
                 indis[xref]['notes'].append(html_mod.unescape(val))
                 current_note = len(indis[xref]['notes']) - 1
                 current_evt  = None
-            elif lvl == 2 and tag in ('CONT', 'CONC') and current_note is not None:
+            elif lvl == 2 and tag in ('CONT', 'CONC') and isinstance(current_note, int):
                 sep = '\n' if tag == 'CONT' else ''
                 indis[xref]['notes'][current_note] += sep + html_mod.unescape(val)
             elif lvl == 1 and tag == 'FAMC' and indis[xref]['famc'] is None:
@@ -623,9 +627,6 @@ header h1 { font-size: 16px; font-weight: 600; }
 .event-modal-field textarea:focus { border-color: #3b82f6; }
 .event-modal-field select option { background: #1e293b; }
 .event-modal-field textarea { resize: vertical; min-height: 60px; }
-.event-modal-note-footer { display: flex; justify-content: flex-end; margin-top: 3px; }
-#event-modal-note-count { font-size: 10px; color: #64748b; }
-#event-modal-note-count.at-limit { color: #ef4444; font-weight: 600; }
 .event-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .event-modal-cancel { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
   color: #94a3b8; border-radius: 6px; padding: 6px 16px; cursor: pointer; }
@@ -828,11 +829,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     <div class="event-modal-field">
       <label>Note</label>
       <textarea id="event-modal-note" rows="3"
-                onkeydown="if(event.key==='Escape')closeEventModal()"
-                oninput="_updateNoteCount()"></textarea>
-      <div class="event-modal-note-footer">
-        <span id="event-modal-note-count"></span>
-      </div>
+                onkeydown="if(event.key==='Escape')closeEventModal()"></textarea>
     </div>
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>
@@ -1295,21 +1292,6 @@ async function submitEventModal() {
   }
 }
 
-const _NOTE_MAX_CHARS = 248;  // GEDCOM line limit (255) minus "2 NOTE " prefix (7)
-
-function _updateNoteCount() {
-  const textarea = document.getElementById('event-modal-note');
-  const countEl  = document.getElementById('event-modal-note-count');
-  if (!textarea || !countEl) return;
-  const len = textarea.value.length;
-  const remaining = _NOTE_MAX_CHARS - len;
-  countEl.textContent = remaining + ' characters remaining';
-  countEl.classList.toggle('at-limit', remaining <= 0);
-  // Prevent input beyond the limit
-  if (len > _NOTE_MAX_CHARS) {
-    textarea.value = textarea.value.slice(0, _NOTE_MAX_CHARS);
-  }
-}
 
 // Update field visibility when the tag selector changes (add mode only)
 document.addEventListener('change', e => {
