@@ -46,7 +46,7 @@ from gedcom_io import level as _level, write_lines
 _TOP_OBJE_RE = re.compile(r'^0 (@[^@]+@) OBJE\s*$')   # top-level: 0 @X@ OBJE
 _INLINE_OBJE_RE = re.compile(r'^(\d+) OBJE\s*$')       # inline:    N OBJE  (no value)
 _PTR_OBJE_RE = re.compile(r'^(\d+) OBJE (@[^@]+@)\s*$')  # pointer: N OBJE @X@
-_FILE_RE = re.compile(r'^\d+ FILE (.+)$')
+_FILE_RE = re.compile(r'^\d+ FILE(.*)$')
 
 _URL_SCHEMES = ('http://', 'https://', 'ftp://', 'ftps://')
 
@@ -58,6 +58,8 @@ def _is_url(path: str) -> bool:
 def _file_exists(file_val: str, gedcom_dir: str) -> bool:
     """Return True if file_val resolves to an existing file (or is a URL)."""
     val = file_val.strip()
+    if not val:
+        return False  # empty FILE tag — no media attached
     if _is_url(val):
         return True  # URLs are never flagged as broken
     if os.path.isabs(val):
@@ -82,7 +84,7 @@ def _find_file_in_block(lines: list[str], start: int, block_level: int) -> str |
             break
         m = _FILE_RE.match(lines[i].rstrip('\n'))
         if m:
-            return m.group(1).strip()
+            return m.group(1).strip()  # empty string for a bare "FILE" line
     return None
 
 

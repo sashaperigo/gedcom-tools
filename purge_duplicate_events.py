@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
 """
-purge_duplicate_events.py — Remove duplicate BIRT/DEAT event blocks from a GEDCOM file.
+purge_duplicate_events.py — Remove duplicate event blocks from a GEDCOM file.
 
-Two event blocks of the same type on the same individual are considered duplicates
-when they have identical DATE and PLAC values (both fields compared, both may be absent).
-Source citations are excluded from this comparison so that two events citing different
-sources are still recognised as duplicates if their DATE and PLAC match.
+INDI records (BIRT / DEAT):
+  Two blocks of the same type are duplicates when they have identical DATE and
+  PLAC values. Source citations are excluded from the comparison so that two
+  events citing different sources are still recognised as duplicates if their
+  DATE and PLAC match.
 
-When duplicates are found, the first block is kept and any source sub-blocks from
-the duplicate that are not already present in the keeper are appended to it.
-No source information is ever discarded.
+FAM records (MARR):
+  Two MARR blocks are duplicates when:
+    • same PLAC (or one absent)
+    • compatible DATE — one absent, or neither has a BEF/AFT prefix and both
+      contain the same 4-digit year (so "5 SEP 1920", "ABT 1920", and "1920"
+      all match each other)
+    • no conflicting ADDR — one absent, or both equal
+
+  BEF/AFT prefixes are directional bounds that never match anything except an
+  identical string. Different venues (ADDR) are a clear signal of a genuine
+  second ceremony and are preserved.
+
+When duplicates are found, the richest block (most non-null sub-fields) is kept
+and any source sub-blocks from the others that are not already present are
+appended to it. No source information is ever discarded.
 
 Usage:
   # Merge in-place:
@@ -28,6 +41,78 @@ import re
 import sys
 
 from gedcom_io import level as _level, write_lines
+
+# ---------------------------------------------------------------------------
+# MARR date-compatibility helpers
+# ---------------------------------------------------------------------------
+
+_YEAR_RE  = re.compile(r'\b(\d{4})\b')
+_BOUND_RE = re.compile(r'^(BEF|AFT)\s+', re.IGNORECASE)
+
+
+def _marr_dates_compatible(da: str | None, db: str | None) -> bool:
+    """True if da and db could plausibly refer to the same marriage event.
+
+    Null matches anything. BEF/AFT are directional bounds and only match an
+    identical string. Otherwise two dates are compatible when they share the
+    same 4-digit year, so "5 SEP 1920", "ABT 1920", and "1920" all match.
+    """
+    if not da or not db:
+        return True
+    if da == db:
+        return True
+    if _BOUND_RE.match(da) or _BOUND_RE.match(db):
+        return False
+    ya, yb = _YEAR_RE.search(da), _YEAR_RE.search(db)
+    return bool(ya and yb and ya.group(1) == yb.group(1))
+
+
+def _marr_blocks_are_duplicate(a: dict, b: dict) -> bool:
+    """Return True if two parsed MARR event dicts represent the same ceremony."""
+    # Different non-null places → distinct
+    if a.get('plac') and b.get('plac') and a['plac'] != b['plac']:
+        return False
+    # Different non-null venues → distinct ceremonies
+    if a.get('addr') and b.get('addr') and a['addr'] != b['addr']:
+        return False
+    return _marr_dates_compatible(a.get('date'), b.get('date'))
+
+
+def _richness(p: dict) -> int:
+    """Count non-null content fields (DATE, PLAC, ADDR, NOTE) in a parsed block."""
+    return sum(1 for f in ('date', 'plac', 'addr', 'note') if p.get(f))
+
+
+# ---------------------------------------------------------------------------
+# Block reconstruction helper (shared by INDI and FAM processing)
+# ---------------------------------------------------------------------------
+
+def _apply_block_changes(
+    rec_lines: list[str],
+    block_spans: list[tuple[int, int]],
+    to_remove: set[int],
+    replacements: dict[int, list[str]],
+) -> list[str]:
+    """Reconstruct rec_lines, skipping removed blocks and splicing in replacements."""
+    block_starts = {start: i for i, (start, _) in enumerate(block_spans)}
+    block_end_map = {start: end for start, end in block_spans}
+    new_rec: list[str] = []
+    i = 0
+    while i < len(rec_lines):
+        if i in block_starts:
+            bidx = block_starts[i]
+            end = block_end_map[i]
+            if bidx in to_remove:
+                pass  # skip the duplicate block
+            elif bidx in replacements:
+                new_rec.extend(replacements[bidx])
+            else:
+                new_rec.extend(rec_lines[i:end])
+            i = end
+        else:
+            new_rec.append(rec_lines[i])
+            i += 1
+    return new_rec
 
 
 def _extract_source_blocks(event_body: list[str]) -> list[tuple[str, ...]]:
@@ -80,11 +165,23 @@ def _parse_event_block(block_lines: list[str]) -> dict:
          for l in body if re.match(r'^2 PLAC ', l)),
         None,
     )
+    addr = next(
+        (re.match(r'^2 ADDR (.+)', l).group(1).strip()
+         for l in body if re.match(r'^2 ADDR ', l)),
+        None,
+    )
+    note = next(
+        (re.match(r'^2 NOTE (.+)', l).group(1).strip()
+         for l in body if re.match(r'^2 NOTE ', l)),
+        None,
+    )
     return {
         'header': header,
         'body': body,
         'date': date,
         'plac': plac,
+        'addr': addr,
+        'note': note,
         'sources': _extract_source_blocks(body),
     }
 
@@ -170,28 +267,74 @@ def _process_indi_record(rec_lines: list[str]) -> tuple[list[str], int, int]:
         if not (to_remove or replacements):
             continue
 
-        # Reconstruct rec_lines with merges applied
-        new_rec: list[str] = []
-        block_idx = 0
-        block_starts = {start: i for i, (start, _) in enumerate(block_spans)}
-        block_end_map = {start: end for start, end in block_spans}
-        i = 0
-        while i < len(rec_lines):
-            if i in block_starts:
-                bidx = block_starts[i]
-                end = block_end_map[i]
-                if bidx in to_remove:
-                    pass  # skip the duplicate block
-                elif bidx in replacements:
-                    new_rec.extend(replacements[bidx])
-                else:
-                    new_rec.extend(rec_lines[i:end])
-                i = end
-            else:
-                new_rec.append(rec_lines[i])
-                i += 1
+        rec_lines = _apply_block_changes(rec_lines, block_spans, to_remove, replacements)
 
-        rec_lines = new_rec
+    return rec_lines, events_merged, sources_added
+
+
+def _process_fam_record(rec_lines: list[str]) -> tuple[list[str], int, int]:
+    """
+    Process a single FAM record, merging duplicate MARR blocks.
+
+    Uses a looser date-compatibility heuristic than INDI events: two MARRs are
+    duplicates when they share the same PLAC (or one is absent), have compatible
+    dates (same year, ignoring ABT/EST; BEF/AFT never match), and have no
+    conflicting ADDR (different venues = genuine second ceremony).
+
+    The richest block (most non-null sub-fields) is kept as the keeper.
+
+    Returns (new_lines, events_merged, sources_added).
+    """
+    events_merged = 0
+    sources_added = 0
+
+    for tag in ('MARR',):
+        block_spans = _collect_event_blocks(rec_lines, tag)
+        if len(block_spans) < 2:
+            continue
+
+        parsed: list[dict] = [
+            _parse_event_block(rec_lines[s:e]) for s, e in block_spans
+        ]
+
+        # Group indices by duplicate heuristic (O(n²) — FAMs have very few MARRs)
+        used = [False] * len(parsed)
+        groups: list[list[int]] = []
+        for i, a in enumerate(parsed):
+            if used[i]:
+                continue
+            group = [i]
+            for j in range(i + 1, len(parsed)):
+                if not used[j] and _marr_blocks_are_duplicate(a, parsed[j]):
+                    group.append(j)
+                    used[j] = True
+            used[i] = True
+            groups.append(group)
+
+        to_remove: set[int] = set()
+        replacements: dict[int, list[str]] = {}
+
+        for group in groups:
+            if len(group) < 2:
+                continue
+            # Keep the richest block; merge sources from the rest into it
+            keeper_i = max(group, key=lambda k: _richness(parsed[k]))
+            keeper = parsed[keeper_i]
+            for dup_i in group:
+                if dup_i == keeper_i:
+                    continue
+                merged_lines, n_new = _merge_into_keeper(keeper, parsed[dup_i])
+                replacements[keeper_i] = merged_lines
+                keeper = _parse_event_block(merged_lines)
+                parsed[keeper_i] = keeper
+                to_remove.add(dup_i)
+                events_merged += 1
+                sources_added += n_new
+
+        if not (to_remove or replacements):
+            continue
+
+        rec_lines = _apply_block_changes(rec_lines, block_spans, to_remove, replacements)
 
     return rec_lines, events_merged, sources_added
 
@@ -202,11 +345,12 @@ def purge_duplicate_events(
     dry_run: bool = False,
 ) -> dict:
     """
-    Merge duplicate BIRT/DEAT event blocks within each INDI record.
+    Merge duplicate event blocks within INDI and FAM records.
 
-    Two blocks are duplicates when they share the same DATE and PLAC values.
-    The first block is kept; source sub-blocks from the duplicate that are not
-    already present in the keeper are appended to it.
+    INDI (BIRT/DEAT): duplicates share the same DATE and PLAC values exactly.
+    FAM (MARR): duplicates share the same PLAC, compatible DATE (same year),
+    and no conflicting ADDR. The richest block is kept in each case; source
+    sub-blocks from the others are merged into it.
 
     Parameters
     ----------
@@ -218,9 +362,7 @@ def purge_duplicate_events(
     -------
     dict with keys:
       'lines_read'     : total lines in the input file
-      'lines_removed'  : net lines removed (negative means lines were added
-                         when sources migrated from a short duplicate to a
-                         longer keeper; in practice always >= 0)
+      'lines_removed'  : net lines removed
       'events_merged'  : number of duplicate event blocks consumed
       'sources_added'  : source sub-blocks migrated from duplicates to keepers
     """
@@ -234,22 +376,32 @@ def purge_duplicate_events(
     i = 0
     while i < len(all_lines):
         line = all_lines[i]
-        if not re.match(r'^0 @.*@ INDI\b', line):
+
+        if re.match(r'^0 @.*@ INDI\b', line):
+            rec_start = i
+            i += 1
+            while i < len(all_lines) and not re.match(r'^0 ', all_lines[i]):
+                i += 1
+            rec_lines = all_lines[rec_start:i]
+            new_rec, merged, added = _process_indi_record(rec_lines)
+            lines_out.extend(new_rec)
+            total_events_merged += merged
+            total_sources_added += added
+
+        elif re.match(r'^0 @.*@ FAM\b', line):
+            rec_start = i
+            i += 1
+            while i < len(all_lines) and not re.match(r'^0 ', all_lines[i]):
+                i += 1
+            rec_lines = all_lines[rec_start:i]
+            new_rec, merged, added = _process_fam_record(rec_lines)
+            lines_out.extend(new_rec)
+            total_events_merged += merged
+            total_sources_added += added
+
+        else:
             lines_out.append(line)
             i += 1
-            continue
-
-        # Collect the full INDI record
-        rec_start = i
-        i += 1
-        while i < len(all_lines) and not re.match(r'^0 ', all_lines[i]):
-            i += 1
-        rec_lines = all_lines[rec_start:i]
-
-        new_rec, merged, added = _process_indi_record(rec_lines)
-        lines_out.extend(new_rec)
-        total_events_merged += merged
-        total_sources_added += added
 
     lines_removed = len(all_lines) - len(lines_out)
     result = {
@@ -270,7 +422,7 @@ def purge_duplicate_events(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description='Merge duplicate BIRT/DEAT event blocks in a GEDCOM file.',
+        description='Merge duplicate event blocks in a GEDCOM file (INDI: BIRT/DEAT; FAM: MARR).',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
