@@ -385,14 +385,22 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     seen_src_titles.add(title)
                     src_list.append({'title': title, 'url': source_urls.get(sxref) or None})
         excl_list = excl_by_xref.get(xref, [])
-        # Assign per-tag occurrence index before exclusion filtering
+        # Assign per-tag occurrence index before exclusion filtering.
+        # Secondary NAME records (_name_record=True) are stored as "1 NAME" in the
+        # GEDCOM, not "1 FACT", so they must NOT increment the FACT counter —
+        # otherwise genuine FACT tags receive inflated indices and can't be found
+        # by _find_event_block(). Name records are edited via openAliasModal using
+        # _name_occurrence, so event_idx=None is correct for them.
         tag_counters: dict[str, int] = {}
         tagged_events = []
         for e in info['events']:
             t = e['tag']
-            occ = tag_counters.get(t, 0)
-            tag_counters[t] = occ + 1
-            tagged_events.append({**e, 'event_idx': occ})
+            if e.get('_name_record'):
+                tagged_events.append({**e, 'event_idx': None})
+            else:
+                occ = tag_counters.get(t, 0)
+                tag_counters[t] = occ + 1
+                tagged_events.append({**e, 'event_idx': occ})
         events = [
             e for e in tagged_events
             if not any(_matches_exclusion(e, ex) for ex in excl_list)
