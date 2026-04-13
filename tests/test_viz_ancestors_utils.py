@@ -240,26 +240,26 @@ class TestBuildAllPlaces:
     def test_fam_marr_place_included(self):
         indis = {'@I1@': {'events': []}}
         fams = {
-            '@F1@': {'marr': {'date': '1920', 'place': 'Athens, Greece'}},
+            '@F1@': {'marrs': [{'date': '1920', 'place': 'Athens, Greece'}]},
         }
         result = build_all_places(indis, fams=fams)
         assert 'Athens, Greece' in result
 
     def test_fam_marr_without_place_excluded(self):
         indis = {}
-        fams = {'@F1@': {'marr': {'date': '1920'}}}   # no 'place' key
+        fams = {'@F1@': {'marrs': [{'date': '1920'}]}}   # no 'place' key
         result = build_all_places(indis, fams=fams)
         assert result == []
 
     def test_fam_non_dict_event_skipped(self):
-        # Some FAM records may have marr: None or marr: True
+        # FAM records with no marrs list produce no places
         indis = {}
-        fams = {'@F1@': {'marr': None}, '@F2@': {'marr': True}}
+        fams = {'@F1@': {'marrs': []}, '@F2@': {}}
         result = build_all_places(indis, fams=fams)
         assert result == []
 
     def test_indi_and_fam_places_combined_and_deduplicated(self):
         indis = {'@I1@': {'events': [{'tag': 'BIRT', 'place': 'Athens, Greece'}]}}
-        fams  = {'@F1@': {'marr': {'place': 'Athens, Greece'}}}
+        fams  = {'@F1@': {'marrs': [{'place': 'Athens, Greece'}]}}
         result = build_all_places(indis, fams=fams)
         assert result.count('Athens, Greece') == 1
