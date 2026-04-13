@@ -196,14 +196,12 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 fams[xref]['chil'].append(val)
                 current_evt = None
             elif lvl == 1 and tag == 'MARR':
-                # If a MARR block was already parsed, keep it rather than overwriting with a
-                # bare duplicate (duplicate 1 MARR lines can appear after a merge and would
-                # otherwise silently lose sub-tags like ADDR from the original block).
-                if fams[xref].get('marr') is None:
-                    evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None}
-                    fams[xref]['marr'] = evt
-                else:
-                    evt = fams[xref]['marr']
+                # Always start a fresh event dict for each 1 MARR block so that
+                # multiple ceremonies (e.g. civil + religious) are all captured.
+                # Empty entries (bare duplicate "1 MARR" lines from a merge with no
+                # sub-tags) are filtered out in build_people_json.
+                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None}
+                fams[xref].setdefault('marrs', []).append(evt)
                 current_evt = evt
             elif lvl == 2 and current_evt is not None:
                 if tag == 'DATE':
@@ -408,14 +406,19 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         if fams:
             for fam_xref in info.get('fams', []):
                 fam = fams.get(fam_xref, {})
-                marr = fam.get('marr')
-                if not marr:
+                marrs = fam.get('marrs', [])
+                if not marrs:
                     continue
                 spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
                 spouse_name = indis[spouse_xref]['name'] if spouse_xref and spouse_xref in indis else None
-                # MARR events live in FAM blocks; event_idx=None marks them as non-editable via INDI
-                events.append({**marr, 'event_idx': None, 'spouse': spouse_name,
-                               'spouse_xref': spouse_xref, 'fam_xref': fam_xref})
+                for marr_idx, marr in enumerate(marrs):
+                    # Skip bare duplicate MARR entries (no sub-tags) that can appear after a merge
+                    if not any(marr.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
+                        continue
+                    # MARR events live in FAM blocks; event_idx=None marks them as non-editable via INDI
+                    events.append({**marr, 'event_idx': None, 'marr_idx': marr_idx,
+                                   'spouse': spouse_name, 'spouse_xref': spouse_xref,
+                                   'fam_xref': fam_xref})
         result[xref] = {
             'name':       info['name'] or '?',
             'birth_year': info['birth_year'],
@@ -1141,7 +1144,7 @@ const _INLINE_TYPE_TAGS = new Set(['OCCU','TITL','NATI','RELI','EDUC']);
 // Tags that use a 2 TYPE sub-field for description
 const _TYPE_TAGS = new Set(['EVEN','FACT','OCCU','TITL','EDUC','NATI','RELI']);
 
-let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null, _eventModalFamXref = null;
+let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null, _eventModalFamXref = null, _eventModalMARRIdx = null;
 
 function _updateEventModalFields(tag) {
   const inlineRow = document.getElementById('event-modal-inline-row');
@@ -1186,18 +1189,19 @@ function _personName(xref) {
     ((ALL_PEOPLE.find(p => p.id === xref) || {}).name) || xref;
 }
 
-function editEvent(xref, eventIdx, tag, famXref) {
+function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   _eventModalXref    = xref;
   _eventModalIdx     = eventIdx;
   _eventModalTag     = tag;
   _eventModalFamXref = famXref || null;
+  _eventModalMARRIdx = (marrIdx !== undefined && marrIdx !== null) ? marrIdx : null;
   document.getElementById('event-modal-title').textContent = 'Edit Event \u2014 ' + _personName(xref);
   document.getElementById('event-modal-save-btn').textContent = 'Save';
   document.getElementById('event-modal-tag-row').style.display = 'none';
   const events = (PEOPLE[xref] && PEOPLE[xref].events) || [];
-  // For FAM events (MARR), match by fam_xref; otherwise match by tag + event_idx
+  // For FAM events (MARR), match by fam_xref + marr_idx; otherwise match by tag + event_idx
   const evt = famXref
-    ? (events.find(e => e.fam_xref === famXref && e.tag === tag) || {})
+    ? (events.find(e => e.fam_xref === famXref && e.tag === tag && (marrIdx == null || e.marr_idx === marrIdx)) || {})
     : (events.find(e => e.tag === tag && e.event_idx === eventIdx) || {});
   const placeVal = evt.place || '';
   document.getElementById('event-modal-inline').value = evt.inline_val || '';
@@ -1237,7 +1241,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
 
 function closeEventModal() {
   document.getElementById('event-modal-overlay').classList.remove('open');
-  _eventModalXref = _eventModalIdx = _eventModalTag = _eventModalFamXref = null;
+  _eventModalXref = _eventModalIdx = _eventModalTag = _eventModalFamXref = _eventModalMARRIdx = null;
 }
 
 async function submitEventModal() {
@@ -1263,7 +1267,8 @@ async function submitEventModal() {
   if (isAdd) {
     body = { xref, tag, fields, current_person: window._currentPerson || null };
   } else if (famXref) {
-    body = { xref, tag, fam_xref: famXref, updates: fields, current_person: window._currentPerson || null };
+    body = { xref, tag, fam_xref: famXref, marr_occurrence: _eventModalMARRIdx ?? 0,
+             updates: fields, current_person: window._currentPerson || null };
   } else {
     body = { xref, tag, event_idx: _eventModalIdx, updates: fields, current_person: window._currentPerson || null };
   }
@@ -1590,7 +1595,7 @@ function buildProse(evt) {
     case 'IMMI': return { prose: short ? `Immigrated to ${short}` : (date ? `Immigrated ${date}` : 'Immigration'), meta: meta() };
     case 'NATU': return { prose: short ? `Naturalized in ${short}` : (date ? `Naturalized ${date}` : 'Naturalization'), meta: meta() };
     case 'ADOP': return { prose: date ? `Adopted ${date}` : 'Adoption', meta: short };
-    case 'EDUC': return { prose: 'Education', meta: [type, short, date].filter(Boolean).join(' \u00b7 ') };
+    case 'EDUC': return { prose: 'Education', meta: [type, place, date].filter(Boolean).join(' \u00b7 ') };
     case 'RETI': return { prose: date ? `Retired ${date}` : 'Retirement', meta: short };
     case 'TITL': return { prose: type ? `Held title: ${type}` : 'Title', meta: date };
     case 'CHR':  return { prose: short ? `Christened in ${short}` : (date ? `Christened ${date}` : 'Christening'), meta: meta() };
@@ -1850,7 +1855,7 @@ function showDetail(xref) {
           : `<div class="marr-prose">${escHtml(prose)}</div>`;
         const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
         const marrEditBtn = evt.fam_xref
-          ? `<button class="marr-edit-btn" title="Edit marriage" onclick="event.stopPropagation();editEvent(${xrefQ},null,'MARR',${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')})">\u270f</button>`
+          ? `<button class="marr-edit-btn" title="Edit marriage" onclick="event.stopPropagation();editEvent(${xrefQ},null,'MARR',${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.marr_idx ?? 0})">\u270f</button>`
           : '';
         html +=
           `<div class="marr-card"${marrClick}>` +
@@ -2730,10 +2735,12 @@ def build_all_places(indis: dict, fams: dict | None = None) -> list[str]:
                 places.add(evt['place'])
     if fams:
         for fam in fams.values():
-            for key in ('marr', 'div'):
-                evt = fam.get(key)
-                if isinstance(evt, dict) and evt.get('place'):
-                    places.add(evt['place'])
+            for marr in fam.get('marrs', []):
+                if marr.get('place'):
+                    places.add(marr['place'])
+            div = fam.get('div')
+            if isinstance(div, dict) and div.get('place'):
+                places.add(div['place'])
     return sorted(places)
 
 

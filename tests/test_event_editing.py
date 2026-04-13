@@ -840,7 +840,7 @@ class TestFamBlock:
         new_lines = _edit_event_fields(FAM_GED, start, end, {'ADDR': 'St. Paul Cathedral'})
         ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
         indis, fams, sources = parse_gedcom(str(ged))
-        assert fams['@F1@']['marr']['addr'] == 'St. Paul Cathedral'
+        assert fams['@F1@']['marrs'][0]['addr'] == 'St. Paul Cathedral'
 
     def test_build_people_json_includes_marr_addr(self, tmp_path):
         """build_people_json must include the ADDR field in MARR events."""
@@ -865,7 +865,7 @@ class TestBuildPeopleJsonFamXref:
         xref = next(
             x for x, info in indis.items()
             if info.get('fams') and any(
-                fams.get(f, {}).get('marr') for f in info['fams']
+                fams.get(f, {}).get('marrs') for f in info['fams']
             )
         )
         people = build_people_json({xref}, indis, fams=fams, sources=sources)
@@ -906,30 +906,115 @@ DUPLICATE_MARR_GED = """\
 0 TRLR""".splitlines()
 
 
+class TestMultipleMarrEvents:
+    """FAM records with multiple distinct MARR ceremonies must produce separate events."""
+
+    def test_two_distinct_marr_blocks_both_shown(self, tmp_path):
+        """
+        When a FAM has two 1 MARR blocks with different dates/venues (e.g. a
+        civil ceremony and a religious ceremony), build_people_json must emit
+        both as separate MARR events for each spouse.
+        """
+        ged_lines = [
+            '0 HEAD',
+            '1 GEDC',
+            '2 VERS 5.5.1',
+            '0 @I1@ INDI',
+            '1 NAME John /Smith/',
+            '1 FAMS @F1@',
+            '0 @I2@ INDI',
+            '1 NAME Mary /Jones/',
+            '1 FAMS @F1@',
+            '0 @F1@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE 31 AUG 1918',
+            '2 PLAC Smyrna, Turkey',
+            '2 ADDR Anglican Church',
+            '2 NOTE Civil ceremony',
+            '1 MARR',
+            '2 DATE 13 SEP 1918',
+            '2 PLAC Smyrna, Turkey',
+            '2 ADDR Catholic Church',
+            '2 NOTE Religious ceremony',
+            '0 TRLR',
+        ]
+        ged = tmp_path / 'two_marr.ged'
+        ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged))
+
+        assert len(fams['@F1@']['marrs']) == 2
+        assert fams['@F1@']['marrs'][0]['date'] == '31 AUG 1918'
+        assert fams['@F1@']['marrs'][1]['date'] == '13 SEP 1918'
+
+        people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
+        for xref in ('@I1@', '@I2@'):
+            marr_evts = [e for e in people[xref]['events'] if e['tag'] == 'MARR']
+            assert len(marr_evts) == 2, f'{xref} must have 2 MARR events'
+            dates = {e['date'] for e in marr_evts}
+            assert dates == {'31 AUG 1918', '13 SEP 1918'}
+            idxs = {e['marr_idx'] for e in marr_evts}
+            assert idxs == {0, 1}
+
+    def test_bare_duplicate_marr_filtered_out(self, tmp_path):
+        """
+        A bare '1 MARR' line with no sub-tags (merge artifact) must not appear
+        as a second marriage event — build_people_json should emit only the one
+        with actual data.
+        """
+        ged_lines = [
+            '0 HEAD',
+            '1 GEDC',
+            '2 VERS 5.5.1',
+            '0 @I1@ INDI',
+            '1 NAME John /Smith/',
+            '1 FAMS @F1@',
+            '0 @I2@ INDI',
+            '1 NAME Mary /Jones/',
+            '1 FAMS @F1@',
+            '0 @F1@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE 1 JAN 1925',
+            '2 PLAC London, England',
+            '1 MARR',   # bare duplicate — no sub-tags
+            '0 TRLR',
+        ]
+        ged = tmp_path / 'bare_dup.ged'
+        ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged))
+
+        assert len(fams['@F1@']['marrs']) == 2  # parser keeps both
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        marr_evts = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
+        assert len(marr_evts) == 1, 'bare duplicate MARR must be filtered out'
+        assert marr_evts[0]['date'] == '1 JAN 1925'
+
+
 class TestDuplicateMarrBlock:
 
     def test_addr_from_first_marr_preserved(self, tmp_path):
         """
-        Regression: when a FAM record contains two '1 MARR' blocks (a merge
-        artifact), parse_gedcom must keep the sub-tags from the first block
-        rather than overwriting with the bare second block.
-
-        Without the fix, the second '1 MARR' replaced fams[xref]['marr'] with a
-        fresh empty dict, silently discarding the ADDR written to the first block.
+        When a FAM record contains a real MARR block followed by a bare '1 MARR'
+        line (a merge artifact with no sub-tags), the first block's ADDR must be
+        present in marrs[0] and the empty entry must be filtered out by
+        build_people_json rather than appearing as a second marriage event.
         """
         ged = tmp_path / 'dup_marr.ged'
         ged.write_text('\n'.join(DUPLICATE_MARR_GED) + '\n', encoding='utf-8')
         _, fams, _ = parse_gedcom(str(ged))
-        marr = fams['@F1@']['marr']
+        marr = fams['@F1@']['marrs'][0]
         assert marr['addr'] == 'St. Paul Cathedral', \
-            'ADDR from first MARR block must survive a duplicate bare 1 MARR line'
+            'ADDR from first MARR block must be in marrs[0]'
 
     def test_date_and_place_still_present(self, tmp_path):
-        """DATE and PLAC from the first block must also be preserved."""
+        """DATE and PLAC from the first block must be in marrs[0]."""
         ged = tmp_path / 'dup_marr2.ged'
         ged.write_text('\n'.join(DUPLICATE_MARR_GED) + '\n', encoding='utf-8')
         _, fams, _ = parse_gedcom(str(ged))
-        marr = fams['@F1@']['marr']
+        marr = fams['@F1@']['marrs'][0]
         assert marr['date'] == '1 JAN 1925'
         assert marr['place'] == 'London, England'
 
@@ -999,7 +1084,7 @@ class TestMarrAddrRoundTrip:
 
         # Re-parse from disk (same as serve_viz does after _write_gedcom_atomic)
         _, fams, _ = parse_gedcom(str(ged))
-        assert fams['@F1@']['marr']['addr'] == 'St. Paul Cathedral', \
+        assert fams['@F1@']['marrs'][0]['addr'] == 'St. Paul Cathedral', \
             'ADDR must survive write → disk → re-parse'
 
     def test_addr_present_in_build_people_json_after_edit(self, tmp_path):
@@ -1044,7 +1129,7 @@ class TestMarrAddrRoundTrip:
         ged.write_text('\n'.join(ged_with_addr) + '\n', encoding='utf-8')
 
         indis, fams, sources = parse_gedcom(str(ged))
-        assert fams['@F1@']['marr']['addr'] == 'St. Paul Cathedral'
+        assert fams['@F1@']['marrs'][0]['addr'] == 'St. Paul Cathedral'
 
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         marr_evts = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
@@ -1085,7 +1170,7 @@ class TestMarrAddrRoundTrip:
         ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
 
         _, fams, _ = parse_gedcom(str(ged))
-        assert fams['@F1@']['marr']['addr'] == 'Notre Dame Cathedral', \
+        assert fams['@F1@']['marrs'][0]['addr'] == 'Notre Dame Cathedral', \
             'ADDR must be preserved even when SOUR/DATA/WWW sub-records follow it'
 
 

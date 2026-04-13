@@ -340,25 +340,28 @@ def _find_fam_block(lines: list[str], fam_xref: str) -> tuple[int | None, int | 
 
 
 def _find_fam_event_block(
-    lines: list[str], fam_xref: str, event_tag: str
+    lines: list[str], fam_xref: str, event_tag: str, occurrence: int = 0
 ) -> tuple[int | None, int | None, str | None]:
-    """Return (start, end, err) for the first occurrence of event_tag in the FAM block."""
+    """Return (start, end, err) for the Nth (0-based) occurrence of event_tag in the FAM block."""
     fam_start, fam_end, err = _find_fam_block(lines, fam_xref)
     if err:
         return None, None, err
+    count = 0
     for i in range(fam_start + 1, fam_end):
         m = _TAG_RE.match(lines[i])
         if not m:
             continue
         if int(m.group(1)) == 1 and m.group(2) == event_tag:
-            j = i + 1
-            while j < fam_end:
-                sm = _TAG_RE.match(lines[j])
-                if sm and int(sm.group(1)) <= 1:
-                    break
-                j += 1
-            return i, j, None
-    return None, None, f'Event {event_tag} not found in family {fam_xref}'
+            if count == occurrence:
+                j = i + 1
+                while j < fam_end:
+                    sm = _TAG_RE.match(lines[j])
+                    if sm and int(sm.group(1)) <= 1:
+                        break
+                    j += 1
+                return i, j, None
+            count += 1
+    return None, None, f'Event {event_tag}[{occurrence}] not found in family {fam_xref}'
 
 
 # ---------------------------------------------------------------------------
@@ -572,8 +575,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 lines = GED.read_text(encoding='utf-8').splitlines()
                 if fam_xref:
-                    # Marriage events live in FAM records
-                    start, end, err = _find_fam_event_block(lines, fam_xref, tag)
+                    # Marriage events live in FAM records; marr_occurrence selects
+                    # which 1 MARR block to edit when a FAM has multiple ceremonies.
+                    marr_occ = int(body.get('marr_occurrence') or 0)
+                    start, end, err = _find_fam_event_block(lines, fam_xref, tag, marr_occ)
                 else:
                     event_idx = int(body['event_idx'])
                     start, end, err = _find_event_block(lines, xref, tag, event_idx)
