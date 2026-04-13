@@ -2925,6 +2925,73 @@ def _name_piece_sort_key(tag: str) -> int:
     return 2
 
 
+def scan_citation_data_children(path: str) -> list[tuple[int, str, str]]:
+    """
+    Return (lineno, invalid_tag, sour_xref) for tags that appear as direct
+    children of the DATA block inside an inline SOURCE_CITATION but are not
+    permitted by GEDCOM 5.5.1.
+
+    The only valid direct children of SOUR.DATA in a citation are:
+      DATE, TEXT, CONC, CONT
+
+    Any other tag (e.g. WWW, NOTE, SOUR, PLAC) at that level is flagged.
+    Level-0 SOUR records with their own DATA blocks are excluded.
+    """
+    _VALID = frozenset({'DATE', 'TEXT', 'CONC', 'CONT'})
+    violations: list[tuple[int, str, str]] = []
+
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+        # Inline SOUR citation: level >= 1 with an @XREF@ pointer
+        m = re.match(r'^(\d+) SOUR (@[^@]+@)', lines[i].rstrip('\n'))
+        if not m or int(m.group(1)) < 1:
+            i += 1
+            continue
+
+        sour_level = int(m.group(1))
+        sour_xref = m.group(2)
+
+        # Scan children of the SOUR citation for a DATA block
+        j = i + 1
+        while j < len(lines):
+            lm = re.match(r'^(\d+)', lines[j])
+            if not lm:
+                j += 1
+                continue
+            child_level = int(lm.group(1))
+            if child_level <= sour_level:
+                break  # end of citation
+
+            if child_level == sour_level + 1:
+                dm = re.match(r'^\d+ DATA\s*$', lines[j].rstrip('\n'))
+                if dm:
+                    # Now check DATA's direct children
+                    data_level = sour_level + 1
+                    k = j + 1
+                    while k < len(lines):
+                        klm = re.match(r'^(\d+) (\w+)', lines[k])
+                        if not klm:
+                            k += 1
+                            continue
+                        if int(klm.group(1)) <= data_level:
+                            break  # end of DATA block
+                        if int(klm.group(1)) == data_level + 1:
+                            tag = klm.group(2)
+                            if tag not in _VALID:
+                                violations.append((k + 1, tag, sour_xref))
+                        k += 1
+                    j = k
+                    continue
+            j += 1
+
+        i += 1
+
+    return violations
+
+
 def scan_name_piece_order(path: str) -> list[tuple[int, str]]:
     """
     Return (lineno, name_value) for NAME records where TYPE appears before
@@ -4248,6 +4315,18 @@ def main():
         if not any(src_quality.values()):
             print('OK: all source records have TITL and citations have PAGE.')
 
+        citation_data_issues = scan_citation_data_children(args.gedfile)
+        if citation_data_issues:
+            errors = True
+            print(f'\n{_WARN} {len(citation_data_issues)} invalid tag(s) under DATA '
+                  'in source citation(s) (only DATE and TEXT are valid children):')
+            for ln, tag, xref in citation_data_issues[:20]:
+                print(f'  line {ln}: {tag} inside DATA of {xref}')
+            if len(citation_data_issues) > 20:
+                print(f'  ... and {len(citation_data_issues) - 20} more.')
+        else:
+            print('OK: no invalid children under citation DATA blocks.')
+
         same_sour_dupes = scan_same_sour_multiple_cites(args.gedfile)
         if same_sour_dupes:
             print(f'\n{_WARN} {len(same_sour_dupes)} potential-duplicate source citation(s) '
@@ -4407,6 +4486,9 @@ def main():
             if same_sour_dupes:
                 _issue_rows.append((len(same_sour_dupes),
                                     'same-source double citations (potential)', _WARN))
+            if citation_data_issues:
+                _issue_rows.append((len(citation_data_issues),
+                                    'invalid tags under citation DATA', _WARN))
             if name_piece_issues:
                 _issue_rows.append((len(name_piece_issues),
                                     'NAME values missing GIVN/SURN', _INFO))
