@@ -186,12 +186,53 @@ def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | 
     return None, None, f'Note index {note_idx} not found in {xref}'
 
 
+_NOTE_LINE_MAX = 248  # 255-char GEDCOM line limit minus 7 chars for "2 NOTE " prefix
+
+
+def _chunk_note_line(text: str, first_tag: str, conc_tag: str) -> list[str]:
+    """Split one logical note line into physical GEDCOM lines using CONC for long lines.
+
+    The spec warns that CONC splits must not occur at a trailing space (parsers
+    often strip them), so we walk back from the limit to find a non-space cut.
+    """
+    out = []
+    tag = first_tag
+    while len(text) > _NOTE_LINE_MAX:
+        cut = _NOTE_LINE_MAX
+        while cut > 0 and text[cut - 1] == ' ':
+            cut -= 1
+        if cut == 0:
+            cut = _NOTE_LINE_MAX  # no non-space found; split anyway
+        out.append(f'{tag} {text[:cut]}')
+        text = text[cut:]
+        tag = conc_tag
+    out.append(f'{tag} {text}')
+    return out
+
+
 def _encode_note_lines(text: str) -> list[str]:
-    """Encode text into GEDCOM '1 NOTE / 2 CONT' lines (split on newlines)."""
-    parts = text.split('\n')
-    out = [f'1 NOTE {parts[0]}']
-    for part in parts[1:]:
-        out.append(f'2 CONT {part}')
+    """Encode text into GEDCOM '1 NOTE / 2 CONT / 2 CONC' lines.
+
+    Newlines in text become CONT lines (preserve line breaks).
+    Lines longer than 248 chars are split with CONC (no line break).
+    """
+    out = []
+    for i, line in enumerate(text.split('\n')):
+        first_tag = '1 NOTE' if i == 0 else '2 CONT'
+        out.extend(_chunk_note_line(line, first_tag, '2 CONC'))
+    return out
+
+
+def _encode_event_note_lines(text: str) -> list[str]:
+    """Encode text into GEDCOM '2 NOTE / 3 CONT / 3 CONC' lines (event sub-notes).
+
+    Newlines in text become CONT lines (preserve line breaks).
+    Lines longer than 248 chars are split with CONC (no line break).
+    """
+    out = []
+    for i, line in enumerate(text.split('\n')):
+        first_tag = '2 NOTE' if i == 0 else '3 CONT'
+        out.extend(_chunk_note_line(line, first_tag, '3 CONC'))
     return out
 
 
@@ -423,17 +464,21 @@ def _edit_event_fields(
             continue
         lvl, tag = int(m.group(1)), m.group(2)
         # Drop stale continuation lines that belonged to a NOTE we just replaced/deleted
-        if skip_cont and lvl == 2 and tag in ('CONT', 'CONC'):
+        # (old event notes may have 3 CONT/CONC; individual notes have 2 CONT/CONC)
+        if skip_cont and lvl in (2, 3) and tag in ('CONT', 'CONC'):
             continue
         skip_cont = False
         if lvl == 2 and tag in _MANAGED_SUBTAGS and tag in updates:
             handled.add(tag)
             new_val = (updates[tag] or '').strip()
-            if new_val:
-                new_block.append(f'2 {tag} {new_val}')
-            # else: omit (delete the sub-field)
             if tag == 'NOTE':
+                if new_val:
+                    new_block.extend(_encode_event_note_lines(new_val))
+                # else: omit (delete the sub-field)
                 skip_cont = True  # drop any following CONT/CONC for the old NOTE
+            else:
+                if new_val:
+                    new_block.append(f'2 {tag} {new_val}')
         else:
             new_block.append(line)
 
@@ -442,7 +487,10 @@ def _edit_event_fields(
         if tag in updates and tag not in handled:
             new_val = (updates[tag] or '').strip()
             if new_val:
-                new_block.append(f'2 {tag} {new_val}')
+                if tag == 'NOTE':
+                    new_block.extend(_encode_event_note_lines(new_val))
+                else:
+                    new_block.append(f'2 {tag} {new_val}')
 
     return lines[:block_start] + new_block + lines[block_end:]
 
@@ -463,7 +511,10 @@ def _insert_new_event(
     for subtag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS'):
         val = (fields.get(subtag) or '').strip()
         if val:
-            new_block.append(f'2 {subtag} {val}')
+            if subtag == 'NOTE':
+                new_block.extend(_encode_event_note_lines(val))
+            else:
+                new_block.append(f'2 {subtag} {val}')
     return lines[:indi_end] + new_block + lines[indi_end:], None
 
 
