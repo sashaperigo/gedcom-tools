@@ -1208,7 +1208,6 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   document.getElementById('event-modal-note').value   = evt.note || '';
   document.getElementById('event-modal-addr').value   = evt.addr || '';
   _updateAddrSuggestions(placeVal);
-  _updateNoteCount();
   _updateEventModalFields(tag);
   document.getElementById('event-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
@@ -1230,7 +1229,6 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   document.getElementById('event-modal-note').value   = '';
   document.getElementById('event-modal-addr').value   = '';
   _updateAddrSuggestions('');
-  _updateNoteCount();
   _updateEventModalFields(defaultTag);
   document.getElementById('event-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
