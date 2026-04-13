@@ -1590,7 +1590,7 @@ function buildProse(evt) {
     case 'IMMI': return { prose: short ? `Immigrated to ${short}` : (date ? `Immigrated ${date}` : 'Immigration'), meta: meta() };
     case 'NATU': return { prose: short ? `Naturalized in ${short}` : (date ? `Naturalized ${date}` : 'Naturalization'), meta: meta() };
     case 'ADOP': return { prose: date ? `Adopted ${date}` : 'Adoption', meta: short };
-    case 'EDUC': return { prose: 'Education', meta: type || meta() };
+    case 'EDUC': return { prose: type ? `Education: ${type}` : 'Education', meta: meta() };
     case 'RETI': return { prose: date ? `Retired ${date}` : 'Retirement', meta: short };
     case 'TITL': return { prose: type ? `Held title: ${type}` : 'Title', meta: date };
     case 'CHR':  return { prose: short ? `Christened in ${short}` : (date ? `Christened ${date}` : 'Christening'), meta: meta() };
