@@ -594,6 +594,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
+        elif parsed.path == '/api/add_note':
+            xref     = body['xref']
+            new_text = body.get('new_text', '').strip()
+            if not new_text:
+                resp = json.dumps({'ok': False, 'error': 'Note text is empty'}).encode()
+            else:
+                lines = GED.read_text(encoding='utf-8').splitlines()
+                _, indi_end, err = _find_indi_block(lines, xref)
+                if err:
+                    resp = json.dumps({'ok': False, 'error': err}).encode()
+                else:
+                    new_lines = lines[:indi_end] + _encode_note_lines(new_text) + lines[indi_end:]
+                    _write_gedcom_atomic(new_lines)
+                    print(f"[note-add] {xref} note added")
+                    regenerate(body.get('current_person'))
+                    viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                    indis, fams, sources = parse_gedcom(str(GED))
+                    updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                    resp = json.dumps({'ok': True, 'people': updated}).encode()
+
         elif parsed.path == '/api/edit_note':
             xref     = body['xref']
             note_idx = int(body['note_idx'])

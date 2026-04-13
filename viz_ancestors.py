@@ -571,10 +571,15 @@ header h1 { font-size: 16px; font-weight: 600; }
 #detail-body { padding: 18px 20px 28px 20px; flex: 1; }
 /* ── Notes (shown first) ────────────────────────────────── */
 #detail-notes { margin-bottom: 20px; }
+.notes-header { display: flex; align-items: center; justify-content: space-between; }
 .notes-toggle { display: flex; align-items: center; gap: 6px; background: none; border: none;
   cursor: pointer; color: #64748b; font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.08em; padding: 0 0 10px 0; }
 .notes-toggle:hover { color: #94a3b8; }
+.note-add-btn { background: none; border: 1px solid rgba(255,255,255,0.15); color: #64748b;
+  border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+.note-add-btn:hover { color: #94a3b8; border-color: rgba(255,255,255,0.3); }
 .notes-toggle-arrow { font-size: 8px; transition: transform 0.2s; }
 .notes-toggle.open .notes-toggle-arrow { transform: rotate(90deg); }
 .note-card-wrap { position: relative; }
@@ -761,7 +766,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 </div>
 <div id="note-modal-overlay" onclick="if(event.target===this)closeNoteModal()">
   <div id="note-modal">
-    <h3>Edit Note</h3>
+    <h3 id="note-modal-title">Edit Note</h3>
     <textarea id="note-modal-textarea" rows="6" onkeydown="if(event.key==='Escape')closeNoteModal()"></textarea>
     <div class="note-modal-actions">
       <button class="note-modal-cancel" onclick="closeNoteModal()">Cancel</button>
@@ -1097,9 +1102,19 @@ async function deleteNote(xref, noteIdx) {
   } catch (e) { alert('Request failed: ' + e); }
 }
 
+function addNote(xref) {
+  _noteEditXref = xref;
+  _noteEditIdx  = null;  // null = add mode
+  document.getElementById('note-modal-title').textContent = 'Add Note';
+  document.getElementById('note-modal-textarea').value = '';
+  document.getElementById('note-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('note-modal-textarea').focus(), 50);
+}
+
 function editNote(xref, noteIdx) {
   _noteEditXref = xref;
   _noteEditIdx  = noteIdx;
+  document.getElementById('note-modal-title').textContent = 'Edit Note';
   document.getElementById('note-modal-textarea').value = (PEOPLE[xref] && PEOPLE[xref].notes[noteIdx]) || '';
   document.getElementById('note-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('note-modal-textarea').focus(), 50);
@@ -1115,12 +1130,16 @@ async function submitNoteEdit() {
   const xref     = _noteEditXref;
   const noteIdx  = _noteEditIdx;
   closeNoteModal();
+  const isAdd = noteIdx === null;
+  const url   = isAdd ? '/api/add_note' : '/api/edit_note';
+  const payload = isAdd
+    ? {xref, new_text: newText, current_person: window._currentPerson || null}
+    : {xref, note_idx: noteIdx, new_text: newText, current_person: window._currentPerson || null};
   try {
-    const resp = await fetch('/api/edit_note', {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({xref, note_idx: noteIdx, new_text: newText,
-                            current_person: window._currentPerson || null}),
+      body: JSON.stringify(payload),
     });
     const data = await resp.json();
     if (data.ok) {
@@ -1738,8 +1757,8 @@ function showDetail(xref) {
   if (notes.length) {
     const count = notes.length;
     const label = count === 1 ? '1 Note' : `${count} Notes`;
+    const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
     const cards = notes.map((n, i) => {
-      const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
       return `<div class="note-card-wrap">` +
         `<div class="note-card" style="border-left-color:${accent}">${linkify(n)}</div>` +
         `<div class="note-actions">` +
@@ -1748,12 +1767,17 @@ function showDetail(xref) {
         `</div></div>`;
     }).join('');
     notesDiv.innerHTML =
-      `<button class="notes-toggle open" onclick="this.classList.toggle('open');` +
-      `this.nextElementSibling.style.display=this.classList.contains('open')?'block':'none'">` +
+      `<div class="notes-header">` +
+      `<button class="notes-toggle open" onclick="this.closest('.notes-header').nextElementSibling.style.display=` +
+      `this.classList.toggle('open')?'block':'none'">` +
       `<span class="notes-toggle-arrow">&#9658;</span>${escHtml(label)}</button>` +
+      `<button class="note-add-btn" title="Add note" onclick="addNote(${xrefQ})">&#43; Add Note</button>` +
+      `</div>` +
       `<div class="notes-body">${cards}</div>`;
   } else {
-    notesDiv.innerHTML = '';
+    const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
+    notesDiv.innerHTML =
+      `<button class="note-add-btn" onclick="addNote(${xrefQ})">&#43; Add Note</button>`;
   }
 
   // Timeline events (AKA excluded — shown above; NATI shown in facts; undated RESI shown below)
