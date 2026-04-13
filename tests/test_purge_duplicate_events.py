@@ -409,6 +409,310 @@ class TestOutputIntegrity:
             assert f'@I{i}@' in content
 
 
+# ===========================================================================
+# FAM / MARR deduplication
+# ===========================================================================
+
+from purge_duplicate_events import (  # noqa: E402
+    _marr_dates_compatible,
+    _marr_blocks_are_duplicate,
+    _process_fam_record,
+)
+
+
+def marr_blocks_for(content: str, fam_xref: str) -> list[list[str]]:
+    """Return all MARR event blocks for the given FAM xref."""
+    lines = content.splitlines()
+    in_fam = False
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in lines:
+        if re.match(r'^0 ', line):
+            if current is not None:
+                blocks.append(current)
+                current = None
+            in_fam = line.startswith(f'0 {fam_xref} FAM')
+            continue
+        if not in_fam:
+            continue
+        if re.match(r'^1 MARR\b', line):
+            if current is not None:
+                blocks.append(current)
+            current = [line]
+        elif current is not None and re.match(r'^[2-9] ', line):
+            current.append(line)
+        else:
+            if current is not None:
+                blocks.append(current)
+                current = None
+    if current is not None:
+        blocks.append(current)
+    return blocks
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _marr_dates_compatible
+# ---------------------------------------------------------------------------
+
+class TestMarrDatesCompatible:
+    def test_both_null(self):
+        assert _marr_dates_compatible(None, None)
+
+    def test_one_null(self):
+        assert _marr_dates_compatible('ABT 1920', None)
+        assert _marr_dates_compatible(None, '1920')
+
+    def test_identical_strings(self):
+        assert _marr_dates_compatible('ABT 1920', 'ABT 1920')
+        assert _marr_dates_compatible('31 AUG 1918', '31 AUG 1918')
+
+    def test_same_year_bare_vs_abt(self):
+        assert _marr_dates_compatible('1920', 'ABT 1920')
+        assert _marr_dates_compatible('ABT 1920', '1920')
+
+    def test_same_year_specific_vs_bare(self):
+        assert _marr_dates_compatible('5 SEP 1920', '1920')
+        assert _marr_dates_compatible('1920', '5 SEP 1920')
+
+    def test_same_year_specific_vs_abt(self):
+        assert _marr_dates_compatible('5 SEP 1920', 'ABT 1920')
+        assert _marr_dates_compatible('ABT 1920', '5 SEP 1920')
+
+    def test_different_months_same_year(self):
+        # Same year → date-compatible even if different day/month;
+        # the Bonnici ceremonies are kept distinct because their ADDRs differ,
+        # not because of date incompatibility.
+        assert _marr_dates_compatible('31 AUG 1918', '13 SEP 1918')
+
+    def test_different_years(self):
+        assert not _marr_dates_compatible('1918', '1919')
+        assert not _marr_dates_compatible('ABT 1918', 'ABT 1919')
+
+    def test_bef_never_matches_anything(self):
+        assert not _marr_dates_compatible('BEF 1920', '1920')
+        assert not _marr_dates_compatible('BEF 1920', 'ABT 1920')
+        assert not _marr_dates_compatible('1920', 'BEF 1920')
+
+    def test_aft_never_matches_anything(self):
+        assert not _marr_dates_compatible('AFT 1920', '1920')
+        assert not _marr_dates_compatible('AFT 1920', 'ABT 1920')
+
+    def test_bef_matches_identical_self(self):
+        assert _marr_dates_compatible('BEF 1920', 'BEF 1920')
+
+    def test_aft_matches_identical_self(self):
+        assert _marr_dates_compatible('AFT 1920', 'AFT 1920')
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _marr_blocks_are_duplicate
+# ---------------------------------------------------------------------------
+
+class TestMarrBlocksAreDuplicate:
+    def _b(self, date=None, plac=None, addr=None):
+        return {'date': date, 'plac': plac, 'addr': addr}
+
+    def test_same_place_no_date_is_dup(self):
+        a = self._b(date='ABT 1920', plac='Smyrna, Turkey')
+        b = self._b(date=None,      plac='Smyrna, Turkey')
+        assert _marr_blocks_are_duplicate(a, b)
+
+    def test_same_place_same_year_no_addr_is_dup(self):
+        a = self._b(date='5 SEP 1920', plac='Smyrna, Turkey')
+        b = self._b(date='ABT 1920',   plac='Smyrna, Turkey')
+        assert _marr_blocks_are_duplicate(a, b)
+
+    def test_different_addr_not_dup(self):
+        a = self._b(date='31 AUG 1918', plac='Smyrna, Turkey', addr='Anglican Church')
+        b = self._b(date='13 SEP 1918', plac='Smyrna, Turkey', addr='Catholic Church')
+        assert not _marr_blocks_are_duplicate(a, b)
+
+    def test_different_place_not_dup(self):
+        a = self._b(date='1920', plac='Smyrna, Turkey')
+        b = self._b(date='1920', plac='Istanbul, Turkey')
+        assert not _marr_blocks_are_duplicate(a, b)
+
+    def test_bef_date_not_dup(self):
+        a = self._b(date='BEF 1920', plac='Smyrna, Turkey')
+        b = self._b(date='ABT 1920', plac='Smyrna, Turkey')
+        assert not _marr_blocks_are_duplicate(a, b)
+
+
+# ---------------------------------------------------------------------------
+# Integration: _process_fam_record
+# ---------------------------------------------------------------------------
+
+class TestProcessFamRecord:
+
+    def _make_fam(self, lines):
+        return [l + '\n' for l in lines]
+
+    def test_duplicate_marr_merged_richest_kept(self):
+        """Richer block (with date) is kept; sparser (no date) removed."""
+        rec = self._make_fam([
+            '0 @F1@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE ABT 1920',
+            '2 PLAC Smyrna, Izmir, Turkey',
+            '2 SOUR @S1@',
+            '3 PAGE History of the Family',
+            '1 MARR',
+            '2 PLAC Smyrna, Izmir, Turkey',
+        ])
+        new_lines, merged, added = _process_fam_record(rec)
+        text = ''.join(new_lines)
+        marr_count = text.count('\n1 MARR\n') + text.count('\n1 MARR')
+        assert merged == 1
+        assert added == 0
+        assert '2 DATE ABT 1920' in text
+        # Only one MARR block remains
+        assert new_lines.count('1 MARR\n') == 1
+
+    def test_source_migrated_from_sparser_to_richer(self):
+        """If the sparser block has a source not in the keeper, it gets migrated."""
+        rec = self._make_fam([
+            '0 @F1@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE ABT 1920',
+            '2 PLAC Smyrna, Izmir, Turkey',
+            '2 SOUR @S1@',
+            '1 MARR',
+            '2 PLAC Smyrna, Izmir, Turkey',
+            '2 SOUR @S2@',
+        ])
+        new_lines, merged, added = _process_fam_record(rec)
+        text = ''.join(new_lines)
+        assert merged == 1
+        assert added == 1
+        assert '@S1@' in text
+        assert '@S2@' in text
+
+    def test_genuine_two_ceremony_preserved(self):
+        """Different ADDR values → not duplicates → both MARR blocks kept."""
+        rec = self._make_fam([
+            '0 @F1@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE 31 AUG 1918',
+            '2 PLAC Smyrna, Izmir, Turkey',
+            '2 ADDR Anglican Church',
+            '1 MARR',
+            '2 DATE 13 SEP 1918',
+            '2 PLAC Smyrna, Izmir, Turkey',
+            '2 ADDR Catholic Church',
+        ])
+        new_lines, merged, added = _process_fam_record(rec)
+        assert merged == 0
+        assert new_lines.count('1 MARR\n') == 2
+
+    def test_bef_date_not_merged(self):
+        """BEF prefix on a date → not compatible → both blocks kept."""
+        rec = self._make_fam([
+            '0 @F1@ FAM',
+            '1 HUSB @I1@',
+            '1 WIFE @I2@',
+            '1 MARR',
+            '2 DATE BEF 1920',
+            '2 PLAC Smyrna, Turkey',
+            '1 MARR',
+            '2 DATE ABT 1920',
+            '2 PLAC Smyrna, Turkey',
+        ])
+        new_lines, merged, _ = _process_fam_record(rec)
+        assert merged == 0
+        assert new_lines.count('1 MARR\n') == 2
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: fixture with FAM records
+# ---------------------------------------------------------------------------
+
+FAM_DEDUP_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Angela /Dellatolla/
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Antonio /Malamo/
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Antoine /Bonnici/
+1 FAMS @F2@
+0 @I4@ INDI
+1 NAME Maria /Vido/
+1 FAMS @F2@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE ABT 1920
+2 PLAC Smyrna, Izmir, Turkey
+2 SOUR @S1@
+3 PAGE History of the Dellatolla and Lanza Families
+1 MARR
+2 PLAC Smyrna, Izmir, Turkey
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I4@
+1 MARR
+2 DATE 31 AUG 1918
+2 PLAC Smyrna, Izmir, Turkey
+2 ADDR St. John the Evangelist's Anglican Church
+2 NOTE Anglican ceremony
+1 MARR
+2 DATE 13 SEP 1918
+2 PLAC Smyrna, Izmir, Turkey
+2 ADDR Saint Maria Catholic Church
+2 NOTE Catholic ceremony
+0 TRLR
+"""
+
+
+class TestFamEndToEnd:
+
+    @pytest.fixture()
+    def result_content(self, tmp_path):
+        ged = tmp_path / 'fam_dedup.ged'
+        ged.write_text(FAM_DEDUP_GED, encoding='utf-8')
+        out = tmp_path / 'out.ged'
+        purge_duplicate_events(str(ged), path_out=str(out))
+        return out.read_text(encoding='utf-8')
+
+    def test_f1_has_one_marr(self, result_content):
+        """Duplicate MARR in @F1@ → merged into one block."""
+        f1_start = result_content.index('0 @F1@ FAM')
+        f1_end   = result_content.index('0 @F2@ FAM')
+        f1_section = result_content[f1_start:f1_end]
+        assert f1_section.count('\n1 MARR') == 1
+
+    def test_f1_date_preserved(self, result_content):
+        assert 'ABT 1920' in result_content
+
+    def test_f1_source_preserved(self, result_content):
+        assert '@S1@' in result_content
+
+    def test_f2_has_two_marr(self, result_content):
+        """Genuine two-ceremony @F2@ → both MARR blocks kept."""
+        f2_section = result_content[result_content.index('0 @F2@ FAM'):]
+        f2_section = f2_section[:f2_section.index('\n0 TRLR')]
+        assert f2_section.count('\n1 MARR') == 2
+
+    def test_f2_both_dates_kept(self, result_content):
+        assert '31 AUG 1918' in result_content
+        assert '13 SEP 1918' in result_content
+
+    def test_f2_both_addrs_kept(self, result_content):
+        assert 'Anglican Church' in result_content
+        assert 'Catholic Church' in result_content
+
+
 # ---------------------------------------------------------------------------
 # Dry-run mode
 # ---------------------------------------------------------------------------
