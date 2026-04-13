@@ -1154,7 +1154,9 @@ function _updateEventModalFields(tag) {
   } else {
     inlineRow.style.display = 'none';
   }
-  typeRow.style.display = _TYPE_TAGS.has(tag) ? '' : 'none';
+  // For inline-type tags (EDUC, OCCU, etc.) the inline value IS the type —
+  // showing a separate TYPE field would duplicate it and cause confusion.
+  typeRow.style.display = (_TYPE_TAGS.has(tag) && !_INLINE_TYPE_TAGS.has(tag)) ? '' : 'none';
 }
 
 function _updateAddrSuggestions(place) {
