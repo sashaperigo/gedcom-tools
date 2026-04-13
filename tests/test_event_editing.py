@@ -470,6 +470,51 @@ class TestEventIdxInBuildPeopleJson:
         assert len(resi_events) == 1
         assert resi_events[0]['event_idx'] == 1   # kept index, not re-numbered to 0
 
+    def test_secondary_name_does_not_inflate_fact_event_idx(self, tmp_path):
+        """
+        Regression: secondary NAME records are stored in the GEDCOM as '1 NAME',
+        not '1 FACT'. They must NOT increment the FACT tag counter so that
+        genuine FACT tags receive correct 0-based indices. Previously a secondary
+        NAME AKA would claim event_idx=0, causing the following FACT (e.g.
+        Languages) to get event_idx=1, which _find_event_block() could not locate
+        because only one '1 FACT' line existed in the file.
+        """
+        ged_lines = [
+            '0 HEAD',
+            '1 GEDC',
+            '2 VERS 5.5.1',
+            '0 @I1@ INDI',
+            '1 NAME Jean /Dupont/',
+            '1 NAME Jeannot /Dupont/',   # secondary NAME → parsed as FACT/AKA
+            '2 TYPE AKA',
+            '1 FACT',                    # genuine FACT — must be FACT[0] in GEDCOM
+            '2 TYPE Languages',
+            '2 NOTE French, English',
+            '0 TRLR',
+        ]
+        ged = tmp_path / 'name_plus_fact.ged'
+        ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged))
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        events = people['@I1@']['events']
+
+        # The secondary NAME AKA must have event_idx=None (edited via alias modal,
+        # not edit_event, so it needs no FACT file position index).
+        aka_events = [e for e in events if e.get('_name_record')]
+        assert len(aka_events) == 1
+        assert aka_events[0]['event_idx'] is None
+
+        # The genuine FACT must be FACT[0] so _find_event_block can locate it.
+        fact_events = [e for e in events if e['tag'] == 'FACT' and not e.get('_name_record')]
+        assert len(fact_events) == 1
+        assert fact_events[0]['event_idx'] == 0
+
+        # Confirm _find_event_block actually finds it at index 0.
+        lines = ged.read_text(encoding='utf-8').splitlines()
+        start, end, err = _find_event_block(lines, '@I1@', 'FACT', 0)
+        assert err is None, f'_find_event_block error: {err}'
+        assert start is not None
+
 
 # ---------------------------------------------------------------------------
 # TestTemplateUIElements
