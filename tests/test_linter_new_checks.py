@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from gedcom_linter import (
+    scan_bapm_without_birth,
+    fix_bapm_without_birth,
     scan_date_month_caps,
     fix_date_caps,
     scan_header_required_fields,
@@ -1847,3 +1849,155 @@ class TestFixRepeatedCitationText:
         original = p.read_text(encoding='utf-8')
         fix_repeated_citation_text(str(p), dry_run=True)
         assert p.read_text(encoding='utf-8') == original
+
+
+# ===========================================================================
+# scan_bapm_without_birth / fix_bapm_without_birth
+# ===========================================================================
+
+class TestFixBirthFromBapm:
+
+    def test_scan_finds_bapm_without_birth(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BAPM
+            2 DATE 15 MAR 1875
+            0 TRLR
+        """)
+        result = scan_bapm_without_birth(str(p))
+        assert len(result) == 1
+        xref, _lineno, year = result[0]
+        assert xref == '@I1@'
+        assert year == 1875
+
+    def test_scan_uses_chr_tag(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 CHR
+            2 DATE 3 JUN 1902
+            0 TRLR
+        """)
+        result = scan_bapm_without_birth(str(p))
+        assert len(result) == 1
+        assert result[0][2] == 1902
+
+    def test_scan_ignores_individual_with_birth_date(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 10 FEB 1875
+            1 BAPM
+            2 DATE 15 MAR 1875
+            0 TRLR
+        """)
+        assert scan_bapm_without_birth(str(p)) == []
+
+    def test_scan_ignores_birt_with_no_date(self, tmp_path):
+        # BIRT block exists but has no DATE → still needs EST birth date
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 PLAC London, England
+            1 BAPM
+            2 DATE 1 JAN 1880
+            0 TRLR
+        """)
+        result = scan_bapm_without_birth(str(p))
+        assert len(result) == 1
+        assert result[0][2] == 1880
+
+    def test_scan_ignores_bapm_without_date(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BAPM
+            2 PLAC Paris, France
+            0 TRLR
+        """)
+        assert scan_bapm_without_birth(str(p)) == []
+
+    def test_fix_inserts_birt_block(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BAPM
+            2 DATE 15 MAR 1875
+            0 TRLR
+        """)
+        count = fix_bapm_without_birth(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        lines = content.splitlines()
+        # Find the INDI header line
+        indi_idx = next(i for i, l in enumerate(lines) if '0 @I1@ INDI' in l)
+        # The two inserted lines should be immediately after it
+        assert lines[indi_idx + 1].strip() == '1 BIRT'
+        assert lines[indi_idx + 2].strip() == '2 DATE EST 1875'
+
+    def test_fix_adds_date_to_existing_birt(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 PLAC London, England
+            1 BAPM
+            2 DATE 1 JAN 1880
+            0 TRLR
+        """)
+        count = fix_bapm_without_birth(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        lines = content.splitlines()
+        birt_idx = next(i for i, l in enumerate(lines) if l.strip() == '1 BIRT')
+        # DATE should be inserted right after the 1 BIRT line
+        assert lines[birt_idx + 1].strip() == '2 DATE EST 1880'
+
+    def test_fix_dry_run_makes_no_changes(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BAPM
+            2 DATE 15 MAR 1875
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        count = fix_bapm_without_birth(str(p), dry_run=True)
+        assert count == 1
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_fix_idempotent(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BAPM
+            2 DATE 15 MAR 1875
+            0 TRLR
+        """)
+        fix_bapm_without_birth(str(p))
+        count2 = fix_bapm_without_birth(str(p))
+        assert count2 == 0
+
+    def test_fix_leaves_unaffected_individuals_alone(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 5 APR 1870
+            1 BAPM
+            2 DATE 20 APR 1870
+            0 @I2@ INDI
+            1 BAPM
+            2 DATE 10 JUL 1890
+            0 TRLR
+        """)
+        count = fix_bapm_without_birth(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        # I1 should keep only its original BIRT DATE (5 APR 1870), not gain an EST date
+        assert 'EST 1870' not in content
+        # I2 should get the estimated birth date
+        assert 'EST 1890' in content
