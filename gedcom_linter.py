@@ -2420,6 +2420,167 @@ def scan_date_consistency(path: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Estimated birth date from baptism/christening  (data quality enrichment)
+# ---------------------------------------------------------------------------
+
+def scan_bapm_without_birth(path: str) -> list[tuple[str, int, int]]:
+    """
+    Find INDI records that have a BAPM or CHR event with a DATE but lack any
+    BIRT event with a DATE.
+
+    Returns a list of (xref, bapm_lineno, year) tuples where:
+      xref        : individual cross-reference (e.g. '@I42@')
+      bapm_lineno : 1-based line number of the BAPM/CHR DATE line
+      year        : four-digit year extracted from the baptism date
+    """
+    results: list[tuple[str, int, int]] = []
+
+    current_xref: str | None = None
+    birt_has_date = False
+    bapm_year: int | None = None
+    bapm_lineno: int | None = None
+    current_event: str | None = None
+
+    def _flush():
+        if current_xref and bapm_year and not birt_has_date:
+            results.append((current_xref, bapm_lineno, bapm_year))
+
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+
+            # Level-0 records
+            m0 = re.match(r'^0 (@\S+@) INDI\s*$', line)
+            if m0:
+                _flush()
+                current_xref = m0.group(1)
+                birt_has_date = False
+                bapm_year = None
+                bapm_lineno = None
+                current_event = None
+                continue
+
+            if re.match(r'^0 ', line):
+                _flush()
+                current_xref = None
+                birt_has_date = False
+                bapm_year = None
+                bapm_lineno = None
+                current_event = None
+                continue
+
+            if current_xref is None:
+                continue
+
+            # Level-1 events
+            m1 = re.match(r'^1 ([A-Z]+)', line)
+            if m1:
+                tag = m1.group(1)
+                if tag == 'BIRT':
+                    current_event = 'BIRT'
+                elif tag in ('BAPM', 'CHR'):
+                    current_event = 'BAPM'
+                else:
+                    current_event = None
+                continue
+
+            # Level-2 DATE under current event
+            m2 = re.match(r'^2 DATE (.+)$', line)
+            if m2 and current_event:
+                val = m2.group(1).strip()
+                if current_event == 'BIRT' and val:
+                    birt_has_date = True
+                elif current_event == 'BAPM' and bapm_year is None:
+                    ym = re.search(r'\b(\d{4})\b', val)
+                    if ym:
+                        bapm_year = int(ym.group(1))
+                        bapm_lineno = lineno
+
+    _flush()
+    return results
+
+
+def fix_bapm_without_birth(path: str, dry_run: bool = False) -> int:
+    """
+    For each INDI that has a BAPM/CHR DATE but no BIRT DATE, insert an
+    estimated birth event immediately after the INDI header line::
+
+        1 BIRT
+        2 DATE EST <year>
+
+    If the individual already has a bare ``1 BIRT`` (no DATE child), the
+    ``2 DATE EST <year>`` line is inserted after that existing ``1 BIRT``
+    instead of creating a duplicate event block.
+
+    Returns the number of individuals updated.
+    """
+    candidates = scan_bapm_without_birth(path)
+    if not candidates:
+        return 0
+
+    # Build a set of xrefs that need fixing for quick lookup
+    fix_map: dict[str, int] = {xref: year for xref, _ln, year in candidates}
+
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    # Each entry: (insert_after_index, new_lines, description)
+    # insert_after_index is 0-based; new lines are inserted *after* that index.
+    changes: list[tuple[int, list[str], str]] = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        m0 = re.match(r'^0 (@\S+@) INDI\s*$', line)
+        if m0:
+            xref = m0.group(1)
+            if xref in fix_map:
+                year = fix_map[xref]
+                indi_start = i
+                # Scan the INDI block to find the end and any existing BIRT
+                birt_idx: int | None = None
+                j = i + 1
+                while j < len(lines):
+                    cl = lines[j].rstrip('\n')
+                    if re.match(r'^0 ', cl):
+                        break
+                    if re.match(r'^1 BIRT\b', cl):
+                        birt_idx = j
+                    j += 1
+
+                if birt_idx is not None:
+                    # Existing BIRT with no DATE: add DATE after the 1 BIRT line
+                    desc = f'{xref}: insert 2 DATE EST {year} into existing BIRT'
+                    changes.append((birt_idx, [f'2 DATE EST {year}\n'], desc))
+                else:
+                    # No BIRT at all: insert full block after the INDI header
+                    desc = f'{xref}: insert 1 BIRT / 2 DATE EST {year}'
+                    changes.append((indi_start, ['1 BIRT\n', f'2 DATE EST {year}\n'], desc))
+        i += 1
+
+    if not changes:
+        return 0
+
+    if dry_run:
+        for _idx, new_lines, desc in sorted(changes, key=lambda c: c[0]):
+            print(f'  {desc}')
+            for nl in new_lines:
+                print(f'    + {nl.rstrip()}')
+        return len(changes)
+
+    # Apply in reverse order so earlier indices stay valid
+    for insert_after, new_lines, _desc in sorted(changes, key=lambda c: c[0], reverse=True):
+        lines[insert_after + 1:insert_after + 1] = new_lines
+
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+    os.replace(tmp, path)
+
+    return len(changes)
+
+
+# ---------------------------------------------------------------------------
 # Bidirectional pointer consistency  (spec 1.13)
 # ---------------------------------------------------------------------------
 
@@ -3515,6 +3676,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_duplicate_families(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_resi(path, dry_run=dry_run)
+    fixes_applied += fix_bapm_without_birth(path, dry_run=dry_run)
     fixes_applied += fix_bare_events(path, dry_run=dry_run)
     fixes_applied += fix_sort_events(path, dry_run=dry_run)
     # Run whitespace strip again — some fixers (e.g. fix_name_pieces) can
@@ -3643,6 +3805,11 @@ def main():
         help='Append Y to bare BIRT/CHR/DEAT tags with no value and no children',
     )
     parser.add_argument(
+        '--fix-birth-from-bapm', action='store_true',
+        help='Insert estimated birth date (EST YEAR) for individuals with a '
+             'baptism/christening date but no birth date',
+    )
+    parser.add_argument(
         '--merge-sources', nargs=2, metavar=('KEEP', 'REMOVE'),
         help='Remap all citations from REMOVE xref to KEEP xref and delete REMOVE. '
              'Example: --merge-sources @S100@ @S200@',
@@ -3682,6 +3849,7 @@ def main():
         args.fix_duplicate_names = True
         args.fix_duplicate_resi = True
         args.fix_bare_events = True
+        args.fix_birth_from_bapm = True
         args.fix_sort_events = True
 
     if not os.path.isfile(args.gedfile):
@@ -3903,6 +4071,15 @@ def main():
         else:
             print(f'  {fixed} bare event tag(s) updated.')
 
+    if args.fix_birth_from_bapm:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Adding estimated birth dates from baptism dates: {args.gedfile}')
+        fixed = fix_bapm_without_birth(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {fixed} individual(s) would have EST birth date added.')
+        else:
+            print(f'  {fixed} individual(s) given estimated birth date from baptism.')
+
     if args.merge_sources:
         keep, remove = args.merge_sources
         mode = 'DRY RUN' if args.dry_run else 'FIX'
@@ -3947,7 +4124,8 @@ def main():
                 args.fix_dateless_dates, args.fix_aka_facts,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
-                args.fix_bare_events, args.fix_sort_events, args.merge_sources]):
+                args.fix_bare_events, args.fix_birth_from_bapm,
+                args.fix_sort_events, args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
         # counters for summary statistics
