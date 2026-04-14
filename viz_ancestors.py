@@ -2483,17 +2483,20 @@ function computeRelativePositions() {
   // the exact same Y as generation-(G-1) ancestor nodes.  Pass 3 must check
   // _posCache (ancestors) not just ch: (root's own children).
   {
-    // Build a map: Y → {minX, maxX} of all fixed nodes (ancestors + root children)
+    // Build Y → {minX, maxX} for all fixed nodes.
+    // Pad ancestor nodes by BTN_PAD on both sides to account for the expand/
+    // relatives-toggle buttons that sit just outside the node box.
     const occupiedByY = new Map();
-    const _mergeOcc = (y, x) => {
-      if (!occupiedByY.has(y)) { occupiedByY.set(y, {minX: x, maxX: x + NODE_W}); return; }
+    const _mergeOcc = (y, xMin, xMax) => {
+      if (!occupiedByY.has(y)) { occupiedByY.set(y, {minX: xMin, maxX: xMax}); return; }
       const b = occupiedByY.get(y);
-      b.minX = Math.min(b.minX, x);
-      b.maxX = Math.max(b.maxX, x + NODE_W);
+      b.minX = Math.min(b.minX, xMin);
+      b.maxX = Math.max(b.maxX, xMax);
     };
-    for (const [, pos] of _posCache.entries()) _mergeOcc(pos.y, pos.x);
+    for (const [, pos] of _posCache.entries())
+      _mergeOcc(pos.y, pos.x - BTN_PAD, pos.x + NODE_W + BTN_PAD);
     for (const [k, e] of _relPosCache.entries()) {
-      if (k.startsWith('ch:')) _mergeOcc(e.y, e.x);
+      if (k.startsWith('ch:')) _mergeOcc(e.y, e.x, e.x + NODE_W);
     }
 
     // Group sibling-child entries by their parent sibling key
@@ -2507,6 +2510,9 @@ function computeRelativePositions() {
     }
 
     const {x: rootNodeX} = _posCache.get(1) || {x: 0};
+    // Track anchors already processed so a second sibling group for the same
+    // anchor doesn't double-shift the whole row.
+    const processedAnchors = new Set();
 
     for (const [parentKey, chEntries] of sibChGroups.entries()) {
       const sibEntry = _relPosCache.get(parentKey);
@@ -2522,17 +2528,23 @@ function computeRelativePositions() {
       // No overlap — nothing to fix
       if (sibChMaxX <= occupied.minX || sibChMinX >= occupied.maxX) continue;
 
-      const isLeft = sibEntry.x < rootNodeX;
-      const [, k, i] = parentKey.split(':');
-      const spEntry = _relPosCache.get(`sibsp:${k}:${i}`);
+      const [, anchorK] = parentKey.split(':');
+      if (processedAnchors.has(anchorK)) continue;
+      processedAnchors.add(anchorK);
 
-      const shift = isLeft
+      const shift = sibEntry.x < rootNodeX
         ? occupied.minX - H_GAP - sibChMaxX   // negative → push left
         : occupied.maxX + H_GAP - sibChMinX;  // positive → push right
 
-      sibEntry.x += shift;
-      if (spEntry && !spEntry.existing) spEntry.x += shift;
-      for (const [, e] of chEntries) { e.x += shift; e.stemX += shift; }
+      // Shift the ENTIRE sibling row for this anchor so all siblings (and their
+      // spouses / children) move together and don't collide with each other.
+      for (const [cacheKey, cacheEntry] of _relPosCache.entries()) {
+        if (cacheEntry.existing) continue;
+        if (!cacheKey.startsWith('sib')) continue;   // sib:, sibsp:, sibch:
+        if (cacheKey.split(':')[1] !== anchorK) continue;
+        cacheEntry.x += shift;
+        if (cacheEntry.stemX !== undefined) cacheEntry.stemX += shift;
+      }
     }
   }
 }
