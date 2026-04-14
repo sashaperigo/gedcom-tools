@@ -437,27 +437,62 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
 
 def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
     """
-    Return {xref: {siblings: [xref,...], spouses: [xref,...],
-    sib_spouses: {sib_xref: [spouse_xref,...]}}} for ALL individuals,
-    so lookups work for any person navigated to via search.
+    Return {xref: {siblings, spouses, sib_spouses, half_siblings}} for ALL individuals.
+
+    half_siblings is a list of groups, each:
+      {'shared_parent': xref, 'other_parent': xref|None, 'half_sibs': [xref,...]}
+    A half-sibling shares exactly one parent (different FAMC record).
     """
     result = {}
     for xref in indis:
         p = indis.get(xref)
         if not p:
             continue
+
+        # Full siblings: same FAMC record
         siblings = []
         famc = p.get('famc')
         if famc and famc in fams:
             for child_xref in fams[famc].get('chil', []):
                 if child_xref != xref:
                     siblings.append(child_xref)
+        full_sib_set = set(siblings)
+
+        # Parents of current person
+        parent_fam = fams.get(famc, {}) if famc else {}
+        father = parent_fam.get('husb')
+        mother = parent_fam.get('wife')
+
+        # Half-siblings: for each parent, look at their other families
+        half_siblings = []
+        for shared_parent in (px for px in (father, mother) if px):
+            parent_info = indis.get(shared_parent, {})
+            # Collect half-sibs from every family of this parent except the current person's own family
+            by_other: dict[str | None, list[str]] = {}
+            for fam_xref in parent_info.get('fams', []):
+                if fam_xref == famc:
+                    continue  # skip the family the current person came from
+                fam = fams.get(fam_xref, {})
+                other_parent = fam.get('wife') if fam.get('husb') == shared_parent else fam.get('husb')
+                for child_xref in fam.get('chil', []):
+                    if child_xref == xref or child_xref in full_sib_set:
+                        continue
+                    key = other_parent  # None if unknown
+                    by_other.setdefault(key, []).append(child_xref)
+            for other_parent, half_sibs in by_other.items():
+                half_siblings.append({
+                    'shared_parent': shared_parent,
+                    'other_parent': other_parent,
+                    'half_sibs': half_sibs,
+                })
+
         spouses = []
         for fam_xref in p.get('fams', []):
             fam = fams.get(fam_xref, {})
             spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
             if spouse_xref and spouse_xref in indis:
                 spouses.append(spouse_xref)
+
         sib_spouses = {}
         for sib_xref in siblings:
             sib = indis.get(sib_xref)
@@ -471,10 +506,13 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
                     sib_sp.append(sp_xref)
             if sib_sp:
                 sib_spouses[sib_xref] = sib_sp
-        if siblings or spouses:
-            entry = {'siblings': siblings, 'spouses': spouses}
+
+        if siblings or spouses or half_siblings:
+            entry: dict = {'siblings': siblings, 'spouses': spouses}
             if sib_spouses:
                 entry['sib_spouses'] = sib_spouses
+            if half_siblings:
+                entry['half_siblings'] = half_siblings
             result[xref] = entry
     return result
 
@@ -974,9 +1012,9 @@ let _sibSpouseIdx = new Map();
     const raw = p.name || '';
     // Collapse slashes, normalize spaces
     const flat = raw.replace(/\\//g, '').replace(/\\s+/g, ' ').trim();
-    // Extract nicknames (text in double quotes)
+    // Extract nicknames (text in straight or curly double quotes: "Nick" or \u201cNick\u201d)
     const nicks = [];
-    const noNicks = flat.replace(/"([^"]+)"/g, (_, n) => { nicks.push(n.trim()); return ' '; })
+    const noNicks = flat.replace(/[\\u201c"]([^\\u201c\\u201d"]+)[\\u201d"]/g, (_, n) => { nicks.push(n.trim()); return ' '; })
                         .replace(/\\s+/g, ' ').trim();
     const tokens = noNicks.split(' ').filter(Boolean);
     // Display: title-case the flat form (keeps quotes visible)
@@ -998,12 +1036,15 @@ let _sibSpouseIdx = new Map();
     // 1. Plain substring anywhere in name (handles most queries)
     if (parsed.normDisp.includes(qNorm)) return true;
     const qToks = qNorm.split(' ').filter(Boolean);
+    // Split normDisp into words (strip punctuation) for nickname fallback matching
+    const dispWords = parsed.normDisp.split(/[^a-z]+/).filter(Boolean);
     if (qToks.length === 1) {
-      // 2. Single token: check nicknames
-      return parsed.normNicks.some(n => n.includes(qToks[0]));
+      // 2. Single token: check nicknames or any word in display name
+      return parsed.normNicks.some(n => n.includes(qToks[0])) ||
+             dispWords.some(w => w.includes(qToks[0]));
     }
     // 3. Multi-token: first+last match skipping middle names
-    //    Query "A B" matches if A is first/nickname and B is last name
+    //    Query "A B" matches if A is first/nickname/any-name-word and B is last name
     //    Query "A B C" matches if A is first/nickname, C is last, B appears anywhere
     const qFirst = qToks[0];
     const qLast  = qToks[qToks.length - 1];
@@ -1011,7 +1052,8 @@ let _sibSpouseIdx = new Map();
     if (!parsed.normLast.startsWith(qLast)) return false;
     if (!qMid.every(m => parsed.normDisp.includes(m))) return false;
     return parsed.normFirst.startsWith(qFirst) ||
-           parsed.normNicks.some(n => n.startsWith(qFirst));
+           parsed.normNicks.some(n => n.startsWith(qFirst)) ||
+           dispWords.some(w => w.startsWith(qFirst));
   }
 
   // Build innerHTML with query tokens bolded in displayStr.
@@ -2025,46 +2067,28 @@ function showDetail(xref) {
       fhtml += '</div>';
     }
 
-    // Half-siblings: share exactly one parent; detected via CHILDREN map
-    const fullSibSet = new Set(sibs);
-    const halfSibSections = [];
-    for (const sharedXref of [fa, mo].filter(Boolean)) {
-      // All children of this parent excluding current person and full siblings
-      const halves = _sortByBirth(
-        (CHILDREN[sharedXref] || []).filter(cx => cx !== xref && !fullSibSet.has(cx))
-      );
-      if (!halves.length) continue;
-      // Group halves by their OTHER parent
-      const byOther = {};
-      for (const cx of halves) {
-        const [cfa, cmo] = PARENTS[cx] || [null, null];
-        const otherKey = (cfa === sharedXref ? cmo : cfa) || '__unknown__';
-        (byOther[otherKey] = byOther[otherKey] || []).push(cx);
-      }
-      halfSibSections.push({ sharedXref, byOther });
-    }
-    if (halfSibSections.length) {
+    // Half-siblings: pre-computed in Python and shipped in RELATIVES
+    const halfSibGroups = (RELATIVES[xref] || {}).half_siblings || [];
+    if (halfSibGroups.length) {
       fhtml += '<div class="family-sub"><span class="family-sub-heading">Half-siblings</span>';
-      for (const { sharedXref, byOther } of halfSibSections) {
-        const sp = PEOPLE[sharedXref];
+      for (const grp of halfSibGroups) {
+        const sp = PEOPLE[grp.shared_parent];
         const sharedName = sp ? escHtml(sp.name || '?') : '?';
         const sharedLy = _ly(sp);
         const sharedYears = sharedLy ? ` <span class="family-years">(${escHtml(sharedLy)})</span>` : '';
-        const sharedQ = JSON.stringify(sharedXref);
+        const sharedQ = JSON.stringify(grp.shared_parent);
         fhtml += `<div class="family-halfsib-side">On the side of <span class="family-link" onclick="changeRoot(${sharedQ})">${sharedName}</span>${sharedYears}</div>`;
-        for (const [otherKey, cxList] of Object.entries(byOther)) {
-          const op = otherKey === '__unknown__' ? null : PEOPLE[otherKey];
-          const otherName = op ? escHtml(op.name || '?') : '?';
-          const otherLy = _ly(op);
-          const otherYears = otherLy ? ` <span class="family-years">(${escHtml(otherLy)})</span>` : '';
-          const otherLink = (otherKey !== '__unknown__')
-            ? `<span class="family-link" onclick="changeRoot(${JSON.stringify(otherKey)})">${otherName}</span>${otherYears}`
-            : `<span class="family-unknown">unknown</span>`;
-          fhtml += `<div class="family-halfsib-with">with ${otherLink}</div>`;
-          fhtml += '<div class="family-children">';
-          cxList.forEach(cx => { fhtml += _pr(cx); });
-          fhtml += '</div>';
-        }
+        const op = grp.other_parent ? PEOPLE[grp.other_parent] : null;
+        const otherName = op ? escHtml(op.name || '?') : '?';
+        const otherLy = _ly(op);
+        const otherYears = otherLy ? ` <span class="family-years">(${escHtml(otherLy)})</span>` : '';
+        const otherLink = grp.other_parent
+          ? `<span class="family-link" onclick="changeRoot(${JSON.stringify(grp.other_parent)})">${otherName}</span>${otherYears}`
+          : `<span class="family-unknown">unknown</span>`;
+        fhtml += `<div class="family-halfsib-with">with ${otherLink}</div>`;
+        fhtml += '<div class="family-children">';
+        _sortByBirth(grp.half_sibs).forEach(cx => { fhtml += _pr(cx); });
+        fhtml += '</div>';
       }
       fhtml += '</div>';
     }
