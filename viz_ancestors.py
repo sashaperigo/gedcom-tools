@@ -631,7 +631,8 @@ header h1 { font-size: 16px; font-weight: 600; }
              padding: 10px 14px;
              background: rgba(254, 249, 195, 0.1); border-radius: 6px;
              border-left: 3px solid rgba(254, 243, 160, 0.35);
-             margin-bottom: 10px; }
+             margin-bottom: 10px;
+             max-height: 260px; overflow-y: auto; }
 .note-card a { color: #fde68a; text-underline-offset: 2px; }
 #note-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   z-index: 1000; align-items: center; justify-content: center; }
