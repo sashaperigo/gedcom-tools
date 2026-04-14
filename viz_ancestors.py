@@ -2037,7 +2037,7 @@ function showDetail(xref) {
       const name = p ? escHtml(p.name || '?') : '?';
       const ly = _ly(p);
       const sx = _sx(p);
-      const pxQ = JSON.stringify(px);
+      const pxQ = JSON.stringify(px).replace(/"/g, '&quot;');
       const link = `<span class="family-link" onclick="changeRoot(${pxQ})">${name}</span>`;
       const years = ly ? `<span class="family-years">(${escHtml(ly)})</span>` : '';
       return `<div class="family-row">${sx}${link}${years}</div>`;
@@ -2077,14 +2077,14 @@ function showDetail(xref) {
         const sharedName = sp ? escHtml(sp.name || '?') : '?';
         const sharedLy = _ly(sp);
         const sharedYears = sharedLy ? ` <span class="family-years">(${escHtml(sharedLy)})</span>` : '';
-        const sharedQ = JSON.stringify(grp.shared_parent);
+        const sharedQ = JSON.stringify(grp.shared_parent).replace(/"/g, '&quot;');
         fhtml += `<div class="family-halfsib-side">On the side of <span class="family-link" onclick="changeRoot(${sharedQ})">${sharedName}</span>${sharedYears}</div>`;
         const op = grp.other_parent ? PEOPLE[grp.other_parent] : null;
         const otherName = op ? escHtml(op.name || '?') : '?';
         const otherLy = _ly(op);
         const otherYears = otherLy ? ` <span class="family-years">(${escHtml(otherLy)})</span>` : '';
         const otherLink = grp.other_parent
-          ? `<span class="family-link" onclick="changeRoot(${JSON.stringify(grp.other_parent)})">${otherName}</span>${otherYears}`
+          ? `<span class="family-link" onclick="changeRoot(${JSON.stringify(grp.other_parent).replace(/"/g, '&quot;')})">${otherName}</span>${otherYears}`
           : `<span class="family-unknown">unknown</span>`;
         fhtml += `<div class="family-halfsib-with">with ${otherLink}</div>`;
         fhtml += '<div class="family-children">';
