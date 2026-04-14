@@ -781,22 +781,23 @@ header h1 { font-size: 16px; font-weight: 600; }
   color: #475569; margin-bottom: 10px; margin-top: 16px; display: block; }
 .also-lived-heading:first-child { margin-top: 0; }
 /* ── Family section ─────────────────────────────────────── */
-#detail-family.has-content { border-top: 1px solid #334155; padding-top: 14px; margin-top: 14px; }
-.family-sub { margin-bottom: 8px; }
-.family-sub-heading { display: block; font-size: 10px; font-weight: 600; color: #64748b;
-  text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px 0; }
-.family-sub:not(:first-child) .family-sub-heading { margin-top: 10px; }
-.family-row { display: flex; align-items: baseline; gap: 5px; padding: 2px 0; font-size: 13px; }
-.family-link { color: #93c5fd; text-decoration: underline; cursor: pointer; }
-.family-link:hover { color: #bfdbfe; }
-.family-years { color: #64748b; font-size: 11px; }
-.family-sex-m { color: #93c5fd; font-size: 11px; }
-.family-sex-f { color: #f9a8d4; font-size: 11px; }
+#detail-family.has-content { border-top: 1px solid #1e293b; padding-top: 18px; margin-top: 18px; }
+.family-sub { margin-bottom: 0; }
+.family-sub + .family-sub { margin-top: 18px; padding-top: 16px; border-top: 1px solid #1e293b; }
+.family-sub-heading { display: block; font-size: 10px; font-weight: 700; color: #475569;
+  text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 10px 0; }
+.family-row { display: flex; align-items: baseline; gap: 6px; padding: 4px 0; font-size: 13px; }
+.family-link { color: #93c5fd; text-decoration: none; cursor: pointer; }
+.family-link:hover { color: #bfdbfe; text-decoration: underline; }
+.family-years { color: #475569; font-size: 12px; }
+.family-sex-m { color: #7db4e8; font-size: 9px; opacity: 0.8; }
+.family-sex-f { color: #e8a0be; font-size: 9px; opacity: 0.8; }
 .family-marr-meta { color: #64748b; font-size: 11px; font-style: italic; padding: 1px 0 3px 0; }
-.family-children { padding-left: 12px; border-left: 1px solid #334155; margin: 2px 0 4px 0; }
-.family-halfsib-side { font-size: 12px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px; }
-.family-halfsib-with { font-size: 12px; color: #64748b; font-style: italic; margin: 2px 0 2px 10px; }
-.family-unknown { color: #64748b; font-style: italic; }
+.family-children { padding-left: 14px; border-left: 2px solid #1e293b; margin: 2px 0 2px 2px; }
+.family-halfsib-group { margin-top: 12px; }
+.family-halfsib-group:first-child { margin-top: 0; }
+.family-halfsib-label { font-size: 11px; color: #64748b; margin-bottom: 4px; line-height: 1.5; }
+.family-unknown { color: #475569; font-style: italic; }
 /* ── Section divider ────────────────────────────────────── */
 .timeline-section-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -2028,10 +2029,10 @@ function showDetail(xref) {
       const b = p.birth_year || '', d = p.death_year || '';
       return (b || d) ? `${b}\u2013${d}` : '';
     };
-    // Sex symbol span
+    // Sex dot: small colored bullet after the name
     const _sx = p => !p ? '' :
-      p.sex === 'M' ? '<span class="family-sex-m">\u2642</span>' :
-      p.sex === 'F' ? '<span class="family-sex-f">\u2640</span>' : '';
+      p.sex === 'M' ? '<span class="family-sex-m">\u2022</span>' :
+      p.sex === 'F' ? '<span class="family-sex-f">\u2022</span>' : '';
     // Clickable person row
     const _pr = px => {
       const p = PEOPLE[px];
@@ -2040,7 +2041,7 @@ function showDetail(xref) {
       const sx = _sx(p);
       const pxQ = JSON.stringify(px).replace(/"/g, '&quot;');
       const link = `<span class="family-link" onclick="changeRoot(${pxQ})">${name}</span>`;
-      const years = ly ? `<span class="family-years">(${escHtml(ly)})</span>` : '';
+      const years = ly ? `<span class="family-years">${escHtml(ly)}</span>` : '';
       return `<div class="family-row">${sx}${link}${years}</div>`;
     };
     // Sort xref list by birth year ascending
@@ -2076,21 +2077,18 @@ function showDetail(xref) {
       for (const grp of halfSibGroups) {
         const sp = PEOPLE[grp.shared_parent];
         const sharedName = sp ? escHtml(sp.name || '?') : '?';
-        const sharedLy = _ly(sp);
-        const sharedYears = sharedLy ? ` <span class="family-years">(${escHtml(sharedLy)})</span>` : '';
         const sharedQ = JSON.stringify(grp.shared_parent).replace(/"/g, '&quot;');
-        fhtml += `<div class="family-halfsib-side">On the side of <span class="family-link" onclick="changeRoot(${sharedQ})">${sharedName}</span>${sharedYears}</div>`;
+        const sharedLink = `<span class="family-link" onclick="changeRoot(${sharedQ})">${sharedName}</span>`;
         const op = grp.other_parent ? PEOPLE[grp.other_parent] : null;
         const otherName = op ? escHtml(op.name || '?') : '?';
-        const otherLy = _ly(op);
-        const otherYears = otherLy ? ` <span class="family-years">(${escHtml(otherLy)})</span>` : '';
         const otherLink = grp.other_parent
-          ? `<span class="family-link" onclick="changeRoot(${JSON.stringify(grp.other_parent).replace(/"/g, '&quot;')})">${otherName}</span>${otherYears}`
+          ? `<span class="family-link" onclick="changeRoot(${JSON.stringify(grp.other_parent).replace(/"/g, '&quot;')})">${otherName}</span>`
           : `<span class="family-unknown">unknown</span>`;
-        fhtml += `<div class="family-halfsib-with">with ${otherLink}</div>`;
+        fhtml += `<div class="family-halfsib-group">`;
+        fhtml += `<div class="family-halfsib-label">${sharedLink} &amp; ${otherLink}</div>`;
         fhtml += '<div class="family-children">';
         _sortByBirth(grp.half_sibs).forEach(cx => { fhtml += _pr(cx); });
-        fhtml += '</div>';
+        fhtml += '</div></div>';
       }
       fhtml += '</div>';
     }
