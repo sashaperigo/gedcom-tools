@@ -781,11 +781,12 @@ header h1 { font-size: 16px; font-weight: 600; }
   color: #475569; margin-bottom: 10px; margin-top: 16px; display: block; }
 .also-lived-heading:first-child { margin-top: 0; }
 /* ── Family section ─────────────────────────────────────── */
-#detail-family.has-content { border-top: 1px solid #1e293b; padding-top: 18px; margin-top: 18px; }
+#detail-family.has-content { margin-top: 4px; }
 .family-sub { margin-bottom: 0; }
-.family-sub + .family-sub { margin-top: 18px; padding-top: 16px; border-top: 1px solid #1e293b; }
 .family-sub-heading { display: block; font-size: 10px; font-weight: 700; color: #475569;
-  text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 10px 0; }
+  text-transform: uppercase; letter-spacing: 0.1em;
+  border-top: 1px solid #1e3a52; padding-top: 12px; margin: 18px 0 10px 0; }
+.family-sub:first-child .family-sub-heading { margin-top: 0; }
 .family-row { display: flex; align-items: baseline; gap: 6px; padding: 4px 0; font-size: 13px; }
 .family-link { color: #93c5fd; text-decoration: none; cursor: pointer; }
 .family-link:hover { color: #bfdbfe; text-decoration: underline; }
