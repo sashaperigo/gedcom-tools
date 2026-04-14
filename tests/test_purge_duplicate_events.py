@@ -488,14 +488,31 @@ class TestMarrDatesCompatible:
         assert not _marr_dates_compatible('1918', '1919')
         assert not _marr_dates_compatible('ABT 1918', 'ABT 1919')
 
-    def test_bef_never_matches_anything(self):
+    def test_bef_same_or_later_year_not_dup(self):
+        # year == bound year or year > bound year → not compatible
         assert not _marr_dates_compatible('BEF 1920', '1920')
         assert not _marr_dates_compatible('BEF 1920', 'ABT 1920')
         assert not _marr_dates_compatible('1920', 'BEF 1920')
+        assert not _marr_dates_compatible('BEF 1920', '1921')
+        assert not _marr_dates_compatible('BEF 1920', '5 MAR 1921')
 
-    def test_aft_never_matches_anything(self):
+    def test_bef_matches_strictly_earlier_specific_date(self):
+        # A specific date strictly before the BEF year is a more precise
+        # version of the vague bound — treat as the same event.
+        assert _marr_dates_compatible('BEF 1903', '26 DEC 1897')
+        assert _marr_dates_compatible('26 DEC 1897', 'BEF 1903')
+        assert _marr_dates_compatible('BEF 1903', '1897')
+        assert _marr_dates_compatible('1897', 'BEF 1903')
+
+    def test_aft_same_or_earlier_year_not_dup(self):
         assert not _marr_dates_compatible('AFT 1920', '1920')
         assert not _marr_dates_compatible('AFT 1920', 'ABT 1920')
+        assert not _marr_dates_compatible('AFT 1920', '1919')
+
+    def test_aft_matches_strictly_later_specific_date(self):
+        assert _marr_dates_compatible('AFT 1920', '1925')
+        assert _marr_dates_compatible('AFT 1920', '5 MAR 1925')
+        assert _marr_dates_compatible('5 MAR 1925', 'AFT 1920')
 
     def test_bef_matches_identical_self(self):
         assert _marr_dates_compatible('BEF 1920', 'BEF 1920')
@@ -532,10 +549,22 @@ class TestMarrBlocksAreDuplicate:
         b = self._b(date='1920', plac='Istanbul, Turkey')
         assert not _marr_blocks_are_duplicate(a, b)
 
-    def test_bef_date_not_dup(self):
+    def test_bef_same_year_not_dup(self):
         a = self._b(date='BEF 1920', plac='Smyrna, Turkey')
         b = self._b(date='ABT 1920', plac='Smyrna, Turkey')
         assert not _marr_blocks_are_duplicate(a, b)
+
+    def test_specific_date_before_bef_is_dup(self):
+        # 26 DEC 1897 is a more precise version of BEF 1903 → same event
+        a = self._b(date='26 DEC 1897', plac='Smyrna, Izmir, Turkey')
+        b = self._b(date='BEF 1903',    plac='Smyrna, Izmir, Turkey')
+        assert _marr_blocks_are_duplicate(a, b)
+
+    def test_specific_date_before_bef_no_place_is_dup(self):
+        # No place on either — date compatibility alone decides
+        a = self._b(date='26 DEC 1897')
+        b = self._b(date='BEF 1903')
+        assert _marr_blocks_are_duplicate(a, b)
 
 
 # ---------------------------------------------------------------------------
