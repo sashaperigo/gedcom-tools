@@ -35,6 +35,7 @@ from gedcom_io import level_tag as _level_tag, write_lines
 _OCCUPATION_RE = re.compile(r'Occupation:\s*([^;]+)')
 _L0_RE = re.compile(r'^0 ')
 _INDI_START_RE = re.compile(r'^0 @[^@]+@ INDI\b')
+_XREF_RE = re.compile(r'^0 (@[^@]+@)')
 
 # Occupations that are not meaningful roles and should be ignored.
 IGNORED_OCCUPATIONS: frozenset[str] = frozenset({
@@ -104,6 +105,11 @@ def extract_occupations(
     Scan path_in for events whose NOTE fields contain "Occupation: X" and
     insert a matching OCCU event immediately after each such event block.
 
+    Existing OCCU events are detected in a first pass so that re-running the
+    script on an already-processed file does not create duplicates.  The source
+    citation(s) from the parent event (CENS, RESI, etc.) are copied onto each
+    new OCCU event so provenance is preserved.
+
     Parameters
     ----------
     path_in  : path to the source GEDCOM file
@@ -120,21 +126,72 @@ def extract_occupations(
     with open(path_in, encoding='utf-8') as f:
         lines = f.readlines()
 
+    # ------------------------------------------------------------------
+    # Pass 1: collect existing OCCU events per INDI so we can skip
+    # inserting ones that are already present.
+    # Key: (occu_value_lower, date_or_none)
+    # ------------------------------------------------------------------
+    indi_occu: dict[str, set[tuple[str, str | None]]] = {}
+    _p1_xref: str | None = None
+    _p1_occu_val: str | None = None
+    _p1_occu_date: str | None = None
+
+    for raw in lines:
+        lt = _level_tag(raw)
+        if _L0_RE.match(raw):
+            # Flush any in-progress OCCU before moving to next record
+            if _p1_xref and _p1_occu_val is not None:
+                indi_occu[_p1_xref].add((_p1_occu_val.lower(), _p1_occu_date))
+            _p1_occu_val = None
+            _p1_occu_date = None
+            if _INDI_START_RE.match(raw):
+                m = _XREF_RE.match(raw)
+                _p1_xref = m.group(1) if m else None
+                if _p1_xref:
+                    indi_occu.setdefault(_p1_xref, set())
+            else:
+                _p1_xref = None
+        elif _p1_xref and lt:
+            if lt[0] == 1:
+                # Flush previous OCCU, then check if this is a new OCCU
+                if _p1_occu_val is not None:
+                    indi_occu[_p1_xref].add((_p1_occu_val.lower(), _p1_occu_date))
+                _p1_occu_val = _line_value(raw).strip() if lt[1] == 'OCCU' else None
+                _p1_occu_date = None
+            elif lt[0] == 2 and _p1_occu_val is not None and lt[1] == 'DATE':
+                _p1_occu_date = _line_value(raw)
+    # End of file flush
+    if _p1_xref and _p1_occu_val is not None:
+        indi_occu[_p1_xref].add((_p1_occu_val.lower(), _p1_occu_date))
+
+    # ------------------------------------------------------------------
+    # Pass 2: insert OCCU events, skipping duplicates and carrying over
+    # source citations from the parent event.
+    # ------------------------------------------------------------------
     lines_out: list[str] = []
     occu_added = 0
 
-    in_indi = False           # are we inside an INDI record?
-    current_event_date: str | None = None   # DATE seen under current level-1 event
-    pending_occu: str | None = None         # occupation value waiting to be flushed
+    in_indi = False
+    current_xref: str | None = None
+    current_event_date: str | None = None
+    current_event_citations: list[list[str]] = []  # [[sour-line, child-lines...], ...]
+    pending_occu: str | None = None
 
     def _flush_pending() -> None:
         nonlocal occu_added, pending_occu
-        if pending_occu is not None:
+        if pending_occu is None:
+            return
+        key = (pending_occu.lower(), current_event_date)
+        existing = indi_occu.get(current_xref, set())
+        if key not in existing:
             lines_out.append(f'1 OCCU {pending_occu}\n')
             if current_event_date is not None:
                 lines_out.append(f'2 DATE {current_event_date}\n')
+            for cit_block in current_event_citations:
+                lines_out.extend(cit_block)
             occu_added += 1
-            pending_occu = None
+            indi_occu.setdefault(current_xref, set()).add(key)
+        pending_occu = None
 
     i = 0
     while i < len(lines):
@@ -142,17 +199,19 @@ def extract_occupations(
         lt = _level_tag(raw)
 
         if _L0_RE.match(raw):
-            # Start of a new record (including xref lines like "0 @I1@ INDI")
             _flush_pending()
             in_indi = bool(_INDI_START_RE.match(raw))
+            m = _XREF_RE.match(raw)
+            current_xref = m.group(1) if (m and in_indi) else None
             current_event_date = None
+            current_event_citations = []
             lines_out.append(raw)
             i += 1
 
         elif lt and lt[0] == 1 and in_indi:
-            # New level-1 tag within an INDI — flush pending OCCU before this line
             _flush_pending()
             current_event_date = None
+            current_event_citations = []
             lines_out.append(raw)
             i += 1
 
@@ -163,6 +222,17 @@ def extract_occupations(
                 occ = extract_occupation_from_note(_line_value(raw))
                 if occ is not None:
                     pending_occu = occ
+            elif lt[1] == 'SOUR':
+                # Collect this citation block (SOUR line + level-3+ children)
+                cit_block = [raw]
+                j = i + 1
+                while j < len(lines):
+                    child_lt = _level_tag(lines[j])
+                    if child_lt is not None and child_lt[0] < 3:
+                        break
+                    cit_block.append(lines[j])
+                    j += 1
+                current_event_citations.append(cit_block)
             lines_out.append(raw)
             i += 1
 
@@ -170,7 +240,6 @@ def extract_occupations(
             lines_out.append(raw)
             i += 1
 
-    # End of file — flush any remaining pending OCCU
     _flush_pending()
 
     lines_delta = len(lines_out) - len(lines)

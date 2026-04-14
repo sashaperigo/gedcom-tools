@@ -469,3 +469,128 @@ class TestPurge:
     def test_trlr_preserved(self, purge_copy):
         purge_blocked_occupations(purge_copy)
         assert lines_of(purge_copy)[-1] == '0 TRLR'
+
+
+# ---------------------------------------------------------------------------
+# Idempotency: re-running must not create duplicate OCCU events
+# ---------------------------------------------------------------------------
+
+_IDEMPOTENT_GED = (
+    '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+    '0 @I1@ INDI\n'
+    '1 NAME John /Smith/\n'
+    '1 CENS\n2 DATE 1911\n2 NOTE Occupation: Brass Polisher; Marital Status: Married\n'
+    '1 CENS\n2 DATE 1921\n2 NOTE Occupation: Police Constable; Marital Status: Married\n'
+    '0 TRLR\n'
+)
+
+
+@pytest.fixture()
+def idempotent_copy(tmp_path):
+    dest = tmp_path / 'idempotent.ged'
+    dest.write_text(_IDEMPOTENT_GED, encoding='utf-8')
+    return str(dest)
+
+
+class TestIdempotency:
+
+    def test_first_run_adds_occu(self, idempotent_copy):
+        result = extract_occupations(idempotent_copy)
+        assert result['occu_added'] == 2
+
+    def test_second_run_adds_nothing(self, idempotent_copy):
+        extract_occupations(idempotent_copy)
+        result = extract_occupations(idempotent_copy)
+        assert result['occu_added'] == 0
+
+    def test_no_duplicate_occu_after_two_runs(self, idempotent_copy):
+        extract_occupations(idempotent_copy)
+        extract_occupations(idempotent_copy)
+        lines = lines_of(idempotent_copy)
+        brass_count = sum(1 for l in lines if l == '1 OCCU Brass Polisher')
+        constable_count = sum(1 for l in lines if l == '1 OCCU Police Constable')
+        assert brass_count == 1
+        assert constable_count == 1
+
+    def test_file_unchanged_on_second_run(self, idempotent_copy):
+        extract_occupations(idempotent_copy)
+        after_first = Path(idempotent_copy).read_text(encoding='utf-8')
+        extract_occupations(idempotent_copy)
+        after_second = Path(idempotent_copy).read_text(encoding='utf-8')
+        assert after_first == after_second
+
+
+# ---------------------------------------------------------------------------
+# Citation copying: SOUR from parent event copied onto new OCCU
+# ---------------------------------------------------------------------------
+
+_CITATION_GED = (
+    '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+    '0 @I1@ INDI\n'
+    '1 NAME Alice /Brown/\n'
+    '1 CENS\n'
+    '2 DATE 1911\n'
+    '2 PLAC London, England\n'
+    '2 NOTE Occupation: Nurse; Marital Status: Single\n'
+    '2 SOUR @S1@\n'
+    '3 PAGE Census roll 42\n'
+    '0 @S1@ SOUR\n'
+    '1 TITL 1911 Census\n'
+    '0 TRLR\n'
+)
+
+_NO_CITATION_GED = (
+    '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+    '0 @I1@ INDI\n'
+    '1 NAME Alice /Brown/\n'
+    '1 CENS\n'
+    '2 DATE 1911\n'
+    '2 NOTE Occupation: Nurse; Marital Status: Single\n'
+    '0 TRLR\n'
+)
+
+
+@pytest.fixture()
+def citation_copy(tmp_path):
+    dest = tmp_path / 'citation.ged'
+    dest.write_text(_CITATION_GED, encoding='utf-8')
+    return str(dest)
+
+
+@pytest.fixture()
+def no_citation_copy(tmp_path):
+    dest = tmp_path / 'no_citation.ged'
+    dest.write_text(_NO_CITATION_GED, encoding='utf-8')
+    return str(dest)
+
+
+class TestCitationCopying:
+
+    def test_sour_copied_onto_occu(self, citation_copy):
+        extract_occupations(citation_copy)
+        lines = lines_of(citation_copy)
+        occu_idx = next(i for i, l in enumerate(lines) if l == '1 OCCU Nurse')
+        # DATE then SOUR should follow
+        assert lines[occu_idx + 1] == '2 DATE 1911'
+        assert lines[occu_idx + 2] == '2 SOUR @S1@'
+
+    def test_sour_page_child_copied(self, citation_copy):
+        extract_occupations(citation_copy)
+        lines = lines_of(citation_copy)
+        occu_idx = next(i for i, l in enumerate(lines) if l == '1 OCCU Nurse')
+        assert lines[occu_idx + 3] == '3 PAGE Census roll 42'
+
+    def test_no_sour_on_occu_when_event_has_none(self, no_citation_copy):
+        extract_occupations(no_citation_copy)
+        lines = lines_of(no_citation_copy)
+        occu_idx = next(i for i, l in enumerate(lines) if l == '1 OCCU Nurse')
+        # Only DATE should follow, no SOUR
+        assert lines[occu_idx + 1] == '2 DATE 1911'
+        assert not any(l.startswith('2 SOUR') for l in lines[occu_idx:occu_idx + 3])
+
+    def test_original_event_sour_still_present(self, citation_copy):
+        extract_occupations(citation_copy)
+        lines = lines_of(citation_copy)
+        cens_idx = next(i for i, l in enumerate(lines) if l == '1 CENS')
+        # The original SOUR must still be inside the CENS block
+        assert any(l == '2 SOUR @S1@' for l in lines[cens_idx:cens_idx + 6])
