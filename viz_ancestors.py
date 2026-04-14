@@ -764,7 +764,8 @@ header h1 { font-size: 16px; font-weight: 600; }
 .facts-subheading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
   color: #64748b; margin-bottom: 5px; margin-top: 10px; display: block; }
 .facts-subheading:first-of-type { margin-top: 0; }
-.facts-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.facts-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.facts-pills .add-event-btn { margin-top: 0; }
 .facts-pill { font-size: 12px; background: #1c2a1e; border: 1px solid #2d4a31;
   border-radius: 12px; padding: 3px 10px; color: #6ee37a; }
 .facts-pill .pill-date { color: #3d6642; font-size: 11px; margin-left: 5px; }
