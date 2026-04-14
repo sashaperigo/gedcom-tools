@@ -2428,6 +2428,15 @@ function computeRelativePositions() {
     });
   }
 
+  // Helper: compute spouse-line midpoint for a node, or fall back to node bottom-center
+  function _spouseMidX(nx, ny, spouseEntry) {
+    if (spouseEntry && !spouseEntry.existing) {
+      const [lx, rx2] = spouseEntry.x < nx ? [spouseEntry.x + NODE_W, nx] : [nx + NODE_W, spouseEntry.x];
+      return {stemX: (lx + rx2) / 2, stemY: ny + NODE_H / 2};
+    }
+    return {stemX: nx + NODE_W / 2, stemY: ny + NODE_H};
+  }
+
   // Children below any expanded node (root or siblings)
   // Pass 1: root children
   const rootXref = currentTree[1];
@@ -2435,10 +2444,11 @@ function computeRelativePositions() {
     const {x: rx, y: ry} = _posCache.get(1);
     const children = CHILDREN[rootXref] || [];
     if (children.length > 0) {
+      const {stemX, stemY} = _spouseMidX(rx, ry, _relPosCache.get('sp:1:0'));
       const totalW = children.length * slotW - H_GAP;
-      const startX = rx + NODE_W / 2 - totalW / 2;
+      const startX = stemX - totalW / 2;
       children.forEach((cx, i) => {
-        _relPosCache.set(`ch:${i}`, {x: startX + i * slotW, y: ry + NODE_H + V_GAP, xref: cx});
+        _relPosCache.set(`ch:${i}`, {x: startX + i * slotW, y: ry + NODE_H + V_GAP, xref: cx, stemX, stemY});
       });
     }
   }
@@ -2450,10 +2460,11 @@ function computeRelativePositions() {
     const sibChildren = CHILDREN[sibXref] || [];
     if (!sibChildren.length) continue;
     const [, k, i] = key.split(':');
+    const {stemX, stemY} = _spouseMidX(sibX, sibY, _relPosCache.get(`sibsp:${k}:${i}`));
     const totalW = sibChildren.length * slotW - H_GAP;
-    const startX = sibX + NODE_W / 2 - totalW / 2;
+    const startX = stemX - totalW / 2;
     sibChildren.forEach((cx, j) => {
-      _relPosCache.set(`sibch:${k}:${i}:${j}`, {x: startX + j * slotW, y: sibY + NODE_H + V_GAP, xref: cx});
+      _relPosCache.set(`sibch:${k}:${i}:${j}`, {x: startX + j * slotW, y: sibY + NODE_H + V_GAP, xref: cx, stemX, stemY});
     });
   }
 }
@@ -2505,26 +2516,26 @@ function fitAndCenter(focusKey) {
   const scaleY = (vp.clientHeight * 0.92) / treeH;
   scale = Math.min(1, scaleY);
 
+  // Left-align: pin the canvas to a fixed horizontal offset so the tree
+  // doesn't shift when the detail panel opens/closes (which changes vp.clientWidth).
+  const LEFT_OFFSET = 0;
+
   if (focusKey) {
-    // Center horizontally on the midpoint between the focus node's parents;
-    // place parents at ~30% from the top so siblings are visible below.
+    // Keep left alignment; only adjust vertical to place parents at ~30% from top.
     const fPos = _posCache.get(2 * focusKey);
     const mPos = _posCache.get(2 * focusKey + 1);
     const p = fPos || mPos;
     if (p) {
-      const cx1 = fPos ? fPos.x + NODE_W / 2 : mPos.x + NODE_W / 2;
-      const cx2 = mPos ? mPos.x + NODE_W / 2 : cx1;
-      const centerX = (cx1 + cx2) / 2;
-      tx = vp.clientWidth  / 2 - centerX * scale;
+      tx = LEFT_OFFSET;
       ty = vp.clientHeight * 0.3 - p.y * scale;
       applyTransform();
       return;
     }
   }
 
-  // Default: root at the bottom
-  const { x: rootX, y: rootY } = nodePos(1);
-  tx = vp.clientWidth  / 2 - (rootX + NODE_W / 2) * scale;
+  // Default: root at the bottom, left-aligned
+  const { y: rootY } = nodePos(1);
+  tx = LEFT_OFFSET;
   ty = vp.clientHeight - (rootY + NODE_H) * scale - 30;
   applyTransform();
 }
@@ -2653,8 +2664,7 @@ function render() {
       const {x: spx} = spEntry;
       const lineY = ay + NODE_H / 2;
       const [x1, x2] = spx < ax ? [spx + NODE_W, ax] : [ax + NODE_W, spx];
-      canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
-      canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+      canvas.appendChild(svgEl('line', {x1, y1: lineY, x2, y2: lineY, stroke: '#0f766e', 'stroke-width': 1.5}));
     });
 
     // Sibling-spouse marriage connectors + cycle toggle button
@@ -2668,31 +2678,24 @@ function render() {
       const lineY = sy + NODE_H / 2;
       const [x1, x2] = spx < sx ? [spx + NODE_W, sx] : [sx + NODE_W, spx];
       const midX = (x1 + x2) / 2;
-      // Draw marriage double lines, leaving a gap in the middle for the toggle button
       if (total > 1) {
         const gap = 12;
-        canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2: midX - gap, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
-        canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2: midX - gap, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
-        canvas.appendChild(svgEl('line', {x1: midX + gap, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
-        canvas.appendChild(svgEl('line', {x1: midX + gap, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
-        // Cycle button
+        canvas.appendChild(svgEl('line', {x1, y1: lineY, x2: midX - gap, y2: lineY, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1: midX + gap, y1: lineY, x2, y2: lineY, stroke: '#0f766e', 'stroke-width': 1.5}));
         const bw = 20, bh = 16;
         const btn = svgEl('rect', {x: midX - bw/2, y: lineY - bh/2, width: bw, height: bh, rx: 4, fill: '#0f766e', cursor: 'pointer'});
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
-          const next = ((spIdx + 1) % total);
-          _sibSpouseIdx.set(`${k}:${i}`, next);
+          _sibSpouseIdx.set(`${k}:${i}`, (spIdx + 1) % total);
           render();
         });
         canvas.appendChild(btn);
-        // Right-pointing triangle
         canvas.appendChild(svgEl('polygon', {
           points: `${midX-4},${lineY-4} ${midX+5},${lineY} ${midX-4},${lineY+4}`,
           fill: 'white', 'pointer-events': 'none'
         }));
       } else {
-        canvas.appendChild(svgEl('line', {x1, y1: lineY - 3, x2, y2: lineY - 3, stroke: '#0f766e', 'stroke-width': 1.5}));
-        canvas.appendChild(svgEl('line', {x1, y1: lineY + 3, x2, y2: lineY + 3, stroke: '#0f766e', 'stroke-width': 1.5}));
+        canvas.appendChild(svgEl('line', {x1, y1: lineY, x2, y2: lineY, stroke: '#0f766e', 'stroke-width': 1.5}));
       }
     });
   }
