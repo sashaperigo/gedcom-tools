@@ -958,7 +958,7 @@ let _sibSpouseIdx = new Map();
                         .replace(/\\s+/g, ' ').trim();
     const tokens = noNicks.split(' ').filter(Boolean);
     // Display: title-case the flat form (keeps quotes visible)
-    const disp = flat.replace(/\\b\\w/g, c => c.toUpperCase());
+    const disp = flat.replace(/(^|[\\s\\-])(\\p{L})/gu, (_, sep, c) => sep + c.toUpperCase());
     const normDisp = normSearch(flat);  // same .length as flat (accent strip is length-preserving for NFC)
     const result = {
       disp,
