@@ -993,6 +993,7 @@ const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;
 const ALL_PLACES = __ALL_PLACES_JSON__;
 let currentTree = Object.assign({}, TREE);
 const expandedRelatives = new Set([1]);
+let expandedChildren = false;
 let _relPosCache = new Map();
 // Maps "${anchorKey}:${sibIdx}" → current spouse index (0-based) for siblings with multiple spouses
 let _sibSpouseIdx = new Map();
@@ -2200,6 +2201,7 @@ function changeRoot(xref) {
   _relPosCache.clear();
   expandedRelatives.clear();
   expandedRelatives.add(1);
+  expandedChildren = false;
   for (let g = 0; g <= 2; g++) {
     const start = Math.pow(2, g);
     const end   = Math.pow(2, g + 1);
@@ -2424,6 +2426,20 @@ function computeRelativePositions() {
         newSibOffset += 1 + (sibSpouses.length > 0 ? 1 : 0);
       }
     });
+  }
+
+  // Children of the root — placed in a row below the root node
+  if (expandedChildren) {
+    const rootXref = currentTree[1];
+    const children = CHILDREN[rootXref] || [];
+    if (children.length > 0 && _posCache.has(1)) {
+      const {x: rx, y: ry} = _posCache.get(1);
+      const totalW = children.length * slotW - H_GAP;
+      let startX = rx + NODE_W / 2 - totalW / 2;
+      children.forEach((cx, i) => {
+        _relPosCache.set(`ch:${i}`, {x: startX + i * slotW, y: ry + NODE_H + V_GAP, xref: cx, existing: false});
+      });
+    }
   }
 }
 
@@ -2756,6 +2772,32 @@ function render() {
       }));
     }
 
+    // Children expand/collapse button — only on root node, below it
+    if (isRoot) {
+      const rootChildren = CHILDREN[currentTree[1]] || [];
+      if (rootChildren.length > 0) {
+        const bx = x + NODE_W / 2 - 8;
+        const by = y + NODE_H + 4;
+        if (!expandedChildren) {
+          const btn = svgEl('rect', {x: bx, y: by, width: 16, height: 16, rx: 4, fill: '#059669', cursor: 'pointer'});
+          btn.addEventListener('click', (e) => { e.stopPropagation(); expandedChildren = true; render(); fitAndCenter(); });
+          canvas.appendChild(btn);
+          canvas.appendChild(svgEl('polygon', {
+            points: `${bx+4},${by+5} ${bx+8},${by+11} ${bx+12},${by+5}`,
+            fill: 'white', 'pointer-events': 'none'
+          }));
+        } else {
+          const btn = svgEl('rect', {x: bx, y: by, width: 16, height: 16, rx: 4, fill: '#475569', cursor: 'pointer'});
+          btn.addEventListener('click', (e) => { e.stopPropagation(); expandedChildren = false; render(); fitAndCenter(); });
+          canvas.appendChild(btn);
+          canvas.appendChild(svgEl('polygon', {
+            points: `${bx+4},${by+11} ${bx+8},${by+5} ${bx+12},${by+11}`,
+            fill: 'white', 'pointer-events': 'none'
+          }));
+        }
+      }
+    }
+
     // Relatives toggle button for non-root ancestors that have siblings or spouses.
     // Positioned outside the node on the side where siblings expand:
     // males expand left → button on left; females expand right → button on right.
@@ -2834,10 +2876,47 @@ function render() {
 
   for (const [key, entry] of _relPosCache.entries()) {
     if (entry.existing) continue;  // already rendered as an ancestor node
+    if (key.startsWith('ch:')) continue;  // children drawn separately below
     const {x: rx, y: ry, xref} = entry;
     const isSibling = key.startsWith('sib:') && !key.startsWith('sibsp:');
     const fill = isSibling ? '#1e3a5f' : '#065f46';
     drawRelNode(rx, ry, xref, fill);
+  }
+
+  // ── Child nodes and connectors ────────────────────────────────────────────
+  if (expandedChildren) {
+    const childEntries = [..._relPosCache.entries()].filter(([k]) => k.startsWith('ch:'));
+    if (childEntries.length > 0) {
+      const {x: rootX, y: rootY} = nodePos(1);
+      const barY = rootY + NODE_H + V_GAP / 2;
+      const childXs = childEntries.map(([, e]) => e.x + NODE_W / 2);
+      const barLeft  = Math.min(...childXs);
+      const barRight = Math.max(...childXs);
+
+      // Vertical stem from root bottom to the horizontal bar
+      canvas.insertBefore(svgEl('line', {
+        x1: rootX + NODE_W / 2, y1: rootY + NODE_H,
+        x2: rootX + NODE_W / 2, y2: barY,
+        stroke: '#475569', 'stroke-width': 1.5
+      }), canvas.firstChild);
+
+      // Horizontal bar
+      canvas.insertBefore(svgEl('line', {
+        x1: barLeft, y1: barY, x2: barRight, y2: barY,
+        stroke: '#475569', 'stroke-width': 1.5
+      }), canvas.firstChild);
+
+      // Vertical drop to each child + draw child node
+      for (const [, entry] of childEntries) {
+        const {x: cx, y: cy, xref} = entry;
+        canvas.insertBefore(svgEl('line', {
+          x1: cx + NODE_W / 2, y1: barY,
+          x2: cx + NODE_W / 2, y2: cy,
+          stroke: '#475569', 'stroke-width': 1.5
+        }), canvas.firstChild);
+        drawRelNode(cx, cy, xref, '#155e75');
+      }
+    }
   }
 
   applyTransform();
