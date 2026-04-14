@@ -217,6 +217,11 @@ def _serialize_name(name: NameRecord, level: int) -> list[str]:
     lines.extend(_line(level, 'NAME', name.full))
     if name.name_type:
         lines.extend(_line(level + 1, 'TYPE', name.name_type))
+    # Preserve GIVN, SURN, NICK, NSFX and any other raw sub-tags not handled above.
+    _handled_name_tags = {'TYPE', 'SOUR'}
+    for child in name.raw.children:
+        if child.tag not in _handled_name_tags:
+            lines.extend(_serialize_node(child))
     for cit in name.citations:
         lines.extend(_serialize_citation(cit, level + 1))
     return lines
