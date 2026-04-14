@@ -3628,6 +3628,70 @@ def fix_repeated_citation_text(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Curly-quote normalisation
+# ---------------------------------------------------------------------------
+
+# Typographic/curly quote characters to replace with their straight equivalents.
+_CURLY_QUOTE_MAP = {
+    '\u2018': "'",  # LEFT SINGLE QUOTATION MARK  '
+    '\u2019': "'",  # RIGHT SINGLE QUOTATION MARK '
+    '\u201a': "'",  # SINGLE LOW-9 QUOTATION MARK ‚
+    '\u201b': "'",  # SINGLE HIGH-REVERSED-9      ‛
+    '\u201c': '"',  # LEFT DOUBLE QUOTATION MARK  "
+    '\u201d': '"',  # RIGHT DOUBLE QUOTATION MARK "
+    '\u201e': '"',  # DOUBLE LOW-9 QUOTATION MARK „
+    '\u201f': '"',  # DOUBLE HIGH-REVERSED-9      ‟
+    '\u2039': "'",  # SINGLE LEFT-POINTING ANGLE  ‹
+    '\u203a': "'",  # SINGLE RIGHT-POINTING ANGLE ›
+    '\u00ab': '"',  # LEFT-POINTING DOUBLE ANGLE  «
+    '\u00bb': '"',  # RIGHT-POINTING DOUBLE ANGLE »
+}
+_CURLY_QUOTE_RE = re.compile('[' + ''.join(_CURLY_QUOTE_MAP) + ']')
+
+
+def scan_curly_quotes(path: str) -> list[tuple[int, str]]:
+    """
+    Return a list of ``(lineno, line)`` for every line in *path* that contains
+    a curly/typographic quote character.  Line numbers are 1-based.
+
+    GEDCOM files should use plain ASCII straight quotes throughout so that
+    nickname extraction (``"Nick"``) and other text processing is reliable.
+    """
+    violations = []
+    with open(path, encoding='utf-8') as f:
+        for i, line in enumerate(f, 1):
+            if _CURLY_QUOTE_RE.search(line):
+                violations.append((i, line.rstrip('\n')))
+    return violations
+
+
+def fix_curly_quotes(path: str, dry_run: bool = False) -> int:
+    """
+    Replace every curly/typographic quote in *path* with its straight ASCII
+    equivalent (see ``_CURLY_QUOTE_MAP``).
+
+    Returns the number of lines changed.  Writes the result in-place unless
+    *dry_run* is ``True``.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    for line in lines_in:
+        fixed = _CURLY_QUOTE_RE.sub(lambda m: _CURLY_QUOTE_MAP[m.group()], line)
+        if fixed != line:
+            changed += 1
+        lines_out.append(fixed)
+
+    if not dry_run and changed:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
 # Programmatic all-fixes API
 # ---------------------------------------------------------------------------
 
@@ -3651,6 +3715,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
         lines_before = sum(1 for _ in f)
 
     fixes_applied = 0
+    fixes_applied += fix_curly_quotes(path, dry_run=dry_run)
     fixes_applied += fix_trailing_whitespace(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_sources(path, dry_run=dry_run)
     fixes_applied += fix_name_double_spaces(path, dry_run=dry_run)
