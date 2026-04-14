@@ -2193,7 +2193,7 @@ function buildAhnentafel(rootXref) {
 }
 
 function changeRoot(xref) {
-  if (!xref || !PARENTS[xref] || !PARENTS[xref].some(p => p)) return;
+  if (!xref || !PEOPLE[xref]) return;
   currentTree = buildAhnentafel(xref);
   visibleKeys.clear();
   _posCache.clear();
