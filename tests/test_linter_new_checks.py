@@ -46,6 +46,8 @@ from gedcom_linter import (
     normalize_date,
     scan_sole_event_type_alternate,
     fix_sole_event_type_alternate,
+    scan_name_piece_case,
+    fix_name_piece_case,
 )
 
 
@@ -2181,4 +2183,155 @@ class TestSoleEventTypeAlternate:
         """)
         original = p.read_text(encoding='utf-8')
         fix_sole_event_type_alternate(str(p), dry_run=True)
+        assert p.read_text(encoding='utf-8') == original
+
+
+# ===========================================================================
+# scan_name_piece_case / fix_name_piece_case
+# ===========================================================================
+
+class TestNamePieceCase:
+
+    # --- scan ---
+
+    def test_scan_detects_allcaps_givn_under_titlecase_name(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 TRLR
+        """)
+        hits = scan_name_piece_case(str(p))
+        assert len(hits) == 2
+        tags = {h[1] for h in hits}
+        assert tags == {'GIVN', 'SURN'}
+
+    def test_scan_no_hit_when_pieces_match_name_case(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN Anitsa
+            2 SURN Vitali
+            0 TRLR
+        """)
+        assert scan_name_piece_case(str(p)) == []
+
+    def test_scan_no_hit_when_both_allcaps(self, tmp_path):
+        """Both NAME and pieces all-caps is consistent — fix_name_case handles it."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME ANITSA /VITALI/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 TRLR
+        """)
+        assert scan_name_piece_case(str(p)) == []
+
+    def test_scan_detects_only_givn_when_surn_is_fine(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN ANITSA
+            2 SURN Vitali
+            0 TRLR
+        """)
+        hits = scan_name_piece_case(str(p))
+        assert len(hits) == 1
+        assert hits[0][1] == 'GIVN'
+
+    def test_scan_multiple_individuals(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 @I2@ INDI
+            1 NAME John /Smith/
+            2 GIVN John
+            2 SURN Smith
+            0 TRLR
+        """)
+        hits = scan_name_piece_case(str(p))
+        assert len(hits) == 2  # only I1's GIVN and SURN
+
+    # --- fix ---
+
+    def test_fix_title_cases_allcaps_givn_surn(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 TRLR
+        """)
+        count = fix_name_piece_case(str(p))
+        assert count == 2
+        content = p.read_text(encoding='utf-8')
+        assert '2 GIVN Anitsa' in content
+        assert '2 SURN Vitali' in content
+        assert '2 GIVN ANITSA' not in content
+        assert '2 SURN VITALI' not in content
+
+    def test_fix_name_line_unchanged(self, tmp_path):
+        """fix_name_piece_case must not touch the NAME line itself."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 TRLR
+        """)
+        fix_name_piece_case(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '1 NAME Anitsa /Vitali/' in content
+
+    def test_fix_name_case_also_fixes_pieces(self, tmp_path):
+        """fix_name_case on an all-caps NAME should fix GIVN/SURN in the same pass."""
+        from gedcom_linter import fix_name_case
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME ANITSA /VITALI/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 TRLR
+        """)
+        fix_name_case(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '1 NAME Anitsa /Vitali/' in content
+        assert '2 GIVN Anitsa' in content
+        assert '2 SURN Vitali' in content
+
+    def test_fix_idempotent(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 TRLR
+        """)
+        fix_name_piece_case(str(p))
+        count2 = fix_name_piece_case(str(p))
+        assert count2 == 0
+
+    def test_fix_dry_run_no_write(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Anitsa /Vitali/
+            2 GIVN ANITSA
+            2 SURN VITALI
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        fix_name_piece_case(str(p), dry_run=True)
         assert p.read_text(encoding='utf-8') == original

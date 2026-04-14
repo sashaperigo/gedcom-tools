@@ -471,22 +471,43 @@ def _name_to_title_case(val: str) -> str:
     return ' '.join(out)
 
 
+_NAME_PIECE_CASE_TAGS = frozenset({'GIVN', 'SURN', 'NPFX', 'NSFX'})
+_NAME_PIECE_CASE_RE = re.compile(r'^((\d+) (GIVN|SURN|NPFX|NSFX) )(.+)$')
+
+
 def fix_name_case(path: str, dry_run: bool = False) -> int:
     """
-    Convert all-caps NAME values to title case. Returns number of lines changed.
+    Convert all-caps NAME values (and their GIVN/SURN/NPFX/NSFX sub-tags) to
+    title case. Returns number of lines changed.
 
-    Only NAME lines where every alphabetic character is uppercase are touched;
-    names that already contain any lowercase letter are left untouched.
+    Only lines where every alphabetic character is uppercase are touched;
+    lines that already contain any lowercase letter are left untouched.
+    GIVN/SURN sub-tags under a NAME block are fixed in the same pass so that
+    the name value and its pieces always stay in sync.
     """
     with open(path, encoding='utf-8') as f:
         lines_in = f.readlines()
 
     lines_out = []
     changed = 0
+    in_name_block = False
+    name_level = 0
+
     for lineno, raw in enumerate(lines_in, 1):
         line = raw.rstrip('\n')
+
+        # Detect level from the line prefix to track NAME block boundaries
+        level_m = re.match(r'^(\d+)', line)
+        cur_level = int(level_m.group(1)) if level_m else -1
+
+        # If we drop back to or below the NAME level, we've left the NAME block
+        if in_name_block and cur_level <= name_level:
+            in_name_block = False
+
         m = NAME_LINE_RE.match(line)
         if m:
+            name_level = int(m.group(2))
+            in_name_block = True
             val = m.group(3)
             letters = [c for c in val if c.isalpha()]
             if letters and all(c.isupper() for c in letters):
@@ -496,6 +517,19 @@ def fix_name_case(path: str, dry_run: bool = False) -> int:
                     if dry_run:
                         print(f'  line {lineno}: {val!r}  →  {fixed!r}')
                     line = m.group(1) + fixed
+        elif in_name_block:
+            mp = _NAME_PIECE_CASE_RE.match(line)
+            if mp:
+                val = mp.group(4)
+                letters = [c for c in val if c.isalpha()]
+                if letters and all(c.isupper() for c in letters):
+                    fixed = _name_to_title_case(val)
+                    if fixed != val:
+                        changed += 1
+                        if dry_run:
+                            print(f'  line {lineno} ({mp.group(3)}): {val!r}  →  {fixed!r}')
+                        line = mp.group(1) + fixed
+
         lines_out.append(line + '\n')
 
     if not dry_run and changed:
@@ -3730,6 +3764,92 @@ def fix_curly_quotes(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Name piece case consistency (GIVN/SURN all-caps under title-cased NAME)
+# ---------------------------------------------------------------------------
+
+def scan_name_piece_case(path: str) -> list[tuple[int, str, str]]:
+    """
+    Return (lineno, tag, value) for every GIVN/SURN/NPFX/NSFX sub-tag that is
+    all-caps while its parent NAME line already contains at least one lowercase
+    letter (i.e. the NAME was title-cased but the sub-tags were not).
+
+    This detects the inconsistency where fix_name_case has been run on a file
+    (or the NAME was added with correct case) but the subordinate name pieces
+    still contain all-caps values.
+    """
+    violations: list[tuple[int, str, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    in_name_block = False
+    name_level = 0
+    name_is_allcaps = True  # if True, pieces are expected to be all-caps too
+
+    for lineno, raw in enumerate(lines, 1):
+        line = raw.rstrip('\n')
+        level_m = re.match(r'^(\d+)', line)
+        cur_level = int(level_m.group(1)) if level_m else -1
+
+        if in_name_block and cur_level <= name_level:
+            in_name_block = False
+
+        m = NAME_LINE_RE.match(line)
+        if m:
+            name_level = int(m.group(2))
+            in_name_block = True
+            val = m.group(3)
+            letters = [c for c in val if c.isalpha()]
+            # Track whether the NAME itself is all-caps
+            name_is_allcaps = bool(letters) and all(c.isupper() for c in letters)
+            continue
+
+        if in_name_block and not name_is_allcaps:
+            mp = _NAME_PIECE_CASE_RE.match(line)
+            if mp:
+                val = mp.group(4)
+                letters = [c for c in val if c.isalpha()]
+                if letters and all(c.isupper() for c in letters):
+                    violations.append((lineno, mp.group(3), val))
+
+    return violations
+
+
+def fix_name_piece_case(path: str, dry_run: bool = False) -> int:
+    """
+    Title-case any all-caps GIVN/SURN/NPFX/NSFX sub-tags whose parent NAME
+    line is not all-caps (i.e. the pieces are out of sync with the NAME).
+
+    Returns the number of lines changed.
+    """
+    hits = scan_name_piece_case(path)
+    if not hits:
+        return 0
+
+    lines_to_fix: set[int] = {lineno for lineno, _tag, _val in hits}
+
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    for lineno, raw in enumerate(lines_in, 1):
+        line = raw.rstrip('\n')
+        if lineno in lines_to_fix:
+            mp = _NAME_PIECE_CASE_RE.match(line)
+            if mp:
+                fixed = _name_to_title_case(mp.group(4))
+                line = mp.group(1) + fixed
+                changed += 1
+        lines_out.append(line + '\n')
+
+    if not dry_run and changed:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
 # Sole-event TYPE alternate
 # ---------------------------------------------------------------------------
 
@@ -3883,6 +4003,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_duplicate_sources(path, dry_run=dry_run)
     fixes_applied += fix_name_double_spaces(path, dry_run=dry_run)
     fixes_applied += fix_name_case(path, dry_run=dry_run)
+    fixes_applied += fix_name_piece_case(path, dry_run=dry_run)
     fixes_applied += fix_long_lines(path, dry_run=dry_run)
     fixes_applied += fix_addr_under_plac(path, dry_run=dry_run)
     fixes_applied += fix_note_under_plac(path, dry_run=dry_run)
