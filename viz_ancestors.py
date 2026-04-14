@@ -2844,7 +2844,7 @@ function render() {
       e.stopPropagation();
       if (expandedChildrenOf.has(xref)) expandedChildrenOf.delete(xref);
       else expandedChildrenOf.add(xref);
-      render(); fitAndCenter();
+      render();
     });
     canvas.appendChild(btn);
     canvas.appendChild(svgEl('polygon', {
