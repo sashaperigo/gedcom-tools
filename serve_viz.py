@@ -161,6 +161,59 @@ def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
     return lines[:event_start] + lines[event_end:], None
 
 
+# Tags for which TYPE alternate is meaningful only when multiple events exist
+_SOLE_EVENT_TYPE_TAGS = frozenset({'BIRT', 'DEAT'})
+
+
+def _strip_sole_event_type_alternate(lines: list[str], xref: str, tag: str) -> list[str]:
+    """
+    After a deletion, if exactly one event of `tag` remains for `xref` and
+    it carries a '2 TYPE alternate' sub-line, remove that sub-line.
+
+    Only applies to BIRT and DEAT — the tags where TYPE alternate is only
+    meaningful when multiple events of the same type exist.
+    """
+    if tag not in _SOLE_EVENT_TYPE_TAGS:
+        return lines
+
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return lines
+
+    # Collect all event blocks of this tag
+    events: list[tuple[int, int]] = []  # (start, end) — end is exclusive
+    i = indi_start + 1
+    while i < indi_end:
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == tag:
+            start = i
+            j = i + 1
+            while j < indi_end:
+                sm = _TAG_RE.match(lines[j])
+                if sm and int(sm.group(1)) <= 1:
+                    break
+                j += 1
+            events.append((start, j))
+            i = j
+        else:
+            i += 1
+
+    if len(events) != 1:
+        return lines  # zero or multiple events — nothing to do
+
+    ev_start, ev_end = events[0]
+    # Find and remove any '2 TYPE alternate' within this event block
+    type_lineno = next(
+        (k for k in range(ev_start + 1, ev_end)
+         if re.match(r'^2 TYPE\s+alternate\s*$', lines[k], re.IGNORECASE)),
+        None,
+    )
+    if type_lineno is None:
+        return lines
+
+    return lines[:type_lineno] + lines[type_lineno + 1:]
+
+
 def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | None, int | None, str | None]:
     """Return (start, end, err) — line range [start, end) for note at note_idx in xref."""
     indi_start, indi_end, err = _find_indi_block(lines, xref)
@@ -569,6 +622,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if err:
                 resp = json.dumps({'ok': False, 'error': err}).encode()
             else:
+                new_lines = _strip_sole_event_type_alternate(new_lines, xref, body['tag'])
                 _write_gedcom_atomic(new_lines)
                 print(f"[fact-delete] {xref} {body['tag']} deleted")
                 regenerate(body.get('current_person'))
