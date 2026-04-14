@@ -831,6 +831,10 @@ header h1 { font-size: 16px; font-weight: 600; }
              onkeydown="if(event.key==='Escape')closeEventModal()">
       <datalist id="addr-suggestions"></datalist>
     </div>
+    <div class="event-modal-field" id="event-modal-cause-row" style="display:none">
+      <label>Cause of Death</label>
+      <input type="text" id="event-modal-cause" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
     <div class="event-modal-field">
       <label>Note</label>
       <textarea id="event-modal-note" rows="3"
@@ -1166,6 +1170,7 @@ function _updateEventModalFields(tag) {
   const inlineRow = document.getElementById('event-modal-inline-row');
   const inlineLbl = document.getElementById('event-modal-inline-label');
   const typeRow   = document.getElementById('event-modal-type-row');
+  const causeRow  = document.getElementById('event-modal-cause-row');
   if (_INLINE_TYPE_TAGS.has(tag)) {
     inlineRow.style.display = '';
     const labelMap = {OCCU:'Occupation',TITL:'Title',NATI:'Nationality',RELI:'Religion',EDUC:'Education'};
@@ -1176,6 +1181,7 @@ function _updateEventModalFields(tag) {
   // For inline-type tags (EDUC, OCCU, etc.) the inline value IS the type —
   // showing a separate TYPE field would duplicate it and cause confusion.
   typeRow.style.display = (_TYPE_TAGS.has(tag) && !_INLINE_TYPE_TAGS.has(tag)) ? '' : 'none';
+  causeRow.style.display = (tag === 'DEAT') ? '' : 'none';
 }
 
 function _updateAddrSuggestions(place) {
@@ -1224,6 +1230,7 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   document.getElementById('event-modal-type').value   = evt.type || '';
   document.getElementById('event-modal-date').value   = evt.date || '';
   document.getElementById('event-modal-place').value  = placeVal;
+  document.getElementById('event-modal-cause').value  = evt.cause || '';
   document.getElementById('event-modal-note').value   = evt.note || '';
   document.getElementById('event-modal-addr').value   = evt.addr || '';
   _updateAddrSuggestions(placeVal);
@@ -1245,6 +1252,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   document.getElementById('event-modal-type').value   = prefillType || '';
   document.getElementById('event-modal-date').value   = '';
   document.getElementById('event-modal-place').value  = '';
+  document.getElementById('event-modal-cause').value  = '';
   document.getElementById('event-modal-note').value   = '';
   document.getElementById('event-modal-addr').value   = '';
   _updateAddrSuggestions('');
@@ -1264,6 +1272,7 @@ async function submitEventModal() {
   const isAdd    = _eventModalIdx === null && !famXref;
   const tag      = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
   const typeRow = document.getElementById('event-modal-type-row');
+  const causeRow = document.getElementById('event-modal-cause-row');
   const fields = {
     inline_val: document.getElementById('event-modal-inline').value.trim(),
     DATE:        document.getElementById('event-modal-date').value.trim(),
@@ -1275,6 +1284,10 @@ async function submitEventModal() {
   // for events (like MARR) where the type row is hidden.
   if (typeRow && typeRow.style.display !== 'none') {
     fields.TYPE = document.getElementById('event-modal-type').value.trim();
+  }
+  // Only include CAUS when the cause row is visible (DEAT events)
+  if (causeRow && causeRow.style.display !== 'none') {
+    fields.CAUS = document.getElementById('event-modal-cause').value.trim();
   }
   const endpoint = isAdd ? '/api/add_event' : '/api/edit_event';
   let body;
@@ -1901,7 +1914,7 @@ function showDetail(xref) {
     return evts.map(evt => {
       const { prose, meta } = buildProse(evt);
       const color   = dotColor(evt);
-      const noteInl = evt.note ? `<div class="evt-note-inline">${escHtml(evt.note)}</div>` : '';
+      const noteInl = evt.note ? evt.note.split('\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
       const xrefQ   = JSON.stringify(xref).replace(/"/g, '&quot;');
       const delBtn  = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
       const editBtn = evt.event_idx !== null && evt.event_idx !== undefined
