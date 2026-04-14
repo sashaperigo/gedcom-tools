@@ -3764,6 +3764,62 @@ def fix_curly_quotes(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Unknown surname placeholder stripping  (/UNKNOWN/ → //)
+# ---------------------------------------------------------------------------
+
+_UNKNOWN_NAME_RE = re.compile(r'^(\d+ NAME .*/)(UNKNOWN)(/.*)$', re.IGNORECASE)
+_UNKNOWN_SURN_RE = re.compile(r'^(\d+) SURN UNKNOWN\s*$', re.IGNORECASE)
+
+
+def scan_unknown_surname(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, line) for every NAME line whose surname slot contains the
+    placeholder value 'UNKNOWN' (case-insensitive), e.g. 'John /UNKNOWN/'.
+
+    These should be converted to '//'. Corresponding '2 SURN UNKNOWN' sub-tags
+    are also flagged.
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+    for lineno, raw in enumerate(lines, 1):
+        line = raw.rstrip('\n')
+        if _UNKNOWN_NAME_RE.match(line) or _UNKNOWN_SURN_RE.match(line):
+            violations.append((lineno, line))
+    return violations
+
+
+def fix_unknown_surname(path: str, dry_run: bool = False) -> int:
+    """
+    Replace '/UNKNOWN/' with '//' in NAME lines and remove any '2 SURN UNKNOWN'
+    sub-tags.  Returns the number of lines changed or removed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    for raw in lines_in:
+        line = raw.rstrip('\n')
+        eol = '\n' if raw.endswith('\n') else ''
+        m_name = _UNKNOWN_NAME_RE.match(line)
+        if m_name:
+            line = m_name.group(1) + m_name.group(3)  # replace UNKNOWN with empty
+            changed += 1
+            lines_out.append(line + eol)
+        elif _UNKNOWN_SURN_RE.match(line):
+            changed += 1  # drop the line entirely
+        else:
+            lines_out.append(raw)
+
+    if not dry_run and changed:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
 # Name piece case consistency (GIVN/SURN all-caps under title-cased NAME)
 # ---------------------------------------------------------------------------
 
@@ -4023,6 +4079,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_aka_facts(path, dry_run=dry_run)
     fixes_applied += fix_broken_xrefs(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_families(path, dry_run=dry_run)
+    fixes_applied += fix_unknown_surname(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_resi(path, dry_run=dry_run)
     fixes_applied += fix_bapm_without_birth(path, dry_run=dry_run)

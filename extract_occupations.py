@@ -49,6 +49,9 @@ IGNORED_OCCUPATIONS: frozenset[str] = frozenset({
     '(no occupation)',
     'keeping house',
     'house wife',
+    'housewife',
+    'homemaker',
+    'retired',
     # French equivalents
     'étudiant',     # student (male)
     'étudiante',    # student (female)

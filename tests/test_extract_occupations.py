@@ -131,6 +131,22 @@ class TestExtractOccupationFromNote:
         assert extract_occupation_from_note('Occupation: Enfant') is None
         assert extract_occupation_from_note('Occupation: enfant') is None
 
+    def test_housewife_ignored(self):
+        assert extract_occupation_from_note('Occupation: Housewife') is None
+        assert extract_occupation_from_note('Occupation: housewife') is None
+
+    def test_homemaker_ignored(self):
+        assert extract_occupation_from_note('Occupation: Homemaker') is None
+        assert extract_occupation_from_note('Occupation: homemaker') is None
+
+    def test_retired_alone_ignored(self):
+        assert extract_occupation_from_note('Occupation: Retired') is None
+        assert extract_occupation_from_note('Occupation: retired') is None
+
+    def test_retired_as_substring_not_ignored(self):
+        # "Retired Engineer" is a meaningful occupation
+        assert extract_occupation_from_note('Occupation: Retired Engineer') == 'Retired Engineer'
+
 
 # ---------------------------------------------------------------------------
 # Fixture sanity checks

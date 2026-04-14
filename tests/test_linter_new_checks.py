@@ -48,6 +48,8 @@ from gedcom_linter import (
     fix_sole_event_type_alternate,
     scan_name_piece_case,
     fix_name_piece_case,
+    scan_unknown_surname,
+    fix_unknown_surname,
 )
 
 
@@ -2334,4 +2336,136 @@ class TestNamePieceCase:
         """)
         original = p.read_text(encoding='utf-8')
         fix_name_piece_case(str(p), dry_run=True)
+        assert p.read_text(encoding='utf-8') == original
+
+
+# ===========================================================================
+# scan_unknown_surname / fix_unknown_surname
+# ===========================================================================
+
+class TestUnknownSurname:
+
+    # --- scan ---
+
+    def test_scan_detects_unknown_surname(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Zabelu /UNKNOWN/
+            2 GIVN Zabelu
+            2 SURN UNKNOWN
+            0 TRLR
+        """)
+        hits = scan_unknown_surname(str(p))
+        # Both the NAME line and the SURN sub-tag are flagged
+        assert len(hits) == 2
+
+    def test_scan_case_insensitive(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Zabelu /Unknown/
+            0 TRLR
+        """)
+        assert len(scan_unknown_surname(str(p))) == 1
+
+    def test_scan_no_hit_when_no_unknown(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            2 GIVN John
+            2 SURN Smith
+            0 TRLR
+        """)
+        assert scan_unknown_surname(str(p)) == []
+
+    def test_scan_no_hit_for_empty_surname(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John //
+            0 TRLR
+        """)
+        assert scan_unknown_surname(str(p)) == []
+
+    def test_scan_multiple_individuals(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Zabelu /UNKNOWN/
+            0 @I2@ INDI
+            1 NAME John /Smith/
+            0 @I3@ INDI
+            1 NAME Marie /UNKNOWN/
+            0 TRLR
+        """)
+        hits = scan_unknown_surname(str(p))
+        assert len(hits) == 2
+
+    # --- fix ---
+
+    def test_fix_replaces_unknown_with_empty_slashes(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Zabelu /UNKNOWN/
+            0 TRLR
+        """)
+        count = fix_unknown_surname(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        assert '1 NAME Zabelu //' in content
+        assert 'UNKNOWN' not in content
+
+    def test_fix_removes_surn_unknown_subtag(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Zabelu /UNKNOWN/
+            2 GIVN Zabelu
+            2 SURN UNKNOWN
+            0 TRLR
+        """)
+        fix_unknown_surname(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '2 SURN UNKNOWN' not in content
+        assert '2 GIVN Zabelu' in content
+
+    def test_fix_preserves_real_surnames(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            2 GIVN John
+            2 SURN Smith
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        count = fix_unknown_surname(str(p))
+        assert count == 0
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_fix_idempotent(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Zabelu /UNKNOWN/
+            2 GIVN Zabelu
+            2 SURN UNKNOWN
+            0 TRLR
+        """)
+        fix_unknown_surname(str(p))
+        count2 = fix_unknown_surname(str(p))
+        assert count2 == 0
+
+    def test_fix_dry_run_no_write(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Zabelu /UNKNOWN/
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        fix_unknown_surname(str(p), dry_run=True)
         assert p.read_text(encoding='utf-8') == original
