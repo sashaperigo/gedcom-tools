@@ -1028,18 +1028,19 @@ def deduplicate_duplicate_names(merged: GedcomFile) -> int:
     """
     Post-merge pass: remove duplicate NAME entries within individual records.
 
-    Two names are considered duplicates when they share the same normalized
-    (given, surname) pair — matching the deduplication key used by
-    _merge_names() at merge time.
+    Two names are considered duplicates when they have the exact same full
+    name string (case-insensitive).  Accented and unaccented variants such as
+    "Manon /Pérez/" and "Manon /Perez/" are treated as distinct names and are
+    both preserved.
 
     Returns the total number of duplicate NAME entries removed.
     """
     removed = 0
     for indi in merged.individuals.values():
-        seen: set[tuple[str, str]] = set()
+        seen: set[str] = set()
         deduped: list = []
         for nm in indi.names:
-            key = (nm.given, nm.surname)
+            key = nm.full.strip().lower()
             if key not in seen:
                 deduped.append(nm)
                 seen.add(key)

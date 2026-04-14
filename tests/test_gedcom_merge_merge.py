@@ -1042,18 +1042,34 @@ class TestSortEvents:
 
 
 class TestDeduplicateDuplicateNames:
-    def test_removes_duplicate_name_within_individual(self):
-        """Exact duplicate NAME in an individual is collapsed to one."""
-        ind = _indi('@I1@', 'Antoine', 'Chile')
+    def test_removes_exact_string_duplicate(self):
+        """Two NAME entries with identical full strings are collapsed to one."""
+        ind = _indi('@I1@', 'Antoine', 'Chilé')
         dup = NameRecord('Antoine /Chilé/', 'antoine', 'chile', None)
-        ind.names.append(dup)  # now has the same (given, surname) twice
+        ind.names.append(dup)  # identical full string appears twice
         merged = _file(indis={'@I1@': ind})
         removed = deduplicate_duplicate_names(merged)
         assert removed == 1
         assert len(merged.individuals['@I1@'].names) == 1
 
+    def test_accented_and_unaccented_kept_as_distinct(self):
+        """Accented primary + unaccented AKA must NOT be treated as duplicates.
+
+        This is the core regression: add_unaccented_names creates 'Manon /Perez/'
+        as an AKA for 'Manon /Pérez/', and fix_duplicate_names must not remove it.
+        """
+        ind = _indi('@I1@', 'Manon', 'Pérez')
+        ind.names.append(NameRecord('Manon /Perez/', 'manon', 'perez', 'AKA'))
+        merged = _file(indis={'@I1@': ind})
+        removed = deduplicate_duplicate_names(merged)
+        assert removed == 0, (
+            'accented primary and unaccented AKA must coexist — '
+            'they are different strings even if they normalize the same way'
+        )
+        assert len(merged.individuals['@I1@'].names) == 2
+
     def test_different_names_untouched(self):
-        """Distinct names in the same individual are kept."""
+        """Completely distinct names in the same individual are kept."""
         ind = _indi('@I1@', 'Antoine', 'Chile')
         ind.names.append(NameRecord('Tony /Smith/', 'tony', 'smith', 'AKA'))
         merged = _file(indis={'@I1@': ind})
