@@ -1,0 +1,161 @@
+0 HEAD
+1 SOUR Ancestry.com Family Trees
+2 VERS 1.0
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME John /Smith/
+2 GIVN John
+2 SURN Smith
+1 SEX M
+1 BIRT
+2 DATE 15 MAR 1842
+2 PLAC Boston, Suffolk, Massachusetts, USA
+1 DEAT
+2 DATE 4 JUL 1905
+2 PLAC Chicago, Cook, Illinois, USA
+1 CENS
+2 DATE 1880
+2 NOTE Occupation: Tailor; Marital Status: Married
+1 FAMS @F1@
+1 SOUR @S1@
+2 PAGE Census record, line 14
+0 @I2@ INDI
+1 NAME Mary /Jones/
+2 GIVN Mary
+2 SURN Jones
+1 SEX F
+1 BIRT
+2 DATE ABT 1848
+2 PLAC Salem, Essex, Massachusetts, USA
+1 DEAT
+2 DATE BEF 1910
+2 PLAC Chicago, Cook, Illinois, USA
+1 FAMS @F1@
+1 SOUR @S1@
+2 PAGE Census record, line 15
+0 @I3@ INDI
+1 NAME James /Smith/
+2 GIVN James
+2 SURN Smith
+1 SEX M
+1 BIRT
+2 DATE 20 DEC 1870
+2 PLAC Boston, Suffolk, Massachusetts, USA
+1 FAMC @F1@
+0 @I4@ INDI
+1 NAME Manon /Pérez/
+2 GIVN Manon
+2 SURN Pérez
+1 NAME Manon /Perez/
+2 GIVN Manon
+2 SURN Perez
+2 TYPE AKA
+1 SEX F
+1 BIRT
+2 DATE 1920
+2 PLAC Paris, Île-de-France, France
+1 FAMS @F2@
+0 @I5@ INDI
+1 NAME Αλέξανδρος /Παπαδόπουλος/
+2 GIVN Αλέξανδρος
+2 SURN Παπαδόπουλος
+1 SEX M
+1 BIRT
+2 DATE 1895
+2 PLAC Athens, Attica, Greece
+1 CENS
+2 DATE 1930
+2 NOTE Occupation: Merchant; Marital Status: Married
+1 FAMS @F2@
+0 @I6@ INDI
+1 NAME Sofia /Müller/
+2 GIVN Sofia
+2 SURN Müller
+1 SEX F
+1 BIRT
+2 DATE 1900
+2 PLAC Berlin, Brandenburg, Germany
+1 CENS
+2 DATE 1921
+2 NOTE Occupation: Student; Marital Status: Single
+1 FAMC @F2@
+0 @I7@ INDI
+1 NAME Robert /Brown/
+2 GIVN Robert
+2 SURN Brown
+1 SEX M
+1 BIRT
+2 DATE 10 JUN 1860
+2 PLAC London, England
+1 BIRT
+2 DATE 10 JUN 1860
+2 PLAC London, England
+1 DEAT
+2 DATE 1930
+2 PLAC London, England
+1 NOTE This note must be preserved exactly as written.
+1 FAMS @F3@
+0 @I8@ INDI
+1 NAME Elisabeth /Dupont/
+2 GIVN Elisabeth
+2 SURN Dupont
+1 SEX F
+1 BIRT
+2 DATE 1865
+2 PLAC Lyon, Rhône, France
+1 CENS
+2 DATE 1901
+2 NOTE Occupation: étudiante; Marital Status: Single
+1 FAMS @F3@
+0 @I9@ INDI
+1 NAME Nicola /Dellatolla/
+2 GIVN Nicola
+2 SURN Dellatolla
+1 SEX M
+1 BIRT
+2 DATE 1880
+1 FAMS @F4@
+0 @I10@ INDI
+1 NAME Lisa /Vido/
+2 GIVN Lisa
+2 SURN Vido
+1 SEX F
+1 FAMS @F4@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I3@
+1 MARR
+2 DATE 12 JUN 1869
+2 PLAC Boston, Suffolk, Massachusetts, USA
+1 SOUR @S1@
+2 PAGE Marriage record
+0 @F2@ FAM
+1 HUSB @I5@
+1 WIFE @I4@
+1 CHIL @I6@
+1 MARR
+2 DATE 1919
+2 PLAC Athens, Attica, Greece
+0 @F3@ FAM
+1 HUSB @I7@
+1 WIFE @I8@
+1 MARR
+2 DATE 1890
+2 PLAC London, England
+0 @F4@ FAM
+1 HUSB @I9@
+1 WIFE @I10@
+1 MARR
+2 DATE 26 DEC 1897
+2 PLAC Smyrna, Izmir, Turkey
+1 MARR
+2 DATE BEF 1903
+0 @S1@ SOUR
+1 TITL 1880 United States Federal Census
+1 AUTH Ancestry.com
+1 PUBL Ancestry.com Operations, Inc.
+0 TRLR
