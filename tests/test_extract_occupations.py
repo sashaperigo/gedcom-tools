@@ -121,6 +121,16 @@ class TestExtractOccupationFromNote:
                     '(no occupation)', 'keeping house', 'house wife'):
             assert val in IGNORED_OCCUPATIONS
 
+    def test_french_student_ignored(self):
+        # étudiante / étudiant — French for student
+        assert extract_occupation_from_note('Occupation: étudiante') is None
+        assert extract_occupation_from_note('Occupation: étudiant') is None
+
+    def test_french_child_ignored(self):
+        # enfant — French for child, not a meaningful occupation
+        assert extract_occupation_from_note('Occupation: Enfant') is None
+        assert extract_occupation_from_note('Occupation: enfant') is None
+
 
 # ---------------------------------------------------------------------------
 # Fixture sanity checks

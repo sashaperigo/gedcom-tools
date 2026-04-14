@@ -48,6 +48,10 @@ IGNORED_OCCUPATIONS: frozenset[str] = frozenset({
     '(no occupation)',
     'keeping house',
     'house wife',
+    # French equivalents
+    'étudiant',     # student (male)
+    'étudiante',    # student (female)
+    'enfant',       # child
 })
 
 # Occupation values whose lowercase form starts with one of these prefixes are
