@@ -2509,7 +2509,6 @@ function computeRelativePositions() {
       sibChGroups.get(parentKey).push([k, e]);
     }
 
-    const {x: rootNodeX} = _posCache.get(1) || {x: 0};
     // Track anchors already processed so a second sibling group for the same
     // anchor doesn't double-shift the whole row.
     const processedAnchors = new Set();
