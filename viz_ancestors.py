@@ -423,14 +423,21 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     events.append({**marr, 'event_idx': None, 'marr_idx': marr_idx,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
+        _deat_age_keywords = frozenset({'STILLBORN', 'INFANT', 'CHILD'})
+        age_at_death = next(
+            (e['age'].upper() for e in events
+             if e['tag'] == 'DEAT' and e.get('age') and e['age'].upper() in _deat_age_keywords),
+            None
+        )
         result[xref] = {
-            'name':       info['name'] or '?',
-            'birth_year': info['birth_year'],
-            'death_year': info['death_year'],
-            'sex':        info['sex'],
-            'events':     sort_events(events),
-            'notes':      info['notes'],
-            'sources':    src_list,
+            'name':         info['name'] or '?',
+            'birth_year':   info['birth_year'],
+            'death_year':   info['death_year'],
+            'sex':          info['sex'],
+            'events':       sort_events(events),
+            'notes':        info['notes'],
+            'sources':      src_list,
+            'age_at_death': age_at_death,
         }
     return result
 
@@ -2647,6 +2654,29 @@ function svgEl(tag, attrs) {
   return e;
 }
 
+// Append a small amber badge to a node <g> when the person died as a child,
+// infant, or stillborn.  Placed in the top-right corner of the node box.
+function drawDiedYoungBadge(g, nx, ny, ageAtDeath) {
+  if (!ageAtDeath) return;
+  const cx = nx + NODE_W - 11, cy = ny + 11;
+  const titleText = ageAtDeath === 'STILLBORN' ? 'Stillborn'
+                  : ageAtDeath === 'INFANT'    ? 'Died in infancy'
+                  :                              'Died in childhood';
+  const circle = svgEl('circle', { cx, cy, r: 8, fill: '#fbbf24', 'pointer-events': 'all' });
+  const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  titleEl.textContent = titleText;
+  circle.appendChild(titleEl);
+  g.appendChild(circle);
+  const sym = svgEl('text', {
+    x: cx, y: cy + 3,
+    'text-anchor': 'middle', fill: '#1c1917',
+    'font-size': 9, 'font-weight': 700,
+    'font-family': 'system-ui, sans-serif', 'pointer-events': 'none'
+  });
+  sym.textContent = '\\u2726';  // ✦ BLACK FOUR POINTED STAR
+  g.appendChild(sym);
+}
+
 const GEN_LABELS = ['You', 'Parents', 'Grandparents', 'Great-grandparents'];
 function genLabel(g) {
   if (g < GEN_LABELS.length) return GEN_LABELS[g];
@@ -2859,6 +2889,7 @@ function render() {
       yrEl.textContent = years;
       nodeG.appendChild(yrEl);
     }
+    drawDiedYoungBadge(nodeG, x, y, data.age_at_death);
     canvas.appendChild(nodeG);
 
     // Expand / collapse buttons — 16×16 polygon triangles, same size as side arrows
@@ -2986,6 +3017,7 @@ function render() {
       yt.textContent = yrs;
       rg.appendChild(yt);
     }
+    drawDiedYoungBadge(rg, rx, ry, nodeData.age_at_death);
     canvas.appendChild(rg);
   }
 
