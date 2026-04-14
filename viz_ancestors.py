@@ -755,6 +755,9 @@ header h1 { font-size: 16px; font-weight: 600; }
 .family-sex-f { color: #f9a8d4; font-size: 11px; }
 .family-marr-meta { color: #64748b; font-size: 11px; font-style: italic; padding: 1px 0 3px 0; }
 .family-children { padding-left: 12px; border-left: 1px solid #334155; margin: 2px 0 4px 0; }
+.family-halfsib-side { font-size: 12px; color: #94a3b8; margin-top: 6px; margin-bottom: 2px; }
+.family-halfsib-with { font-size: 12px; color: #64748b; font-style: italic; margin: 2px 0 2px 10px; }
+.family-unknown { color: #64748b; font-style: italic; }
 /* ── Section divider ────────────────────────────────────── */
 .timeline-section-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -2014,11 +2017,55 @@ function showDetail(xref) {
       fhtml += '</div>';
     }
 
-    // Siblings (sorted by birth year)
+    // Siblings (sorted by birth year) — only full siblings (same FAMC)
     const sibs = _sortByBirth((RELATIVES[xref] || {}).siblings || []);
     if (sibs.length) {
       fhtml += '<div class="family-sub"><span class="family-sub-heading">Siblings</span>';
       for (const sx of sibs) fhtml += _pr(sx);
+      fhtml += '</div>';
+    }
+
+    // Half-siblings: share exactly one parent; detected via CHILDREN map
+    const fullSibSet = new Set(sibs);
+    const halfSibSections = [];
+    for (const sharedXref of [fa, mo].filter(Boolean)) {
+      // All children of this parent excluding current person and full siblings
+      const halves = _sortByBirth(
+        (CHILDREN[sharedXref] || []).filter(cx => cx !== xref && !fullSibSet.has(cx))
+      );
+      if (!halves.length) continue;
+      // Group halves by their OTHER parent
+      const byOther = {};
+      for (const cx of halves) {
+        const [cfa, cmo] = PARENTS[cx] || [null, null];
+        const otherKey = (cfa === sharedXref ? cmo : cfa) || '__unknown__';
+        (byOther[otherKey] = byOther[otherKey] || []).push(cx);
+      }
+      halfSibSections.push({ sharedXref, byOther });
+    }
+    if (halfSibSections.length) {
+      fhtml += '<div class="family-sub"><span class="family-sub-heading">Half-siblings</span>';
+      for (const { sharedXref, byOther } of halfSibSections) {
+        const sp = PEOPLE[sharedXref];
+        const sharedName = sp ? escHtml(sp.name || '?') : '?';
+        const sharedLy = _ly(sp);
+        const sharedYears = sharedLy ? ` <span class="family-years">(${escHtml(sharedLy)})</span>` : '';
+        const sharedQ = JSON.stringify(sharedXref);
+        fhtml += `<div class="family-halfsib-side">On the side of <span class="family-link" onclick="showDetail(${sharedQ})">${sharedName}</span>${sharedYears}</div>`;
+        for (const [otherKey, cxList] of Object.entries(byOther)) {
+          const op = otherKey === '__unknown__' ? null : PEOPLE[otherKey];
+          const otherName = op ? escHtml(op.name || '?') : '?';
+          const otherLy = _ly(op);
+          const otherYears = otherLy ? ` <span class="family-years">(${escHtml(otherLy)})</span>` : '';
+          const otherLink = (otherKey !== '__unknown__')
+            ? `<span class="family-link" onclick="showDetail(${JSON.stringify(otherKey)})">${otherName}</span>${otherYears}`
+            : `<span class="family-unknown">unknown</span>`;
+          fhtml += `<div class="family-halfsib-with">with ${otherLink}</div>`;
+          fhtml += '<div class="family-children">';
+          cxList.forEach(cx => { fhtml += _pr(cx); });
+          fhtml += '</div>';
+        }
+      }
       fhtml += '</div>';
     }
 
@@ -2030,10 +2077,8 @@ function showDetail(xref) {
       const accounted = new Set();
       for (const marr of marrEvts) {
         const spXref = marr.spouse_xref;
-        const marrMeta = [marr.date, marr.place].filter(Boolean).join(' \xb7 ');
         if (spXref) {
           fhtml += _pr(spXref);
-          if (marrMeta) fhtml += `<div class="family-marr-meta">${escHtml(marrMeta)}</div>`;
           const shared = _sortByBirth(allCh.filter(cx => {
             const [cfa, cmo] = PARENTS[cx] || [null, null];
             return cfa === spXref || cmo === spXref;
@@ -2043,8 +2088,6 @@ function showDetail(xref) {
             shared.forEach(cx => { accounted.add(cx); fhtml += _pr(cx); });
             fhtml += '</div>';
           }
-        } else if (marrMeta) {
-          fhtml += `<div class="family-marr-meta">Married: ${escHtml(marrMeta)}</div>`;
         }
       }
       // Children not tied to any listed spouse
