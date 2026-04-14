@@ -1744,7 +1744,7 @@ function showDetail(xref) {
   {
     const xrefQA = JSON.stringify(xref).replace(/"/g, '&quot;');
     const akaEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
-      .filter(e => e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA' && e.note);
+      .filter(e => e._name_record && e.note);
     const addAkaBtn = `<button class="aka-btn" title="Add secondary name" style="font-size:11px;color:#475569;margin-left:4px" onclick="openAliasModal(${xrefQA},null,'','AKA',true)">&#43; alias</button>`;
     if (akaEvents.length) {
       const entries = akaEvents.map(e => {
@@ -1756,7 +1756,8 @@ function showDetail(xref) {
             ? `<button class="aka-btn" title="Edit alias" onclick="editEvent(${xrefQA},${e.event_idx},'FACT')">\u270f</button>`
             : '');
         const delBtn = `<button class="aka-btn del" title="Delete name" onclick="deleteAlias(${xrefQA},PEOPLE[${xrefQA}].events[${e._origIdx}])">\u2715</button>`;
-        return `<span class="aka-entry"><span style="font-style:italic">${escHtml(e.note)}</span>${editBtn}${delBtn}</span>`;
+        const typeLabel = (e.type && e.type.toUpperCase() !== 'AKA') ? `<span style="font-size:10px;color:#94a3b8;margin-right:2px">${escHtml(e.type)}:</span>` : '';
+        return `<span class="aka-entry">${typeLabel}<span style="font-style:italic">${escHtml(e.note)}</span>${editBtn}${delBtn}</span>`;
       }).join(' \xb7 ');
       akaDiv.innerHTML = entries + addAkaBtn;
     } else {
@@ -1826,7 +1827,7 @@ function showDetail(xref) {
   const allVisible = (data.events || []).map((e, i) => ({...e, _origIdx: i})).filter(e =>
     e.tag !== 'NATI' &&
     (e.tag === 'MARR' || e.date || e.place || e.note || e.type || e.cause || e.addr) &&
-    !(e.tag === 'FACT' && (e.type || '').toUpperCase() === 'AKA')
+    !e._name_record
   );
   const _keepInTimeline = e =>
     e.tag !== 'RELI' && (
@@ -1914,7 +1915,7 @@ function showDetail(xref) {
     return evts.map(evt => {
       const { prose, meta } = buildProse(evt);
       const color   = dotColor(evt);
-      const noteInl = evt.note ? evt.note.split('\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
+      const noteInl = evt.note ? evt.note.split('\\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
       const xrefQ   = JSON.stringify(xref).replace(/"/g, '&quot;');
       const delBtn  = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
       const editBtn = evt.event_idx !== null && evt.event_idx !== undefined
