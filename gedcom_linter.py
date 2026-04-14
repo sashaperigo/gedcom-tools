@@ -152,17 +152,35 @@ _DATE_RULES: list[tuple[str, str, int]] = [
     # "bet. YYYY-YYYY" or "between YYYY-YYYY"
     (r'^bet\.?\s+(\d{3,4})-(\d{3,4})$', r'BET \1 AND \2', re.I),
     (r'^between\s+(\d{3,4})-(\d{3,4})$', r'BET \1 AND \2', re.I),
-    # "bet[ween] X and Y"
-    (r'^bet(?:ween)?\.?\s+(\S+)\s+and\s+(\S+)$', r'BET \1 AND \2', re.I),
-    # Ordinal day numbers: "1st", "2nd", "3rd", "4th" etc.
-    (r'^(\d{1,2})(st|nd|rd|th)\s+', r'\1 ', re.I),
+    # "bet[ween] X and Y" — .+? allows multi-word date parts (e.g. "April 1962")
+    (r'^bet(?:ween)?\.?\s+(.+?)\s+and\s+(.+)$', r'BET \1 AND \2', re.I),
+    # "Jan." → "Jan"  (abbreviated months with trailing period)
+    (r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.', r'\1', re.I),
+    # "the Nth of Month" → "Nth Month"
+    (r'\bthe\s+(\d{1,2}(?:st|nd|rd|th)?)\s+of\s+', r'\1 ', re.I),
+    # Ordinal day numbers anywhere in the string: "1st", "2nd", "3rd", "4th" etc.
+    (r'(\d{1,2})(st|nd|rd|th)(\s+)', r'\1\3', re.I),
     # "Month D, YYYY" → "D Month YYYY"
     (r'^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$', r'\2 \1 \3', 0),
     # "D Month, YYYY" → "D Month YYYY"  (trailing comma)
     (r'^(\d{1,2})\s+([A-Za-z]+),\s*(\d{4})$', r'\1 \2 \3', 0),
     # "YYYY Month D" → "D Month YYYY"
     (r'^(\d{4})\s+([A-Za-z]+)\s+(\d{1,2})$', r'\3 \2 \1', 0),
+    # "Month D YYYY" → "D Month YYYY"  (no comma, no qualifier)
+    (r'^([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})$', r'\2 \1 \3', 0),
+    # "QUAL Month D, YYYY" → "QUAL D Month YYYY"  (qualifier already applied)
+    (r'^(BEF|AFT|ABT|CAL|EST|INT)\s+([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$',
+     r'\1 \3 \2 \4', re.I),
+    # "QUAL Month D YYYY" → "QUAL D Month YYYY"  (no comma)
+    (r'^(BEF|AFT|ABT|CAL|EST|INT)\s+([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})$',
+     r'\1 \3 \2 \4', re.I),
+    # "QUAL D Month, YYYY" → "QUAL D Month YYYY"  (trailing comma only)
+    (r'^(BEF|AFT|ABT|CAL|EST|INT)\s+(\d{1,2})\s+([A-Za-z]+),\s*(\d{4})$',
+     r'\1 \2 \3 \4', re.I),
 ]
+
+_MONTH_ABBREVS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
 
 def normalize_date(val: str) -> str:
@@ -177,14 +195,34 @@ def normalize_date(val: str) -> str:
       - "YYYY-YYYY" or full "date-date" range   → BET … AND …
       - "bet. YYYY-YYYY" / "between YYYY-YYYY"  → BET … AND …
       - "bet[ween] X and Y"                     → BET X AND Y
+      - "Jan." abbreviated months with period   → "Jan"
+      - "the Nth of Month"                      → "Nth Month"
       - "1st / 2nd / 3rd / 4th" ordinals        → bare number
       - "Month D, YYYY"                         → D Month YYYY
       - "D Month, YYYY" (trailing comma)        → D Month YYYY
       - "YYYY Month D"                          → D Month YYYY
+      - "Month D YYYY" (no comma)               → D Month YYYY
+      - Qualifier-prefixed reorder rules        → QUAL D Month YYYY
+      - ISO "YYYY-MM-DD"                        → D Month YYYY
+      - US "MM/DD/YYYY"                         → D Month YYYY
       - Non-English/full month names            → standard 3-letter abbrev
       - Collapse multiple spaces
     """
     v = val.strip()
+
+    # ISO date: "1985-01-15" → "15 JAN 1985"
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', v)
+    if m:
+        mo = int(m.group(2))
+        if 1 <= mo <= 12:
+            v = f'{int(m.group(3))} {_MONTH_ABBREVS[mo - 1]} {m.group(1)}'
+
+    # US slash date: "01/15/1985" → "15 JAN 1985"
+    m = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', v)
+    if m:
+        mo = int(m.group(1))
+        if 1 <= mo <= 12:
+            v = f'{int(m.group(2))} {_MONTH_ABBREVS[mo - 1]} {m.group(3)}'
 
     # "full date - full date" range (e.g. "Abt. 1569 - 1583") — handled
     # separately because it requires .strip() on captured groups.

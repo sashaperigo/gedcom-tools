@@ -341,7 +341,7 @@ class TestEditEventEndpoint:
         original = _ged_text(ged)
         resp = post('/api/edit_event', {
             'xref': '@I1@', 'tag': 'BIRT', 'event_idx': 0,
-            'updates': {'DATE': '1900-01-05'},
+            'updates': {'DATE': 'not a date at all'},
         })
         assert resp['ok'] is False
         assert 'error' in resp
@@ -386,7 +386,7 @@ class TestAddEventEndpoint:
         original = _ged_text(ged)
         resp = post('/api/add_event', {
             'xref': '@I2@', 'tag': 'RESI',
-            'fields': {'DATE': '1985-06-15'},
+            'fields': {'DATE': 'not a date at all'},
         })
         assert resp['ok'] is False
         assert _ged_text(ged) == original

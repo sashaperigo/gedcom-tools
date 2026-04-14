@@ -108,12 +108,6 @@ class TestNormalization:
 # ---------------------------------------------------------------------------
 
 class TestInvalidDates:
-    def test_iso_format_rejected(self):
-        # "1900-01-05" is not a date range and can't be normalized
-        result, err = _normalize_event_date('1900-01-05')
-        assert err is not None
-        assert 'Invalid date' in err
-
     def test_completely_unparseable(self):
         result, err = _normalize_event_date('not a date at all')
         assert err is not None
@@ -124,8 +118,96 @@ class TestInvalidDates:
         assert err is not None
 
     def test_error_includes_original_value(self):
-        _, err = _normalize_event_date('1900-01-05')
-        assert '1900-01-05' in err
+        _, err = _normalize_event_date('totally unparseable xyz')
+        assert 'totally unparseable xyz' in err
+
+
+# ---------------------------------------------------------------------------
+# Natural-language date inputs — TDD: these define the target behavior
+# ---------------------------------------------------------------------------
+
+class TestNaturalLanguageDates:
+    def test_before_month_day_comma_year(self):
+        # Primary bug: "before April 26, 1962" was erroring
+        result, err = _normalize_event_date('before April 26, 1962')
+        assert err is None
+        assert result == 'BEF 26 APR 1962'
+
+    def test_after_month_day_comma_year(self):
+        result, err = _normalize_event_date('after April 26, 1962')
+        assert err is None
+        assert result == 'AFT 26 APR 1962'
+
+    def test_about_month_day_comma_year(self):
+        result, err = _normalize_event_date('about April 26, 1962')
+        assert err is None
+        assert result == 'ABT 26 APR 1962'
+
+    def test_before_day_month_comma_year(self):
+        # "before 26 April, 1962" — trailing comma after month
+        result, err = _normalize_event_date('before 26 April, 1962')
+        assert err is None
+        assert result == 'BEF 26 APR 1962'
+
+    def test_before_month_day_no_comma(self):
+        # Should already work, verify it does
+        result, err = _normalize_event_date('before April 26 1962')
+        assert err is None
+        assert result == 'BEF 26 APR 1962'
+
+    def test_before_month_year_only(self):
+        # Should already work
+        result, err = _normalize_event_date('before April 1962')
+        assert err is None
+        assert result == 'BEF APR 1962'
+
+    def test_between_multi_word_dates(self):
+        # "between April 1962 and June 1963" — multi-word parts require .+?
+        result, err = _normalize_event_date('between April 1962 and June 1963')
+        assert err is None
+        assert result == 'BET APR 1962 AND JUN 1963'
+
+    def test_month_abbrev_with_period(self):
+        # "Jan. 5, 1991" → "5 JAN 1991"
+        result, err = _normalize_event_date('Jan. 5, 1991')
+        assert err is None
+        assert result == '5 JAN 1991'
+
+    def test_before_month_abbrev_with_period(self):
+        # "before Jan. 5, 1991" → "BEF 5 JAN 1991"
+        result, err = _normalize_event_date('before Jan. 5, 1991')
+        assert err is None
+        assert result == 'BEF 5 JAN 1991'
+
+    def test_us_slash_date(self):
+        # "01/15/1985" → "15 JAN 1985"
+        result, err = _normalize_event_date('01/15/1985')
+        assert err is None
+        assert result == '15 JAN 1985'
+
+    def test_iso_date_normalizes(self):
+        # "1985-01-15" → "15 JAN 1985"  (ISO format now normalizes instead of errors)
+        result, err = _normalize_event_date('1985-01-15')
+        assert err is None
+        assert result == '15 JAN 1985'
+
+    def test_before_ordinal_month_year(self):
+        # Should already work
+        result, err = _normalize_event_date('before 5th January 1900')
+        assert err is None
+        assert result == 'BEF 5 JAN 1900'
+
+    def test_before_the_nth_of_month_year(self):
+        # "before the 5th of January, 1900" → "BEF 5 JAN 1900"
+        result, err = _normalize_event_date('before the 5th of January, 1900')
+        assert err is None
+        assert result == 'BEF 5 JAN 1900'
+
+    def test_circa_month_year(self):
+        # Should already work
+        result, err = _normalize_event_date('circa April 1962')
+        assert err is None
+        assert result == 'ABT APR 1962'
 
 
 # ---------------------------------------------------------------------------
