@@ -2402,8 +2402,18 @@ function computeRelativePositions() {
 
     // Siblings: males go LEFT, females go RIGHT (after any new spouses).
     // Each sibling group occupies 1 + (number of sibling's spouses) slots.
+    // Sort chronologically so the leftmost sibling is always the earliest born.
+    // For male anchors (siblings left), first-iterated lands nearest the anchor
+    // (rightmost among siblings), so we reverse the sorted order.
+    // We preserve the original array index as the cache key so _sibSpouseIdx
+    // (spouse cycle state) remains stable across re-renders.
+    const _sibsSorted = rels.siblings
+      .map((xref, origIdx) => ({xref, origIdx, by: (PEOPLE[xref] || {}).birth_year || 9999}))
+      .sort((a, b) => a.by - b.by);
+    if (male) _sibsSorted.reverse();
+
     let newSibOffset = 0;
-    rels.siblings.forEach((xref, i) => {
+    _sibsSorted.forEach(({xref, origIdx: i}) => {
       const sibSpouses = (rels.sib_spouses || {})[xref] || [];
       const existingKey = xrefToKey.get(xref);
       if (existingKey !== undefined) {
