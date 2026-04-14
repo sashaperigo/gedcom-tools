@@ -44,6 +44,8 @@ from gedcom_linter import (
     scan_repeated_citation_text,
     fix_repeated_citation_text,
     normalize_date,
+    scan_sole_event_type_alternate,
+    fix_sole_event_type_alternate,
 )
 
 
@@ -2001,3 +2003,182 @@ class TestFixBirthFromBapm:
         assert 'EST 1870' not in content
         # I2 should get the estimated birth date
         assert 'EST 1890' in content
+
+
+# ===========================================================================
+# scan_sole_event_type_alternate / fix_sole_event_type_alternate
+# ===========================================================================
+
+class TestSoleEventTypeAlternate:
+
+    # --- scan ---
+
+    def test_scan_sole_birt_with_type_alternate(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 TYPE alternate
+            0 TRLR
+        """)
+        hits = scan_sole_event_type_alternate(str(p))
+        assert len(hits) == 1
+        assert hits[0][1] == 'BIRT'
+
+    def test_scan_sole_deat_with_type_alternate(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 DEAT
+            2 DATE 1910
+            2 TYPE alternate
+            0 TRLR
+        """)
+        hits = scan_sole_event_type_alternate(str(p))
+        assert len(hits) == 1
+        assert hits[0][1] == 'DEAT'
+
+    def test_scan_no_hit_when_two_births(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 15 MAR 1842
+            1 BIRT
+            2 DATE ABT 1840
+            2 TYPE alternate
+            0 TRLR
+        """)
+        assert scan_sole_event_type_alternate(str(p)) == []
+
+    def test_scan_no_hit_when_no_type_alternate(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 15 MAR 1842
+            0 TRLR
+        """)
+        assert scan_sole_event_type_alternate(str(p)) == []
+
+    def test_scan_case_insensitive(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 TYPE Alternate
+            0 TRLR
+        """)
+        assert len(scan_sole_event_type_alternate(str(p))) == 1
+
+    def test_scan_other_type_value_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 TYPE calculated
+            0 TRLR
+        """)
+        assert scan_sole_event_type_alternate(str(p)) == []
+
+    def test_scan_multiple_individuals(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 TYPE alternate
+            0 @I2@ INDI
+            1 BIRT
+            2 DATE 10 JUN 1860
+            1 BIRT
+            2 DATE ABT 1860
+            2 TYPE alternate
+            0 @I3@ INDI
+            1 DEAT
+            2 DATE 1930
+            2 TYPE alternate
+            0 TRLR
+        """)
+        hits = scan_sole_event_type_alternate(str(p))
+        # I1 (sole BIRT) and I3 (sole DEAT) are flagged; I2 has two BIRTs so not flagged
+        assert len(hits) == 2
+        xrefs = {h[2] for h in hits}
+        assert '@I1@' in xrefs
+        assert '@I3@' in xrefs
+        assert '@I2@' not in xrefs
+
+    # --- fix ---
+
+    def test_fix_removes_type_alternate_line(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 TYPE alternate
+            0 TRLR
+        """)
+        count = fix_sole_event_type_alternate(str(p))
+        assert count == 1
+        assert '2 TYPE alternate' not in p.read_text(encoding='utf-8')
+
+    def test_fix_preserves_date_and_other_fields(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 PLAC Boston, Massachusetts
+            2 TYPE alternate
+            0 TRLR
+        """)
+        fix_sole_event_type_alternate(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '2 DATE ABT 1850' in content
+        assert '2 PLAC Boston, Massachusetts' in content
+        assert '2 TYPE alternate' not in content
+
+    def test_fix_leaves_two_birt_alternate_alone(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 15 MAR 1842
+            1 BIRT
+            2 DATE ABT 1840
+            2 TYPE alternate
+            0 TRLR
+        """)
+        count = fix_sole_event_type_alternate(str(p))
+        assert count == 0
+        assert '2 TYPE alternate' in p.read_text(encoding='utf-8')
+
+    def test_fix_idempotent(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 TYPE alternate
+            0 TRLR
+        """)
+        fix_sole_event_type_alternate(str(p))
+        count2 = fix_sole_event_type_alternate(str(p))
+        assert count2 == 0
+
+    def test_fix_dry_run_does_not_write(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1850
+            2 TYPE alternate
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        fix_sole_event_type_alternate(str(p), dry_run=True)
+        assert p.read_text(encoding='utf-8') == original

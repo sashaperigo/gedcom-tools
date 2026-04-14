@@ -3730,6 +3730,131 @@ def fix_curly_quotes(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Sole-event TYPE alternate
+# ---------------------------------------------------------------------------
+
+def scan_sole_event_type_alternate(path: str) -> list[tuple[int, str, str]]:
+    """
+    Return (lineno, tag, xref) for every '2 TYPE alternate' sub-line that
+    belongs to a BIRT or DEAT event when that event is the *only* BIRT/DEAT
+    for the individual.
+
+    If an individual has two BIRT events and one is marked TYPE alternate,
+    that is intentional (it's the alternate birth record) and is NOT flagged.
+    Only when the event is the sole occurrence of its type is the TYPE
+    alternate label meaningless.
+    """
+    violations: list[tuple[int, str, str]] = []
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    _TAGS = ('BIRT', 'DEAT')
+    current_xref: str | None = None
+    # For each tag, list of (event_start_lineno_0indexed, type_alternate_lineno_0indexed)
+    # We collect per-individual, then decide after the record ends.
+    event_info: dict[str, list[tuple[int, int | None]]] = {}  # tag → [(event_start, type_lineno)]
+
+    def _flush(xref: str | None) -> None:
+        if xref is None:
+            return
+        for tag, events in event_info.items():
+            if len(events) == 1:
+                _, type_lineno = events[0]
+                if type_lineno is not None:
+                    violations.append((type_lineno + 1, tag, xref))
+
+    i = 0
+    in_indi = False
+    current_event_tag: str | None = None
+    current_event_start: int | None = None
+    current_type_lineno: int | None = None  # 0-based index of '2 TYPE alternate' in current event
+
+    while i < len(lines):
+        raw = lines[i].rstrip('\n')
+
+        if re.match(r'^0 ', raw):
+            # End of previous record — flush
+            if current_event_tag and in_indi:
+                event_info.setdefault(current_event_tag, []).append(
+                    (current_event_start, current_type_lineno)
+                )
+            _flush(current_xref)
+
+            in_indi = bool(re.match(r'^0 @[^@]+@ INDI\b', raw))
+            m = re.match(r'^0 (@[^@]+@)', raw)
+            current_xref = m.group(1) if (m and in_indi) else None
+            event_info = {}
+            current_event_tag = None
+            current_event_start = None
+            current_type_lineno = None
+            i += 1
+            continue
+
+        if not in_indi:
+            i += 1
+            continue
+
+        m1 = re.match(r'^1 ([A-Z]+)', raw)
+        if m1:
+            # Close previous event block
+            if current_event_tag is not None:
+                event_info.setdefault(current_event_tag, []).append(
+                    (current_event_start, current_type_lineno)
+                )
+            tag1 = m1.group(1)
+            if tag1 in _TAGS:
+                current_event_tag = tag1
+                current_event_start = i
+                current_type_lineno = None
+            else:
+                current_event_tag = None
+                current_event_start = None
+                current_type_lineno = None
+            i += 1
+            continue
+
+        if current_event_tag and re.match(r'^2 TYPE\s+alternate\s*$', raw, re.IGNORECASE):
+            current_type_lineno = i
+
+        i += 1
+
+    # End of file — flush last record
+    if current_event_tag and in_indi:
+        event_info.setdefault(current_event_tag, []).append(
+            (current_event_start, current_type_lineno)
+        )
+    _flush(current_xref)
+
+    return violations
+
+
+def fix_sole_event_type_alternate(path: str, dry_run: bool = False) -> int:
+    """
+    Remove '2 TYPE alternate' lines from BIRT/DEAT events when the individual
+    has only one event of that type.
+
+    Returns the number of lines removed.
+    """
+    hits = scan_sole_event_type_alternate(path)
+    if not hits:
+        return 0
+
+    # Convert to a set of 1-based line numbers to drop
+    lines_to_remove: set[int] = {lineno for lineno, _tag, _xref in hits}
+
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    out = [line for i, line in enumerate(lines, 1) if i not in lines_to_remove]
+
+    if not dry_run:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(out)
+
+    return len(lines_to_remove)
+
+
+# ---------------------------------------------------------------------------
 # Programmatic all-fixes API
 # ---------------------------------------------------------------------------
 
@@ -3781,6 +3906,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_duplicate_resi(path, dry_run=dry_run)
     fixes_applied += fix_bapm_without_birth(path, dry_run=dry_run)
     fixes_applied += fix_bare_events(path, dry_run=dry_run)
+    fixes_applied += fix_sole_event_type_alternate(path, dry_run=dry_run)
     fixes_applied += fix_sort_events(path, dry_run=dry_run)
     # Run whitespace strip again — some fixers (e.g. fix_name_pieces) can
     # introduce trailing whitespace on blank CONT lines.
