@@ -741,6 +741,20 @@ header h1 { font-size: 16px; font-weight: 600; }
 .also-lived-heading { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
   color: #475569; margin-bottom: 10px; margin-top: 16px; display: block; }
 .also-lived-heading:first-child { margin-top: 0; }
+/* ── Family section ─────────────────────────────────────── */
+#detail-family.has-content { border-top: 1px solid #334155; padding-top: 14px; margin-top: 14px; }
+.family-sub { margin-bottom: 8px; }
+.family-sub-heading { display: block; font-size: 10px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px 0; }
+.family-sub:not(:first-child) .family-sub-heading { margin-top: 10px; }
+.family-row { display: flex; align-items: baseline; gap: 5px; padding: 2px 0; font-size: 13px; }
+.family-link { color: #93c5fd; text-decoration: underline; cursor: pointer; }
+.family-link:hover { color: #bfdbfe; }
+.family-years { color: #64748b; font-size: 11px; }
+.family-sex-m { color: #93c5fd; font-size: 11px; }
+.family-sex-f { color: #f9a8d4; font-size: 11px; }
+.family-marr-meta { color: #64748b; font-size: 11px; font-style: italic; padding: 1px 0 3px 0; }
+.family-children { padding-left: 12px; border-left: 1px solid #334155; margin: 2px 0 4px 0; }
 /* ── Section divider ────────────────────────────────────── */
 .timeline-section-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -911,6 +925,7 @@ header h1 { font-size: 16px; font-weight: 600; }
       <div id="detail-events"></div>
     </div>
     <div id="detail-also-lived"></div>
+    <div id="detail-family"></div>
     <div id="detail-facts"></div>
     <div id="detail-sources"></div>
   </div>
@@ -927,6 +942,10 @@ const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const RELATIVES = __RELATIVES_JSON__;
 const PARENTS = __PARENTS_JSON__;
+const CHILDREN = {};
+for (const [cx, [fa, mo]] of Object.entries(PARENTS)) {
+  for (const p of [fa, mo]) { if (p) { (CHILDREN[p] = CHILDREN[p] || []).push(cx); } }
+}
 const ROOT_XREF = __ROOT_XREF_JSON__;
 const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;
 const ALL_PLACES = __ALL_PLACES_JSON__;
@@ -1952,6 +1971,95 @@ function showDetail(xref) {
 
   alsoLivedDiv.innerHTML = bottomHtml;
   alsoLivedDiv.className = bottomHtml ? 'has-content' : '';
+
+  // ── Family section ────────────────────────────────────────
+  const familyDiv = document.getElementById('detail-family');
+  {
+    // Life-year string, e.g. "1883\u20131941" or "1910\u2013"
+    const _ly = p => {
+      if (!p) return '';
+      const b = p.birth_year || '', d = p.death_year || '';
+      return (b || d) ? `${b}\u2013${d}` : '';
+    };
+    // Sex symbol span
+    const _sx = p => !p ? '' :
+      p.sex === 'M' ? '<span class="family-sex-m">\u2642</span>' :
+      p.sex === 'F' ? '<span class="family-sex-f">\u2640</span>' : '';
+    // Clickable person row
+    const _pr = px => {
+      const p = PEOPLE[px];
+      const name = p ? escHtml(p.name || '?') : '?';
+      const ly = _ly(p);
+      const sx = _sx(p);
+      const pxQ = JSON.stringify(px);
+      const link = `<span class="family-link" onclick="showDetail(${pxQ})">${name}</span>`;
+      const years = ly ? `<span class="family-years">(${escHtml(ly)})</span>` : '';
+      return `<div class="family-row">${sx}${link}${years}</div>`;
+    };
+    // Sort xref list by birth year ascending
+    const _sortByBirth = arr => arr.slice().sort((a, b) => {
+      const ay = (PEOPLE[a] || {}).birth_year || '9999';
+      const by_ = (PEOPLE[b] || {}).birth_year || '9999';
+      return ay < by_ ? -1 : ay > by_ ? 1 : 0;
+    });
+
+    let fhtml = '';
+
+    // Parents
+    const [fa, mo] = PARENTS[xref] || [null, null];
+    if (fa || mo) {
+      fhtml += '<div class="family-sub"><span class="family-sub-heading">Parents</span>';
+      if (fa) fhtml += _pr(fa);
+      if (mo) fhtml += _pr(mo);
+      fhtml += '</div>';
+    }
+
+    // Siblings (sorted by birth year)
+    const sibs = _sortByBirth((RELATIVES[xref] || {}).siblings || []);
+    if (sibs.length) {
+      fhtml += '<div class="family-sub"><span class="family-sub-heading">Siblings</span>';
+      for (const sx of sibs) fhtml += _pr(sx);
+      fhtml += '</div>';
+    }
+
+    // Spouses & Children
+    const marrEvts = (data.events || []).filter(e => e.tag === 'MARR');
+    const allCh = CHILDREN[xref] || [];
+    if (marrEvts.length || allCh.length) {
+      fhtml += '<div class="family-sub"><span class="family-sub-heading">Spouses &amp; Children</span>';
+      const accounted = new Set();
+      for (const marr of marrEvts) {
+        const spXref = marr.spouse_xref;
+        const marrMeta = [marr.date, marr.place].filter(Boolean).join(' \xb7 ');
+        if (spXref) {
+          fhtml += _pr(spXref);
+          if (marrMeta) fhtml += `<div class="family-marr-meta">${escHtml(marrMeta)}</div>`;
+          const shared = _sortByBirth(allCh.filter(cx => {
+            const [cfa, cmo] = PARENTS[cx] || [null, null];
+            return cfa === spXref || cmo === spXref;
+          }));
+          if (shared.length) {
+            fhtml += '<div class="family-children">';
+            shared.forEach(cx => { accounted.add(cx); fhtml += _pr(cx); });
+            fhtml += '</div>';
+          }
+        } else if (marrMeta) {
+          fhtml += `<div class="family-marr-meta">Married: ${escHtml(marrMeta)}</div>`;
+        }
+      }
+      // Children not tied to any listed spouse
+      const unaccounted = _sortByBirth(allCh.filter(cx => !accounted.has(cx)));
+      if (unaccounted.length) {
+        fhtml += '<div class="family-children">';
+        unaccounted.forEach(cx => { fhtml += _pr(cx); });
+        fhtml += '</div>';
+      }
+      fhtml += '</div>';
+    }
+
+    familyDiv.innerHTML = fhtml;
+    familyDiv.className = fhtml ? 'has-content' : '';
+  }
 
   const sourcesDiv = document.getElementById('detail-sources');
   const srcs = (data.sources || []).slice().sort((a, b) => (a.title||'').localeCompare(b.title||''));
