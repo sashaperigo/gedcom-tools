@@ -11,14 +11,15 @@ INDI records (BIRT / DEAT):
 FAM records (MARR):
   Two MARR blocks are duplicates when:
     • same PLAC (or one absent)
-    • compatible DATE — one absent, or neither has a BEF/AFT prefix and both
-      contain the same 4-digit year (so "5 SEP 1920", "ABT 1920", and "1920"
-      all match each other)
+    • compatible DATE — one absent; or both share the same 4-digit year
+      (so "5 SEP 1920", "ABT 1920", and "1920" all match); or one is a
+      BEF/AFT bound and the other's year strictly falls inside it
+      (e.g. "26 DEC 1897" matches "BEF 1903" because 1897 < 1903).
     • no conflicting ADDR — one absent, or both equal
 
-  BEF/AFT prefixes are directional bounds that never match anything except an
-  identical string. Different venues (ADDR) are a clear signal of a genuine
-  second ceremony and are preserved.
+  Two BEF/AFT bounds never match each other unless identical. Different
+  venues (ADDR) are a clear signal of a genuine second ceremony and are
+  preserved.
 
 When duplicates are found, the richest block (most non-null sub-fields) is kept
 and any source sub-blocks from the others that are not already present are
@@ -53,16 +54,43 @@ _BOUND_RE = re.compile(r'^(BEF|AFT)\s+', re.IGNORECASE)
 def _marr_dates_compatible(da: str | None, db: str | None) -> bool:
     """True if da and db could plausibly refer to the same marriage event.
 
-    Null matches anything. BEF/AFT are directional bounds and only match an
-    identical string. Otherwise two dates are compatible when they share the
-    same 4-digit year, so "5 SEP 1920", "ABT 1920", and "1920" all match.
+    Null matches anything. Otherwise:
+      • Identical strings always match.
+      • If both have BEF/AFT prefixes, they must be identical (handled above).
+      • If exactly one has a BEF/AFT prefix, the other is compatible when its
+        year strictly falls inside the bound — e.g. "26 DEC 1897" is a more
+        specific version of "BEF 1903" (1897 < 1903).  The same-year case is
+        NOT compatible ("1920" is not strictly before "BEF 1920").
+      • Otherwise two dates are compatible when they share the same 4-digit
+        year, so "5 SEP 1920", "ABT 1920", and "1920" all match.
     """
     if not da or not db:
         return True
     if da == db:
         return True
-    if _BOUND_RE.match(da) or _BOUND_RE.match(db):
+
+    bound_a = _BOUND_RE.match(da)
+    bound_b = _BOUND_RE.match(db)
+
+    if bound_a and bound_b:
+        # Both are directional bounds and not identical — not compatible.
         return False
+
+    if bound_a or bound_b:
+        # Exactly one side is a BEF/AFT bound.
+        bound_str, other_str = (da, db) if bound_a else (db, da)
+        prefix = _BOUND_RE.match(bound_str).group(1).upper()
+        y_bound = _YEAR_RE.search(bound_str)
+        y_other = _YEAR_RE.search(other_str)
+        if not y_bound or not y_other:
+            return False
+        bound_year = int(y_bound.group(1))
+        other_year = int(y_other.group(1))
+        if prefix == 'BEF':
+            return other_year < bound_year
+        else:  # AFT
+            return other_year > bound_year
+
     ya, yb = _YEAR_RE.search(da), _YEAR_RE.search(db)
     return bool(ya and yb and ya.group(1) == yb.group(1))
 
