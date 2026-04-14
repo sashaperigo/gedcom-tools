@@ -970,8 +970,8 @@ header h1 { font-size: 16px; font-weight: 600; }
       <div id="detail-events"></div>
     </div>
     <div id="detail-also-lived"></div>
-    <div id="detail-family"></div>
     <div id="detail-facts"></div>
+    <div id="detail-family"></div>
     <div id="detail-sources"></div>
   </div>
 </div>
