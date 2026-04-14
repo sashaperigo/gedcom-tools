@@ -2532,7 +2532,12 @@ function computeRelativePositions() {
       if (processedAnchors.has(anchorK)) continue;
       processedAnchors.add(anchorK);
 
-      const shift = sibEntry.x < rootNodeX
+      // Compare the sibling's center to the occupied zone's center to determine
+      // which way to push.  Using rootNodeX was wrong: it's at the bottom-center
+      // of the tree and has no relationship to where the collision is happening.
+      const occupiedCenter = (occupied.minX + occupied.maxX) / 2;
+      const isLeft = (sibEntry.x + NODE_W / 2) < occupiedCenter;
+      const shift = isLeft
         ? occupied.minX - H_GAP - sibChMaxX   // negative → push left
         : occupied.maxX + H_GAP - sibChMinX;  // positive → push right
 
