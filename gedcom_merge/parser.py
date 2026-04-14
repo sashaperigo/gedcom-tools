@@ -230,6 +230,7 @@ def _parse_individual(node: GedcomNode) -> Individual:
                 surname=surname,
                 name_type=name_type,
                 citations=name_citations,
+                raw=child,
             ))
         elif tag == 'SEX':
             sex = val.upper() if val else None

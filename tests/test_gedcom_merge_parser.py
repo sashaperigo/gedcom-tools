@@ -475,3 +475,61 @@ class TestBuildRecords:
         # NOTE: CONT at level 1 gets folded into level 0
         # The NOTE node's children should be empty (CONT consumed)
         assert '\nLine two' in note.value or len(note.children) == 0
+
+
+# ---------------------------------------------------------------------------
+# NameRecord.raw preservation — GIVN/SURN must survive a parse→write round-trip
+# ---------------------------------------------------------------------------
+
+class TestNameRawPreservation:
+    GED = textwrap.dedent("""\
+        0 HEAD
+        1 GEDC
+        2 VERS 5.5.1
+        0 @I1@ INDI
+        1 NAME John /Smith/
+        2 GIVN John
+        2 SURN Smith
+        2 SOUR @S1@
+        1 NAME Johnny /Smith/
+        2 GIVN Johnny
+        2 SURN Smith
+        2 TYPE AKA
+        1 SEX M
+        0 TRLR
+    """)
+
+    def test_namerecord_has_raw(self, tmp_path):
+        """parse_gedcom must populate NameRecord.raw with the NAME GedcomNode."""
+        ged = tmp_path / 'test.ged'
+        ged.write_text(self.GED, encoding='utf-8')
+        gf = parse_gedcom(str(ged))
+        ind = gf.individuals['@I1@']
+        for nm in ind.names:
+            assert nm.raw is not None, f'NameRecord.raw is None for {nm.full!r}'
+            assert nm.raw.tag == 'NAME', f'Expected NAME node, got {nm.raw.tag}'
+
+    def test_givn_surn_survive_write(self, tmp_path):
+        """write_gedcom must preserve GIVN and SURN sub-tags on every NAME."""
+        from gedcom_merge.writer import write_gedcom
+        ged = tmp_path / 'test.ged'
+        ged.write_text(self.GED, encoding='utf-8')
+        gf = parse_gedcom(str(ged))
+        out = tmp_path / 'out.ged'
+        write_gedcom(gf, str(out))
+        text = out.read_text(encoding='utf-8')
+        assert '2 GIVN John' in text,   'GIVN sub-tag lost on primary name'
+        assert '2 SURN Smith' in text,  'SURN sub-tag lost on primary name'
+        assert '2 GIVN Johnny' in text, 'GIVN sub-tag lost on AKA name'
+
+    def test_givn_surn_survive_dedup_names(self, tmp_path):
+        """fix_duplicate_names must not cause write_gedcom to drop GIVN/SURN."""
+        import sys
+        sys.path.insert(0, str(tmp_path.parent.parent))
+        from gedcom_linter import fix_duplicate_names
+        ged = tmp_path / 'test.ged'
+        ged.write_text(self.GED, encoding='utf-8')
+        fix_duplicate_names(str(ged))
+        text = ged.read_text(encoding='utf-8')
+        assert '2 GIVN John' in text,  'GIVN dropped after fix_duplicate_names'
+        assert '2 SURN Smith' in text, 'SURN dropped after fix_duplicate_names'

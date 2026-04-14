@@ -97,6 +97,7 @@ class NameRecord:
     surname: str                # e.g. "Bonnici"
     name_type: str | None       # "AKA", "married", etc.
     citations: list[CitationRecord] = field(default_factory=list)
+    raw: 'GedcomNode' = field(default_factory=lambda: GedcomNode(1, '', 'NAME', None))
 
 
 # ---------------------------------------------------------------------------
