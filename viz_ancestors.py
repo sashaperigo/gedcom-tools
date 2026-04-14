@@ -559,9 +559,13 @@ header h1 { font-size: 16px; font-weight: 600; }
   background: #334155; color: #f1f5f9; }
 #search-results li b { font-weight: 700; color: #f1f5f9; }
 #search-results li .srch-dates { color: #64748b; font-size: 12px; margin-left: 4px; }
-#viewport { overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; }
+#viewport { position: relative; overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; }
 #viewport.dragging { cursor: grabbing; }
 #tree { display: block; width: 100%; height: 100%; }
+#gen-labels { position: absolute; left: 0; top: 0; bottom: 0; width: 90px;
+  pointer-events: none; overflow: hidden; }
+.gen-label { position: absolute; left: 8px; font-size: 11px; color: #64748b;
+  font-family: system-ui, sans-serif; transform: translateY(-50%); white-space: nowrap; }
 /* ── Detail panel shell ─────────────────────────────────── */
 #detail-panel {
   position: fixed; top: var(--header-h, 45px); right: 0;
@@ -819,6 +823,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   </div>
 </header>
 <div id="viewport">
+<div id="gen-labels"></div>
 <svg id="tree" xmlns="http://www.w3.org/2000/svg">
   <g id="canvas"></g>
 </svg>
@@ -2233,6 +2238,10 @@ function applyTransform() {
   document.getElementById('canvas').setAttribute(
     'transform', `translate(${tx}, ${ty}) scale(${scale})`
   );
+  // Generation labels track only vertical pan — never horizontal.
+  for (const lbl of document.getElementById('gen-labels').children) {
+    lbl.style.top = (parseFloat(lbl.dataset.canvasY) * scale + ty) + 'px';
+  }
 }
 
 function genOf(k) { return Math.floor(Math.log2(k)); }
@@ -2466,6 +2475,63 @@ function computeRelativePositions() {
     sibChildren.forEach((cx, j) => {
       _relPosCache.set(`sibch:${k}:${i}:${j}`, {x: startX + j * slotW, y: sibY + NODE_H + V_GAP, xref: cx, stemX, stemY});
     });
+  }
+
+  // Pass 3: resolve collisions — push sibling groups outward if their children
+  // overlap the root's children (both groups sit at the same Y level).
+  {
+    const rootChEntries = [..._relPosCache.entries()].filter(([k]) => k.startsWith('ch:'));
+    if (rootChEntries.length > 0) {
+      const rootMinX = Math.min(...rootChEntries.map(([, e]) => e.x));
+      const rootMaxX = Math.max(...rootChEntries.map(([, e]) => e.x)) + NODE_W;
+
+      // Group sibling-child entries by their parent sibling key
+      const sibChGroups = new Map();
+      for (const [k, e] of _relPosCache.entries()) {
+        if (!k.startsWith('sibch:')) continue;
+        const parts = k.split(':');
+        const parentKey = `sib:${parts[1]}:${parts[2]}`;
+        if (!sibChGroups.has(parentKey)) sibChGroups.set(parentKey, []);
+        sibChGroups.get(parentKey).push([k, e]);
+      }
+
+      const {x: rootNodeX} = _posCache.get(1) || {x: 0};
+
+      for (const [parentKey, chEntries] of sibChGroups.entries()) {
+        const sibEntry = _relPosCache.get(parentKey);
+        if (!sibEntry || sibEntry.existing) continue;
+
+        const sibChMinX = Math.min(...chEntries.map(([, e]) => e.x));
+        const sibChMaxX = Math.max(...chEntries.map(([, e]) => e.x)) + NODE_W;
+
+        // Check for horizontal overlap with root children
+        if (sibChMaxX <= rootMinX || sibChMinX >= rootMaxX) continue;
+
+        const isLeft = sibEntry.x < rootNodeX;
+        const [, k, i] = parentKey.split(':');
+        const spKey = `sibsp:${k}:${i}`;
+        const spEntry = _relPosCache.get(spKey);
+
+        let shift;
+        if (isLeft) {
+          // Push further left so sibling-children clear the root-children
+          shift = rootMinX - H_GAP - sibChMaxX;   // negative
+        } else {
+          // Push further right
+          shift = rootMaxX + H_GAP - sibChMinX;   // positive
+        }
+
+        // Shift sibling node and spouse node (if not an existing ancestor node)
+        sibEntry.x += shift;
+        if (spEntry && !spEntry.existing) spEntry.x += shift;
+
+        // Shift each sibling-child entry and its stemX
+        for (const [, e] of chEntries) {
+          e.x += shift;
+          e.stemX += shift;
+        }
+      }
+    }
   }
 }
 
@@ -2909,13 +2975,15 @@ function render() {
   }
 
   // ── Child node connectors helper ──────────────────────────────────────────
-  function _drawChildGroup(parentX, parentY, childEntries, fill) {
+  // childEntries: [[key, {x, y, xref, stemX, stemY}], ...]
+  // stemX/stemY are the start point of the vertical stem (spouse-line midpoint or node bottom-center).
+  function _drawChildGroup(childEntries, fill) {
     if (!childEntries.length) return;
-    const barY = parentY + NODE_H + V_GAP / 2;
+    const {stemX, stemY, y: childY} = childEntries[0][1];
+    const barY = stemY + (childY - stemY) / 2;
     const childXs = childEntries.map(([, e]) => e.x + NODE_W / 2);
     canvas.insertBefore(svgEl('line', {
-      x1: parentX + NODE_W / 2, y1: parentY + NODE_H,
-      x2: parentX + NODE_W / 2, y2: barY,
+      x1: stemX, y1: stemY, x2: stemX, y2: barY,
       stroke: '#475569', 'stroke-width': 1.5
     }), canvas.firstChild);
     canvas.insertBefore(svgEl('line', {
@@ -2936,10 +3004,7 @@ function render() {
   // Root children
   {
     const entries = [..._relPosCache.entries()].filter(([k]) => k.startsWith('ch:'));
-    if (entries.length) {
-      const {x: rootX, y: rootY} = nodePos(1);
-      _drawChildGroup(rootX, rootY, entries, '#155e75');
-    }
+    if (entries.length) _drawChildGroup(entries, '#155e75');
   }
   // Sibling children — group by sibling key prefix "sibch:k:i:"
   {
@@ -2953,7 +3018,7 @@ function render() {
     for (const [parentKey, children] of byParent.entries()) {
       const sibEntry = _relPosCache.get(parentKey);
       if (!sibEntry || sibEntry.existing) continue;
-      _drawChildGroup(sibEntry.x, sibEntry.y, children, '#155e75');
+      _drawChildGroup(children, '#155e75');
     }
   }
 
