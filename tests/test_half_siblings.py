@@ -101,12 +101,55 @@ class TestHalfSiblings:
         assert set(bob_group['half_sibs']) == {'@I1@', '@I4@'}
         assert bob_group['other_parent'] == '@I3@'  # Carol
 
+    def test_alice_bob_group_contains_only_eve(self, relatives):
+        """No extra people should appear in the Bob-side group for Alice."""
+        groups = relatives['@I1@']['half_siblings']
+        bob_group = next(g for g in groups if g['shared_parent'] == '@I2@')
+        assert set(bob_group['half_sibs']) == {'@I5@'}
+
+    def test_alice_carol_group_contains_only_frank(self, relatives):
+        """No extra people should appear in the Carol-side group for Alice."""
+        groups = relatives['@I1@']['half_siblings']
+        carol_group = next(g for g in groups if g['shared_parent'] == '@I3@')
+        assert set(carol_group['half_sibs']) == {'@I7@'}
+
+    def test_no_duplicate_half_sibs_for_alice(self, relatives):
+        groups = relatives['@I1@'].get('half_siblings', [])
+        all_half_sibs = [cx for g in groups for cx in g['half_sibs']]
+        assert len(all_half_sibs) == len(set(all_half_sibs)), "Duplicate half-siblings found"
+
+    def test_frank_sees_alice_and_david_as_half_sibs_on_carols_side(self, relatives):
+        # Frank (I7) is Ernest+Carol's child. Carol also has Alice (I1) and David (I4) with Bob.
+        groups = relatives.get('@I7@', {}).get('half_siblings', [])
+        carol_group = next((g for g in groups if g['shared_parent'] == '@I3@'), None)
+        assert carol_group is not None, "Frank should have a half-sibling group on Carol's side"
+        assert set(carol_group['half_sibs']) == {'@I1@', '@I4@'}
+        assert carol_group['other_parent'] == '@I2@'  # Bob
+
+    def test_frank_has_no_half_sibs_on_ernests_side(self, relatives):
+        # Ernest (I8) has no other families, so no half-siblings on his side.
+        groups = relatives.get('@I7@', {}).get('half_siblings', [])
+        ernest_group = next((g for g in groups if g['shared_parent'] == '@I8@'), None)
+        assert ernest_group is None
+
+    def test_david_has_same_half_siblings_as_alice(self, relatives):
+        # David (I4) shares both parents with Alice, so same half-sib groups.
+        alice_groups = relatives['@I1@'].get('half_siblings', [])
+        david_groups = relatives['@I4@'].get('half_siblings', [])
+        alice_all = {cx for g in alice_groups for cx in g['half_sibs']}
+        david_all = {cx for g in david_groups for cx in g['half_sibs']}
+        assert alice_all == david_all
+
     def test_half_sibling_relationship_is_symmetric(self, relatives):
-        # Eve (I5) should see Alice (I1) as a half-sibling on Bob's side
+        # Eve sees exactly Alice+David on Bob's side (already tested),
+        # and Frank sees exactly Alice+David on Carol's side.
         eve_groups = relatives.get('@I5@', {}).get('half_siblings', [])
-        eve_half_sibs = {cx for g in eve_groups for cx in g['half_sibs']}
-        assert '@I1@' in eve_half_sibs or '@I4@' in eve_half_sibs, \
-            "Eve should see at least one of Bob+Carol's children as a half-sibling"
+        eve_all = {cx for g in eve_groups for cx in g['half_sibs']}
+        assert eve_all == {'@I1@', '@I4@'}, "Eve's half-sibs should be exactly Alice and David"
+
+        frank_groups = relatives.get('@I7@', {}).get('half_siblings', [])
+        frank_all = {cx for g in frank_groups for cx in g['half_sibs']}
+        assert frank_all == {'@I1@', '@I4@'}, "Frank's half-sibs should be exactly Alice and David"
 
     def test_unknown_other_parent_handled(self, indis, fams):
         """When a parent's other family has no spouse recorded, other_parent should be None."""
