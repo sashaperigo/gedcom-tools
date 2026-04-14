@@ -786,7 +786,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   color: #475569; margin-bottom: 10px; margin-top: 16px; display: block; }
 .also-lived-heading:first-child { margin-top: 0; }
 /* ── Family section ─────────────────────────────────────── */
-#detail-family.has-content { margin-top: 4px; }
+#detail-family.has-content { margin-top: 16px; }
 .family-sub { margin-bottom: 0; }
 .family-sub-heading { display: block; font-size: 10px; font-weight: 700; color: #475569;
   text-transform: uppercase; letter-spacing: 0.1em;
@@ -2478,59 +2478,61 @@ function computeRelativePositions() {
   }
 
   // Pass 3: resolve collisions — push sibling groups outward if their children
-  // overlap the root's children (both groups sit at the same Y level).
+  // overlap ANY fixed node (ancestor or root-children) at the same Y level.
+  // Math: a sibling of a generation-G ancestor has children at y(G-1), which is
+  // the exact same Y as generation-(G-1) ancestor nodes.  Pass 3 must check
+  // _posCache (ancestors) not just ch: (root's own children).
   {
-    const rootChEntries = [..._relPosCache.entries()].filter(([k]) => k.startsWith('ch:'));
-    if (rootChEntries.length > 0) {
-      const rootMinX = Math.min(...rootChEntries.map(([, e]) => e.x));
-      const rootMaxX = Math.max(...rootChEntries.map(([, e]) => e.x)) + NODE_W;
+    // Build a map: Y → {minX, maxX} of all fixed nodes (ancestors + root children)
+    const occupiedByY = new Map();
+    const _mergeOcc = (y, x) => {
+      if (!occupiedByY.has(y)) { occupiedByY.set(y, {minX: x, maxX: x + NODE_W}); return; }
+      const b = occupiedByY.get(y);
+      b.minX = Math.min(b.minX, x);
+      b.maxX = Math.max(b.maxX, x + NODE_W);
+    };
+    for (const [, pos] of _posCache.entries()) _mergeOcc(pos.y, pos.x);
+    for (const [k, e] of _relPosCache.entries()) {
+      if (k.startsWith('ch:')) _mergeOcc(e.y, e.x);
+    }
 
-      // Group sibling-child entries by their parent sibling key
-      const sibChGroups = new Map();
-      for (const [k, e] of _relPosCache.entries()) {
-        if (!k.startsWith('sibch:')) continue;
-        const parts = k.split(':');
-        const parentKey = `sib:${parts[1]}:${parts[2]}`;
-        if (!sibChGroups.has(parentKey)) sibChGroups.set(parentKey, []);
-        sibChGroups.get(parentKey).push([k, e]);
-      }
+    // Group sibling-child entries by their parent sibling key
+    const sibChGroups = new Map();
+    for (const [k, e] of _relPosCache.entries()) {
+      if (!k.startsWith('sibch:')) continue;
+      const parts = k.split(':');
+      const parentKey = `sib:${parts[1]}:${parts[2]}`;
+      if (!sibChGroups.has(parentKey)) sibChGroups.set(parentKey, []);
+      sibChGroups.get(parentKey).push([k, e]);
+    }
 
-      const {x: rootNodeX} = _posCache.get(1) || {x: 0};
+    const {x: rootNodeX} = _posCache.get(1) || {x: 0};
 
-      for (const [parentKey, chEntries] of sibChGroups.entries()) {
-        const sibEntry = _relPosCache.get(parentKey);
-        if (!sibEntry || sibEntry.existing) continue;
+    for (const [parentKey, chEntries] of sibChGroups.entries()) {
+      const sibEntry = _relPosCache.get(parentKey);
+      if (!sibEntry || sibEntry.existing) continue;
 
-        const sibChMinX = Math.min(...chEntries.map(([, e]) => e.x));
-        const sibChMaxX = Math.max(...chEntries.map(([, e]) => e.x)) + NODE_W;
+      const sibChY = chEntries[0][1].y;
+      const occupied = occupiedByY.get(sibChY);
+      if (!occupied) continue;
 
-        // Check for horizontal overlap with root children
-        if (sibChMaxX <= rootMinX || sibChMinX >= rootMaxX) continue;
+      const sibChMinX = Math.min(...chEntries.map(([, e]) => e.x));
+      const sibChMaxX = Math.max(...chEntries.map(([, e]) => e.x)) + NODE_W;
 
-        const isLeft = sibEntry.x < rootNodeX;
-        const [, k, i] = parentKey.split(':');
-        const spKey = `sibsp:${k}:${i}`;
-        const spEntry = _relPosCache.get(spKey);
+      // No overlap — nothing to fix
+      if (sibChMaxX <= occupied.minX || sibChMinX >= occupied.maxX) continue;
 
-        let shift;
-        if (isLeft) {
-          // Push further left so sibling-children clear the root-children
-          shift = rootMinX - H_GAP - sibChMaxX;   // negative
-        } else {
-          // Push further right
-          shift = rootMaxX + H_GAP - sibChMinX;   // positive
-        }
+      const isLeft = sibEntry.x < rootNodeX;
+      const [, k, i] = parentKey.split(':');
+      const spEntry = _relPosCache.get(`sibsp:${k}:${i}`);
 
-        // Shift sibling node and spouse node (if not an existing ancestor node)
-        sibEntry.x += shift;
-        if (spEntry && !spEntry.existing) spEntry.x += shift;
+      const shift = isLeft
+        ? occupied.minX - H_GAP - sibChMaxX   // negative → push left
+        : occupied.maxX + H_GAP - sibChMinX;  // positive → push right
 
-        // Shift each sibling-child entry and its stemX
-        for (const [, e] of chEntries) {
-          e.x += shift;
-          e.stemX += shift;
-        }
-      }
+      sibEntry.x += shift;
+      if (spEntry && !spEntry.existing) spEntry.x += shift;
+      for (const [, e] of chEntries) { e.x += shift; e.stemX += shift; }
     }
   }
 }
@@ -2766,19 +2768,19 @@ function render() {
     });
   }
 
-  // Generation labels (left side)
+  // Generation labels — rendered in a separate overlay div (left-fixed, y-follows pan).
+  // Populated here; positioned in applyTransform() using only ty+scale, never tx.
+  const genLabelsEl = document.getElementById('gen-labels');
+  genLabelsEl.innerHTML = '';
   const gensSeen = new Set([...visibleKeys].map(genOf));
-  for (const g of gensSeen) {
+  for (const g of [...gensSeen].sort((a, b) => a - b)) {
     const firstK = [...visibleKeys].find(k => genOf(k) === g);
     const { y } = nodePos(firstK);
-    const lbl = svgEl('text', {
-      x: 4, y: y + NODE_H / 2,
-      fill: '#64748b', 'font-size': 11,
-      'font-family': 'system-ui, sans-serif',
-      'dominant-baseline': 'middle'
-    });
+    const lbl = document.createElement('div');
+    lbl.className = 'gen-label';
     lbl.textContent = genLabel(g);
-    canvas.appendChild(lbl);
+    lbl.dataset.canvasY = y + NODE_H / 2;
+    genLabelsEl.appendChild(lbl);
   }
 
   // Person nodes
