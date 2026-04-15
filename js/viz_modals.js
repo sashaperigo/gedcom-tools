@@ -91,6 +91,8 @@ function _updateEventModalFields(tag) {
   const inlineLbl = document.getElementById('event-modal-inline-label');
   const typeRow   = document.getElementById('event-modal-type-row');
   const causeRow  = document.getElementById('event-modal-cause-row');
+  const placeRow  = document.getElementById('event-modal-place-row');
+  const addrRow   = document.getElementById('event-modal-addr-row');
   if (_INLINE_TYPE_TAGS.has(tag)) {
     inlineRow.style.display = '';
     const labelMap = {OCCU:'Occupation',TITL:'Title',NATI:'Nationality',RELI:'Religion',EDUC:'Education'};
@@ -102,6 +104,9 @@ function _updateEventModalFields(tag) {
   // showing a separate TYPE field would duplicate it and cause confusion.
   typeRow.style.display = (_TYPE_TAGS.has(tag) && !_INLINE_TYPE_TAGS.has(tag)) ? '' : 'none';
   causeRow.style.display = (tag === 'DEAT') ? '' : 'none';
+  const hidePlaceAddr = (tag === 'NATI');
+  if (placeRow) placeRow.style.display = hidePlaceAddr ? 'none' : '';
+  if (addrRow)  addrRow.style.display  = hidePlaceAddr ? 'none' : '';
   _updateSpouseRow(tag);
 }
 
@@ -158,7 +163,8 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   _updateAddrSuggestions(placeVal);
   _updateEventModalFields(tag);
   document.getElementById('event-modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
+  const focusId = _INLINE_TYPE_TAGS.has(tag) ? 'event-modal-inline' : 'event-modal-date';
+  setTimeout(() => document.getElementById(focusId).focus(), 50);
 }
 
 function addEvent(xref, defaultTag = 'RESI', prefillType) {
@@ -185,7 +191,8 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   _updateAddrSuggestions('');
   _updateEventModalFields(defaultTag);
   document.getElementById('event-modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('event-modal-date').focus(), 50);
+  const focusId = _INLINE_TYPE_TAGS.has(defaultTag) ? 'event-modal-inline' : 'event-modal-date';
+  setTimeout(() => document.getElementById(focusId).focus(), 50);
 }
 
 function closeEventModal() {

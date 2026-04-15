@@ -906,13 +906,13 @@ header h1 { font-size: 16px; font-weight: 600; }
       <label>Date</label>
       <input type="text" id="event-modal-date" placeholder="e.g. 26 FEB 1785" onkeydown="if(event.key==='Escape')closeEventModal()">
     </div>
-    <div class="event-modal-field">
+    <div class="event-modal-field" id="event-modal-place-row">
       <label>Place</label>
       <input type="text" id="event-modal-place" list="plac-suggestions"
              onkeydown="if(event.key==='Escape')closeEventModal()">
       <datalist id="plac-suggestions"></datalist>
     </div>
-    <div class="event-modal-field">
+    <div class="event-modal-field" id="event-modal-addr-row">
       <label>Address</label>
       <input type="text" id="event-modal-addr" list="addr-suggestions"
              placeholder="e.g. Church name or building"
