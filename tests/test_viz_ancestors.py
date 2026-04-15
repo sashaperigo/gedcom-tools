@@ -399,13 +399,18 @@ class TestOutput:
         assert '1960' in content
         assert '2005' in content
 
-    def test_html_is_self_contained(self, tmp_path):
-        """No external script/stylesheet src attributes."""
+    def test_html_only_uses_allowed_external_sources(self, tmp_path):
+        """Only D3 CDN is allowed as an external src; no other external scripts."""
         out = str(tmp_path / 'out.html')
         viz_ancestors(str(FIXTURE), '@I1@', out)
         content = Path(out).read_text(encoding='utf-8')
-        assert 'src="http' not in content
-        assert "src='http" not in content
+        # D3 from jsDelivr CDN is explicitly allowed
+        external_srcs = [
+            line for line in content.splitlines()
+            if ('src="http' in line or "src='http" in line)
+            and 'cdn.jsdelivr.net' not in line
+        ]
+        assert external_srcs == [], f'Unexpected external src attributes: {external_srcs}'
 
     def test_name_search(self, tmp_path):
         """--person accepts a name substring, not just an xref."""
@@ -459,13 +464,16 @@ class TestOutput:
         assert '"events"' in content
         assert 'Greenwich, Connecticut, USA' in content
 
-    def test_html_contains_tree_and_people_json(self, tmp_path):
-        """Both TREE and PEOPLE consts must be present in the output."""
+    def test_html_contains_required_json_globals(self, tmp_path):
+        """Core data globals must be present in the output."""
         out = str(tmp_path / 'out.html')
         viz_ancestors(str(FIXTURE), '@I1@', out)
         content = Path(out).read_text(encoding='utf-8')
-        assert 'const TREE' in content
         assert 'const PEOPLE' in content
+        assert 'const RELATIVES' in content
+        assert 'const SOURCES' in content
+        assert 'const PARENTS' in content
+        assert 'const ROOT_XREF' in content
 
     def test_html_contains_aka_note(self, tmp_path):
         """AKA alias stored as 2 NOTE must appear in the embedded JSON."""
@@ -474,13 +482,14 @@ class TestOutput:
         content = Path(out).read_text(encoding='utf-8')
         assert 'Rosie Smith' in content
 
-    def test_html_uses_midY_routing(self, tmp_path):
-        """Connector routes through midY waypoint — no direct diagonal to child."""
-        # JS is now in external viz_render.js file (not inlined in HTML output)
+    def test_render_js_uses_row_height(self, tmp_path):
+        """Redesign: viz_render.js uses ROW_HEIGHT from DESIGN tokens for edge routing."""
         render_js = Path(__file__).parent.parent / 'js' / 'viz_render.js'
         assert render_js.exists(), 'js/viz_render.js must exist'
         content = render_js.read_text(encoding='utf-8')
-        assert 'cy - V_GAP / 2' in content   # midY L-shaped routing present
+        assert 'ROW_HEIGHT' in content or 'DESIGN' in content, (
+            'viz_render.js must reference DESIGN layout constants'
+        )
 
     def test_html_contains_relatives_json(self, tmp_path):
         """RELATIVES_JSON must be embedded and contain sibling/spouse data."""

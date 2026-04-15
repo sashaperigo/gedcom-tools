@@ -160,24 +160,22 @@ class TestTemplateAntipatterns:
             "RELATIVES[currentTree[k]] so it works after changeRoot()"
         )
 
-    def test_expandNode_uses_currentTree(self):
-        """B1: expandNode must check currentTree, not the static TREE."""
-        assert 'function expandNode' in _FULL_SOURCE
-        # Find the function body and confirm it references currentTree
-        fn_start = _FULL_SOURCE.index('function expandNode')
-        fn_body = _FULL_SOURCE[fn_start:fn_start + 200]
-        assert 'currentTree' in fn_body, (
-            "expandNode does not reference currentTree — "
-            "parent expansion broken after changeRoot()"
+    def test_expand_uses_setState(self):
+        """Redesign: ancestor expansion uses setState({ expandedNodes }) not currentTree."""
+        # viz_render.js wires expand buttons to setState; verify the pattern
+        render_src = (Path(__file__).parent.parent / 'js' / 'viz_render.js').read_text()
+        assert 'setState' in render_src, (
+            "viz_render.js must call setState for expand button clicks"
+        )
+        assert 'expandedNodes' in render_src, (
+            "viz_render.js must reference expandedNodes state key"
         )
 
-    def test_hasHiddenParents_uses_currentTree(self):
-        """B1: hasHiddenParents must check currentTree."""
-        fn_start = _FULL_SOURCE.index('function hasHiddenParents')
-        fn_body = _FULL_SOURCE[fn_start:fn_start + 200]
-        assert 'currentTree' in fn_body, (
-            "hasHiddenParents does not reference currentTree — "
-            "expand button broken after changeRoot()"
+    def test_panel_uses_getState(self):
+        """Redesign: detail panel reads from state via getState(), not global _openDetailKey."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'getState' in panel_src or 'onStateChange' in panel_src, (
+            "viz_panel.js must integrate with state management"
         )
 
     def test_connector_drawn_unconditionally_for_both_parents(self):
@@ -192,9 +190,11 @@ class TestTemplateAntipatterns:
             "both-parent nodes to child is skipped for the root person"
         )
 
-    def test_currentTree_declared(self):
-        """currentTree must be declared as a mutable variable."""
-        assert 'let currentTree' in _HTML_TEMPLATE
+    def test_currentTree_not_in_template(self):
+        """Redesign: currentTree is gone — state is managed by viz_state.js."""
+        assert 'let currentTree' not in _HTML_TEMPLATE, (
+            "currentTree should not be in the template; state is managed by viz_state.js"
+        )
 
     def test_parents_json_placeholder_present(self):
         """PARENTS_JSON placeholder must exist so it gets substituted."""

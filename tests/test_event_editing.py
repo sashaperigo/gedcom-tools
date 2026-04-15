@@ -702,14 +702,14 @@ class TestTemplateUIElements:
         # Locate the submitEventModal function body in combined source
         fn_start = _FULL_SOURCE.find('async function submitEventModal(')
         assert fn_start != -1, 'submitEventModal must be present'
-        # Find the closing brace of the function (search for showDetail after fn_start)
-        show_detail_pos = _FULL_SOURCE.find('showDetail(xref)', fn_start)
-        assert show_detail_pos != -1, 'showDetail(xref) call must be present in submitEventModal'
+        # Find the closing brace of the function (search for showDetail(xref, after fn_start)
+        show_detail_pos = _FULL_SOURCE.find('showDetail(xref,', fn_start)
+        assert show_detail_pos != -1, 'showDetail(xref, ...) call must be present in submitEventModal'
         # _openDetailKey = null must appear somewhere between fn_start and the showDetail call
         null_assign_pos = _FULL_SOURCE.find('_openDetailKey = null', fn_start)
         assert null_assign_pos != -1, '_openDetailKey must be nulled in submitEventModal'
         assert null_assign_pos < show_detail_pos, \
-            '_openDetailKey = null must come BEFORE showDetail(xref) so the re-render is not skipped'
+            '_openDetailKey = null must come BEFORE showDetail(xref, ...) so the re-render is not skipped'
 
 
 # ---------------------------------------------------------------------------

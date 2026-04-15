@@ -82,7 +82,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
         m = _SOUR_RE.match(line)
         if m:
             xref = m.group(1)
-            sources[xref] = None
+            sources[xref] = {'titl': None, 'auth': None, 'publ': None, 'repo': None, 'note': None}
             ctx          = ('sour', xref)
             current_evt  = None
             current_note = None
@@ -225,8 +225,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
 
         elif ctx[0] == 'sour':
             xref = ctx[1]
-            if lvl == 1 and tag == 'TITL':
-                sources[xref] = val
+            if lvl == 1 and tag in ('TITL', 'AUTH', 'PUBL', 'NOTE'):
+                sources[xref][tag.lower()] = val
+            elif lvl == 1 and tag == 'REPO':
+                sources[xref]['repo'] = val
 
     return indis, fams, sources
 
@@ -386,7 +388,8 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         if sources:
             source_urls = info.get('source_urls', {})
             for sxref in info.get('source_xrefs', []):
-                title = sources.get(sxref)
+                sour = sources.get(sxref) or {}
+                title = sour.get('titl') if isinstance(sour, dict) else sour
                 if title and title not in seen_src_titles:
                     seen_src_titles.add(title)
                     src_list.append({'title': title, 'url': source_urls.get(sxref) or None})
@@ -1065,7 +1068,6 @@ window.addEventListener('error', e => {
 window.addEventListener('unhandledrejection', e => {
   console.error('[UNHANDLED REJECTION]', e.reason);
 });
-const TREE = __TREE_JSON__;
 const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const SOURCES = __SOURCES_JSON__;
@@ -1078,22 +1080,16 @@ for (const [cx, [fa, mo]] of Object.entries(PARENTS)) {
 const ROOT_XREF = __ROOT_XREF_JSON__;
 const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;
 const ALL_PLACES = __ALL_PLACES_JSON__;
-let currentTree = Object.assign({}, TREE);
-const expandedRelatives = new Set([1]);
-const expandedChildrenOf = new Set(); // xrefs whose children are currently shown
-let _relPosCache = new Map();
-// Maps "${anchorKey}:${sibIdx}" → current spouse index (0-based) for siblings with multiple spouses
-let _sibSpouseIdx = new Map();
-const visibleKeys = new Set();
-let _posCache = new Map();
 </script>
-<script src="/js/viz_constants.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="/js/viz_design.js"></script>
+<script src="/js/viz_state.js"></script>
+<script src="/js/viz_api.js"></script>
 <script src="/js/viz_layout.js"></script>
 <script src="/js/viz_render.js"></script>
-<script src="/js/viz_detail.js"></script>
+<script src="/js/viz_panel.js"></script>
 <script src="/js/viz_search.js"></script>
 <script src="/js/viz_modals.js"></script>
-<script src="/js/viz_init.js"></script>
 </body>
 </html>
 """
@@ -1159,15 +1155,22 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     root_xref_json      = json.dumps(root_xref or '')
     addr_by_place_json  = json.dumps(build_addr_by_place(indis))
     all_places_json     = json.dumps(build_all_places(indis, fams))
-    # Build global SOURCES dict: {xref: {title, url}} for citation lookups
+    # Build global SOURCES dict: {xref: {titl, auth, publ, repo, note, url}}
     source_urls_global: dict[str, str] = {}
     for indi_info in indis.values():
         for sxref, url in indi_info.get('source_urls', {}).items():
             if url and sxref not in source_urls_global:
                 source_urls_global[sxref] = url
     sources_js = {
-        xref: {'title': title or '', 'url': source_urls_global.get(xref) or None}
-        for xref, title in (sources or {}).items()
+        xref: {
+            'titl': sour.get('titl') or '',
+            'auth': sour.get('auth') or '',
+            'publ': sour.get('publ') or '',
+            'repo': sour.get('repo') or '',
+            'note': sour.get('note') or '',
+            'url': source_urls_global.get(xref) or None,
+        }
+        for xref, sour in (sources or {}).items()
     }
     sources_json = json.dumps(sources_js)
     return (
