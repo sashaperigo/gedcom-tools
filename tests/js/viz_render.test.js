@@ -377,7 +377,7 @@ describe('render — click handlers', () => {
     resetState();
     loadRenderMod();
     svg = makeSvgEl();
-    // Spy BEFORE initRenderer so the global is replaced before closure capture
+    // Spy before initRenderer so the initial render() call goes through the spy
     setStateSpy = vi.fn();
     global.setState = setStateSpy;
     renderMod.initRenderer(svg);
@@ -427,7 +427,7 @@ describe('render — expand button click handler', () => {
     resetState();
     loadRenderMod();
     svg = makeSvgEl();
-    // Spy BEFORE initRenderer so the global is replaced before closure capture
+    // Spy before initRenderer so the initial render() call goes through the spy
     setStateSpy = vi.fn();
     global.setState = setStateSpy;
     renderMod.initRenderer(svg);

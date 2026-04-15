@@ -224,7 +224,6 @@ function _renderNode(node, onNodeClick, onExpandClick) {
 // Pan / zoom state
 // ---------------------------------------------------------------------------
 
-let _svgEl_ref = null;    // the <svg> element
 let _treeRoot  = null;    // the <g id="tree-root"> wrapper
 let _tx = 0, _ty = 0;    // current translation
 let _scale = 1;           // current zoom scale
@@ -238,8 +237,10 @@ function _applyTransform() {
 
 function _attachPanZoom(svgEl) {
   svgEl.addEventListener('mousedown', (e) => {
-    // Only pan when clicking the background (not a node/button)
-    if (e.target !== svgEl && e.target !== _treeRoot) return;
+    // Only pan when clicking background/edges, not a node or expand button.
+    // Nodes carry a [data-xref] ancestor; expand buttons sit inside those groups.
+    const isNodeTarget = e.target.closest && e.target.closest('[data-xref]');
+    if (isNodeTarget) return;
     _dragging = true;
     _dragStartX = e.clientX;
     _dragStartY = e.clientY;
@@ -322,8 +323,6 @@ function render() {
 // ---------------------------------------------------------------------------
 
 function initRenderer(svgEl) {
-  _svgEl_ref = svgEl;
-
   // Create the tree-root group
   _treeRoot = _svgEl('g', { id: 'tree-root' });
 
