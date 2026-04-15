@@ -26,4 +26,13 @@ const DESIGN = {
   NODE_RADIUS:  4,    // border-radius for nodes
 };
 
-if (typeof module !== 'undefined') module.exports = { DESIGN };
+// ── Shared utility: HTML escaping ─────────────────────────────────────────────
+function escHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+if (typeof module !== 'undefined') module.exports = { DESIGN, escHtml };

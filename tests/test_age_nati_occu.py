@@ -181,9 +181,9 @@ class TestDeatAgeDisplay:
         assert 'function fmtAge' in _FULL_SOURCE
 
     def test_deat_age_branch_in_prose(self):
-        # The DEAT case must reference evt.age and call fmtAge
-        assert 'evt.age' in _FULL_SOURCE
-        assert 'fmtAge(age)' in _FULL_SOURCE
+        # The DEAT case must reference fact.age and call fmtAge
+        assert 'fact.age' in _FULL_SOURCE
+        assert 'fmtAge(fact.age)' in _FULL_SOURCE
 
     def test_deat_age_prose_in_rendered_html(self, people, indis, fams, parsed):
         tree = build_tree_json('@I1@', indis, fams)
@@ -232,17 +232,17 @@ class TestNatiDisplay:
         assert nati['type'] == 'American'
 
     def test_nati_pill_renders_inline_val_in_template(self):
-        # The pill must use e.inline_val, NOT e.type, so empty inline_val shows nothing
-        assert "escHtml(e.inline_val || '')" in _FULL_SOURCE, (
+        # The pill must use e.inline_val so empty inline_val shows nothing
+        assert "e.inline_val || ''" in _FULL_SOURCE, (
             "Nationality pill must render e.inline_val"
         )
 
     def test_nati_filter_in_template(self):
-        # natiEvents must filter by tag === 'NATI'
+        # NATI events must be extracted by tag === 'NATI' for pill rendering
         assert "e.tag === 'NATI'" in _FULL_SOURCE
 
     def test_nati_excluded_from_all_visible(self):
-        # NATI events must not bleed into the timeline (allVisible excludes them)
+        # NATI events must not appear in the Life Events timeline
         assert "e.tag !== 'NATI'" in _FULL_SOURCE
 
     def test_nati_events_present_in_rendered_html_people_json(self, people, indis, fams, parsed):
@@ -300,12 +300,11 @@ class TestOccuProse:
     """
 
     def test_occu_prose_uses_inline_val(self):
-        # The OCCU case must use inline_val (the value on the 1 OCCU line), not type
-        assert 'evt.inline_val' in _FULL_SOURCE, (
-            "OCCU prose must use evt.inline_val for the job title"
+        # The OCCU case must use fact.inline_val (the value on the 1 OCCU line), not type
+        assert 'fact.inline_val' in _FULL_SOURCE, (
+            "OCCU prose must use fact.inline_val for the job title"
         )
-        assert '`Worked as ${jobTitle}`' in _FULL_SOURCE or \
-               'Worked as' in _FULL_SOURCE, (
+        assert 'Worked as' in _FULL_SOURCE, (
             "OCCU prose must still include 'Worked as' prefix"
         )
 

@@ -115,7 +115,7 @@ describe('renderPanel', () => {
     global.PEOPLE['@I1@'] = {
       name: 'Test Person',
       birth_year: '1900', death_year: '1970',
-      sex: 'M', facts: [], notes: [], sources: [], nationalities: [],
+      sex: 'M', events: [], notes: [], sources: [],
     };
 
     global.document = {
@@ -156,7 +156,7 @@ describe('renderPanel', () => {
     global.PEOPLE['@I1@'] = {
       name: 'John Papadopoulos',
       birth_year: '1873', death_year: '1940',
-      sex: 'M', facts: [], notes: [], sources: [], nationalities: [],
+      sex: 'M', events: [], notes: [], sources: [],
     };
 
     global.document = {
@@ -182,7 +182,7 @@ describe('renderPanel', () => {
     global.PEOPLE['@I2@'] = {
       name: 'Mary Smith',
       birth_year: '1880', death_year: '1950',
-      sex: 'F', facts: [], notes: [], sources: [], nationalities: [],
+      sex: 'F', events: [], notes: [], sources: [],
     };
 
     global.document = {
@@ -210,11 +210,11 @@ describe('renderPanel', () => {
       name: 'Andreas Kostas',
       birth_year: '1890', death_year: null,
       sex: 'M',
-      facts: [
+      events: [
         { tag: 'BIRT', date: '12 JAN 1890', place: 'Smyrna', citations: [] },
         { tag: 'IMMI', date: '1922',         place: 'New York', citations: [] },
       ],
-      notes: [], sources: [], nationalities: [],
+      notes: [], sources: [],
     };
 
     global.document = {
@@ -245,7 +245,7 @@ describe('renderPanel', () => {
 
     global.PEOPLE['@I1@'] = {
       name: 'Test', birth_year: '1900', death_year: null,
-      sex: 'M', facts: [], notes: [], sources: [], nationalities: [],
+      sex: 'M', events: [], notes: [], sources: [],
     };
 
     global.document = {
@@ -275,7 +275,7 @@ describe('renderPanel', () => {
         name: 'Nicolaos Petros',
         birth_year: '1895', death_year: null,
         sex: 'M',
-        facts: [
+        events: [
           {
             tag: 'CHR',
             date: '5 MAR 1895',
@@ -284,12 +284,12 @@ describe('renderPanel', () => {
             asso: [{ xref: '@I5@', rela: 'Godparent' }],
           },
         ],
-        notes: [], sources: [], nationalities: [],
+        notes: [], sources: [],
       },
       '@I5@': {
         name: 'Kostas Manolakis',
         birth_year: '1860', death_year: null,
-        sex: 'M', facts: [], notes: [], sources: [], nationalities: [],
+        sex: 'M', events: [], notes: [], sources: [],
       },
     };
 
@@ -319,7 +319,7 @@ describe('renderPanel', () => {
         name: 'Nicolaos Petros',
         birth_year: '1895', death_year: null,
         sex: 'M',
-        facts: [
+        events: [
           {
             tag: 'CHR',
             date: '5 MAR 1895',
@@ -328,12 +328,12 @@ describe('renderPanel', () => {
             asso: [{ xref: '@I5@', rela: 'Godparent' }],
           },
         ],
-        notes: [], sources: [], nationalities: [],
+        notes: [], sources: [],
       },
       '@I5@': {
         name: 'Kostas Manolakis',
         birth_year: '1860', death_year: null,
-        sex: 'M', facts: [], notes: [], sources: [], nationalities: [],
+        sex: 'M', events: [], notes: [], sources: [],
       },
     };
 

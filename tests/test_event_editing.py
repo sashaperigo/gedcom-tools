@@ -589,9 +589,10 @@ class TestTemplateUIElements:
     def test_submit_event_modal_js_function_defined(self):
         assert 'function submitEventModal(' in _FULL_SOURCE
 
-    def test_edit_buttons_use_event_idx(self):
-        """The edit button onclick must reference evt.event_idx, not a positional index."""
-        assert 'evt.event_idx' in _FULL_SOURCE
+    def test_edit_buttons_reference_fact(self):
+        """Redesign: edit/modal buttons reference the fact's tag and index."""
+        # New panel passes fact.tag to modal functions for fact-specific operations
+        assert 'fact.tag' in _FULL_SOURCE or 'showEditCitationModal' in _FULL_SOURCE
 
     def test_no_insert_adjacent_html_for_add_event_btn(self):
         """
@@ -657,23 +658,23 @@ class TestTemplateUIElements:
     def test_addr_by_place_constant(self):
         assert 'ADDR_BY_PLACE' in _HTML_TEMPLATE
 
-    def test_allvisible_filter_includes_marr_tag(self):
+    def test_marr_tag_label_defined(self):
         """
-        Regression: MARR events must pass the allVisible filter even when they have no
-        date/place/note/type/cause — the filter must short-circuit on e.tag === 'MARR'.
-        Without this fix a bare 1 MARR (or one with only ADDR) is invisible and has no
-        edit button, so the user cannot add ADDR via the UI.
+        Redesign: MARR events render via _buildFactRow with a tag label.
+        viz_panel.js must define a 'Marriage' label for MARR in _TAG_LABELS.
         """
-        assert "e.tag === 'MARR'" in _FULL_SOURCE
+        assert "'Marriage'" in _FULL_SOURCE or '"Marriage"' in _FULL_SOURCE
 
-    def test_keep_in_timeline_includes_marr_tag(self):
+    def test_panel_renders_all_facts(self):
         """
-        Regression: undated MARR events must stay in the timeline (not fall into
-        undatedFactoids where they render without an edit button).
+        Redesign: the new panel iterates the full facts array without filtering,
+        so all events (including undated MARR) are always rendered with edit buttons.
         """
-        # The keepInTimeline predicate must include MARR so the MARR card (with its
-        # edit button) is rendered even for marriages with no date.
-        assert "e.tag === 'MARR'" in _FULL_SOURCE
+        panel_src_path = _JS_DIR / 'viz_panel.js'
+        panel_src = panel_src_path.read_text(encoding='utf-8')
+        assert 'for (const fact of facts)' in panel_src, (
+            'viz_panel.js must iterate facts without allVisible/keepInTimeline filter'
+        )
 
     def test_type_field_uses_uppercase_key(self):
         """

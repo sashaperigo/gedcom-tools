@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
-// viz_search.js reads escHtml from global scope
-const { escHtml } = require('../../js/viz_detail.js');
+// viz_search.js reads escHtml from global scope (defined in viz_design.js)
+const { escHtml } = require('../../js/viz_design.js');
 global.escHtml = escHtml;
 
 const {

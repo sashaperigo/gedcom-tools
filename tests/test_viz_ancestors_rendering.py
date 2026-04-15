@@ -615,60 +615,28 @@ class TestExpansionButtonLogic:
 
 
 # ---------------------------------------------------------------------------
-# B7  buildProse stale `full` variable — ReferenceError in default switch branch
+# B7  Panel fact rendering — viz_panel.js _buildFactRow
 # ---------------------------------------------------------------------------
 
-class TestBuildProseStaleFullVariable:
+class TestPanelFactRendering:
     """
-    B7: When the meta line in buildProse was reordered from [full, date, addr]
-    to [addr, place, date], the `full` variable declaration was removed but one
-    stale reference survived in the default switch case:
-
-        meta: [full, date].filter(Boolean).join(' · ')
-
-    This caused a ReferenceError whenever showDetail() rendered any event that
-    fell through to the default branch (bare EVEN tags, unknown types, etc.).
-    Symptoms: panel didn't open on first click; stale content shown on second
-    click because the exception fired after the name was set but before
-    panel.classList.add('panel-open').
+    Redesign: the old buildProse function in viz_detail.js was replaced by
+    _buildFactRow in viz_panel.js. These tests verify the new panel renders
+    fact rows correctly.
     """
 
-    def test_no_stale_full_variable_in_buildprose(self):
-        """
-        The identifier `full` must not appear anywhere in the buildProse
-        function body.  It was removed when the meta ordering changed; any
-        surviving reference causes a ReferenceError at runtime.
-        """
-        fn_start = _FULL_SOURCE.index('function buildProse')
-        # Find the closing brace of buildProse (next top-level `\n}` after the open)
-        fn_end = _FULL_SOURCE.index('\n}', fn_start) + 2
-        fn_body = _FULL_SOURCE[fn_start:fn_end]
-        import re
-        stale_refs = re.findall(r'\bfull\b', fn_body)
-        assert not stale_refs, (
-            f'Found {len(stale_refs)} reference(s) to `full` in buildProse — '
-            'this variable was removed when meta ordering changed; stale '
-            'references cause ReferenceError in showDetail() for events that '
-            'fall through to the default switch branch'
+    def test_build_fact_row_exists_in_panel(self):
+        """viz_panel.js must define _buildFactRow for rendering life events."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'function _buildFactRow' in panel_src, (
+            'viz_panel.js must define _buildFactRow for event rendering'
         )
 
-    def test_meta_closure_used_in_default_branch(self):
-        """
-        The default switch case in buildProse must call meta() rather than
-        building an inline array expression.  Using an inline expression risks
-        referencing removed variables (the bug that caused B7).
-        """
-        fn_start = _FULL_SOURCE.index('function buildProse')
-        fn_end = _FULL_SOURCE.index('\n}', fn_start) + 2
-        fn_body = _FULL_SOURCE[fn_start:fn_end]
-        # Find the default: branch
-        default_start = fn_body.rfind('default:')
-        assert default_start != -1, 'No default: branch found in buildProse'
-        default_body = fn_body[default_start:]
-        # Should call meta(), not reference `full`
-        assert 'meta()' in default_body, (
-            "default: branch does not call meta() — it may build an inline "
-            "array that references removed variables"
+    def test_panel_renders_life_events_section(self):
+        """viz_panel.js must emit a LIFE EVENTS section header."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'LIFE EVENTS' in panel_src, (
+            'viz_panel.js must emit a LIFE EVENTS section header'
         )
 
 
@@ -765,52 +733,31 @@ class TestMarriageAddr:
 # Facts section rendering — single heading, EDUC format, sorted
 # ---------------------------------------------------------------------------
 
-class TestFactsSectionRendering:
+class TestPanelTagLabels:
     """
-    Guards the three visual fixes applied to the undated facts section:
-      1. Single 'Facts' heading for the whole section (no per-event headings).
-      2. EDUC rendered like RELI: prose='Education', meta=institution name.
-      3. Facts sorted by tag so same-type facts are adjacent.
+    Redesign: viz_panel.js defines _TAG_LABELS for mapping GEDCOM tags to
+    display labels. Verify key labels are present.
     """
 
-    def test_educ_prose_is_education_not_colon_format(self):
-        """
-        Regression: buildProse for EDUC must return prose='Education' (not
-        'Education: Institution Name') so the institution appears as the meta
-        line below, matching the visual style of Religion facts.
-        """
-        # The JS source must NOT have 'Education: ' as a prose prefix
-        assert "`Education: ${type}`" not in _FULL_SOURCE, \
-            "EDUC prose must not use 'Education: X' format — use 'Education' + meta instead"
-        assert "'Education'" in _FULL_SOURCE or '"Education"' in _FULL_SOURCE, \
-            "EDUC case must return prose='Education'"
+    def test_education_label_present(self):
+        """EDUC must map to 'Education' in _TAG_LABELS."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert "'Education'" in panel_src or '"Education"' in panel_src, \
+            "viz_panel.js must define 'Education' label for EDUC tag"
 
-    def test_single_facts_heading_in_template(self):
-        """
-        Regression: the facts section must emit one 'Facts' heading for the
-        whole block, not a heading per group.  The old grouping loop emitted
-        institution names ('English College, Shelton') and tag labels ('FACT')
-        as headings for every group.
-        """
-        assert '>Facts<' in _FULL_SOURCE, \
-            "Source must emit a single 'Facts' heading for the facts section"
+    def test_tag_labels_covers_core_tags(self):
+        """_TAG_LABELS must cover key lifecycle events."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        for label in ("'Birth'", "'Death'", "'Burial'", "'Residence'"):
+            assert label in panel_src, f'viz_panel.js must define {label} in _TAG_LABELS'
+
+    def test_no_per_group_heading_loop(self):
+        """Old grouping-by-heading loop must not exist — panel uses flat fact list."""
         assert 'for (const [heading, evts] of groups)' not in _FULL_SOURCE, \
-            "Per-group heading loop must be removed; use a single 'Facts' heading instead"
+            "Per-group heading loop must be removed; panel uses flat _buildFactRow list"
 
-    def test_facts_sorted_by_tag(self):
-        """
-        Regression: otherFacts must be sorted before rendering so same-type
-        events (e.g. multiple EDUC events) appear adjacent.
-        """
-        assert 'otherFacts.sort(' in _FULL_SOURCE, \
-            "otherFacts must be sorted so same-type facts appear together"
-
-    def test_resi_separated_from_other_facts(self):
-        """
-        Undated RESI events keep their own 'Also lived in' label; they must
-        not be mixed into the 'Facts' section.
-        """
-        assert "e.tag !== 'RESI'" in _FULL_SOURCE or "e.tag === 'RESI'" in _FULL_SOURCE, \
-            "RESI events must be filtered separately from other facts"
-        assert '>Also lived in<' in _FULL_SOURCE, \
-            "RESI section must keep its 'Also lived in' label"
+    def test_panel_iterates_facts_array(self):
+        """viz_panel.js must iterate a facts array to render life events."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'for (const fact of facts)' in panel_src or 'facts.forEach' in panel_src, \
+            "viz_panel.js must iterate facts array to render life event rows"

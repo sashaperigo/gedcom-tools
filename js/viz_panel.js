@@ -7,11 +7,29 @@
 // ── Utility: HTML escaping ─────────────────────────────────────────────────
 
 function _esc(s) {
-  return String(s)
+  return String(s || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ── Utility: format GEDCOM AGE value for display ─────────────────────────
+
+function fmtAge(raw) {
+  if (!raw) return '';
+  const s = String(raw).toUpperCase().trim();
+  if (s === 'INFANT' || s === 'STILLBORN' || s === 'CHILD') return s.charAt(0) + s.slice(1).toLowerCase();
+  // Parse "55y 3m 10d" style
+  const ym = s.match(/^(\d+)Y(?:\s+(\d+)M)?(?:\s+(\d+)D)?$/);
+  if (ym) {
+    const parts = [];
+    if (ym[1] !== '0') parts.push(ym[1] + ' year' + (ym[1] === '1' ? '' : 's'));
+    if (ym[2]) parts.push(ym[2] + ' month' + (ym[2] === '1' ? '' : 's'));
+    if (ym[3]) parts.push(ym[3] + ' day' + (ym[3] === '1' ? '' : 's'));
+    return parts.join(', ') || '0';
+  }
+  return raw;
 }
 
 // ── Event label map (subset used in panel) ────────────────────────────────
@@ -43,9 +61,20 @@ function _buildFactRow(fact, xref) {
   const date     = fact.date  ? ` · ${_esc(fact.date)}`  : '';
   const place    = fact.place ? ` · ${_esc(fact.place)}` : '';
 
+  // DEAT with age-but-no-date: show "Died at age …"
+  let ageStr = '';
+  if (fact.tag === 'DEAT' && fact.age && !fact.date) {
+    ageStr = ` · age ${_esc(fmtAge(fact.age))}`;
+  }
+
+  // OCCU/TITL/NATI-style inline value: show job title after label
+  const inlineVal = (fact.inline_val && fact.tag === 'OCCU')
+    ? ` · Worked as ${_esc(fact.inline_val)}`
+    : '';
+
   let html = `<div class="panel-fact-row">`;
   html += `<span class="panel-fact-label">${_esc(tagLabel)}</span>`;
-  html += `<span class="panel-fact-meta">${date}${place}</span>`;
+  html += `<span class="panel-fact-meta">${date}${place}${ageStr}${inlineVal}</span>`;
 
   // Citations badge
   if (fact.citations && fact.citations.length > 0) {
@@ -213,17 +242,20 @@ function renderPanel() {
     lifespanEl.innerHTML = html;
   }
 
-  // Nationality pills
+  // Nationality pills (derived from NATI events, shown separately from the timeline)
   const natiEl = document.getElementById('detail-nationalities');
   if (natiEl) {
-    const natis = data.nationalities || [];
-    natiEl.innerHTML = natis.map(n => `<span class="panel-nati-pill">${_esc(n)}</span>`).join('');
+    const natis = (data.events || []).filter(e => e.tag === 'NATI').map(e => e.inline_val || '').filter(Boolean);
+    const natiPills = natis.map(n => `<span class="panel-nati-pill">${_esc(n)}</span>`).join('');
+    const addNatiBtn = `<button class="add-event-btn" onclick="showAddEventModal(${xrefQ},'NATI')">+ Add nationality</button>`;
+    natiEl.innerHTML = natiPills + addNatiBtn;
   }
 
   // ── Life Events section ───────────────────────────────────────────────
   const eventsEl = document.getElementById('detail-events');
   if (eventsEl) {
-    const facts    = data.facts || [];
+    // Exclude NATI events — those are shown above as nationality pills
+    const facts = (data.events || []).filter(e => e.tag !== 'NATI');
     let evtHtml = `<div class="panel-section">`;
     evtHtml += `<div class="panel-section-header"><span class="panel-section-title">LIFE EVENTS</span>`;
     evtHtml += `<button class="panel-section-add" onclick="showAddEventModal(${xrefQ})">+</button></div>`;
@@ -239,7 +271,7 @@ function renderPanel() {
   // ── Fact Citations section ────────────────────────────────────────────
   const factsEl = document.getElementById('detail-fact-sources');
   if (factsEl) {
-    factsEl.innerHTML = _buildCitationsSection(xref, data.facts || []);
+    factsEl.innerHTML = _buildCitationsSection(xref, data.events || []);
   }
 
   // ── Person Sources section ────────────────────────────────────────────
