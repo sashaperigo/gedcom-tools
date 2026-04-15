@@ -4197,8 +4197,6 @@ def scan_godparent_count(path: str) -> list[tuple[str, int, int, int]]:
     violations: list[tuple[str, int, int, int]] = []
     current_xref = None
     in_indi = False
-    # State machine within an INDI: track current ASSO and whether we saw RELA
-    current_asso_xref: str | None = None
     godparents: list[str] = []  # list of godparent xrefs for current INDI
 
     def _check_and_emit(indi_xref: str, gps: list[str]) -> None:
@@ -4212,7 +4210,6 @@ def scan_godparent_count(path: str) -> list[tuple[str, int, int, int]]:
 
     with open(path, encoding='utf-8') as f:
         lines_iter = enumerate(f, 1)
-        current_asso_xref = None
         pending_asso_xref: str | None = None  # ASSO xref awaiting RELA confirmation
 
         for _lineno, raw in lines_iter:
@@ -4240,7 +4237,10 @@ def scan_godparent_count(path: str) -> list[tuple[str, int, int, int]]:
             if not in_indi:
                 continue
 
-            # Level-1 ASSO tag
+            # Level-1 ASSO tag.  Overwriting any existing pending_asso_xref is
+            # intentional: if the previous ASSO never received a "2 RELA
+            # Godparent" line it was not a godparent association and can be
+            # discarded.
             m1 = re.match(r'^1 ASSO (@[^@]+@)', line)
             if m1:
                 pending_asso_xref = m1.group(1)
