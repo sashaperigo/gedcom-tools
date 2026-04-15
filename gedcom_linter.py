@@ -4155,6 +4155,229 @@ def fix_sole_event_type_alternate(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Godparent count validation  (spec 1.11)
+# ---------------------------------------------------------------------------
+
+def scan_godparent_count(path: str) -> list[tuple[str, int, int, int]]:
+    """
+    Return (xref, total, male_count, female_count) tuples for any INDI that
+    violates the godparent rules:
+      - More than 2 godparents total, OR
+      - More than 1 godparent of the same gender (M or F)
+
+    Algorithm:
+    1. First pass: build sex_map = { xref: 'M'|'F'|'U' } from all INDI 1 SEX tags.
+    2. Second pass: for each INDI, collect all 1 ASSO blocks where 2 RELA == 'Godparent'
+       (case-insensitive). Look up each godparent's sex in sex_map (default 'U').
+    3. Emit violation if total > 2 OR male_count > 1 OR female_count > 1.
+    """
+    # --- First pass: build sex_map ---
+    sex_map: dict[str, str] = {}
+    current_xref: str | None = None
+    in_indi = False
+
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.rstrip('\n')
+            m = re.match(r'^0 (@[^@]+@) INDI', line)
+            if m:
+                current_xref = m.group(1)
+                in_indi = True
+                continue
+            if in_indi and line.startswith('0 '):
+                in_indi = False
+                current_xref = None
+                continue
+            if in_indi and current_xref:
+                sm = re.match(r'^1 SEX ([MFU])', line)
+                if sm:
+                    sex_map[current_xref] = sm.group(1)
+
+    # --- Second pass: collect godparent ASSOciations per INDI ---
+    violations: list[tuple[str, int, int, int]] = []
+    current_xref = None
+    in_indi = False
+    # State machine within an INDI: track current ASSO and whether we saw RELA
+    current_asso_xref: str | None = None
+    godparents: list[str] = []  # list of godparent xrefs for current INDI
+
+    def _check_and_emit(indi_xref: str, gps: list[str]) -> None:
+        if not gps:
+            return
+        male_count = sum(1 for gp in gps if sex_map.get(gp, 'U') == 'M')
+        female_count = sum(1 for gp in gps if sex_map.get(gp, 'U') == 'F')
+        total = len(gps)
+        if total > 2 or male_count > 1 or female_count > 1:
+            violations.append((indi_xref, total, male_count, female_count))
+
+    with open(path, encoding='utf-8') as f:
+        lines_iter = enumerate(f, 1)
+        current_asso_xref = None
+        pending_asso_xref: str | None = None  # ASSO xref awaiting RELA confirmation
+
+        for _lineno, raw in lines_iter:
+            line = raw.rstrip('\n')
+            m0 = re.match(r'^0 (@[^@]+@) INDI', line)
+            if m0:
+                # Close previous INDI
+                if in_indi and current_xref:
+                    _check_and_emit(current_xref, godparents)
+                current_xref = m0.group(1)
+                in_indi = True
+                godparents = []
+                pending_asso_xref = None
+                continue
+
+            if in_indi and line.startswith('0 '):
+                # Close current INDI
+                _check_and_emit(current_xref, godparents)
+                in_indi = False
+                current_xref = None
+                godparents = []
+                pending_asso_xref = None
+                continue
+
+            if not in_indi:
+                continue
+
+            # Level-1 ASSO tag
+            m1 = re.match(r'^1 ASSO (@[^@]+@)', line)
+            if m1:
+                pending_asso_xref = m1.group(1)
+                continue
+
+            # Level-1 tag (not ASSO) — pending ASSO loses its chance for RELA
+            if re.match(r'^1 ', line):
+                pending_asso_xref = None
+                continue
+
+            # Level-2 RELA tag under a pending ASSO
+            if pending_asso_xref is not None:
+                m2 = re.match(r'^2 RELA (.+)', line)
+                if m2:
+                    rela = m2.group(1).strip()
+                    if rela.lower() == 'godparent':
+                        godparents.append(pending_asso_xref)
+                    pending_asso_xref = None
+
+    # Final INDI at end of file
+    if in_indi and current_xref:
+        _check_and_emit(current_xref, godparents)
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# ASSO without RELA  (spec 1.12)
+# ---------------------------------------------------------------------------
+
+def scan_asso_without_rela(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, indi_xref) for every 1 ASSO tag on an INDI record that has
+    no 2 RELA subordinate before the next level-0 or level-1 tag.
+
+    RELA is required per GEDCOM 5.5.1 ASSOCIATION_STRUCTURE.
+    """
+    violations: list[tuple[int, str]] = []
+    current_xref: str | None = None
+    in_indi = False
+    pending_asso_lineno: int | None = None   # lineno of the 1 ASSO under scrutiny
+
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+
+            m0 = re.match(r'^0 (@[^@]+@) INDI', line)
+            if m0:
+                # Close previous INDI; if we had a pending ASSO it has no RELA
+                if in_indi and pending_asso_lineno is not None:
+                    violations.append((pending_asso_lineno, current_xref))
+                current_xref = m0.group(1)
+                in_indi = True
+                pending_asso_lineno = None
+                continue
+
+            if in_indi and line.startswith('0 '):
+                # Close current INDI
+                if pending_asso_lineno is not None:
+                    violations.append((pending_asso_lineno, current_xref))
+                in_indi = False
+                current_xref = None
+                pending_asso_lineno = None
+                continue
+
+            if not in_indi:
+                continue
+
+            # Level-1 ASSO tag
+            if re.match(r'^1 ASSO\b', line):
+                # Previous ASSO (if any) had no RELA
+                if pending_asso_lineno is not None:
+                    violations.append((pending_asso_lineno, current_xref))
+                pending_asso_lineno = lineno
+                continue
+
+            # Another level-1 tag (not ASSO) closes any pending ASSO without RELA
+            if re.match(r'^1 ', line):
+                if pending_asso_lineno is not None:
+                    violations.append((pending_asso_lineno, current_xref))
+                    pending_asso_lineno = None
+                continue
+
+            # Level-2 RELA tag resolves the pending ASSO
+            if pending_asso_lineno is not None and re.match(r'^2 RELA\b', line):
+                pending_asso_lineno = None
+
+    # End of file: any pending ASSO has no RELA
+    if in_indi and pending_asso_lineno is not None:
+        violations.append((pending_asso_lineno, current_xref))
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
+# SOUR without TITL  (spec 1.13)
+# ---------------------------------------------------------------------------
+
+def scan_sour_without_titl(path: str) -> list[str]:
+    """
+    Return xrefs of 0 @Sn@ SOUR records that have no 1 TITL subordinate.
+    """
+    violations: list[str] = []
+    current_xref: str | None = None
+    in_sour = False
+    has_titl = False
+
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.rstrip('\n')
+
+            m = re.match(r'^0 (@[^@]+@) SOUR', line)
+            if m:
+                if in_sour and current_xref and not has_titl:
+                    violations.append(current_xref)
+                current_xref = m.group(1)
+                in_sour = True
+                has_titl = False
+                continue
+
+            if in_sour and line.startswith('0 '):
+                if current_xref and not has_titl:
+                    violations.append(current_xref)
+                in_sour = False
+                current_xref = None
+                continue
+
+            if in_sour and re.match(r'^1 TITL\b', line):
+                has_titl = True
+
+    if in_sour and current_xref and not has_titl:
+        violations.append(current_xref)
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Programmatic all-fixes API
 # ---------------------------------------------------------------------------
 
@@ -5201,6 +5424,67 @@ def main():
             else:
                 print('OK: no date logical inconsistencies detected.')
 
+            # ── New content-quality checks ───────────────────────────────────
+
+            # Build name map for godparent output (xref → display name)
+            _name_map: dict[str, str] = {}
+            _cur_xref_nm: str | None = None
+            with open(args.gedfile, encoding='utf-8') as _f:
+                for _raw in _f:
+                    _l = _raw.rstrip('\n')
+                    _m0 = re.match(r'^0 (@[^@]+@) INDI', _l)
+                    if _m0:
+                        _cur_xref_nm = _m0.group(1)
+                        continue
+                    if _cur_xref_nm and _l.startswith('0 '):
+                        _cur_xref_nm = None
+                        continue
+                    if _cur_xref_nm:
+                        _mn = re.match(r'^1 NAME (.+)', _l)
+                        if _mn and _cur_xref_nm not in _name_map:
+                            raw_name = _mn.group(1).strip()
+                            display = raw_name.replace('/', '').strip()
+                            _name_map[_cur_xref_nm] = display
+
+            godparent_issues = scan_godparent_count(args.gedfile)
+            if godparent_issues:
+                print(f'\n{_WARN} {len(godparent_issues)} individual(s) with unusual godparent count:')
+                for xref, total, m_count, f_count in godparent_issues[:20]:
+                    name = _name_map.get(xref, xref)
+                    reasons = []
+                    if total > 2:
+                        reasons.append(f'expected at most 2 total')
+                    if m_count > 1:
+                        reasons.append(f'expected at most 1 male godparent')
+                    if f_count > 1:
+                        reasons.append(f'expected at most 1 female godparent')
+                    reason_str = ', '.join(reasons)
+                    print(f'  {xref} {name}: {total} godparents ({m_count}M, {f_count}F) — {reason_str}')
+                if len(godparent_issues) > 20:
+                    print(f'  ... and {len(godparent_issues) - 20} more.')
+            else:
+                print('OK: no unusual godparent counts.')
+
+            asso_no_rela = scan_asso_without_rela(args.gedfile)
+            if asso_no_rela:
+                errors = True
+                print(f'\n{_ERR} {len(asso_no_rela)} ASSO record(s) missing required RELA tag:')
+                for lineno, xref in asso_no_rela[:20]:
+                    print(f'  line {lineno} ({xref})')
+                if len(asso_no_rela) > 20:
+                    print(f'  ... and {len(asso_no_rela) - 20} more.')
+            else:
+                print('OK: all ASSO records have a RELA tag.')
+
+            sour_no_titl = scan_sour_without_titl(args.gedfile)
+            if sour_no_titl:
+                xref_list = ', '.join(sour_no_titl[:20])
+                if len(sour_no_titl) > 20:
+                    xref_list += f', ... and {len(sour_no_titl) - 20} more'
+                print(f'\n{_WARN} {len(sour_no_titl)} SOUR record(s) have no TITL: {xref_list}')
+            else:
+                print('OK: all SOUR records have a TITL.')
+
             # ── Summary statistics ───────────────────────────────────────────
             try:
                 from gedcom_merge.parser import parse_gedcom
@@ -5249,6 +5533,15 @@ def main():
             if bad_format:
                 _issue_rows.append((len(bad_format),
                                     'DATE values with invalid format', _ERR))
+            if godparent_issues:
+                _issue_rows.append((len(godparent_issues),
+                                    'individuals with unusual godparent count', _WARN))
+            if asso_no_rela:
+                _issue_rows.append((len(asso_no_rela),
+                                    'ASSO records missing RELA tag', _ERR))
+            if sour_no_titl:
+                _issue_rows.append((len(sour_no_titl),
+                                    'SOUR records without TITL', _WARN))
             _issue_rows.sort(key=lambda r: -r[0])
 
             _total_errors   = sum(1 for _, _, sev in _issue_rows if sev == _ERR)
