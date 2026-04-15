@@ -1046,3 +1046,100 @@ class TestDeleteGodparentEndpoint:
         bak.unlink(missing_ok=True)
         post('/api/delete_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
         assert bak.exists()
+
+
+# ===========================================================================
+# Additional regression tests for review-found bugs
+# ===========================================================================
+
+class TestEditSourceRecordContinuationLines:
+    """edit_source_record must not orphan CONT lines under managed tags."""
+
+    def test_cont_lines_under_note_not_orphaned(self, live_server):
+        """A NOTE with a CONT line should be replaced cleanly without leaving
+        orphaned CONT lines in the updated block."""
+        ged, post, _, _ = live_server
+        # Manually insert a SOUR record with a multi-line NOTE
+        text = ged.read_text(encoding='utf-8')
+        src_block = (
+            '0 @S1@ SOUR\n'
+            '1 TITL Multi-line Source\n'
+            '1 NOTE First line\n'
+            '2 CONT Second line\n'
+        )
+        text = text.replace('0 TRLR', src_block + '0 TRLR')
+        ged.write_text(text, encoding='utf-8')
+
+        # Edit the source record — replaces NOTE with new value
+        post('/api/edit_source_record', {
+            'xref': '@S1@',
+            'titl': 'Multi-line Source',
+            'auth': '', 'publ': '', 'repo': '',
+            'note': 'Replaced note',
+        })
+        result = _ged_text(ged)
+        # Old CONT should be gone
+        assert '2 CONT Second line' not in result
+        # New NOTE present
+        assert '1 NOTE Replaced note' in result
+        # No orphaned CONT lines (not preceded by a NOTE/CONC in valid hierarchy)
+        lines = result.splitlines()
+        for i, ln in enumerate(lines):
+            if ln.startswith('2 CONT'):
+                # The preceding level-1 line should be a text-value tag, not be absent
+                prev_l1 = None
+                for j in range(i - 1, -1, -1):
+                    m = ln.strip()
+                    import re
+                    pm = re.match(r'^(\d+)\s', lines[j])
+                    if pm:
+                        if int(pm.group(1)) < 2:
+                            prev_l1 = lines[j]
+                            break
+                assert prev_l1 is not None, f'Orphaned CONT at line {i}: {ln!r}'
+
+
+class TestAddPersonParentOf:
+    """add_person with rel_type=parent_of."""
+
+    def test_parent_of_adds_parent_to_existing_family(self, live_server):
+        ged, post, _, _ = live_server
+        # @I6@ is in @F6@ as a child (FAMC @F6@). @F6@ has only HUSB @I10@ — no WIFE.
+        text = _ged_text(ged)
+        f6_block = text.split('0 @F6@ FAM')[1].split('\n0 ')[0]
+        assert '1 WIFE' not in f6_block  # Confirm no WIFE in @F6@ initially
+
+        # Add a new person as a parent (WIFE) of @I6@
+        resp = post('/api/add_person', {
+            'given': 'Martha', 'surn': 'Jones', 'sex': 'F',
+            'birth_year': '1935',
+            'rel_type': 'parent_of', 'rel_xref': '@I6@',
+        })
+        assert 'xref' in resp
+        new_xref = resp['xref']
+        result = _ged_text(ged)
+        # New INDI created
+        assert f'0 {new_xref} INDI' in result
+        # WIFE link added to @F6@
+        assert f'1 WIFE {new_xref}' in result
+        # New INDI has FAMS back-link to @F6@
+        assert f'1 FAMS @F6@' in result.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+
+    def test_parent_of_returns_400_when_slot_occupied(self, live_server):
+        """Adding a second WIFE to a family that already has one should return 400."""
+        ged, post, _, _ = live_server
+        import urllib.error
+        # First add a wife to @F6@ (which starts with only a HUSB)
+        post('/api/add_person', {
+            'given': 'First', 'surn': 'Wife', 'sex': 'F',
+            'birth_year': '', 'rel_type': 'parent_of', 'rel_xref': '@I6@',
+        })
+        # Now try to add a second wife — should fail with 400
+        try:
+            post('/api/add_person', {
+                'given': 'Second', 'surn': 'Wife', 'sex': 'F',
+                'birth_year': '', 'rel_type': 'parent_of', 'rel_xref': '@I6@',
+            })
+            assert False, 'Expected 400 for duplicate WIFE slot'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400

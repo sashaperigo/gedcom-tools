@@ -1305,12 +1305,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             for tag, val in (('AUTH', auth), ('PUBL', publ), ('REPO', repo), ('NOTE', note)):
                 if val:
                     new_block.append(f'1 {tag} {val}')
-            # Also keep any unmanaged sub-tags (e.g. custom extensions)
+            # Keep any unmanaged level-1 sub-tags (e.g. custom extensions),
+            # but skip managed tags AND all of their subordinate (level > 1)
+            # continuation lines so we don't orphan CONT/CONC lines.
             managed = {'TITL', 'AUTH', 'PUBL', 'REPO', 'NOTE'}
+            skip_children = False
             for line in lines[sour_start + 1: sour_end]:
                 m = _TAG_RE.match(line)
-                if m and int(m.group(1)) == 1 and m.group(2) in managed:
-                    continue
+                if m:
+                    lvl = int(m.group(1))
+                    if lvl == 1:
+                        # New level-1 tag: decide whether to include it
+                        skip_children = m.group(2) in managed
+                        if skip_children:
+                            continue
+                    elif skip_children:
+                        # Child of a managed tag — drop continuation lines too
+                        continue
                 new_block.append(line)
             new_lines = lines[:sour_start] + new_block + lines[sour_end:]
             _write_gedcom_atomic(new_lines)
@@ -1463,13 +1474,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 famc_xref = _get_famc_for_indi(lines, rel_xref)
                 if famc_xref:
                     fam_xref = famc_xref
-                    # Add new INDI as HUSB or WIFE to that family
+                    # Guard: check whether the HUSB/WIFE slot is already occupied
+                    slot = 'WIFE' if sex == 'F' else 'HUSB'
                     fam_start, fam_end, ferr = _find_fam_block(lines, fam_xref)
                     if not ferr:
-                        if sex == 'F':
-                            lines = lines[:fam_end] + [f'1 WIFE {new_xref}'] + lines[fam_end:]
-                        else:
-                            lines = lines[:fam_end] + [f'1 HUSB {new_xref}'] + lines[fam_end:]
+                        slot_occupied = any(
+                            _TAG_RE.match(l) and _TAG_RE.match(l).group(2) == slot
+                            for l in lines[fam_start:fam_end]
+                        )
+                        if slot_occupied:
+                            self.send_error(400, f'Family {fam_xref} already has a {slot}')
+                            return
+                        lines = lines[:fam_end] + [f'1 {slot} {new_xref}'] + lines[fam_end:]
                 else:
                     fam_xref = _next_fam_xref(lines)
                     if sex == 'F':
