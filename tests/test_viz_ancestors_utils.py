@@ -6,7 +6,6 @@ Covers:
   - _find_person         – locate an INDI xref by exact xref or name substring
 """
 
-import os
 from pathlib import Path
 
 import pytest

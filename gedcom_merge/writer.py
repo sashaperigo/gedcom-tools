@@ -109,11 +109,6 @@ def _serialize_node(node: GedcomNode, override_level: int | None = None) -> list
     else:
         prefix = f'{level} {node.tag}'
 
-    if node.value:
-        full_line = f'{prefix} {node.value}'
-    else:
-        full_line = prefix
-
     # Handle long lines and embedded newlines
     text_parts = node.value.split('\n') if node.value else ['']
     first_part = text_parts[0]
@@ -126,7 +121,6 @@ def _serialize_node(node: GedcomNode, override_level: int | None = None) -> list
         # Wrap with CONC
         p = prefix + ' '
         remaining = first_part
-        first = True
         while remaining:
             max_len = _MAX_LINE_LEN - len(p)
             chunk = remaining[:max_len]
@@ -138,7 +132,6 @@ def _serialize_node(node: GedcomNode, override_level: int | None = None) -> list
     for part in rest_parts:
         cont_prefix = f'{level + 1} CONT '
         remaining = part
-        first = True
         while True:
             max_len = _MAX_LINE_LEN - len(cont_prefix)
             if len(remaining) <= max_len:
@@ -355,8 +348,6 @@ def _serialize_note(note: Note) -> list[str]:
 def _make_header(
     file_a_path: str = '',
     file_b_path: str = '',
-    merged_indi: int = 0,
-    merged_fam: int = 0,
 ) -> list[str]:
     today = datetime.date.today()
     date_str = today.strftime('%d %b %Y').upper()
@@ -393,10 +384,7 @@ def write_gedcom(
     lines: list[str] = []
 
     # Header
-    lines.extend(_make_header(
-        file_a_path, file_b_path,
-        len(merged.individuals), len(merged.families)
-    ))
+    lines.extend(_make_header(file_a_path, file_b_path))
 
     # SUBM
     if merged.submitter:

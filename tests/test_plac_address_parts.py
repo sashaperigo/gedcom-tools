@@ -9,7 +9,6 @@ Covers:
 import textwrap
 from pathlib import Path
 
-import pytest
 
 from gedcom_linter import classify_plac_part, scan_plac_address_parts, fix_plac_address_parts
 

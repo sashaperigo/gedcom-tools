@@ -7,7 +7,6 @@ Follows the style of tests/test_fix_name_case.py.
 import textwrap
 from pathlib import Path
 
-import pytest
 
 from gedcom_linter import (
     scan_html_entities,

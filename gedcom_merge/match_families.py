@@ -11,8 +11,7 @@ A family in B matches a family in A if:
 from __future__ import annotations
 
 from gedcom_merge.model import (
-    GedcomFile, Family,
-    FamilyMatch, FamilyMatchResult,
+    GedcomFile, FamilyMatch, FamilyMatchResult,
 )
 
 

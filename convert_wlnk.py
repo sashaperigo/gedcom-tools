@@ -31,7 +31,6 @@ import argparse
 import os
 import re
 import sys
-from collections import defaultdict
 
 from gedcom_io import write_lines
 

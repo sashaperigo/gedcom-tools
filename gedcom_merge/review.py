@@ -11,10 +11,8 @@ from __future__ import annotations
 import sys
 
 from gedcom_merge.model import (
-    GedcomFile, Individual, Source, Family,
-    SourceMatchResult, IndividualMatchResult, FamilyMatchResult,
-    MergeDecisions, FieldChoice,
-    SourceMatch, IndividualMatch,
+    GedcomFile, Individual, Source, SourceMatchResult, IndividualMatchResult, FamilyMatchResult,
+    MergeDecisions, SourceMatch, IndividualMatch,
 )
 from gedcom_merge.session import SessionState, save_session
 

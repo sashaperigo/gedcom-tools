@@ -595,7 +595,6 @@ class TestExpansionButtonLogic:
         Non-tree xrefs in RELATIVES don't produce toggles (JS guard: k != 1 and xref in RELATIVES).
         This test verifies tree members with relatives get a toggle, and non-members don't.
         """
-        tree_xrefs = set(_tree.values())
         # Every tree member that has relatives should have a toggle (except root, key 1)
         for k, xref in _tree.items():
             if k == 1:

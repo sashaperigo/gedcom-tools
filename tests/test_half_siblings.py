@@ -166,7 +166,6 @@ class TestHalfSiblings:
 
         rels = build_relatives_json({}, indis_copy, fams_copy)
         alice_groups = rels['@I1@'].get('half_siblings', [])
-        bob_group = next((g for g in alice_groups if g['shared_parent'] == '@I2@'), None)
         # Find any group where the mystery child is listed
         mystery_group = next(
             (g for g in alice_groups if '@I99@' in g.get('half_sibs', [])), None

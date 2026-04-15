@@ -7,7 +7,6 @@ nickname extraction and other text processing works reliably.
 import textwrap
 from pathlib import Path
 
-import pytest
 
 from gedcom_linter import scan_curly_quotes, fix_curly_quotes
 

@@ -17,7 +17,7 @@ from gedcom_merge.model import (
     IndividualMatch, IndividualMatchResult,
 )
 from gedcom_merge.normalize import (
-    normalize_surname, date_overlap_score, place_similarity,
+    date_overlap_score, place_similarity,
 )
 
 try:

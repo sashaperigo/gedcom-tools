@@ -41,7 +41,7 @@ import os
 import re
 import sys
 
-from gedcom_io import level as _level, write_lines
+from gedcom_io import write_lines
 
 # ---------------------------------------------------------------------------
 # MARR date-compatibility helpers

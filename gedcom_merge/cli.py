@@ -70,17 +70,16 @@ def main(argv: list[str] | None = None) -> int:
     from gedcom_merge.match_sources import match_sources
     from gedcom_merge.match_individuals import match_individuals
     from gedcom_merge.match_families import match_families
-    from gedcom_merge.merge import (merge_records, MergeStats, deduplicate_merged_sources,
+    from gedcom_merge.merge import (merge_records, deduplicate_merged_sources,
                                     remove_empty_family_shells, purge_dangling_xrefs,
                                     deduplicate_duplicate_families, deduplicate_duplicate_names)
     from gedcom_merge.writer import write_gedcom
     from gedcom_merge.validator import validate
     from gedcom_merge.report import generate_report
     from gedcom_merge.analysis import analyze_merged
-    from gedcom_merge.session import new_session, load_session, save_session
+    from gedcom_merge.session import new_session, load_session
     from gedcom_merge.review import run_review
     from gedcom_merge.review_html import run_web_review
-    from gedcom_merge.model import MergeDecisions
 
     # ---- Phase 1: Parse ----
     print(f'Parsing {args.file_a}...')

@@ -1,6 +1,5 @@
 """Tests for gedcom_merge.match_individuals — TDD for individual matching logic."""
 
-import pytest
 from gedcom_merge.model import (
     Individual, GedcomFile, GedcomNode,
     NameRecord, EventRecord, ParsedDate,
@@ -8,9 +7,7 @@ from gedcom_merge.model import (
 from gedcom_merge.match_individuals import (
     match_individuals,
     _score_names,
-    _score_event,
     _build_surname_index,
-    _get_candidates_for,
     _estimate_birth_year,
     _has_parent_contradiction,
     _score_family_context,
@@ -18,7 +15,6 @@ from gedcom_merge.match_individuals import (
     _plausible_lifespan,
     _NAME_ALIASES,
 )
-from gedcom_merge.normalize import parse_date
 from tests.helpers import make_indi, make_family, make_file
 
 # Shorter aliases matching the naming style used in this file

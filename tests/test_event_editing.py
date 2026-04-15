@@ -11,7 +11,6 @@ Covers:
   - _HTML_TEMPLATE        – UI elements present; no insertAdjacentHTML accumulation
 """
 
-import json
 import os
 import re
 from pathlib import Path
@@ -36,7 +35,6 @@ from serve_viz import (          # noqa: E402  (after env var is set)
 from viz_ancestors import (      # noqa: E402
     _HTML_TEMPLATE,
     build_people_json,
-    build_tree_json,
     parse_gedcom,
 )
 
@@ -845,16 +843,6 @@ class TestFamBlock:
 
     def test_edit_marr_replace_existing_addr(self):
         """Editing an existing ADDR sub-tag on a MARR event must replace the value."""
-        ged_with_addr = FAM_GED + [
-            '0 @F2@ FAM',
-            '1 HUSB @I1@',
-            '1 WIFE @I2@',
-            '1 MARR',
-            '2 DATE 1 JAN 1900',
-            '2 PLAC London, England',
-            '2 ADDR Old Church',
-            '0 TRLR',
-        ]
         # Remove original TRLR from FAM_GED before appending
         ged = [l for l in FAM_GED if l != '0 TRLR'] + [
             '0 @F2@ FAM',
@@ -875,7 +863,6 @@ class TestFamBlock:
     def test_edit_marr_addr_preserved_in_marr_event_dict(self, tmp_path):
         """After adding ADDR, parse_gedcom must read it back into the MARR event dict."""
         ged = tmp_path / 'addr_marr.ged'
-        new_lines, err = None, None
         # Start with FAM_GED, add ADDR to the MARR block
         start, end, e = _find_fam_event_block(FAM_GED, '@F1@', 'MARR')
         assert e is None

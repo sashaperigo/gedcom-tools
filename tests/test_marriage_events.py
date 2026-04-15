@@ -154,7 +154,6 @@ class TestAddFamsToIndi:
     def test_inserts_fams_line_in_indi_block(self):
         lines = _lines()
         new_lines = _add_fams_to_indi(lines, '@I2@', '@F7@')
-        text = '\n'.join(new_lines)
         # Must appear inside @I2@'s block (before next record)
         i2_start = next(i for i, l in enumerate(new_lines) if '0 @I2@ INDI' in l)
         i2_end = next(i for i in range(i2_start + 1, len(new_lines)) if new_lines[i].startswith('0 '))

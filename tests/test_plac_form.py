@@ -1,7 +1,6 @@
 """
 Tests for scan_plac_form() in gedcom_linter.py.
 """
-import pytest
 
 from gedcom_linter import scan_plac_form
 

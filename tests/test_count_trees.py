@@ -12,7 +12,6 @@ Covers connected-component counting on the family graph:
 
 from pathlib import Path
 
-import pytest
 
 from count_trees import count_trees
 

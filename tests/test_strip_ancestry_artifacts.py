@@ -13,7 +13,6 @@ real Ancestry.com export, including all categories of proprietary tags:
 import os
 import re
 import shutil
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -261,7 +260,7 @@ class TestOutputFile:
 
     def test_output_to_separate_file(self, tmp_path):
         out = str(tmp_path / 'clean.ged')
-        result = strip_ancestry_artifacts(str(FIXTURE), path_out=out)
+        strip_ancestry_artifacts(str(FIXTURE), path_out=out)
         assert os.path.exists(out)
         remaining = tags_in_file(out) & ANCESTRY_TAGS
         assert remaining == set()

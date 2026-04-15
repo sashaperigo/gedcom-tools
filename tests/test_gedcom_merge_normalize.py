@@ -1,6 +1,5 @@
 """Tests for gedcom_merge.normalize — TDD for date/name/place normalization."""
 
-import pytest
 from gedcom_merge.normalize import (
     normalize_name_str,
     tokenize_title,
@@ -9,7 +8,6 @@ from gedcom_merge.normalize import (
     place_similarity,
     jaccard,
 )
-from gedcom_merge.model import ParsedDate
 
 
 class TestNormalizeName:

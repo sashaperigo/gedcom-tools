@@ -12,7 +12,6 @@ Usage:
 
 from __future__ import annotations
 import re
-from typing import TextIO
 
 from gedcom_merge.model import (
     GedcomFile, GedcomNode,
@@ -20,8 +19,7 @@ from gedcom_merge.model import (
     NameRecord, EventRecord, CitationRecord, ParsedDate,
 )
 from gedcom_merge.normalize import (
-    normalize_name_str, normalize_surname, normalize_given,
-    extract_parenthetical_surnames, strip_parentheticals,
+    normalize_name_str, normalize_surname, extract_parenthetical_surnames, strip_parentheticals,
     tokenize_title, parse_date,
 )
 

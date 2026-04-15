@@ -93,7 +93,6 @@ class TestAddUnaccentedNames:
         assert '1 NAME Klara /Koettner/' in c
 
     def test_plain_name_unchanged(self, tmp_copy):
-        original = Path(tmp_copy).read_text(encoding='utf-8')
         add_unaccented_names(tmp_copy)
         c = Path(tmp_copy).read_text(encoding='utf-8')
         # @I3@ John Smith should have no new NAME line added

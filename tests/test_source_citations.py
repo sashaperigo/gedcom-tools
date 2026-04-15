@@ -7,11 +7,9 @@ Covers:
   - render_html:   window.SOURCES dict injected into the generated HTML
 """
 
-import json
 import os
 from pathlib import Path
 
-import pytest
 
 os.environ.setdefault('GED_FILE', str(Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'))
 

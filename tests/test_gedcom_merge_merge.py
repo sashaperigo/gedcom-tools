@@ -4,8 +4,7 @@ import os
 import pytest
 
 from gedcom_merge.model import (
-    GedcomFile, Individual, Family, Source, GedcomNode,
-    NameRecord, EventRecord, CitationRecord, ParsedDate,
+    Family, Source, NameRecord, EventRecord, CitationRecord, ParsedDate,
     MergeDecisions,
 )
 from gedcom_merge.merge import (
@@ -19,7 +18,6 @@ from gedcom_merge.merge import (
     deduplicate_duplicate_names,
     MergeStats,
 )
-from gedcom_merge.normalize import parse_date
 from tests.helpers import _node, make_indi, make_family, make_file, make_source, make_citation
 
 # Shorter aliases for the helpers used pervasively in this file
@@ -973,9 +971,7 @@ class TestSortEvents:
 
     def test_already_sorted_returns_zero(self):
         """No reordering needed → 0 records changed."""
-        from gedcom_linter import fix_sort_events
         ind = _indi('@I1@', birth_year=1900, death_year=1980)
-        merged = _file(indis={'@I1@': ind})
         # Manually call sort on the in-memory object (fix_sort_events works on files;
         # test sort key logic directly via _event_sort_key)
         from gedcom_linter import _event_sort_key
@@ -1026,7 +1022,7 @@ class TestSortEvents:
 
     def test_scan_detects_out_of_order(self, tmp_path):
         """scan_unsorted_events flags an individual with events out of order."""
-        import sys, os
+        import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
         from gedcom_linter import scan_unsorted_events
         from gedcom_merge.writer import write_gedcom

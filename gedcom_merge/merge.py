@@ -12,7 +12,6 @@ All changes are tracked in MergeStats for the report.
 """
 
 from __future__ import annotations
-import copy
 from dataclasses import dataclass, field, replace as _dc_replace
 
 from gedcom_merge.model import (
@@ -22,8 +21,7 @@ from gedcom_merge.model import (
     MergeDecisions,
 )
 from gedcom_merge.normalize import (
-    normalize_name_str, parse_date, date_overlap_score, place_similarity,
-    extract_parenthetical_surnames, strip_parentheticals,
+    date_overlap_score, extract_parenthetical_surnames, strip_parentheticals,
 )
 
 
@@ -1067,7 +1065,6 @@ def purge_dangling_xrefs(merged: GedcomFile) -> int:
     removed = 0
     indi_xrefs = set(merged.individuals)
     fam_xrefs = set(merged.families)
-    sour_xrefs = set(merged.sources)
     obje_xrefs = set(merged.media)
 
     for fam in merged.families.values():

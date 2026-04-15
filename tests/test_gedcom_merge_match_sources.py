@@ -1,6 +1,5 @@
 """Tests for gedcom_merge.match_sources — TDD for source matching logic."""
 
-import pytest
 from gedcom_merge.model import GedcomFile, Source, GedcomNode
 from gedcom_merge.normalize import tokenize_title
 from gedcom_merge.match_sources import match_sources, _score_pair, _score_title

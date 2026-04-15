@@ -8,7 +8,6 @@ Covers:
 import textwrap
 from pathlib import Path
 
-import pytest
 
 from gedcom_linter import _name_to_title_case, fix_name_case
 

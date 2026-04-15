@@ -3,7 +3,6 @@ Tests for scan_level_jumps() in gedcom_linter.py, plus an integration test
 that the real GEDCOM file (GED_FILE env var) has no invalid level jumps.
 """
 import os
-from pathlib import Path
 
 import pytest
 

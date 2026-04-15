@@ -1,10 +1,8 @@
 """Tests for deduplicate_merged_sources() in gedcom_merge.merge."""
 
-import pytest
 from gedcom_merge.model import (
     GedcomFile, Individual, Family, Source,
     CitationRecord, NameRecord, EventRecord, GedcomNode,
-    Repository, MediaObject, Note,
 )
 from gedcom_merge.merge import deduplicate_merged_sources
 

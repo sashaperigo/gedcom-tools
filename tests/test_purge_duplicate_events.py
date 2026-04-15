@@ -592,7 +592,6 @@ class TestProcessFamRecord:
         ])
         new_lines, merged, added = _process_fam_record(rec)
         text = ''.join(new_lines)
-        marr_count = text.count('\n1 MARR\n') + text.count('\n1 MARR')
         assert merged == 1
         assert added == 0
         assert '2 DATE ABT 1920' in text

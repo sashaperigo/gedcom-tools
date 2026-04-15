@@ -28,7 +28,6 @@ from gedcom_merge.writer import _format_date
 from gedcom_merge.match_individuals import (
     _estimate_birth_year,
     _build_surname_index,
-    _get_candidates_for,
     _score_pair,
 )
 from gedcom_merge.match_sources import _score_pair as _score_source_pair
@@ -1100,7 +1099,6 @@ class _ReviewHandler(BaseHTTPRequestHandler):
         matched_b_to_a: dict[str, str] = cls.decisions.get('indi_map', {})
 
         all_xrefs_a = list(file_a.individuals.keys())
-        candidate_xrefs = _get_candidates_for(ind_b, cls._surname_index_a, all_xrefs_a, file_b)
 
         # Always search all of File A for manual searches — exhaustive is better
         # than fast when the user is explicitly looking for a match.
