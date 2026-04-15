@@ -46,7 +46,7 @@ class TestParsing:
         assert FIXTURE.exists()
 
     def test_all_indis_parsed(self, indis):
-        assert len(indis) == 13  # @I1@ through @I13@
+        assert len(indis) == 15  # @I1@ through @I15@
 
     def test_parse_indi_name(self, indis):
         """Slashes around surname must be stripped."""
@@ -86,7 +86,7 @@ class TestParsing:
         assert indis['@I4@']['famc'] is None
 
     def test_all_fams_parsed(self, fams):
-        assert len(fams) == 6  # @F1@ through @F6@
+        assert len(fams) == 7  # @F1@ through @F7@
 
     def test_fam_husb_wife(self, fams):
         assert fams['@F1@']['husb'] == '@I2@'

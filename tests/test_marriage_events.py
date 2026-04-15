@@ -17,7 +17,7 @@ Fixture individuals (ancestors_sample.ged):
   @I2@  James /Smith/  SEX M  FAMS @F1@
   @I3@  Clara /Jones/  SEX F  FAMS @F1@
   @F1@  HUSB @I2@   WIFE @I3@  (no MARR event)
-  Max FAM xref in file: @F6@  → next should be @F7@
+  Max FAM xref in file: @F7@  → next should be @F8@
 """
 
 import json
@@ -130,9 +130,9 @@ class TestNextFamXref:
 
     def test_increments_beyond_max(self):
         lines = _lines()
-        # Fixture has @F1@ … @F6@, so next should be @F7@
+        # Fixture has @F1@ … @F7@, so next should be @F8@
         result = _next_fam_xref(lines)
-        assert result == '@F7@'
+        assert result == '@F8@'
 
     def test_works_with_minimal_ged(self):
         lines = ['0 HEAD', '0 @F3@ FAM', '1 HUSB @I1@', '0 TRLR']
@@ -235,29 +235,29 @@ class TestCreateFamWithEvent:
     def test_creates_fam_record(self):
         lines = _lines()
         new_lines = _create_fam_with_event(
-            lines, '@I4@', '@I5@', '@F7@', 'MARR', {'DATE': '1955'}
+            lines, '@I4@', '@I5@', '@F8@', 'MARR', {'DATE': '1955'}
         )
-        assert any('0 @F7@ FAM' in l for l in new_lines)
+        assert any('0 @F8@ FAM' in l for l in new_lines)
 
     def test_fam_contains_husb_wife(self):
         lines = _lines()
         new_lines = _create_fam_with_event(
-            lines, '@I4@', '@I5@', '@F7@', 'MARR', {}
+            lines, '@I4@', '@I5@', '@F8@', 'MARR', {}
         )
-        f7_start = next(i for i, l in enumerate(new_lines) if '0 @F7@ FAM' in l)
-        f7_end = next(i for i in range(f7_start + 1, len(new_lines)) if new_lines[i].startswith('0 '))
-        block = new_lines[f7_start:f7_end]
+        f8_start = next(i for i, l in enumerate(new_lines) if '0 @F8@ FAM' in l)
+        f8_end = next(i for i in range(f8_start + 1, len(new_lines)) if new_lines[i].startswith('0 '))
+        block = new_lines[f8_start:f8_end]
         assert any('1 HUSB @I4@' == l.strip() for l in block)
         assert any('1 WIFE @I5@' == l.strip() for l in block)
 
     def test_fam_contains_event(self):
         lines = _lines()
         new_lines = _create_fam_with_event(
-            lines, '@I4@', '@I5@', '@F7@', 'MARR', {'DATE': '1955', 'PLAC': 'Dublin'}
+            lines, '@I4@', '@I5@', '@F8@', 'MARR', {'DATE': '1955', 'PLAC': 'Dublin'}
         )
-        f7_start = next(i for i, l in enumerate(new_lines) if '0 @F7@ FAM' in l)
-        f7_end = next(i for i in range(f7_start + 1, len(new_lines)) if new_lines[i].startswith('0 '))
-        block = new_lines[f7_start:f7_end]
+        f8_start = next(i for i, l in enumerate(new_lines) if '0 @F8@ FAM' in l)
+        f8_end = next(i for i in range(f8_start + 1, len(new_lines)) if new_lines[i].startswith('0 '))
+        block = new_lines[f8_start:f8_end]
         assert any('1 MARR' == l.strip() for l in block)
         assert any('1955' in l for l in block)
         assert any('Dublin' in l for l in block)
@@ -266,11 +266,11 @@ class TestCreateFamWithEvent:
         """New FAM should come after the last existing FAM block, before TRLR."""
         lines = _lines()
         new_lines = _create_fam_with_event(
-            lines, '@I4@', '@I5@', '@F7@', 'MARR', {}
+            lines, '@I4@', '@I5@', '@F8@', 'MARR', {}
         )
         trlr_idx = next(i for i, l in enumerate(new_lines) if l.strip() == '0 TRLR')
-        f7_idx = next(i for i, l in enumerate(new_lines) if '0 @F7@ FAM' in l)
-        assert f7_idx < trlr_idx
+        f8_idx = next(i for i, l in enumerate(new_lines) if '0 @F8@ FAM' in l)
+        assert f8_idx < trlr_idx
 
 
 # ===========================================================================
@@ -368,7 +368,7 @@ class TestAddMarriageEndpoint:
         text = ged.read_text(encoding='utf-8')
         # Both @I4@ and @I11@ should have FAMS pointing to the new FAM
         # We can check that a new @FX@ appears as FAMS in both INDI blocks
-        new_fam = '@F7@'   # fixture max is @F6@, next is @F7@
+        new_fam = '@F8@'   # fixture max is @F7@, next is @F8@
         assert f'1 FAMS {new_fam}' in text
 
     def test_add_div_creates_fam_event(self, live_server):

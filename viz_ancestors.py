@@ -411,16 +411,24 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
             for fam_xref in info.get('fams', []):
                 fam = fams.get(fam_xref, {})
                 marrs = fam.get('marrs', [])
-                if not marrs:
-                    continue
                 spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
                 spouse_name = indis[spouse_xref]['name'] if spouse_xref and spouse_xref in indis else None
+                appended = False
                 for marr_idx, marr in enumerate(marrs):
                     # Skip bare duplicate MARR entries (no sub-tags) that can appear after a merge
                     if not any(marr.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
                         continue
                     # MARR events live in FAM blocks; event_idx=None marks them as non-editable via INDI
                     events.append({**marr, 'event_idx': None, 'marr_idx': marr_idx,
+                                   'spouse': spouse_name, 'spouse_xref': spouse_xref,
+                                   'fam_xref': fam_xref})
+                    appended = True
+                if not appended and spouse_xref:
+                    # FAM has no MARR record (or only bare duplicates) — emit a
+                    # synthetic event so the spouse still appears in the panel.
+                    events.append({'tag': 'MARR', 'type': None, 'date': None,
+                                   'place': None, 'note': None, 'age': None, 'addr': None,
+                                   'event_idx': None, 'marr_idx': 0,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
         _deat_age_keywords = frozenset({'STILLBORN', 'INFANT', 'CHILD'})

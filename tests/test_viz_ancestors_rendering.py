@@ -397,6 +397,36 @@ class TestMarriageEventSpouseXref:
         if mark_marr:  # Mark is in people (he is, since we include all indis)
             assert mark_marr[0]['spouse_xref'] == '@I1@'
 
+    def test_spouse_shown_when_fam_has_no_marr_record(self, people):
+        """
+        Regression: a FAM with a HUSB and WIFE but no MARR sub-record must still
+        produce a synthetic MARR event so the spouse appears in the
+        Spouses & Children panel.  @F7@ (George @I14@ / Susan @I15@) has no
+        MARR tag at all — both individuals must still carry a MARR event with
+        the other's xref.
+        """
+        george_marr = [e for e in people.get('@I14@', {}).get('events', [])
+                       if e['tag'] == 'MARR']
+        assert george_marr, (
+            '@I14@ (George) has no MARR events despite being in @F7@ — '
+            'spouse will not appear in the Spouses & Children panel'
+        )
+        assert george_marr[0].get('spouse_xref') == '@I15@', (
+            f"George's MARR event has spouse_xref={george_marr[0].get('spouse_xref')!r}, "
+            'expected @I15@ (Susan)'
+        )
+
+        susan_marr = [e for e in people.get('@I15@', {}).get('events', [])
+                      if e['tag'] == 'MARR']
+        assert susan_marr, (
+            '@I15@ (Susan) has no MARR events despite being in @F7@ — '
+            'spouse will not appear in the Spouses & Children panel'
+        )
+        assert susan_marr[0].get('spouse_xref') == '@I14@', (
+            f"Susan's MARR event has spouse_xref={susan_marr[0].get('spouse_xref')!r}, "
+            'expected @I14@ (George)'
+        )
+
 
 # ---------------------------------------------------------------------------
 # Expansion-button logic
