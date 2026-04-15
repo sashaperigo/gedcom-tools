@@ -655,6 +655,388 @@ function _buildSourcesModalContent(citations, sources) {
 }
 
 // ---------------------------------------------------------------------------
+// Task 14 — New modals
+// ---------------------------------------------------------------------------
+
+// ── Helper: _personName (already defined above) ───────────────────────────
+
+// ── showEditNameModal ─────────────────────────────────────────────────────
+
+let _editNameModalXref = null;
+
+function showEditNameModal(xref) {
+  _editNameModalXref = xref;
+  const name = (_personName(xref) || '').trim();
+
+  // Parse "Given /Surname/" GEDCOM format or fallback heuristic
+  const surnameMatch = name.match(/^(.*?)\s*\/([^/]*)\/\s*(.*)$/);
+  let given = '', surname = '';
+  if (surnameMatch) {
+    given   = (surnameMatch[1] + ' ' + (surnameMatch[3] || '')).trim();
+    surname = surnameMatch[2].trim();
+  } else {
+    const parts = name.split(' ');
+    surname = parts.length > 1 ? parts.pop() : '';
+    given   = parts.join(' ');
+  }
+
+  const titleEl    = document.getElementById('edit-name-modal-title');
+  const givenEl    = document.getElementById('edit-name-modal-given');
+  const surnameEl  = document.getElementById('edit-name-modal-surname');
+  const overlayEl  = document.getElementById('edit-name-modal-overlay');
+
+  if (titleEl)   titleEl.textContent = 'Edit Name \u2014 ' + name;
+  if (givenEl)   givenEl.value   = given;
+  if (surnameEl) surnameEl.value = surname;
+  if (overlayEl) overlayEl.classList.add('open');
+
+  if (givenEl) setTimeout(() => givenEl.focus && givenEl.focus(), 50);
+}
+
+function closeEditNameModal() {
+  const overlayEl = document.getElementById('edit-name-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _editNameModalXref = null;
+}
+
+async function submitEditNameModal() {
+  const xref    = _editNameModalXref;
+  const givenEl   = document.getElementById('edit-name-modal-given');
+  const surnameEl = document.getElementById('edit-name-modal-surname');
+  const given   = givenEl   ? givenEl.value.trim()   : '';
+  const surname = surnameEl ? surnameEl.value.trim() : '';
+  closeEditNameModal();
+  try {
+    await apiEditName(xref, given, surname);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showAddNoteModal ──────────────────────────────────────────────────────
+
+let _addNoteModalXref = null;
+
+function showAddNoteModal(xref) {
+  _addNoteModalXref = xref;
+
+  const titleEl   = document.getElementById('add-note-modal-title');
+  const textEl    = document.getElementById('add-note-modal-text');
+  const overlayEl = document.getElementById('add-note-modal-overlay');
+
+  if (titleEl)   titleEl.textContent = 'Add Note';
+  if (textEl)    textEl.value = '';
+  if (overlayEl) overlayEl.classList.add('open');
+
+  if (textEl) setTimeout(() => textEl.focus && textEl.focus(), 50);
+}
+
+function closeAddNoteModal() {
+  const overlayEl = document.getElementById('add-note-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addNoteModalXref = null;
+}
+
+async function submitAddNoteModal() {
+  const xref   = _addNoteModalXref;
+  const textEl = document.getElementById('add-note-modal-text');
+  const text   = textEl ? textEl.value.trim() : '';
+  closeAddNoteModal();
+  if (!text) return;
+  try {
+    await apiAddNote(xref, text);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showAddCitationModal ──────────────────────────────────────────────────
+
+let _addCitationModalXref = null, _addCitationModalFactTag = null;
+
+function showAddCitationModal(xref, factTag) {
+  _addCitationModalXref    = xref;
+  _addCitationModalFactTag = factTag;
+
+  const overlayEl  = document.getElementById('add-citation-modal-overlay');
+  const sourceEl   = document.getElementById('add-citation-modal-source');
+  const pageEl     = document.getElementById('add-citation-modal-page');
+  const textEl     = document.getElementById('add-citation-modal-text');
+  const noteEl     = document.getElementById('add-citation-modal-note');
+  const titleEl    = document.getElementById('add-citation-modal-title');
+
+  if (titleEl)   titleEl.textContent = factTag ? `Add Citation — ${factTag}` : 'Add Person Source';
+  if (pageEl)    pageEl.value  = '';
+  if (textEl)    textEl.value  = '';
+  if (noteEl)    noteEl.value  = '';
+
+  // Populate sourceXref select from global SOURCES
+  if (sourceEl && typeof SOURCES !== 'undefined') {
+    sourceEl.innerHTML = '<option value="">— select source —</option>';
+    for (const [sxref, src] of Object.entries(SOURCES)) {
+      const opt = (typeof document !== 'undefined' && document.createElement)
+        ? document.createElement('option')
+        : { value: '', textContent: '' };
+      opt.value       = sxref;
+      opt.textContent = src.titl || sxref;
+      if (sourceEl.appendChild) sourceEl.appendChild(opt);
+    }
+  }
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (sourceEl)  setTimeout(() => sourceEl.focus && sourceEl.focus(), 50);
+}
+
+function closeAddCitationModal() {
+  const overlayEl = document.getElementById('add-citation-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addCitationModalXref = _addCitationModalFactTag = null;
+}
+
+async function submitAddCitationModal() {
+  const xref       = _addCitationModalXref;
+  const factTag    = _addCitationModalFactTag;
+  const sourceEl   = document.getElementById('add-citation-modal-source');
+  const pageEl     = document.getElementById('add-citation-modal-page');
+  const textEl     = document.getElementById('add-citation-modal-text');
+  const noteEl     = document.getElementById('add-citation-modal-note');
+  const sourceXref = sourceEl ? sourceEl.value : '';
+  const page       = pageEl   ? pageEl.value.trim()   : '';
+  const text       = textEl   ? textEl.value.trim()   : '';
+  const note       = noteEl   ? noteEl.value.trim()   : '';
+  closeAddCitationModal();
+  if (!sourceXref) { alert('Please select a source.'); return; }
+  try {
+    await apiAddCitation(xref, sourceXref, factTag, page, text, note);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showEditCitationModal ─────────────────────────────────────────────────
+
+let _editCitationXref = null, _editCitationFactTag = null, _editCitationIndex = null;
+let _editCitationSourceXref = null;
+
+function showEditCitationModal(xref, factTag, citationIndex) {
+  _editCitationXref      = xref;
+  _editCitationFactTag   = factTag;
+  _editCitationIndex     = citationIndex;
+
+  // Locate the citation data
+  const person = (typeof PEOPLE !== 'undefined') && PEOPLE[xref];
+  let cite = null;
+  if (person) {
+    if (factTag === null || factTag === undefined) {
+      // person-level source
+      cite = (person.sources || [])[citationIndex] || null;
+    } else {
+      const fact = (person.facts || []).find(f => f.tag === factTag);
+      if (fact) cite = (fact.citations || [])[citationIndex] || null;
+    }
+  }
+  _editCitationSourceXref = cite ? (cite.sourceXref || null) : null;
+
+  const overlayEl  = document.getElementById('edit-citation-modal-overlay');
+  const pageEl     = document.getElementById('edit-citation-modal-page');
+  const textEl     = document.getElementById('edit-citation-modal-text');
+  const noteEl     = document.getElementById('edit-citation-modal-note');
+  const titleEl    = document.getElementById('edit-citation-modal-title');
+  const viewSrcBtn = document.getElementById('edit-citation-view-source-btn');
+
+  if (titleEl) titleEl.textContent = 'Edit Citation' + (factTag ? ' \u2014 ' + factTag : '');
+  if (pageEl)  pageEl.value  = (cite && cite.page)  || '';
+  if (textEl)  textEl.value  = (cite && cite.text)  || '';
+  if (noteEl)  noteEl.value  = (cite && cite.note)  || '';
+
+  if (viewSrcBtn && _editCitationSourceXref) {
+    const sxref = _editCitationSourceXref;
+    viewSrcBtn.onclick = () => showEditSourceModal(sxref);
+    viewSrcBtn.style   = viewSrcBtn.style || {};
+    viewSrcBtn.style.display = '';
+  } else if (viewSrcBtn) {
+    viewSrcBtn.style = viewSrcBtn.style || {};
+    viewSrcBtn.style.display = 'none';
+  }
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (pageEl)    setTimeout(() => pageEl.focus && pageEl.focus(), 50);
+}
+
+function closeEditCitationModal() {
+  const overlayEl = document.getElementById('edit-citation-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _editCitationXref = _editCitationFactTag = _editCitationIndex = null;
+}
+
+async function submitEditCitationModal() {
+  const xref    = _editCitationXref;
+  const factTag = _editCitationFactTag;
+  const index   = _editCitationIndex;
+  const pageEl  = document.getElementById('edit-citation-modal-page');
+  const textEl  = document.getElementById('edit-citation-modal-text');
+  const noteEl  = document.getElementById('edit-citation-modal-note');
+  const page    = pageEl ? pageEl.value.trim() : '';
+  const text    = textEl ? textEl.value.trim() : '';
+  const note    = noteEl ? noteEl.value.trim() : '';
+  closeEditCitationModal();
+  try {
+    await apiEditCitation(xref, factTag ? `${factTag}:${index}` : `SOUR:${index}`, page, text, note);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showEditSourceModal ───────────────────────────────────────────────────
+
+let _editSourceXref = null;
+
+function showEditSourceModal(sourceXref) {
+  _editSourceXref = sourceXref;
+  const src = (typeof SOURCES !== 'undefined' && SOURCES[sourceXref]) || {};
+
+  const overlayEl  = document.getElementById('edit-source-modal-overlay');
+  const titlEl     = document.getElementById('edit-source-modal-titl');
+  const authEl     = document.getElementById('edit-source-modal-auth');
+  const publEl     = document.getElementById('edit-source-modal-publ');
+  const repoEl     = document.getElementById('edit-source-modal-repo');
+  const noteEl     = document.getElementById('edit-source-modal-note');
+  const warningEl  = document.getElementById('edit-source-modal-warning');
+  const titleEl    = document.getElementById('edit-source-modal-title');
+
+  if (titleEl)   titleEl.textContent = 'Edit Source Record';
+  if (warningEl) warningEl.textContent = 'Changes to this source record affect all citations that reference it.';
+  if (titlEl)    titlEl.value = src.titl || '';
+  if (authEl)    authEl.value = src.auth || '';
+  if (publEl)    publEl.value = src.publ || '';
+  if (repoEl)    repoEl.value = src.repo || '';
+  if (noteEl)    noteEl.value = src.note || '';
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (titlEl)    setTimeout(() => titlEl.focus && titlEl.focus(), 50);
+}
+
+function closeEditSourceModal() {
+  const overlayEl = document.getElementById('edit-source-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _editSourceXref = null;
+}
+
+async function submitEditSourceModal() {
+  const sourceXref = _editSourceXref;
+  const titlEl = document.getElementById('edit-source-modal-titl');
+  const authEl = document.getElementById('edit-source-modal-auth');
+  const publEl = document.getElementById('edit-source-modal-publ');
+  const repoEl = document.getElementById('edit-source-modal-repo');
+  const noteEl = document.getElementById('edit-source-modal-note');
+  const fields = {
+    titl: titlEl ? titlEl.value.trim() : '',
+    auth: authEl ? authEl.value.trim() : '',
+    publ: publEl ? publEl.value.trim() : '',
+    repo: repoEl ? repoEl.value.trim() : '',
+    note: noteEl ? noteEl.value.trim() : '',
+  };
+  if (!fields.titl) { alert('Title is required.'); return; }
+  closeEditSourceModal();
+  try {
+    await apiEditSourceRecord(sourceXref, fields);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showAddGodparentModal ─────────────────────────────────────────────────
+
+let _addGodparentXref = null, _addGodparentSelectedXref = null;
+
+function showAddGodparentModal(xref) {
+  _addGodparentXref         = xref;
+  _addGodparentSelectedXref = null;
+
+  const overlayEl  = document.getElementById('add-godparent-modal-overlay');
+  const searchEl   = document.getElementById('add-godparent-modal-search');
+  const resultsEl  = document.getElementById('add-godparent-modal-results');
+  const titleEl    = document.getElementById('add-godparent-modal-title');
+
+  if (titleEl)  titleEl.textContent = 'Add Godparent';
+  if (searchEl) searchEl.value = '';
+  if (resultsEl) resultsEl.innerHTML = '';
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (searchEl)  setTimeout(() => searchEl.focus && searchEl.focus(), 50);
+}
+
+function closeAddGodparentModal() {
+  const overlayEl = document.getElementById('add-godparent-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addGodparentXref = _addGodparentSelectedXref = null;
+}
+
+async function submitAddGodparentModal() {
+  const xref            = _addGodparentXref;
+  const godparentXref   = _addGodparentSelectedXref;
+  closeAddGodparentModal();
+  if (!godparentXref) { alert('Please select a godparent from the search results.'); return; }
+  try {
+    await apiAddGodparent(xref, godparentXref);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showAddSourceModal ────────────────────────────────────────────────────
+
+function showAddSourceModal() {
+  const overlayEl = document.getElementById('add-source-modal-overlay');
+  const titlEl    = document.getElementById('add-source-modal-titl');
+  const authEl    = document.getElementById('add-source-modal-auth');
+  const publEl    = document.getElementById('add-source-modal-publ');
+  const repoEl    = document.getElementById('add-source-modal-repo');
+  const noteEl    = document.getElementById('add-source-modal-note');
+
+  if (titlEl) titlEl.value = '';
+  if (authEl) authEl.value = '';
+  if (publEl) publEl.value = '';
+  if (repoEl) repoEl.value = '';
+  if (noteEl) noteEl.value = '';
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (titlEl)    setTimeout(() => titlEl.focus && titlEl.focus(), 50);
+}
+
+function closeAddSourceModal() {
+  const overlayEl = document.getElementById('add-source-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+}
+
+async function submitAddSourceModal() {
+  const titlEl = document.getElementById('add-source-modal-titl');
+  const authEl = document.getElementById('add-source-modal-auth');
+  const publEl = document.getElementById('add-source-modal-publ');
+  const repoEl = document.getElementById('add-source-modal-repo');
+  const noteEl = document.getElementById('add-source-modal-note');
+  const titl   = titlEl ? titlEl.value.trim() : '';
+  const auth   = authEl ? authEl.value.trim() : '';
+  const publ   = publEl ? publEl.value.trim() : '';
+  const repo   = repoEl ? repoEl.value.trim() : '';
+  const note   = noteEl ? noteEl.value.trim() : '';
+  if (!titl) { alert('Title is required.'); return; }
+  closeAddSourceModal();
+  try {
+    await apiAddSource(titl, auth, publ);
+    if (typeof setState !== 'undefined') setState({});   // trigger re-render
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Exports (for Vitest unit tests via CommonJS require)
 // ---------------------------------------------------------------------------
 
@@ -662,5 +1044,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
     openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
+    showEditNameModal, showAddNoteModal, showAddCitationModal,
+    showEditCitationModal, showEditSourceModal, showAddGodparentModal,
+    showAddSourceModal,
   };
 }
