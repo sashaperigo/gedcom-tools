@@ -470,7 +470,7 @@ function _renderSpouseResults(query) {
   const hits = _filterSpouseResults(query, typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : []);
   if (!hits.length) { container.innerHTML = ''; return; }
   container.innerHTML = hits.map(p =>
-    `<div class="spouse-result-item" onclick="_selectSpouse(${JSON.stringify(p.id)},${JSON.stringify(p.name)})">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
+    `<div class="spouse-result-item" data-xref="${escHtml(p.id)}" data-name="${escHtml(p.name)}">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
   ).join('');
 }
 
@@ -481,6 +481,12 @@ function _selectSpouse(xref, name) {
   if (res) res.innerHTML = '';
   _eventModalSpouseXref = xref;
 }
+
+// Use event delegation on the results container so data-attribute clicks work
+document.addEventListener('click', e => {
+  const item = e.target.closest('.spouse-result-item');
+  if (item) _selectSpouse(item.dataset.xref, item.dataset.name);
+});
 
 async function deleteMarriage(xref, famXref, marrIdx) {
   if (!confirm('Delete this marriage record? The GEDCOM file will be updated immediately (a backup will be saved).')) return;
