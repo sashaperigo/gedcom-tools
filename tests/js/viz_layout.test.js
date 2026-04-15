@@ -265,10 +265,7 @@ describe('computeLayout — focus with spouse', () => {
   it('spouse is at x = NODE_W + MARRIAGE_GAP (no siblings)', () => {
     const { nodes } = computeLayout('@FOCUS@', new Set(), false);
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
-    // maxSiblingX is focus.x (=0) + NODE_W; then add MARRIAGE_GAP offset from right edge
-    // Per spec: spouse x = maxSiblingX + NODE_W + MARRIAGE_GAP — actually
-    // maxSiblingX = max x of all nodes placed (focus at 0), so
-    // spouse.x = 0 + NODE_W + MARRIAGE_GAP
+    // Focus is at x=0; its right edge is NODE_W. Spouse starts MARRIAGE_GAP beyond that.
     expect(spouse.x).toBe(NODE_W + MARRIAGE_GAP);
   });
 
@@ -282,6 +279,40 @@ describe('computeLayout — focus with spouse', () => {
     const { edges } = computeLayout('@FOCUS@', new Set(), false);
     const marriageEdges = edges.filter(e => e.type === 'marriage');
     expect(marriageEdges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('marriage edge x1 is the right edge of the focus node (no siblings)', () => {
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const me = edges.find(e => e.type === 'marriage');
+    expect(me.x1).toBe(NODE_W);   // focus at x=0; right edge = NODE_W
+  });
+});
+
+// ── Test 5c: Multi-spouse marriage edges ───────────────────────────────────
+
+describe('computeLayout — multi-spouse marriage edges', () => {
+  it('second spouse marriage edge starts at right edge of first spouse', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@SPOUSE1@': { birth_year: 1901 },
+        '@SPOUSE2@': { birth_year: 1920 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@', '@SPOUSE2@'] },
+      },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const sp1 = nodes.find(n => n.xref === '@SPOUSE1@');
+    const sp2 = nodes.find(n => n.xref === '@SPOUSE2@');
+    const marriageEdges = edges.filter(e => e.type === 'marriage');
+    expect(marriageEdges).toHaveLength(2);
+    // First edge: focus right edge → spouse1
+    expect(marriageEdges[0].x1).toBe(NODE_W);
+    expect(marriageEdges[0].x2).toBe(sp1.x);
+    // Second edge: spouse1 right edge → spouse2
+    expect(marriageEdges[1].x1).toBe(sp1.x + NODE_W);
+    expect(marriageEdges[1].x2).toBe(sp2.x);
   });
 });
 
