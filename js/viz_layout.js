@@ -214,7 +214,6 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
       });
 
       // Recurse into grandchildren for expanded children
-      _placeDescendants(xref, cx, ROW_HEIGHT, 1, expandedAncestors, nodes, edges);
     });
   }
 
@@ -271,39 +270,6 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
 
     _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, nodes, edges);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Recursive descendant placement
-// ---------------------------------------------------------------------------
-
-function _placeDescendants(xref, x, y, generation, expandedAncestors, nodes, edges) {
-  const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
-  const SLOT = NODE_W + H_GAP;
-
-  if (!expandedAncestors.has(xref)) return;
-
-  const childXrefs = CHILDREN[xref] ?? [];
-  if (childXrefs.length === 0) return;
-
-  const nextGen = generation + 1;
-  const nextY   = nextGen * ROW_HEIGHT;
-  const n       = childXrefs.length;
-  const totalW  = n * NODE_W + (n - 1) * H_GAP;
-  const startX  = x - totalW / 2 + NODE_W / 2;
-
-  childXrefs.forEach((childXref, i) => {
-    const cx = startX + i * SLOT;
-    nodes.push({ xref: childXref, x: cx, y: nextY, generation: nextGen, role: 'descendant' });
-    edges.push({
-      x1:   x + NODE_W / 2,
-      y1:   y + NODE_H,
-      x2:   cx + NODE_W / 2,
-      y2:   nextY,
-      type: 'descendant',
-    });
-    _placeDescendants(childXref, cx, nextY, nextGen, expandedAncestors, nodes, edges);
-  });
 }
 
 // ---------------------------------------------------------------------------

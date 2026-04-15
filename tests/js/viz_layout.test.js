@@ -285,6 +285,56 @@ describe('computeLayout — focus with spouse', () => {
   });
 });
 
+// ── Test 5b: Spouse siblings expanded ─────────────────────────────────────
+
+describe('computeLayout — spouse siblings expanded', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@SPOUSE@': { birth_year: 1902 },
+        '@SS1@':    { birth_year: 1895 },
+        '@SS2@':    { birth_year: 1898 },
+      },
+      relatives: {
+        '@FOCUS@':  { siblings: [], spouses: ['@SPOUSE@'] },
+        '@SPOUSE@': { siblings: ['@SS1@', '@SS2@'], spouses: [] },
+      },
+    });
+  });
+
+  it('spouse siblings appear to the right of the spouse', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    const ss1    = nodes.find(n => n.xref === '@SS1@');
+    const ss2    = nodes.find(n => n.xref === '@SS2@');
+    expect(ss1).toBeDefined();
+    expect(ss2).toBeDefined();
+    expect(ss1.x).toBeGreaterThan(spouse.x);
+    expect(ss2.x).toBeGreaterThan(spouse.x);
+  });
+
+  it('first spouse sibling is exactly one SLOT to the right of the spouse', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    // spouse siblings sorted by birth_year; @SS1@ (1895) comes first
+    const ss1 = nodes.find(n => n.xref === '@SS1@');
+    expect(ss1.x).toBe(spouse.x + NODE_W + H_GAP);
+  });
+
+  it('spouse siblings have role "spouse_sibling"', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const spouseSibs = nodes.filter(n => n.role === 'spouse_sibling');
+    expect(spouseSibs).toHaveLength(2);
+  });
+
+  it('spouse siblings do NOT appear when spouseSiblingsExpanded is false', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouseSibs = nodes.filter(n => n.role === 'spouse_sibling');
+    expect(spouseSibs).toHaveLength(0);
+  });
+});
+
 // ── Test 6: No overlap (6 siblings + spouse with 4 siblings expanded) ──────
 
 describe('computeLayout — no overlap', () => {
