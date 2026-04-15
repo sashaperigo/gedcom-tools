@@ -18,8 +18,7 @@ async function deleteNote(xref, noteIdx) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      _openDetailKey = null;
-      showDetail(xref);
+      showDetail(xref, true);
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }
@@ -68,8 +67,7 @@ async function submitNoteEdit() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      _openDetailKey = null;
-      showDetail(xref);
+      showDetail(xref, true);
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -235,8 +233,7 @@ async function submitEventModal() {
       if (data.people) {
         for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
       }
-      _openDetailKey = null;
-      showDetail(xref);
+      showDetail(xref, true);
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -303,7 +300,7 @@ async function deleteAlias(xref, evt) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      _openDetailKey = null; showDetail(xref);
+      showDetail(xref, true);
     } else { alert('Delete failed: ' + (data.error || 'unknown error')); }
   } catch (e) { alert('Request failed: ' + e); }
 }
@@ -332,7 +329,7 @@ async function submitAliasModal() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      _openDetailKey = null; showDetail(xref);
+      showDetail(xref, true);
     } else { alert('Save failed: ' + (data.error || 'unknown error')); }
   } catch (e) { alert('Request failed: ' + e); }
 }
@@ -385,8 +382,7 @@ async function submitNameModal() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      _openDetailKey = null;
-      showDetail(xref);
+      showDetail(xref, true);
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -417,8 +413,7 @@ async function deleteFact(xref, evt) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      _openDetailKey = null;
-      showDetail(xref);
+      showDetail(xref, true);
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }

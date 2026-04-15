@@ -229,11 +229,11 @@ function collapseResidences(events) {
 
 let _openDetailKey = null;
 
-function showDetail(xref) {
-  if (_openDetailKey === xref) {
+function showDetail(xref, forceRefresh = false) {
+  if (_openDetailKey === xref && !forceRefresh) {
     return;  // already open for this person
   }
-  const panelWasOpen = _openDetailKey !== null;
+  const panelWasOpen = _openDetailKey !== null || forceRefresh;
   const data = PEOPLE[xref] || (() => {
     const p = ALL_PEOPLE.find(x => x.id === xref);
     return p ? { name: p.name, birth_year: p.birth_year, death_year: p.death_year,

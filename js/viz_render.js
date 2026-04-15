@@ -124,14 +124,12 @@ function collapseNode(k) {
   if (visibleKeys.has(2 * k))     removeSubtree(2 * k);
   if (visibleKeys.has(2 * k + 1)) removeSubtree(2 * k + 1);
   render();
-  fitAndCenter();
 }
 
 function expandNode(k) {
   if ((2 * k) in currentTree)     visibleKeys.add(2 * k);
   if ((2 * k + 1) in currentTree) visibleKeys.add(2 * k + 1);
   render();
-  fitAndCenter();
 }
 
 // ---------------------------------------------------------------------------
