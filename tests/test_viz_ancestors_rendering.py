@@ -49,6 +49,12 @@ from viz_ancestors import (
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'
 
+# JS logic now lives in external js/ files; combine all sources for pattern checks.
+_JS_DIR = Path(__file__).parent.parent / 'js'
+_FULL_SOURCE = _HTML_TEMPLATE + ''.join(
+    f.read_text(encoding='utf-8') for f in sorted(_JS_DIR.glob('*.js'))
+)
+
 
 # ---------------------------------------------------------------------------
 # Shared fixture data
@@ -156,10 +162,10 @@ class TestTemplateAntipatterns:
 
     def test_expandNode_uses_currentTree(self):
         """B1: expandNode must check currentTree, not the static TREE."""
-        assert 'function expandNode' in _HTML_TEMPLATE
+        assert 'function expandNode' in _FULL_SOURCE
         # Find the function body and confirm it references currentTree
-        fn_start = _HTML_TEMPLATE.index('function expandNode')
-        fn_body = _HTML_TEMPLATE[fn_start:fn_start + 200]
+        fn_start = _FULL_SOURCE.index('function expandNode')
+        fn_body = _FULL_SOURCE[fn_start:fn_start + 200]
         assert 'currentTree' in fn_body, (
             "expandNode does not reference currentTree — "
             "parent expansion broken after changeRoot()"
@@ -167,8 +173,8 @@ class TestTemplateAntipatterns:
 
     def test_hasHiddenParents_uses_currentTree(self):
         """B1: hasHiddenParents must check currentTree."""
-        fn_start = _HTML_TEMPLATE.index('function hasHiddenParents')
-        fn_body = _HTML_TEMPLATE[fn_start:fn_start + 200]
+        fn_start = _FULL_SOURCE.index('function hasHiddenParents')
+        fn_body = _FULL_SOURCE[fn_start:fn_start + 200]
         assert 'currentTree' in fn_body, (
             "hasHiddenParents does not reference currentTree — "
             "expand button broken after changeRoot()"
@@ -604,10 +610,10 @@ class TestBuildProseStaleFullVariable:
         function body.  It was removed when the meta ordering changed; any
         surviving reference causes a ReferenceError at runtime.
         """
-        fn_start = _HTML_TEMPLATE.index('function buildProse')
+        fn_start = _FULL_SOURCE.index('function buildProse')
         # Find the closing brace of buildProse (next top-level `\n}` after the open)
-        fn_end = _HTML_TEMPLATE.index('\n}', fn_start) + 2
-        fn_body = _HTML_TEMPLATE[fn_start:fn_end]
+        fn_end = _FULL_SOURCE.index('\n}', fn_start) + 2
+        fn_body = _FULL_SOURCE[fn_start:fn_end]
         import re
         stale_refs = re.findall(r'\bfull\b', fn_body)
         assert not stale_refs, (
@@ -623,9 +629,9 @@ class TestBuildProseStaleFullVariable:
         building an inline array expression.  Using an inline expression risks
         referencing removed variables (the bug that caused B7).
         """
-        fn_start = _HTML_TEMPLATE.index('function buildProse')
-        fn_end = _HTML_TEMPLATE.index('\n}', fn_start) + 2
-        fn_body = _HTML_TEMPLATE[fn_start:fn_end]
+        fn_start = _FULL_SOURCE.index('function buildProse')
+        fn_end = _FULL_SOURCE.index('\n}', fn_start) + 2
+        fn_body = _FULL_SOURCE[fn_start:fn_end]
         # Find the default: branch
         default_start = fn_body.rfind('default:')
         assert default_start != -1, 'No default: branch found in buildProse'
@@ -744,10 +750,10 @@ class TestFactsSectionRendering:
         'Education: Institution Name') so the institution appears as the meta
         line below, matching the visual style of Religion facts.
         """
-        # The JS template must NOT have 'Education: ' as a prose prefix
-        assert "`Education: ${type}`" not in _HTML_TEMPLATE, \
+        # The JS source must NOT have 'Education: ' as a prose prefix
+        assert "`Education: ${type}`" not in _FULL_SOURCE, \
             "EDUC prose must not use 'Education: X' format — use 'Education' + meta instead"
-        assert "'Education'" in _HTML_TEMPLATE or '"Education"' in _HTML_TEMPLATE, \
+        assert "'Education'" in _FULL_SOURCE or '"Education"' in _FULL_SOURCE, \
             "EDUC case must return prose='Education'"
 
     def test_single_facts_heading_in_template(self):
@@ -757,9 +763,9 @@ class TestFactsSectionRendering:
         institution names ('English College, Shelton') and tag labels ('FACT')
         as headings for every group.
         """
-        assert '>Facts<' in _HTML_TEMPLATE, \
-            "Template must emit a single 'Facts' heading for the facts section"
-        assert 'for (const [heading, evts] of groups)' not in _HTML_TEMPLATE, \
+        assert '>Facts<' in _FULL_SOURCE, \
+            "Source must emit a single 'Facts' heading for the facts section"
+        assert 'for (const [heading, evts] of groups)' not in _FULL_SOURCE, \
             "Per-group heading loop must be removed; use a single 'Facts' heading instead"
 
     def test_facts_sorted_by_tag(self):
@@ -767,7 +773,7 @@ class TestFactsSectionRendering:
         Regression: otherFacts must be sorted before rendering so same-type
         events (e.g. multiple EDUC events) appear adjacent.
         """
-        assert 'otherFacts.sort(' in _HTML_TEMPLATE, \
+        assert 'otherFacts.sort(' in _FULL_SOURCE, \
             "otherFacts must be sorted so same-type facts appear together"
 
     def test_resi_separated_from_other_facts(self):
@@ -775,7 +781,7 @@ class TestFactsSectionRendering:
         Undated RESI events keep their own 'Also lived in' label; they must
         not be mixed into the 'Facts' section.
         """
-        assert "e.tag !== 'RESI'" in _HTML_TEMPLATE or "e.tag === 'RESI'" in _HTML_TEMPLATE, \
+        assert "e.tag !== 'RESI'" in _FULL_SOURCE or "e.tag === 'RESI'" in _FULL_SOURCE, \
             "RESI events must be filtered separately from other facts"
-        assert '>Also lived in<' in _HTML_TEMPLATE, \
+        assert '>Also lived in<' in _FULL_SOURCE, \
             "RESI section must keep its 'Also lived in' label"

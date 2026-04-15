@@ -476,9 +476,10 @@ class TestOutput:
 
     def test_html_uses_midY_routing(self, tmp_path):
         """Connector routes through midY waypoint — no direct diagonal to child."""
-        out = str(tmp_path / 'out.html')
-        viz_ancestors(str(FIXTURE), '@I1@', out)
-        content = Path(out).read_text(encoding='utf-8')
+        # JS is now in external viz_render.js file (not inlined in HTML output)
+        render_js = Path(__file__).parent.parent / 'js' / 'viz_render.js'
+        assert render_js.exists(), 'js/viz_render.js must exist'
+        content = render_js.read_text(encoding='utf-8')
         assert 'cy - V_GAP / 2' in content   # midY L-shaped routing present
 
     def test_html_contains_relatives_json(self, tmp_path):

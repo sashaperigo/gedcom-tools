@@ -42,6 +42,12 @@ from viz_ancestors import (      # noqa: E402
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'
 
+# JS logic now lives in external js/ files; combine all sources for pattern checks.
+_JS_DIR = Path(__file__).parent.parent / 'js'
+_FULL_SOURCE = _HTML_TEMPLATE + ''.join(
+    f.read_text(encoding='utf-8') for f in sorted(_JS_DIR.glob('*.js'))
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures
@@ -538,20 +544,20 @@ class TestTemplateUIElements:
         assert 'add-event-btn' in _HTML_TEMPLATE
 
     def test_add_nationality_btn_present(self):
-        assert 'Add nationality' in _HTML_TEMPLATE
+        assert 'Add nationality' in _FULL_SOURCE
 
     def test_edit_event_js_function_defined(self):
-        assert 'function editEvent(' in _HTML_TEMPLATE
+        assert 'function editEvent(' in _FULL_SOURCE
 
     def test_add_event_js_function_defined(self):
-        assert 'function addEvent(' in _HTML_TEMPLATE
+        assert 'function addEvent(' in _FULL_SOURCE
 
     def test_submit_event_modal_js_function_defined(self):
-        assert 'function submitEventModal(' in _HTML_TEMPLATE
+        assert 'function submitEventModal(' in _FULL_SOURCE
 
     def test_edit_buttons_use_event_idx(self):
         """The edit button onclick must reference evt.event_idx, not a positional index."""
-        assert 'evt.event_idx' in _HTML_TEMPLATE
+        assert 'evt.event_idx' in _FULL_SOURCE
 
     def test_no_insert_adjacent_html_for_add_event_btn(self):
         """
@@ -559,35 +565,35 @@ class TestTemplateUIElements:
         insertAdjacentHTML (which caused multiple buttons to accumulate).
         The button must be part of innerHTML assignment instead.
         """
-        assert "insertAdjacentHTML" not in _HTML_TEMPLATE or \
+        assert "insertAdjacentHTML" not in _FULL_SOURCE or \
                "add-event-btn" not in re.search(
-                   r'insertAdjacentHTML[^;]+', _HTML_TEMPLATE, re.DOTALL
-               ).group(0) if re.search(r'insertAdjacentHTML', _HTML_TEMPLATE) else True
+                   r'insertAdjacentHTML[^;]+', _FULL_SOURCE, re.DOTALL
+               ).group(0) if re.search(r'insertAdjacentHTML', _FULL_SOURCE) else True
 
     def test_modal_title_shows_person_name(self):
         """Modal title must include the person's name (via _personName helper)."""
-        assert '_personName(' in _HTML_TEMPLATE
+        assert '_personName(' in _FULL_SOURCE
 
     def test_api_edit_event_endpoint_referenced(self):
-        assert '/api/edit_event' in _HTML_TEMPLATE
+        assert '/api/edit_event' in _FULL_SOURCE
 
     def test_api_add_event_endpoint_referenced(self):
-        assert '/api/add_event' in _HTML_TEMPLATE
+        assert '/api/add_event' in _FULL_SOURCE
 
     def test_delete_fact_uses_immediate_confirm(self):
         """deleteFact must say 'updated immediately', not 'Queue' (staged model removed)."""
-        assert 'updated immediately' in _HTML_TEMPLATE
-        assert 'Queue this fact' not in _HTML_TEMPLATE
+        assert 'updated immediately' in _FULL_SOURCE
+        assert 'Queue this fact' not in _FULL_SOURCE
 
     def test_no_pending_bar_in_template(self):
         """pending-bar was removed with the staging model."""
-        assert 'id="pending-bar"' not in _HTML_TEMPLATE
+        assert 'id="pending-bar"' not in _FULL_SOURCE
 
     def test_no_commit_deletions_in_template(self):
-        assert 'commitDeletions' not in _HTML_TEMPLATE
+        assert 'commitDeletions' not in _FULL_SOURCE
 
     def test_no_clear_pending_in_template(self):
-        assert 'clearPending' not in _HTML_TEMPLATE
+        assert 'clearPending' not in _FULL_SOURCE
 
     def test_addr_field_in_event_modal(self):
         """ADDR input must be present in the event modal."""
@@ -600,19 +606,19 @@ class TestTemplateUIElements:
         assert 'name-modal-overlay' in _HTML_TEMPLATE
 
     def test_name_edit_button_rendered(self):
-        assert 'editName(' in _HTML_TEMPLATE
+        assert 'editName(' in _FULL_SOURCE
 
     def test_api_edit_name_referenced(self):
-        assert '/api/edit_name' in _HTML_TEMPLATE
+        assert '/api/edit_name' in _FULL_SOURCE
 
     def test_marr_edit_button_rendered(self):
-        assert 'marr-edit-btn' in _HTML_TEMPLATE
+        assert 'marr-edit-btn' in _FULL_SOURCE
 
     def test_aka_add_button_rendered(self):
-        assert 'openAliasModal' in _HTML_TEMPLATE
+        assert 'openAliasModal' in _FULL_SOURCE
 
     def test_fam_xref_in_submit_modal(self):
-        assert 'fam_xref' in _HTML_TEMPLATE
+        assert 'fam_xref' in _FULL_SOURCE
 
     def test_addr_by_place_constant(self):
         assert 'ADDR_BY_PLACE' in _HTML_TEMPLATE
@@ -624,7 +630,7 @@ class TestTemplateUIElements:
         Without this fix a bare 1 MARR (or one with only ADDR) is invisible and has no
         edit button, so the user cannot add ADDR via the UI.
         """
-        assert "e.tag === 'MARR'" in _HTML_TEMPLATE
+        assert "e.tag === 'MARR'" in _FULL_SOURCE
 
     def test_keep_in_timeline_includes_marr_tag(self):
         """
@@ -633,7 +639,7 @@ class TestTemplateUIElements:
         """
         # The keepInTimeline predicate must include MARR so the MARR card (with its
         # edit button) is rendered even for marriages with no date.
-        assert "e.tag === 'MARR'" in _HTML_TEMPLATE
+        assert "e.tag === 'MARR'" in _FULL_SOURCE
 
     def test_type_field_uses_uppercase_key(self):
         """
@@ -642,13 +648,13 @@ class TestTemplateUIElements:
         update / add a 2 TYPE sub-tag.  Sending lowercase 'type' silently dropped the
         value.
         """
-        assert "fields.TYPE" in _HTML_TEMPLATE
+        assert "fields.TYPE" in _FULL_SOURCE
 
     def test_type_only_sent_when_row_visible(self):
         """TYPE must only be included in fields when the type row is visible, so that
         existing 2 TYPE sub-tags are not deleted for events (like MARR) where the
         type row is hidden."""
-        assert "typeRow.style.display !== 'none'" in _HTML_TEMPLATE
+        assert "typeRow.style.display !== 'none'" in _FULL_SOURCE
 
     def test_open_detail_key_cleared_before_show_detail(self):
         """
@@ -659,14 +665,14 @@ class TestTemplateUIElements:
         _openDetailKey still equals xref when showDetail(xref) is called, triggering
         the early-return guard and leaving the panel displaying stale data.
         """
-        # Locate the submitEventModal function body in the template
-        fn_start = _HTML_TEMPLATE.find('async function submitEventModal(')
+        # Locate the submitEventModal function body in combined source
+        fn_start = _FULL_SOURCE.find('async function submitEventModal(')
         assert fn_start != -1, 'submitEventModal must be present'
         # Find the closing brace of the function (search for showDetail after fn_start)
-        show_detail_pos = _HTML_TEMPLATE.find('showDetail(xref)', fn_start)
+        show_detail_pos = _FULL_SOURCE.find('showDetail(xref)', fn_start)
         assert show_detail_pos != -1, 'showDetail(xref) call must be present in submitEventModal'
         # _openDetailKey = null must appear somewhere between fn_start and the showDetail call
-        null_assign_pos = _HTML_TEMPLATE.find('_openDetailKey = null', fn_start)
+        null_assign_pos = _FULL_SOURCE.find('_openDetailKey = null', fn_start)
         assert null_assign_pos != -1, '_openDetailKey must be nulled in submitEventModal'
         assert null_assign_pos < show_detail_pos, \
             '_openDetailKey = null must come BEFORE showDetail(xref) so the re-render is not skipped'

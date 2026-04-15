@@ -608,6 +608,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.path = OUT.name
             self.directory = str(OUT.parent)
             return http.server.SimpleHTTPRequestHandler.do_GET(self)
+        if parsed.path.startswith('/js/') and parsed.path.endswith('.js'):
+            js_file = Path(__file__).parent / parsed.path.lstrip('/')
+            if js_file.exists():
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/javascript')
+                self.end_headers()
+                self.wfile.write(js_file.read_bytes())
+                return
+            self.send_error(404)
+            return
         self.send_error(404)
 
     def do_POST(self):
