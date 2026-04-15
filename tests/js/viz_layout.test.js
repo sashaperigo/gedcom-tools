@@ -15,6 +15,7 @@ const {
   _buildSibSlots, _subtreeWidth,
   computePositions, computeRelativePositions,
   hasHiddenParents, hasVisibleParents,
+  maxVisibleGen, nodePos,
 } = require('../../js/viz_layout.js');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -373,6 +374,118 @@ describe('computeRelativePositions — Pass 3: sibling-children vs ancestor node
       sibChEntry.x + NODE_W + H_GAP <= rootPos.x  ||
       sibChEntry.x >= rootPos.x + NODE_W + H_GAP;
     expect(noOverlap).toBe(true);
+  });
+});
+
+// ── maxVisibleGen ──────────────────────────────────────────────────────────
+
+describe('maxVisibleGen', () => {
+  beforeEach(() => resetGlobals({ tree: {}, visible: new Set(), people: {}, relatives: {} }));
+
+  it('returns 0 when only root is visible (key=1, gen=0)', () => {
+    global.visibleKeys = new Set([1]);
+    expect(maxVisibleGen()).toBe(0);
+  });
+
+  it('returns 1 when root + both parents visible (keys 1,2,3)', () => {
+    global.visibleKeys = new Set([1, 2, 3]);
+    expect(maxVisibleGen()).toBe(1);
+  });
+
+  it('returns 2 when a full 3-generation tree is visible (keys 1–7)', () => {
+    global.visibleKeys = new Set([1, 2, 3, 4, 5, 6, 7]);
+    expect(maxVisibleGen()).toBe(2);
+  });
+
+  it('handles an asymmetric tree (only paternal line)', () => {
+    // keys 1, 2, 4 → gen 0, 1, 2 → max is 2
+    global.visibleKeys = new Set([1, 2, 4]);
+    expect(maxVisibleGen()).toBe(2);
+  });
+});
+
+// ── nodePos ────────────────────────────────────────────────────────────────
+
+describe('nodePos', () => {
+  beforeEach(() => resetGlobals({ tree: {}, visible: new Set(), people: {}, relatives: {} }));
+
+  it('returns cached position when key is in _posCache', () => {
+    global._posCache = new Map([[1, { x: 100, y: 200 }]]);
+    expect(nodePos(1)).toEqual({ x: 100, y: 200 });
+  });
+
+  it('returns {x:0, y:0} when key is not in _posCache', () => {
+    global._posCache = new Map();
+    expect(nodePos(99)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+// ── hasHiddenParents ───────────────────────────────────────────────────────
+
+describe('hasHiddenParents', () => {
+  function setup(treeKeys, visKeys) {
+    const tree = {};
+    treeKeys.forEach(k => { tree[k] = `xref${k}`; });
+    global.currentTree = tree;
+    global.visibleKeys = new Set(visKeys);
+  }
+
+  it('returns true when both parents are in the tree but neither is visible', () => {
+    setup([1, 2, 3], [1]);   // key=1 is root; parents are keys 2,3 (in tree, not visible)
+    expect(hasHiddenParents(1)).toBe(true);
+  });
+
+  it('returns false when neither parent is in the tree at all', () => {
+    setup([1], [1]);          // key=1 has no parents in tree
+    expect(hasHiddenParents(1)).toBe(false);
+  });
+
+  it('returns false when father is visible', () => {
+    setup([1, 2, 3], [1, 2]); // father (key=2) is visible
+    expect(hasHiddenParents(1)).toBe(false);
+  });
+
+  it('returns false when mother is visible', () => {
+    setup([1, 2, 3], [1, 3]); // mother (key=3) is visible
+    expect(hasHiddenParents(1)).toBe(false);
+  });
+
+  it('returns false when both parents are visible', () => {
+    setup([1, 2, 3], [1, 2, 3]);
+    expect(hasHiddenParents(1)).toBe(false);
+  });
+
+  it('returns true when only one parent is in tree and it is not visible', () => {
+    setup([1, 2], [1]);       // only father in tree, not visible
+    expect(hasHiddenParents(1)).toBe(true);
+  });
+});
+
+// ── hasVisibleParents ──────────────────────────────────────────────────────
+
+describe('hasVisibleParents', () => {
+  function setup(visKeys) {
+    global.visibleKeys = new Set(visKeys);
+  }
+
+  it('returns true when father (key*2) is visible', () => {
+    setup([1, 2]);
+    expect(hasVisibleParents(1)).toBe(true);
+  });
+
+  it('returns true when mother (key*2+1) is visible', () => {
+    setup([1, 3]);
+    expect(hasVisibleParents(1)).toBe(true);
+  });
+
+  it('returns false when neither parent is visible', () => {
+    setup([1]);
+    expect(hasVisibleParents(1)).toBe(false);
+  });
+
+  it('returns true when both parents are visible', () => {
+    setup([1, 2, 3]);
+    expect(hasVisibleParents(1)).toBe(true);
   });
 });
 

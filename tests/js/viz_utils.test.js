@@ -251,3 +251,65 @@ describe('collapseResidences', () => {
     expect(result[0].note).toContain('1925: Moved to Back Bay');
   });
 });
+
+// ── linkify ────────────────────────────────────────────────────────────────
+
+describe('linkify', () => {
+  it('returns HTML-escaped plain text when no URL present', () => {
+    const result = linkify('hello & world');
+    expect(result).toBe('hello &amp; world');
+    expect(result).not.toContain('<a');
+  });
+
+  it('handles empty string', () => {
+    expect(linkify('')).toBe('');
+  });
+
+  it('wraps a bare URL in an anchor tag', () => {
+    const result = linkify('https://example.com');
+    expect(result).toContain('<a href="https://example.com"');
+    expect(result).toContain('target="_blank"');
+    expect(result).toContain('rel="noopener"');
+    expect(result).toContain('https://example.com</a>');
+  });
+
+  it('HTML-escapes surrounding text with special chars', () => {
+    const result = linkify('see https://example.com & enjoy');
+    expect(result).toContain('&amp;');            // & in surrounding text is escaped
+    expect(result).toContain('<a href="https://example.com"');
+  });
+
+  it('strips trailing period from URL', () => {
+    const result = linkify('See https://example.com.');
+    expect(result).toContain('href="https://example.com"');
+    expect(result).not.toContain('com.</a>');     // period not inside the tag
+    expect(result).toContain('https://example.com</a>.');  // period after </a>
+  });
+
+  it('strips trailing comma from URL', () => {
+    const result = linkify('Visit https://example.com, then continue.');
+    expect(result).toContain('href="https://example.com"');
+    expect(result).toContain('https://example.com</a>,');
+  });
+
+  it('strips trailing closing parenthesis from URL', () => {
+    const result = linkify('(see https://example.com)');
+    expect(result).toContain('href="https://example.com"');
+    expect(result).toContain('https://example.com</a>)');
+  });
+
+  it('links multiple URLs in one string', () => {
+    const result = linkify('https://a.com and https://b.com');
+    expect(result.match(/<a /g)).toHaveLength(2);
+    expect(result).toContain('href="https://a.com"');
+    expect(result).toContain('href="https://b.com"');
+  });
+
+  it('HTML-escapes literal & in URL for both href and display text', () => {
+    const result = linkify('https://example.com?a=1&b=2');
+    // href must have & escaped as &amp; (valid HTML attribute)
+    expect(result).toContain('href="https://example.com?a=1&amp;b=2"');
+    // display text also HTML-escaped
+    expect(result).toContain('>https://example.com?a=1&amp;b=2</a>');
+  });
+});
