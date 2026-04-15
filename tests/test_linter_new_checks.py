@@ -10,6 +10,9 @@ from pathlib import Path
 import pytest
 
 from gedcom_linter import (
+    scan_html_entities,
+    fix_html_entities,
+    _decode_html_value,
     scan_bapm_without_birth,
     fix_bapm_without_birth,
     scan_date_month_caps,
@@ -2469,3 +2472,185 @@ class TestUnknownSurname:
         original = p.read_text(encoding='utf-8')
         fix_unknown_surname(str(p), dry_run=True)
         assert p.read_text(encoding='utf-8') == original
+
+
+# ===========================================================================
+# _decode_html_value / scan_html_entities / fix_html_entities
+# ===========================================================================
+
+class TestDecodeHtmlValue:
+    """Unit tests for the _decode_html_value helper."""
+
+    def test_italic_tags_stripped(self):
+        assert _decode_html_value('&lt;i&gt;Find a Grave&lt;/i&gt;') == 'Find a Grave'
+
+    def test_nbsp_replaced_with_space(self):
+        assert _decode_html_value('Cauchi 2 —&nbsp;MaltaGenealogy') == 'Cauchi 2 — MaltaGenealogy'
+
+    def test_amp_decoded(self):
+        assert _decode_html_value('England &amp; Wales') == 'England & Wales'
+
+    def test_double_encoded_amp_in_url(self):
+        val = 'https://example.com?a=1&amp;amp;b=2'
+        assert _decode_html_value(val) == 'https://example.com?a=1&b=2'
+
+    def test_apos_decoded(self):
+        assert _decode_html_value("Angela&apos;s marriage") == "Angela's marriage"
+
+    def test_quot_decoded(self):
+        assert _decode_html_value('She said &quot;hello&quot;') == 'She said "hello"'
+
+    def test_p_tag_becomes_space(self):
+        result = _decode_html_value('&lt;p&gt;First.&lt;/p&gt;&lt;p&gt;Second.&lt;/p&gt;')
+        assert result == 'First. Second.'
+
+    def test_br_tag_becomes_space(self):
+        result = _decode_html_value('Line one.&lt;br&gt;Line two.')
+        assert result == 'Line one. Line two.'
+
+    def test_anchor_preserved_as_text_url(self):
+        val = ('Publication A1 848, NAID: &lt;a href="https://catalog.archives.gov/id/1227672"'
+               ' target="_blank"&gt;1227672&lt;/a&gt;. General Records.')
+        result = _decode_html_value(val)
+        assert result == ('Publication A1 848, NAID: 1227672 '
+                          '(https://catalog.archives.gov/id/1227672). General Records.')
+
+    def test_anchor_template_url_drops_href(self):
+        val = '&lt;a href="##SearchUrlPrefix##/search/dbextra.aspx?dbid=1082"&gt;View Sources&lt;/a&gt;.'
+        assert _decode_html_value(val) == 'View Sources.'
+
+    def test_anchor_url_equals_text_no_duplication(self):
+        val = '&lt;a href="http://www.findagrave.com"&gt;http://www.findagrave.com&lt;/a&gt;'
+        assert _decode_html_value(val) == 'http://www.findagrave.com'
+
+    def test_bold_tags_stripped(self):
+        assert _decode_html_value('&lt;b&gt;First name&lt;/b&gt; Alice') == 'First name Alice'
+
+    def test_plain_value_unchanged(self):
+        val = 'England and Wales, Death Index, 1989-2025'
+        assert _decode_html_value(val) == val
+
+    def test_multiple_spaces_collapsed(self):
+        result = _decode_html_value('A &lt;b&gt;B&lt;/b&gt;  C')
+        assert '  ' not in result
+
+
+class TestScanHtmlEntities:
+
+    def test_detects_encoded_italic(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 NOTE &lt;i&gt;Find a Grave&lt;/i&gt;.
+            0 TRLR
+        """)
+        issues = scan_html_entities(str(p))
+        assert len(issues) == 1
+        assert issues[0][0] == 3  # line number
+
+    def test_detects_nbsp(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Cauchi 2 —&nbsp;MaltaGenealogy Surname Page
+            0 TRLR
+        """)
+        issues = scan_html_entities(str(p))
+        assert len(issues) == 1
+
+    def test_clean_file_no_issues(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Alice /Wonder/
+            1 NOTE A plain note with & ampersand already decoded.
+            0 TRLR
+        """)
+        assert scan_html_entities(str(p)) == []
+
+
+class TestFixHtmlEntities:
+
+    def test_italic_tags_removed(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 NOTE &lt;i&gt;Find a Grave&lt;/i&gt;. Find a Grave.
+            0 TRLR
+        """)
+        fix_html_entities(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '&lt;' not in content
+        assert '&gt;' not in content
+        assert 'Find a Grave.' in content
+
+    def test_anchor_becomes_text_url(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 NOTE NAID: &lt;a href="https://catalog.archives.gov/id/613857"&gt;613857&lt;/a&gt;.
+            0 TRLR
+        """)
+        fix_html_entities(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '613857 (https://catalog.archives.gov/id/613857)' in content
+        assert '&lt;' not in content
+
+    def test_nbsp_in_title_replaced(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Cauchi 2 —&nbsp;MaltaGenealogy Surname Page
+            0 TRLR
+        """)
+        fix_html_entities(str(p))
+        content = p.read_text(encoding='utf-8')
+        assert '&nbsp;' not in content
+        assert 'Cauchi 2 — MaltaGenealogy Surname Page' in content
+
+    def test_returns_changed_count(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 NOTE &lt;i&gt;Title One&lt;/i&gt;.
+            1 NOTE &lt;i&gt;Title Two&lt;/i&gt;.
+            1 NOTE Plain note, no HTML.
+            0 TRLR
+        """)
+        n = fix_html_entities(str(p))
+        assert n == 2
+
+    def test_dry_run_does_not_write(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 NOTE &lt;i&gt;Find a Grave&lt;/i&gt;.
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        fix_html_entities(str(p), dry_run=True)
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_clean_file_unchanged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Alice /Wonder/
+            1 NOTE A plain note.
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        n = fix_html_entities(str(p))
+        assert n == 0
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_no_trailing_whitespace_after_fix(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 ADDR &lt;line /&gt;
+            0 TRLR
+        """)
+        fix_html_entities(str(p))
+        for line in p.read_text(encoding='utf-8').splitlines():
+            assert line == line.rstrip(), f'trailing whitespace: {line!r}'

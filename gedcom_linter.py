@@ -56,6 +56,7 @@ Notes:
 """
 
 import argparse
+import html
 import os
 import re
 import sys
@@ -1019,6 +1020,129 @@ def fix_trailing_whitespace(path: str, dry_run: bool = False):
             if dry_run:
                 print(f'  line {i + 1}: {raw.rstrip(chr(10))!r}')
         lines_out.append(clean)
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# HTML entity / tag detection and removal
+# ---------------------------------------------------------------------------
+
+# Matches any HTML entity: &lt; &gt; &amp; &apos; &quot; &nbsp; &#NNN; &#xHH;
+_HTML_ENTITY_RE = re.compile(r'&(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);')
+# Block-level tags whose removal should leave a space so adjacent words are not run together.
+_HTML_BLOCK_TAG_RE = re.compile(r'<(?:p|br|li|/p|/li)[^>]*>', re.IGNORECASE)
+# Anchor tags: capture href and link text so we can emit "text (url)" instead of losing the URL.
+_HTML_ANCHOR_RE   = re.compile(r'<a\s[^>]*\bhref="([^"]*)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+# Any remaining HTML tag.
+_HTML_ANY_TAG_RE  = re.compile(r'<[^>]+>')
+# A GEDCOM "level tag value" line — capture prefix (level + optional xref + tag) and value.
+_GEDCOM_LINE_RE   = re.compile(r'^(\d+ (?:@[^@]+@ )?\S+ )(.*)', re.DOTALL)
+# Runs of two or more spaces (used to collapse the gaps left after tag removal).
+_MULTI_SPACE_RE   = re.compile(r'  +')
+
+
+def _replace_anchor(m: re.Match) -> str:
+    """
+    Convert ``<a href="URL">text</a>`` to ``text (URL)``.
+
+    Exceptions:
+    - If URL is a template placeholder (``##SearchUrlPrefix##``), just keep text.
+    - If the link text already is the URL (or empty), avoid duplication.
+    """
+    url  = m.group(1).strip()
+    text = m.group(2).strip()
+    if not url or '##' in url:
+        return text
+    if not text or text == url:
+        return url
+    return f'{text} ({url})'
+
+
+def _decode_html_value(value: str) -> str:
+    """
+    Decode HTML entities and strip HTML tags from a GEDCOM field value.
+
+    Processing order:
+    1. Two passes of html.unescape() — handles single- and double-encoded
+       entities (e.g. ``&amp;amp;`` → ``&amp;`` → ``&``).
+    2. Replace Unicode non-breaking space (U+00A0) with a regular space.
+    3. Convert ``<a href="URL">text</a>`` to ``text (URL)`` so hyperlink
+       URLs are preserved rather than silently dropped.
+    4. Replace block-level tags (``<p>``, ``<br>``, ``<li>``) with a space
+       so adjacent words are not merged.
+    5. Strip all remaining HTML tags.
+    6. Collapse runs of spaces introduced by the above steps.
+    """
+    decoded = html.unescape(html.unescape(value))
+    decoded = decoded.replace('\u00a0', ' ')
+    decoded = _HTML_ANCHOR_RE.sub(_replace_anchor, decoded)
+    decoded = _HTML_BLOCK_TAG_RE.sub(' ', decoded)
+    decoded = _HTML_ANY_TAG_RE.sub('', decoded)
+    decoded = _MULTI_SPACE_RE.sub(' ', decoded).strip()
+    return decoded
+
+
+def _line_has_html(line: str) -> bool:
+    """Return True if the line contains an HTML entity or tag."""
+    return bool(_HTML_ENTITY_RE.search(line) or _HTML_ANY_TAG_RE.search(line))
+
+
+def scan_html_entities(path: str) -> list[tuple[int, str]]:
+    """
+    Return a list of ``(lineno, raw_value)`` for every line that contains
+    HTML entities (e.g. ``&lt;``, ``&amp;``) or HTML tags (e.g. ``<i>``).
+    """
+    violations: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            if _line_has_html(line):
+                violations.append((lineno, line))
+    return violations
+
+
+def fix_html_entities(path: str, dry_run: bool = False) -> int:
+    """
+    Decode HTML entities and strip HTML tags from every GEDCOM line that
+    contains them.  Returns the number of lines changed.
+
+    The fix is applied to the *value* portion of each line (everything after
+    the ``level [xref] tag`` prefix) so that structural GEDCOM tokens are
+    never touched.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    for i, raw in enumerate(lines_in):
+        body = raw.rstrip('\n')
+        if not _line_has_html(body):
+            lines_out.append(raw)
+            continue
+
+        m = _GEDCOM_LINE_RE.match(body)
+        if m:
+            prefix, value = m.group(1), m.group(2)
+            new_value = _decode_html_value(value)
+            new_body = (prefix + new_value).rstrip()
+        else:
+            new_body = body.rstrip()
+
+        if new_body != body:
+            changed += 1
+            if dry_run:
+                print(f'  line {i + 1}: {body!r}')
+                print(f'         → {new_body!r}')
+
+        lines_out.append(new_body + '\n')
 
     if not dry_run and changed:
         tmp = path + '.tmp'
@@ -4120,6 +4244,11 @@ def main():
         help='Strip trailing whitespace from every line in-place',
     )
     parser.add_argument(
+        '--fix-html-entities', action='store_true',
+        help='Decode HTML entities (&lt; &amp; &nbsp; etc.) and strip HTML tags '
+             'from NOTE, TITL, PUBL, PAGE and other field values in-place',
+    )
+    parser.add_argument(
         '--fix-places', action='store_true',
         help='Normalize PLAC comma-spacing in-place',
     )
@@ -4234,6 +4363,7 @@ def main():
     if args.fix_all:
         args.fix_dates = True
         args.fix_whitespace = True
+        args.fix_html_entities = True
         args.fix_places = True
         args.fix_address_parts = True
         args.fix_duplicate_sources = True
@@ -4266,6 +4396,15 @@ def main():
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Stripping trailing whitespace in: {args.gedfile}')
         changed = fix_trailing_whitespace(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'\n{changed} line(s) would be changed.')
+        else:
+            print(f'{changed} line(s) fixed.')
+
+    if args.fix_html_entities:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Decoding HTML entities and stripping HTML tags in: {args.gedfile}')
+        changed = fix_html_entities(args.gedfile, dry_run=args.dry_run)
         if args.dry_run:
             print(f'\n{changed} line(s) would be changed.')
         else:
@@ -4521,8 +4660,8 @@ def main():
     if args.fix_all:
         fix_trailing_whitespace(args.gedfile, dry_run=args.dry_run)
 
-    if not any([args.fix_dates, args.fix_whitespace, args.fix_places,
-                args.fix_address_parts, args.fix_names, args.fix_long_lines,
+    if not any([args.fix_dates, args.fix_whitespace, args.fix_html_entities,
+                args.fix_places, args.fix_address_parts, args.fix_names, args.fix_long_lines,
                 args.fix_duplicate_sources, args.fix_addr_under_plac,
                 args.fix_note_under_plac, args.fix_note_under_addr,
                 args.fix_date_caps, args.fix_nicknames, args.fix_name_pieces,
@@ -4551,6 +4690,18 @@ def main():
                 print(f'  ... and {len(trailing) - 20} more.')
         else:
             print('OK: no trailing whitespace.')
+
+        html_issues = scan_html_entities(args.gedfile)
+        if html_issues:
+            errors = True
+            print(f'\n{len(html_issues)} line(s) with HTML entities or tags '
+                  '(run --fix-html-entities to decode):')
+            for ln, val in html_issues[:20]:
+                print(f'  line {ln}: {val!r}')
+            if len(html_issues) > 20:
+                print(f'  ... and {len(html_issues) - 20} more.')
+        else:
+            print('OK: no HTML entities or tags.')
 
         dupe_sources = scan_duplicate_sources(args.gedfile)
         if dupe_sources:
