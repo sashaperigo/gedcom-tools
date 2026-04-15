@@ -464,14 +464,18 @@ function _updateSpouseRow(tag) {
   }
 }
 
+function _buildSpouseResultsHtml(hits) {
+  return hits.map(p =>
+    `<div class="spouse-result-item" data-xref="${escHtml(p.id)}" data-name="${escHtml(p.name)}">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
+  ).join('');
+}
+
 function _renderSpouseResults(query) {
   const container = document.getElementById('event-modal-spouse-results');
   if (!container) return;
   const hits = _filterSpouseResults(query, typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : []);
   if (!hits.length) { container.innerHTML = ''; return; }
-  container.innerHTML = hits.map(p =>
-    `<div class="spouse-result-item" data-xref="${escHtml(p.id)}" data-name="${escHtml(p.name)}">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
-  ).join('');
+  container.innerHTML = _buildSpouseResultsHtml(hits);
 }
 
 function _selectSpouse(xref, name) {
@@ -556,5 +560,5 @@ async function deleteFact(xref, evt) {
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _filterSpouseResults, _isFamEventTag };
+  module.exports = { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml };
 }

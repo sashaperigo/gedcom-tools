@@ -12,7 +12,7 @@ global.PEOPLE = {};
 global.escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 global.ADDR_BY_PLACE = {};
 
-const { _filterSpouseResults, _isFamEventTag } = require('../../js/viz_modals.js');
+const { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml } = require('../../js/viz_modals.js');
 
 // ── _isFamEventTag ────────────────────────────────────────────────────────
 
@@ -109,5 +109,53 @@ describe('_filterSpouseResults', () => {
     const results = _filterSpouseResults('mark', SAMPLE_PEOPLE);
     expect(results.length).toBe(1);
     expect(results[0]).toMatchObject({ id: '@I12@', name: 'Mark Davis' });
+  });
+});
+
+// ── _buildSpouseResultsHtml (regression: data-attribute click, not inline onclick) ──
+
+describe('_buildSpouseResultsHtml', () => {
+  const people = [
+    { id: '@I1@', name: 'Rose Smith', birth_year: '1990', death_year: '' },
+    { id: '@I2@', name: 'James "Jimmy" O\'Brien', birth_year: '', death_year: '' },
+  ];
+
+  it('renders data-xref and data-name attributes for each item', () => {
+    const html = _buildSpouseResultsHtml(people);
+    expect(html).toContain('data-xref="@I1@"');
+    expect(html).toContain('data-name="Rose Smith"');
+    expect(html).toContain('data-xref="@I2@"');
+  });
+
+  it('does NOT use inline onclick handlers (regression: double-quote quoting bug)', () => {
+    // The original bug: JSON.stringify inside onclick="..." broke attribute boundaries.
+    // Clicks silently failed when xrefs like @I1@ were JSON-stringified as "@I1@"
+    // and embedded directly in the onclick attribute value.
+    const html = _buildSpouseResultsHtml(people);
+    expect(html).not.toContain('onclick=');
+  });
+
+  it('HTML-escapes special characters in names and xrefs', () => {
+    const html = _buildSpouseResultsHtml([
+      { id: '@I99@', name: 'A & B <Test>', birth_year: '' },
+    ]);
+    expect(html).not.toContain('A & B');
+    expect(html).toContain('A &amp; B');
+    expect(html).not.toContain('<Test>');
+    expect(html).toContain('&lt;Test&gt;');
+  });
+
+  it('includes birth year in parentheses when present', () => {
+    const html = _buildSpouseResultsHtml([people[0]]);
+    expect(html).toContain('(1990)');
+  });
+
+  it('omits birth year when absent', () => {
+    const html = _buildSpouseResultsHtml([people[1]]);
+    expect(html).not.toMatch(/\(\s*\)/);
+  });
+
+  it('returns empty string for empty array', () => {
+    expect(_buildSpouseResultsHtml([])).toBe('');
   });
 });
