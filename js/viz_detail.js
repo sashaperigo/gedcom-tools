@@ -434,12 +434,14 @@ function showDetail(xref, forceRefresh = false) {
       const editBtn = evt.event_idx !== null && evt.event_idx !== undefined
         ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>`
         : '';
+      const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
       html +=
         `<div class="evt-entry">` +
         `<div class="${dotCls}" style="background:${color}"></div>` +
         `<div class="evt-prose">${yearStr}${escHtml(prose)}</div>` +
         (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
         noteInl +
+        srcBadge +
         editBtn +
         delBtn +
         `</div>`;
@@ -459,11 +461,13 @@ function showDetail(xref, forceRefresh = false) {
       const editBtn = evt.event_idx !== null && evt.event_idx !== undefined
         ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>`
         : '';
+      const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
       return `<div class="evt-entry">` +
         `<div class="evt-dot" style="background:${color}"></div>` +
         `<div class="evt-prose">${escHtml(prose)}</div>` +
         (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
         noteInl +
+        srcBadge +
         editBtn +
         delBtn +
         `</div>`;
@@ -640,6 +644,26 @@ function closeDetail() {
 }
 
 // ---------------------------------------------------------------------------
+// Citation badge helper (also used by undatedRows via closure)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns an HTML string for the citation count badge on a fact row, or ''
+ * if the event has no citations.
+ *
+ * @param {Array}  citations - evt.citations array
+ * @param {string} xref      - person xref (JSON-escaped inline)
+ * @param {number} origIdx   - evt._origIdx (index into PEOPLE[xref].events)
+ */
+function buildSourceBadgeHtml(citations, xref, origIdx) {
+  if (!citations || citations.length === 0) return '';
+  const n     = citations.length;
+  const label = n === 1 ? '1 source' : `${n} sources`;
+  const xrefQ = JSON.stringify(String(xref)).replace(/"/g, '&quot;');
+  return `<span class="evt-src-badge" title="${label}" onclick="event.stopPropagation();openSourcesModal(${xrefQ},${origIdx})">${n} src</span>`;
+}
+
+// ---------------------------------------------------------------------------
 // Node export (for tests)
 // ---------------------------------------------------------------------------
 
@@ -650,5 +674,6 @@ if (typeof module !== 'undefined') {
     buildProse, dotColor,
     sortEvents, collapseResidences,
     EVENT_LABELS, _MONTH_ABBR,
+    buildSourceBadgeHtml,
   };
 }

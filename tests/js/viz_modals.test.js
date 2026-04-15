@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
@@ -9,10 +9,15 @@ global.document = {
 };
 global.ALL_PEOPLE = [];
 global.PEOPLE = {};
+global.SOURCES = {};
+global.EVENT_LABELS = { BIRT: 'Birth', DEAT: 'Death', RESI: 'Residence', EMIG: 'Emigration' };
 global.escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 global.ADDR_BY_PLACE = {};
 
-const { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS } = require('../../js/viz_modals.js');
+const {
+  _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
+  openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
+} = require('../../js/viz_modals.js');
 
 // ── _isFamEventTag ────────────────────────────────────────────────────────
 
@@ -230,5 +235,146 @@ describe('_FACT_PRESETS', () => {
   it('NCHI has an inlineLabel', () => {
     expect(typeof _FACT_PRESETS['NCHI'].inlineLabel).toBe('string');
     expect(_FACT_PRESETS['NCHI'].inlineLabel.length).toBeGreaterThan(0);
+  });
+});
+
+// ── _buildSourcesModalContent ─────────────────────────────────────────────
+
+describe('_buildSourcesModalContent', () => {
+  const SOURCES = {
+    '@S1@': { title: 'Ellis Island Records', url: 'https://example.com/s1' },
+    '@S2@': { title: 'Greek Orthodox Ledger', url: null },
+  };
+
+  it('returns fallback message when citations is empty', () => {
+    const html = _buildSourcesModalContent([], SOURCES);
+    expect(html).toContain('No sources recorded');
+  });
+
+  it('returns fallback message when citations is null', () => {
+    const html = _buildSourcesModalContent(null, SOURCES);
+    expect(html).toContain('No sources recorded');
+  });
+
+  it('renders source title as link when URL is present', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
+    expect(html).toContain('<a ');
+    expect(html).toContain('Ellis Island Records');
+    expect(html).toContain('https://example.com/s1');
+  });
+
+  it('renders source title as plain text when URL is absent', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S2@', page: null }], SOURCES);
+    expect(html).not.toContain('<a ');
+    expect(html).toContain('Greek Orthodox Ledger');
+  });
+
+  it('renders page info when page is present', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: '47' }], SOURCES);
+    expect(html).toContain('src-modal-page');
+    expect(html).toContain('47');
+  });
+
+  it('omits page element when page is null', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
+    expect(html).not.toContain('src-modal-page');
+  });
+
+  it('HTML-escapes source title', () => {
+    const evilSources = { '@S1@': { title: '<script>alert(1)</script>', url: null } };
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], evilSources);
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('renders all sources when multiple citations', () => {
+    const html = _buildSourcesModalContent(
+      [{ sour_xref: '@S1@', page: '3' }, { sour_xref: '@S2@', page: null }],
+      SOURCES
+    );
+    expect(html).toContain('Ellis Island Records');
+    expect(html).toContain('Greek Orthodox Ledger');
+  });
+
+  it('shows xref as fallback when citation xref is not in SOURCES', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S99@', page: null }], SOURCES);
+    expect(html).toContain('@S99@');
+  });
+});
+
+// ── openSourcesModal / closeSourcesModal ──────────────────────────────────
+
+describe('openSourcesModal and closeSourcesModal', () => {
+  // Build a minimal DOM double that records classList.add/remove calls.
+  function makeFakeElement(id) {
+    return {
+      id,
+      textContent: '',
+      innerHTML: '',
+      classList: {
+        _classes: new Set(),
+        add(c)    { this._classes.add(c); },
+        remove(c) { this._classes.delete(c); },
+        contains(c) { return this._classes.has(c); },
+      },
+    };
+  }
+
+  let overlay, title, list;
+
+  beforeEach(() => {
+    overlay = makeFakeElement('sources-modal-overlay');
+    title   = makeFakeElement('sources-modal-title');
+    list    = makeFakeElement('sources-modal-list');
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'sources-modal-overlay') return overlay;
+        if (id === 'sources-modal-title')   return title;
+        if (id === 'sources-modal-list')    return list;
+        return null;
+      },
+      addEventListener: () => {},
+    };
+
+    global.PEOPLE = {
+      '@I1@': {
+        events: [
+          { tag: 'BIRT', date: '1900', type: null, citations: [{ sour_xref: '@S1@', page: '5' }] },
+          { tag: 'DEAT', date: '1970', type: null, citations: [] },
+        ],
+      },
+    };
+    global.SOURCES = {
+      '@S1@': { title: 'Birth Register', url: null },
+    };
+    global.EVENT_LABELS = { BIRT: 'Birth', DEAT: 'Death' };
+  });
+
+  it('adds "open" class to overlay', () => {
+    openSourcesModal('@I1@', 0);
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('sets title text to include the event label and year', () => {
+    openSourcesModal('@I1@', 0);
+    expect(title.textContent).toContain('Birth');
+    expect(title.textContent).toContain('1900');
+  });
+
+  it('populates the list with source content', () => {
+    openSourcesModal('@I1@', 0);
+    expect(list.innerHTML).toContain('Birth Register');
+  });
+
+  it('closeSourcesModal removes "open" class from overlay', () => {
+    overlay.classList.add('open');
+    closeSourcesModal();
+    expect(overlay.classList.contains('open')).toBe(false);
+  });
+
+  it('shows fallback text for an event with no citations', () => {
+    openSourcesModal('@I1@', 1);
+    expect(list.innerHTML).toContain('No sources recorded');
   });
 });

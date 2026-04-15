@@ -119,7 +119,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 alias = re.sub(r'\s+', ' ', alias).strip()
                 evt = {'tag': 'FACT', 'type': 'AKA', 'date': None, 'place': None,
                        'cause': None, 'addr': None, 'note': alias, 'inline_val': None,
-                       'age': None, '_name_record': True, '_name_occurrence': secondary_name_n}
+                       'age': None, 'citations': [], '_name_record': True, '_name_occurrence': secondary_name_n}
                 secondary_name_n += 1
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
@@ -134,7 +134,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
                 inline_type = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
                 initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
-                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None, 'age': None}
+                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None, 'age': None, 'citations': []}
                 indis[xref]['events'].append(evt)
                 current_evt  = evt
                 current_note = None
@@ -161,6 +161,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_note = 'event'   # sentinel: subsequent CONT/CONC at lvl 3 belong here
                 elif tag == 'AGE':
                     current_evt['age'] = val
+                elif tag == 'SOUR' and val.startswith('@'):
+                    current_evt['citations'].append({'sour_xref': val, 'page': None})
+            elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
+                current_evt['citations'][-1]['page'] = val
             elif lvl == 3 and tag in ('CONT', 'CONC') and current_note == 'event':
                 sep = '\n' if tag == 'CONT' else ''
                 current_evt['note'] += sep + html_mod.unescape(val)
@@ -769,6 +773,34 @@ header h1 { font-size: 16px; font-weight: 600; }
 #alias-modal-overlay.open { display: flex; }
 #alias-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 420px; max-width: 90vw; }
+/* ── Sources viewer modal ────────────────────────────────── */
+#sources-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#sources-modal-overlay.open { display: flex; }
+#sources-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
+#sources-modal-header { display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 14px; }
+#sources-modal-title { font-size: 13px; font-weight: 600; color: #94a3b8; margin: 0; line-height: 1.4; }
+#sources-modal-close { background: none; border: none; color: #64748b; cursor: pointer;
+  font-size: 18px; line-height: 1; padding: 0 0 0 8px; flex-shrink: 0; }
+#sources-modal-close:hover { color: #94a3b8; }
+#sources-modal-list { margin: 0; }
+.src-modal-item { padding: 10px 0; border-bottom: 1px solid #1e3a52; }
+.src-modal-item:last-child { border-bottom: none; padding-bottom: 0; }
+.src-modal-title { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
+.src-modal-title a { color: #93c5fd; text-underline-offset: 2px;
+  text-decoration-color: rgba(147,197,253,0.4); }
+.src-modal-title a:hover { text-decoration-color: rgba(147,197,253,0.8); }
+.src-modal-page { font-size: 11px; color: #64748b; margin-top: 3px; }
+.src-modal-empty { font-size: 13px; color: #475569; }
+/* ── Citation badge on fact rows ─────────────────────────── */
+.evt-src-badge { font-size: 10px; color: #475569; background: rgba(71,85,105,0.15);
+  border: 1px solid rgba(71,85,105,0.3); border-radius: 3px; padding: 1px 5px;
+  cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s,
+  background .15s; position: absolute; right: 46px; top: 3px; line-height: 1.4; }
+.evt-src-badge:hover { color: #93c5fd; border-color: rgba(147,197,253,0.5);
+  background: rgba(147,197,253,0.08); }
 #alias-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 /* ── Timeline ───────────────────────────────────────────── */
 #detail-timeline { position: relative; padding-left: 28px; }
@@ -973,6 +1005,15 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
+<div id="sources-modal-overlay" onclick="if(event.target===this)closeSourcesModal()">
+  <div id="sources-modal">
+    <div id="sources-modal-header">
+      <div id="sources-modal-title">Sources</div>
+      <button id="sources-modal-close" onclick="closeSourcesModal()" title="Close">&times;</button>
+    </div>
+    <div id="sources-modal-list"></div>
+  </div>
+</div>
 <div id="name-modal-overlay" onclick="if(event.target===this)closeNameModal()">
   <div id="name-modal">
     <h3 id="name-modal-title">Edit Name</h3>
@@ -1027,6 +1068,7 @@ window.addEventListener('unhandledrejection', e => {
 const TREE = __TREE_JSON__;
 const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
+const SOURCES = __SOURCES_JSON__;
 const RELATIVES = __RELATIVES_JSON__;
 const PARENTS = __PARENTS_JSON__;
 const CHILDREN = {};
@@ -1088,7 +1130,8 @@ def build_addr_by_place(indis: dict) -> dict:
 
 
 def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis: dict,
-                fams: dict | None = None, root_xref: str | None = None) -> str:
+                fams: dict | None = None, root_xref: str | None = None,
+                sources: dict | None = None) -> str:
     """Return a complete self-contained HTML string."""
     safe_name      = html_mod.escape(root_name)
     tree_json      = json.dumps(tree)
@@ -1116,6 +1159,17 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     root_xref_json      = json.dumps(root_xref or '')
     addr_by_place_json  = json.dumps(build_addr_by_place(indis))
     all_places_json     = json.dumps(build_all_places(indis, fams))
+    # Build global SOURCES dict: {xref: {title, url}} for citation lookups
+    source_urls_global: dict[str, str] = {}
+    for indi_info in indis.values():
+        for sxref, url in indi_info.get('source_urls', {}).items():
+            if url and sxref not in source_urls_global:
+                source_urls_global[sxref] = url
+    sources_js = {
+        xref: {'title': title or '', 'url': source_urls_global.get(xref) or None}
+        for xref, title in (sources or {}).items()
+    }
+    sources_json = json.dumps(sources_js)
     return (
         _HTML_TEMPLATE
         .replace('__ROOT_NAME__', safe_name)
@@ -1127,6 +1181,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         .replace('__ROOT_XREF_JSON__', root_xref_json)
         .replace('__ADDR_BY_PLACE_JSON__', addr_by_place_json)
         .replace('__ALL_PLACES_JSON__', all_places_json)
+        .replace('__SOURCES_JSON__', sources_json)
     )
 
 
@@ -1167,7 +1222,8 @@ def viz_ancestors(path_in: str, person: str, path_out: str,
     people    = build_people_json(set(indis.keys()), indis, fams, sources, exclude=exclude)
 
     root_name = people.get(root_xref, {}).get('name', '?')
-    html = render_html(tree, root_name, people, relatives, indis, fams=fams, root_xref=root_xref)
+    html = render_html(tree, root_name, people, relatives, indis, fams=fams, root_xref=root_xref,
+                       sources=sources)
     with open(path_out, 'w', encoding='utf-8') as f:
         f.write(html)
 

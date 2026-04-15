@@ -612,9 +612,55 @@ async function deleteFact(xref, evt) {
 }
 
 // ---------------------------------------------------------------------------
+// Sources viewer modal
+// ---------------------------------------------------------------------------
+
+function openSourcesModal(xref, eventIdx) {
+  const evt = PEOPLE[xref] && PEOPLE[xref].events[eventIdx];
+  const citations = (evt && evt.citations) || [];
+  const sources   = (typeof SOURCES !== 'undefined') ? SOURCES : {};
+
+  // Build fact label: e.g. "Emigration · 1922"
+  let label = '';
+  if (evt) {
+    const labelMap = (typeof EVENT_LABELS !== 'undefined') ? EVENT_LABELS : {};
+    const tag  = labelMap[evt.tag] || evt.tag;
+    const type = evt.type ? ` (${evt.type})` : '';
+    const year = evt.date ? (' \u00b7 ' + (evt.date.match(/\b\d{4}\b/) || [''])[0]) : '';
+    label = tag + type + year;
+  }
+  document.getElementById('sources-modal-title').textContent = label || 'Sources';
+  document.getElementById('sources-modal-list').innerHTML =
+    _buildSourcesModalContent(citations, sources);
+  document.getElementById('sources-modal-overlay').classList.add('open');
+}
+
+function closeSourcesModal() {
+  document.getElementById('sources-modal-overlay').classList.remove('open');
+}
+
+function _buildSourcesModalContent(citations, sources) {
+  if (!citations || citations.length === 0) {
+    return '<div class="src-modal-empty">No sources recorded for this fact.</div>';
+  }
+  return citations.map(c => {
+    const src = sources[c.sour_xref] || {};
+    const title = src.title || c.sour_xref || 'Unknown source';
+    const titleHtml = src.url
+      ? `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
+      : escHtml(title);
+    const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
+    return `<div class="src-modal-item"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>`;
+  }).join('');
+}
+
+// ---------------------------------------------------------------------------
 // Exports (for Vitest unit tests via CommonJS require)
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS };
+  module.exports = {
+    _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
+    openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
+  };
 }
