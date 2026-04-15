@@ -15,3 +15,6 @@ venv/
 merged.ged
 merge-session.json
 merge-report.txt
+
+# Git worktrees
+.worktrees/
