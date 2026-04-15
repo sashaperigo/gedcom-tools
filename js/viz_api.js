@@ -63,8 +63,8 @@ async function apiDeleteSecondaryName(xref, nameIdx) {
 
 // ── Source operations ─────────────────────────────────────────────────────
 
-async function apiAddSource(titl, auth, publ) {
-  return _post('/api/add_source', { titl, auth, publ });
+async function apiAddSource(titl, auth, publ, repo, note) {
+  return _post('/api/add_source', { titl, auth, publ, repo, note });
 }
 
 async function apiEditSourceRecord(sourXref, fields) {

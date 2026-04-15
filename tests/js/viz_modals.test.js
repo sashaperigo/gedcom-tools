@@ -571,9 +571,9 @@ describe('showEditSourceModal', () => {
   it('shows warning about shared source changes', () => {
     if (!showEditSourceModal) return;
     showEditSourceModal('@S1@');
-    // Warning element should have some text content set, or the overlay
-    // should have been opened — the key contract is that the modal opens
     expect(overlay.classList.contains('open')).toBe(true);
+    // Warning text must mention that changes affect all citations
+    expect(warningEl.textContent).toMatch(/affect all citations/i);
   });
 });
 

@@ -1029,7 +1029,7 @@ async function submitAddSourceModal() {
   if (!titl) { alert('Title is required.'); return; }
   closeAddSourceModal();
   try {
-    await apiAddSource(titl, auth, publ);
+    await apiAddSource(titl, auth, publ, repo, note);
     if (typeof setState !== 'undefined') setState({});   // trigger re-render
   } catch (e) {
     alert('Save failed: ' + e);

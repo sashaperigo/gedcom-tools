@@ -28,8 +28,7 @@ const _TAG_LABELS = {
 
 // ── Module state ──────────────────────────────────────────────────────────
 
-let _panelEl   = null;
-let _panelXref = null;   // last rendered xref (for change detection)
+let _panelEl = null;
 
 // ── Public: navigate to a godparent (exported for testing) ────────────────
 
@@ -54,16 +53,20 @@ function _buildFactRow(fact, xref) {
     html += `<span class="panel-fact-cite-badge">${n} src</span>`;
   }
 
-  // Godparents for CHR / BAPM facts
+  // Godparents section: always show for CHR/BAPM, even when assoArr is empty,
+  // so users can add the first godparent to a christening or baptism fact.
   const assoArr = (fact.asso || []).filter(a => a.rela === 'Godparent');
-  if (assoArr.length > 0) {
+  const isChrOrBapm = fact.tag === 'CHR' || fact.tag === 'BAPM';
+  if (isChrOrBapm || assoArr.length > 0) {
     html += `<div class="panel-godparents">`;
-    html += `<span class="panel-godparents-label">Godparents:</span>`;
-    for (const asso of assoArr) {
-      const gp     = (typeof PEOPLE !== 'undefined' && PEOPLE[asso.xref]);
-      const gpName = gp ? _esc(gp.name) : _esc(asso.xref);
-      const xrefJs = JSON.stringify(asso.xref);
-      html += `<span class="panel-godparent-pill" data-xref="${_esc(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}</span>`;
+    if (assoArr.length > 0) {
+      html += `<span class="panel-godparents-label">Godparents:</span>`;
+      for (const asso of assoArr) {
+        const gp     = (typeof PEOPLE !== 'undefined' && PEOPLE[asso.xref]);
+        const gpName = gp ? _esc(gp.name) : _esc(asso.xref);
+        const xrefJs = JSON.stringify(asso.xref);
+        html += `<span class="panel-godparent-pill" data-xref="${_esc(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}</span>`;
+      }
     }
     const xrefQ = JSON.stringify(xref);
     html += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
@@ -143,8 +146,10 @@ function _buildNotesSection(xref, notes) {
 // ── Internal: citation delete (called from inline onclick) ─────────────────
 
 async function _panelDeleteCitation(xref, factTag, index) {
+  // apiDeleteCitation expects a formatted "TAG:index" key string
+  const citationKey = factTag ? `${factTag}:${index}` : `SOUR:${index}`;
   try {
-    await apiDeleteCitation(xref, { factTag, index });
+    await apiDeleteCitation(xref, citationKey);
   } catch (e) {
     // ignore
   }
@@ -250,7 +255,6 @@ function renderPanel() {
   }
 
   _panelEl.classList.add('panel-open');
-  _panelXref = xref;
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
@@ -265,5 +269,5 @@ function initPanel(panelEl) {
 // ── Exports ───────────────────────────────────────────────────────────────
 
 if (typeof module !== 'undefined') {
-  module.exports = { initPanel, renderPanel, _handleGodparentClick, _buildFactRow };
+  module.exports = { initPanel, renderPanel };
 }
