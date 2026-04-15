@@ -704,6 +704,11 @@ header h1 { font-size: 16px; font-weight: 600; }
   border: 1px dashed #334155; border-radius: 6px; color: #475569; font-size: 12px;
   padding: 5px 12px; cursor: pointer; margin-top: 12px; }
 .add-event-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+.add-fact-select { appearance: none; background: none; border: 1px dashed #334155;
+  border-radius: 6px; color: #475569; font-size: 12px; padding: 5px 12px;
+  cursor: pointer; margin-top: 12px; font-family: inherit; }
+.add-fact-select:hover { border-color: #3b82f6; color: #3b82f6; }
+.add-fact-select:focus { outline: none; border-color: #3b82f6; }
 /* ── Nationality pill actions ─────────────────────────────── */
 .facts-pill-wrap { position: relative; display: inline-flex; align-items: center; }
 .facts-pill-actions { display: none; position: absolute; right: -2px; top: 50%;
@@ -886,7 +891,6 @@ header h1 { font-size: 16px; font-weight: 600; }
         <option value="EMIG">Emigration</option>
         <option value="EVEN">Event</option>
         <option value="FACT">Fact</option>
-        <option value="FACT:Languages">Languages</option>
         <option value="NATI">Nationality</option>
         <option value="RELI">Religion</option>
         <option value="TITL">Title</option>

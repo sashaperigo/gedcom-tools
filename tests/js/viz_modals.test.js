@@ -12,7 +12,7 @@ global.PEOPLE = {};
 global.escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 global.ADDR_BY_PLACE = {};
 
-const { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml } = require('../../js/viz_modals.js');
+const { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS } = require('../../js/viz_modals.js');
 
 // ── _isFamEventTag ────────────────────────────────────────────────────────
 
@@ -157,5 +157,78 @@ describe('_buildSpouseResultsHtml', () => {
 
   it('returns empty string for empty array', () => {
     expect(_buildSpouseResultsHtml([])).toBe('');
+  });
+});
+
+// ── _FACT_PRESETS ─────────────────────────────────────────────────────────
+
+describe('_FACT_PRESETS', () => {
+  const EXPECTED_KEYS = [
+    'FACT:Languages',
+    'FACT:Literacy',
+    'FACT:Politics',
+    'FACT:Medical condition',
+    'DSCR',
+    'NCHI',
+  ];
+
+  it('exports an object', () => {
+    expect(typeof _FACT_PRESETS).toBe('object');
+    expect(_FACT_PRESETS).not.toBeNull();
+  });
+
+  it('contains all six fact presets', () => {
+    for (const key of EXPECTED_KEYS) {
+      expect(_FACT_PRESETS).toHaveProperty(key);
+    }
+  });
+
+  it('every FACT: preset has baseTag FACT and a non-empty type', () => {
+    for (const [key, preset] of Object.entries(_FACT_PRESETS)) {
+      if (key.startsWith('FACT:')) {
+        expect(preset.baseTag).toBe('FACT');
+        expect(typeof preset.type).toBe('string');
+        expect(preset.type.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('DSCR preset has baseTag DSCR and showInline true', () => {
+    expect(_FACT_PRESETS['DSCR'].baseTag).toBe('DSCR');
+    expect(_FACT_PRESETS['DSCR'].showInline).toBe(true);
+  });
+
+  it('NCHI preset has baseTag NCHI and showInline true', () => {
+    expect(_FACT_PRESETS['NCHI'].baseTag).toBe('NCHI');
+    expect(_FACT_PRESETS['NCHI'].showInline).toBe(true);
+  });
+
+  it('every preset has a label string', () => {
+    for (const preset of Object.values(_FACT_PRESETS)) {
+      expect(typeof preset.label).toBe('string');
+      expect(preset.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('FACT: presets have showInline false (type field, not inline value)', () => {
+    for (const [key, preset] of Object.entries(_FACT_PRESETS)) {
+      if (key.startsWith('FACT:')) {
+        expect(preset.showInline).toBe(false);
+      }
+    }
+  });
+
+  it('FACT:Languages type matches Languages', () => {
+    expect(_FACT_PRESETS['FACT:Languages'].type).toBe('Languages');
+  });
+
+  it('DSCR has an inlineLabel', () => {
+    expect(typeof _FACT_PRESETS['DSCR'].inlineLabel).toBe('string');
+    expect(_FACT_PRESETS['DSCR'].inlineLabel.length).toBeGreaterThan(0);
+  });
+
+  it('NCHI has an inlineLabel', () => {
+    expect(typeof _FACT_PRESETS['NCHI'].inlineLabel).toBe('string');
+    expect(_FACT_PRESETS['NCHI'].inlineLabel.length).toBeGreaterThan(0);
   });
 });

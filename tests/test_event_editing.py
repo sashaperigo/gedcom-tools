@@ -337,6 +337,42 @@ class TestInsertNewEvent:
         assert err is None
         assert any(l == '1 NATI British' for l in new_lines)
 
+    def test_insert_dscr_with_inline_val(self):
+        """DSCR is an inline-value tag — description goes on the level-1 line."""
+        new_lines, err = _insert_new_event(
+            MULTI_EVENT_GED, '@I1@', 'DSCR',
+            {'inline_val': 'Height: 5\'6"; Eyes: Brown'}
+        )
+        assert err is None
+        assert any(l == '1 DSCR Height: 5\'6"; Eyes: Brown' for l in new_lines)
+
+    def test_insert_dscr_with_note(self):
+        """DSCR supports a NOTE sub-tag in addition to the inline value."""
+        new_lines, err = _insert_new_event(
+            MULTI_EVENT_GED, '@I1@', 'DSCR',
+            {'inline_val': 'Tall', 'NOTE': 'Per passport'}
+        )
+        assert err is None
+        joined = '\n'.join(new_lines)
+        assert '1 DSCR Tall' in joined
+        assert '2 NOTE Per passport' in joined
+
+    def test_insert_nchi_with_inline_val(self):
+        """NCHI is an inline-value tag — count goes on the level-1 line."""
+        new_lines, err = _insert_new_event(
+            MULTI_EVENT_GED, '@I1@', 'NCHI', {'inline_val': '5'}
+        )
+        assert err is None
+        assert any(l == '1 NCHI 5' for l in new_lines)
+
+    def test_insert_nchi_without_inline_val(self):
+        """NCHI with no count still produces a valid 1 NCHI line."""
+        new_lines, err = _insert_new_event(
+            MULTI_EVENT_GED, '@I1@', 'NCHI', {}
+        )
+        assert err is None
+        assert any(l == '1 NCHI' for l in new_lines)
+
     def test_insert_occu_with_inline_val_and_type(self):
         new_lines, err = _insert_new_event(
             MULTI_EVENT_GED, '@I1@', 'OCCU',

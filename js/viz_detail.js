@@ -470,8 +470,19 @@ function showDetail(xref, forceRefresh = false) {
     }).join('');
   }
 
+  const _xrefQ2 = JSON.stringify(xref).replace(/"/g, '&quot;');
+  const _addFactBtn = `<select class="add-fact-select" onchange="if(this.value){addEvent(${_xrefQ2},this.value);this.selectedIndex=0}">` +
+    `<option value="" disabled selected>&#43; Add fact\u2026</option>` +
+    `<option value="FACT:Languages">Languages</option>` +
+    `<option value="FACT:Literacy">Literacy</option>` +
+    `<option value="FACT:Politics">Politics</option>` +
+    `<option value="FACT:Medical condition">Medical condition</option>` +
+    `<option value="DSCR">Physical Description</option>` +
+    `<option value="NCHI">Children (count)</option>` +
+    `</select>`;
+
   let bottomHtml = '';
-  if (undatedFactoids.length) {
+  {
     const residences = undatedFactoids.filter(e => e.tag === 'RESI');
     const otherFacts = undatedFactoids.filter(e => e.tag !== 'RESI');
     otherFacts.sort((a, b) => {
@@ -482,13 +493,14 @@ function showDetail(xref, forceRefresh = false) {
     if (residences.length) {
       bottomHtml += `<span class="also-lived-heading">Also lived in</span>` + undatedRows(residences);
     }
-    if (otherFacts.length) {
-      bottomHtml += `<span class="also-lived-heading">Facts</span>` + undatedRows(otherFacts);
-    }
+    // Facts heading + rows always shown; add-fact button always present
+    bottomHtml += `<span class="also-lived-heading">Facts</span>`;
+    if (otherFacts.length) bottomHtml += undatedRows(otherFacts);
+    bottomHtml += _addFactBtn;
   }
 
   alsoLivedDiv.innerHTML = bottomHtml;
-  alsoLivedDiv.className = bottomHtml ? 'has-content' : '';
+  alsoLivedDiv.className = 'has-content';
 
   // ── Family section ────────────────────────────────────────
   const familyDiv = document.getElementById('detail-family');

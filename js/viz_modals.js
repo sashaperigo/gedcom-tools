@@ -86,10 +86,18 @@ const _TYPE_TAGS = new Set(['EVEN','FACT','OCCU','TITL','EDUC','NATI','RELI']);
 let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null,
     _eventModalFamXref = null, _eventModalMARRIdx = null;
 
-// Pseudo-tags that expand to FACT with a fixed TYPE pre-filled.
-// Key: option value, Value: { label: display label, type: TYPE string to inject }
+// Fact presets — each key is the pseudo-tag used in the UI (option value).
+// baseTag:     the real GEDCOM tag submitted to the server
+// type:        value for 2 TYPE sub-tag (null for tags that don't use TYPE)
+// showInline:  true → show the inline value field (for DSCR, NCHI)
+// inlineLabel: label for the inline field when showInline is true
 const _FACT_PRESETS = {
-  'FACT:Languages': { label: 'Languages', type: 'Languages' },
+  'FACT:Languages':         { label: 'Languages',           baseTag: 'FACT', type: 'Languages',         showInline: false },
+  'FACT:Literacy':          { label: 'Literacy',            baseTag: 'FACT', type: 'Literacy',          showInline: false },
+  'FACT:Politics':          { label: 'Politics',            baseTag: 'FACT', type: 'Politics',          showInline: false },
+  'FACT:Medical condition': { label: 'Medical condition',   baseTag: 'FACT', type: 'Medical condition', showInline: false },
+  'DSCR':                   { label: 'Physical Description', baseTag: 'DSCR', type: null,              showInline: true,  inlineLabel: 'Description' },
+  'NCHI':                   { label: 'Children (count)',    baseTag: 'NCHI', type: null,              showInline: true,  inlineLabel: 'Count' },
 };
 
 function _updateEventModalFields(tag) {
@@ -102,16 +110,23 @@ function _updateEventModalFields(tag) {
 
   const preset = _FACT_PRESETS[tag];
   if (preset) {
-    // Preset FACT: show the type row pre-filled and read-only, hide inline,
-    // cause, place, and address — only date and note are relevant.
-    inlineRow.style.display = 'none';
-    typeRow.style.display   = '';
-    const typeInp = document.getElementById('event-modal-type');
-    if (typeInp && !typeInp.value) typeInp.value = preset.type;
-    typeInp.readOnly = true;
+    // Preset fact: hide cause, place, address — only date and note are relevant.
     causeRow.style.display = 'none';
     if (placeRow) placeRow.style.display = 'none';
     if (addrRow)  addrRow.style.display  = 'none';
+    if (preset.showInline) {
+      // DSCR / NCHI: show inline field (value goes on the tag line), hide TYPE row
+      inlineRow.style.display = '';
+      inlineLbl.textContent   = preset.inlineLabel;
+      typeRow.style.display   = 'none';
+    } else {
+      // FACT: show type row pre-filled and read-only, hide inline field
+      inlineRow.style.display = 'none';
+      typeRow.style.display   = '';
+      const typeInp = document.getElementById('event-modal-type');
+      if (typeInp && !typeInp.value) typeInp.value = preset.type;
+      if (typeInp) typeInp.readOnly = true;
+    }
     _updateSpouseRow(tag);
     return;
   }
@@ -218,7 +233,9 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   _updateAddrSuggestions('');
   _updateEventModalFields(defaultTag);
   document.getElementById('event-modal-overlay').classList.add('open');
-  const focusId = _FACT_PRESETS[defaultTag] ? 'event-modal-note'
+  const _dfPreset = _FACT_PRESETS[defaultTag];
+  const focusId = _dfPreset
+                ? (_dfPreset.showInline ? 'event-modal-inline' : 'event-modal-note')
                 : _INLINE_TYPE_TAGS.has(defaultTag) ? 'event-modal-inline'
                 : 'event-modal-date';
   setTimeout(() => document.getElementById(focusId).focus(), 50);
@@ -235,9 +252,9 @@ async function submitEventModal() {
   const famXref  = _eventModalFamXref;
   const isAdd    = _eventModalIdx === null && !famXref;
   const rawTag   = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
-  // Resolve preset pseudo-tags (e.g. 'FACT:Languages') to their base GEDCOM tag.
+  // Resolve preset pseudo-tags to their real GEDCOM tag (e.g. 'FACT:Languages' → 'FACT').
   const preset   = _FACT_PRESETS[rawTag];
-  const tag      = preset ? rawTag.split(':')[0] : rawTag;
+  const tag      = preset ? preset.baseTag : rawTag;
   const typeRow  = document.getElementById('event-modal-type-row');
   const causeRow = document.getElementById('event-modal-cause-row');
   const fields = {
@@ -599,5 +616,5 @@ async function deleteFact(xref, evt) {
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml };
+  module.exports = { _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS };
 }

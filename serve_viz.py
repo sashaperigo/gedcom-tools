@@ -574,7 +574,7 @@ def _find_fam_event_block(
 # ---------------------------------------------------------------------------
 
 _MANAGED_SUBTAGS = frozenset({'DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS', 'ADDR'})
-_INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
+_INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC', 'DSCR', 'NCHI'})
 
 
 def _find_event_block(
