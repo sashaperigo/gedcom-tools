@@ -506,3 +506,543 @@ class TestBackupCreatedByEndpoints:
         post('/api/edit_name', {'xref': '@I2@', 'given_name': 'Jimmy', 'surname': 'Smith'})
         backup = ged.with_suffix('.ged.bak').read_text(encoding='utf-8')
         assert backup == original
+
+
+# ===========================================================================
+# /api/add_source
+# ===========================================================================
+
+class TestAddSourceEndpoint:
+    def test_returns_xref(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_source', {
+            'titl': 'Birth Records', 'auth': 'County Office',
+            'publ': '', 'repo': '', 'note': '',
+        })
+        assert 'xref' in resp
+        assert resp['xref'].startswith('@S')
+
+    def test_new_sour_record_in_ged(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_source', {
+            'titl': 'Birth Records', 'auth': 'County Office',
+            'publ': 'City Hall', 'repo': '', 'note': 'Reliable source',
+        })
+        text = _ged_text(ged)
+        xref = resp['xref']
+        assert f'0 {xref} SOUR' in text
+        assert '1 TITL Birth Records' in text
+        assert '1 AUTH County Office' in text
+        assert '1 PUBL City Hall' in text
+        assert '1 NOTE Reliable source' in text
+
+    def test_empty_optional_fields_not_written(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/add_source', {
+            'titl': 'Simple Source', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })
+        text = _ged_text(ged)
+        assert '1 AUTH' not in text
+        assert '1 PUBL' not in text
+        assert '1 REPO' not in text
+
+    def test_xref_increments(self, live_server):
+        ged, post, _, _ = live_server
+        resp1 = post('/api/add_source', {'titl': 'Source One', 'auth': '', 'publ': '', 'repo': '', 'note': ''})
+        resp2 = post('/api/add_source', {'titl': 'Source Two', 'auth': '', 'publ': '', 'repo': '', 'note': ''})
+        assert resp1['xref'] != resp2['xref']
+
+    def test_missing_titl_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_source', {'auth': 'Someone'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/add_source', {'titl': 'Source', 'auth': '', 'publ': '', 'repo': '', 'note': ''})
+        assert ged.with_suffix('.ged.bak').exists()
+
+
+# ===========================================================================
+# /api/edit_source_record
+# ===========================================================================
+
+class TestEditSourceRecordEndpoint:
+    def test_updates_titl(self, live_server):
+        ged, post, _, _ = live_server
+        # First add a source
+        resp = post('/api/add_source', {
+            'titl': 'Original Title', 'auth': 'Author', 'publ': '', 'repo': '', 'note': '',
+        })
+        xref = resp['xref']
+        resp2 = post('/api/edit_source_record', {
+            'xref': xref, 'titl': 'Updated Title', 'auth': 'Author',
+            'publ': '', 'repo': '', 'note': '',
+        })
+        assert resp2.get('ok') is True
+        text = _ged_text(ged)
+        assert '1 TITL Updated Title' in text
+        assert '1 TITL Original Title' not in text
+
+    def test_removes_empty_optional_fields(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_source', {
+            'titl': 'Title', 'auth': 'Old Author', 'publ': 'Publisher', 'repo': '', 'note': '',
+        })
+        xref = resp['xref']
+        # Now edit: remove auth and publ by passing empty strings
+        post('/api/edit_source_record', {
+            'xref': xref, 'titl': 'Title', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })
+        text = _ged_text(ged)
+        assert '1 AUTH Old Author' not in text
+        assert '1 PUBL Publisher' not in text
+
+    def test_unknown_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/edit_source_record', {
+                'xref': '@S999@', 'titl': 'X', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_missing_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/edit_source_record', {'titl': 'Title'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_source', {'titl': 'T', 'auth': '', 'publ': '', 'repo': '', 'note': ''})
+        # Remove the bak from the add_source call
+        bak = ged.with_suffix('.ged.bak')
+        bak.unlink(missing_ok=True)
+        post('/api/edit_source_record', {
+            'xref': resp['xref'], 'titl': 'T2', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })
+        assert bak.exists()
+
+
+# ===========================================================================
+# /api/add_citation
+# ===========================================================================
+
+class TestAddCitationEndpoint:
+    def _add_source(self, post):
+        """Helper: add a source, return its xref."""
+        return post('/api/add_source', {
+            'titl': 'Test Source', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+
+    def test_fact_level_citation_written_to_ged(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 42', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert f'2 SOUR {sour_xref}' in text
+        assert '3 PAGE p. 42' in text
+
+    def test_fact_citation_with_text(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': '', 'text': 'Entry reads: born 1990', 'note': '',
+        })
+        text = _ged_text(ged)
+        assert '3 DATA' in text
+        assert '4 TEXT Entry reads: born 1990' in text
+
+    def test_person_level_citation(self, live_server):
+        """No fact_key → person-level SOUR at level 1."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@I2@', 'sour_xref': sour_xref,
+            'fact_key': None, 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert f'1 SOUR {sour_xref}' in text
+
+    def test_missing_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        sour_xref = self._add_source(post)
+        try:
+            post('/api/add_citation', {'sour_xref': sour_xref, 'fact_key': 'BIRT:0'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_missing_sour_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_citation', {'xref': '@I1@', 'fact_key': 'BIRT:0'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        bak = ged.with_suffix('.ged.bak')
+        bak.unlink(missing_ok=True)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        assert bak.exists()
+
+
+# ===========================================================================
+# /api/edit_citation
+# ===========================================================================
+
+class TestEditCitationEndpoint:
+    def _setup_citation(self, post, xref='@I1@', fact_key='BIRT:0'):
+        """Add a source and a citation, return sour_xref."""
+        sour_xref = post('/api/add_source', {
+            'titl': 'Test Source', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+        post('/api/add_citation', {
+            'xref': xref, 'sour_xref': sour_xref,
+            'fact_key': fact_key, 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        return sour_xref
+
+    def test_updates_page(self, live_server):
+        ged, post, _, _ = live_server
+        self._setup_citation(post)
+        resp = post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 99', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '3 PAGE p. 99' in text
+        assert '3 PAGE p. 1' not in text
+
+    def test_adds_text_field(self, live_server):
+        ged, post, _, _ = live_server
+        self._setup_citation(post)
+        post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 1', 'text': 'New transcription', 'note': '',
+        })
+        text = _ged_text(ged)
+        assert '4 TEXT New transcription' in text
+
+    def test_missing_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/edit_citation', {'citation_key': 'BIRT:0:0', 'page': 'p. 1'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_missing_citation_key_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/edit_citation', {'xref': '@I1@', 'page': 'p. 1'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        self._setup_citation(post)
+        bak = ged.with_suffix('.ged.bak')
+        bak.unlink(missing_ok=True)
+        post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 99', 'text': '', 'note': '',
+        })
+        assert bak.exists()
+
+
+# ===========================================================================
+# /api/delete_citation
+# ===========================================================================
+
+class TestDeleteCitationEndpoint:
+    def _setup_citation(self, post, xref='@I1@', fact_key='BIRT:0'):
+        sour_xref = post('/api/add_source', {
+            'titl': 'Test Source', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+        post('/api/add_citation', {
+            'xref': xref, 'sour_xref': sour_xref,
+            'fact_key': fact_key, 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        return sour_xref
+
+    def test_removes_sour_block_from_fact(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._setup_citation(post)
+        resp = post('/api/delete_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert f'2 SOUR {sour_xref}' not in text
+        assert '3 PAGE p. 1' not in text
+
+    def test_person_level_citation_removed(self, live_server):
+        """Deleting a person-level citation (SOUR:0) removes 1 SOUR block."""
+        ged, post, _, _ = live_server
+        sour_xref = post('/api/add_source', {
+            'titl': 'T', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+        post('/api/add_citation', {
+            'xref': '@I2@', 'sour_xref': sour_xref,
+            'fact_key': None, 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        resp = post('/api/delete_citation', {
+            'xref': '@I2@', 'citation_key': 'SOUR:0',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert f'1 SOUR {sour_xref}' not in text
+
+    def test_missing_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/delete_citation', {'citation_key': 'BIRT:0:0'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        self._setup_citation(post)
+        bak = ged.with_suffix('.ged.bak')
+        bak.unlink(missing_ok=True)
+        post('/api/delete_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+        })
+        assert bak.exists()
+
+
+# ===========================================================================
+# /api/add_person
+# ===========================================================================
+
+class TestAddPersonEndpoint:
+    def test_child_of_creates_new_indi(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
+            'birth_year': '2000',
+            'rel_type': 'child_of', 'rel_xref': '@I2@',
+        })
+        assert 'xref' in resp
+        xref = resp['xref']
+        text = _ged_text(ged)
+        assert f'0 {xref} INDI' in text
+        assert '1 NAME Lucy /Smith/' in text
+
+    def test_child_of_adds_famc_link(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
+            'birth_year': '2000',
+            'rel_type': 'child_of', 'rel_xref': '@I2@',
+        })
+        xref = resp['xref']
+        text = _ged_text(ged)
+        # New INDI should have FAMC link
+        assert '1 FAMC' in text
+        # The family that @I2@ belongs to should have a CHIL link to the new person
+        assert f'1 CHIL {xref}' in text
+
+    def test_birth_year_written(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'birth_year': '1975',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        text = _ged_text(ged)
+        assert '2 DATE 1975' in text
+
+    def test_spouse_of_creates_fam(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'birth_year': '',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        xref = resp['xref']
+        text = _ged_text(ged)
+        # A FAM record should reference both
+        assert f'@F' in text
+        assert f'1 HUSB {xref}' in text or f'1 WIFE {xref}' in text
+
+    def test_sibling_of_adds_to_same_fam(self, live_server):
+        """New sibling of @I1@ (FAMC @F1@) should be added as CHIL to @F1@."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Tom', 'surn': 'Smith', 'sex': 'M',
+            'birth_year': '',
+            'rel_type': 'sibling_of', 'rel_xref': '@I1@',
+        })
+        xref = resp['xref']
+        text = _ged_text(ged)
+        # @F1@ already has @I1@ as a child — new INDI should also appear as CHIL
+        assert f'1 CHIL {xref}' in text
+
+    def test_missing_given_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_person', {
+                'surn': 'Smith', 'sex': 'M', 'birth_year': '',
+                'rel_type': 'child_of', 'rel_xref': '@I2@',
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_missing_rel_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_person', {
+                'given': 'Tom', 'surn': 'Smith', 'sex': 'M',
+                'birth_year': '', 'rel_type': 'child_of',
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/add_person', {
+            'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
+            'birth_year': '', 'rel_type': 'child_of', 'rel_xref': '@I2@',
+        })
+        assert ged.with_suffix('.ged.bak').exists()
+
+
+# ===========================================================================
+# /api/add_godparent
+# ===========================================================================
+
+class TestAddGodparentEndpoint:
+    def test_asso_rela_written(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '1 ASSO @I4@' in text
+        assert '2 RELA Godparent' in text
+
+    def test_asso_within_correct_indi_block(self, live_server):
+        """The ASSO must appear before the next level-0 record."""
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        lines = _ged_text(ged).splitlines()
+        indi_start = next(i for i, l in enumerate(lines) if '0 @I1@ INDI' in l)
+        indi_end = next(i for i in range(indi_start + 1, len(lines)) if lines[i].startswith('0 '))
+        block = '\n'.join(lines[indi_start:indi_end])
+        assert '1 ASSO @I4@' in block
+        assert '2 RELA Godparent' in block
+
+    def test_missing_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_godparent', {'godparent_xref': '@I4@'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_missing_godparent_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_godparent', {'xref': '@I1@'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        assert ged.with_suffix('.ged.bak').exists()
+
+
+# ===========================================================================
+# /api/delete_godparent
+# ===========================================================================
+
+class TestDeleteGodparentEndpoint:
+    def _add_godparent(self, post, xref, gp_xref):
+        post('/api/add_godparent', {'xref': xref, 'godparent_xref': gp_xref})
+
+    def test_removes_asso_block(self, live_server):
+        ged, post, _, _ = live_server
+        self._add_godparent(post, '@I1@', '@I4@')
+        resp = post('/api/delete_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '1 ASSO @I4@' not in text
+
+    def test_other_asso_records_untouched(self, live_server):
+        """Deleting one godparent must not remove other ASSO blocks."""
+        ged, post, _, _ = live_server
+        self._add_godparent(post, '@I1@', '@I4@')
+        self._add_godparent(post, '@I1@', '@I5@')
+        post('/api/delete_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        text = _ged_text(ged)
+        assert '1 ASSO @I4@' not in text
+        assert '1 ASSO @I5@' in text
+
+    def test_missing_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/delete_godparent', {'godparent_xref': '@I4@'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_nonexistent_godparent_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/delete_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        self._add_godparent(post, '@I1@', '@I4@')
+        bak = ged.with_suffix('.ged.bak')
+        bak.unlink(missing_ok=True)
+        post('/api/delete_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        assert bak.exists()
