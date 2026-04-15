@@ -1,5 +1,5 @@
 // Edit / add / delete modals: notes, events, aliases, names.
-// All functions are DOM-dependent and are not exported for tests.
+// Pure helpers exported for testing (node require-compatible at the bottom).
 
 // ---------------------------------------------------------------------------
 // Note edit / delete
@@ -102,6 +102,7 @@ function _updateEventModalFields(tag) {
   // showing a separate TYPE field would duplicate it and cause confusion.
   typeRow.style.display = (_TYPE_TAGS.has(tag) && !_INLINE_TYPE_TAGS.has(tag)) ? '' : 'none';
   causeRow.style.display = (tag === 'DEAT') ? '' : 'none';
+  _updateSpouseRow(tag);
 }
 
 function _updateAddrSuggestions(place) {
@@ -165,6 +166,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   _eventModalIdx     = null;
   _eventModalTag     = null;
   _eventModalFamXref = null;
+  _eventModalSpouseXref = null;
   document.getElementById('event-modal-title').textContent = 'Add Event \u2014 ' + _personName(xref);
   document.getElementById('event-modal-save-btn').textContent = 'Add';
   document.getElementById('event-modal-tag-row').style.display = '';
@@ -176,6 +178,10 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   document.getElementById('event-modal-cause').value  = '';
   document.getElementById('event-modal-note').value   = '';
   document.getElementById('event-modal-addr').value   = '';
+  const spouseInp = document.getElementById('event-modal-spouse-input');
+  const spouseRes = document.getElementById('event-modal-spouse-results');
+  if (spouseInp) spouseInp.value = '';
+  if (spouseRes) spouseRes.innerHTML = '';
   _updateAddrSuggestions('');
   _updateEventModalFields(defaultTag);
   document.getElementById('event-modal-overlay').classList.add('open');
@@ -185,6 +191,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
 function closeEventModal() {
   document.getElementById('event-modal-overlay').classList.remove('open');
   _eventModalXref = _eventModalIdx = _eventModalTag = _eventModalFamXref = _eventModalMARRIdx = null;
+  _eventModalSpouseXref = null;
 }
 
 async function submitEventModal() {
@@ -210,6 +217,37 @@ async function submitEventModal() {
   if (causeRow && causeRow.style.display !== 'none') {
     fields.CAUS = document.getElementById('event-modal-cause').value.trim();
   }
+
+  // Marriage / divorce events route to /api/add_marriage (FAM-level, requires spouse)
+  if (isAdd && _isFamEventTag(tag)) {
+    if (!_eventModalSpouseXref) {
+      alert('Please select a spouse or other party from the search results.');
+      return;
+    }
+    closeEventModal();
+    try {
+      const resp = await fetch('/api/add_marriage', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          xref, spouse_xref: _eventModalSpouseXref, tag, fields,
+          current_person: window._currentPerson || null,
+        }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+        window._openDetailKey = null;
+        showDetail(xref, true);
+      } else {
+        alert('Save failed: ' + (data.error || 'unknown error'));
+      }
+    } catch (e) {
+      alert('Request failed: ' + e);
+    }
+    return;
+  }
+
   const endpoint = isAdd ? '/api/add_event' : '/api/edit_event';
   let body;
   if (isAdd) {
@@ -233,6 +271,7 @@ async function submitEventModal() {
       if (data.people) {
         for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
       }
+      window._openDetailKey = null;
       showDetail(xref, true);
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
@@ -390,6 +429,90 @@ async function submitNameModal() {
 }
 
 // ---------------------------------------------------------------------------
+// Marriage / divorce add + delete
+// ---------------------------------------------------------------------------
+
+// Tags whose events live in FAM records (not in INDI)
+const _FAM_EVENT_TAGS = new Set(['MARR', 'DIV']);
+
+// Pure helper: filter ALL_PEOPLE by name substring (case-insensitive), max 12
+function _filterSpouseResults(query, allPeople) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return [];
+  return allPeople.filter(p => (p.name || '').toLowerCase().includes(q)).slice(0, 12);
+}
+
+// Pure helper: is this tag a FAM-level event?
+function _isFamEventTag(tag) {
+  return _FAM_EVENT_TAGS.has(tag);
+}
+
+let _eventModalSpouseXref = null;
+
+function _updateSpouseRow(tag) {
+  const row = document.getElementById('event-modal-spouse-row');
+  if (!row) return;
+  if (_isFamEventTag(tag)) {
+    row.style.display = '';
+  } else {
+    row.style.display = 'none';
+    const inp = document.getElementById('event-modal-spouse-input');
+    const res = document.getElementById('event-modal-spouse-results');
+    if (inp) inp.value = '';
+    if (res) res.innerHTML = '';
+    _eventModalSpouseXref = null;
+  }
+}
+
+function _renderSpouseResults(query) {
+  const container = document.getElementById('event-modal-spouse-results');
+  if (!container) return;
+  const hits = _filterSpouseResults(query, typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : []);
+  if (!hits.length) { container.innerHTML = ''; return; }
+  container.innerHTML = hits.map(p =>
+    `<div class="spouse-result-item" onclick="_selectSpouse(${JSON.stringify(p.id)},${JSON.stringify(p.name)})">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
+  ).join('');
+}
+
+function _selectSpouse(xref, name) {
+  const inp = document.getElementById('event-modal-spouse-input');
+  const res = document.getElementById('event-modal-spouse-results');
+  if (inp) inp.value = name;
+  if (res) res.innerHTML = '';
+  _eventModalSpouseXref = xref;
+}
+
+async function deleteMarriage(xref, famXref, marrIdx) {
+  if (!confirm('Delete this marriage record? The GEDCOM file will be updated immediately (a backup will be saved).')) return;
+  try {
+    const resp = await fetch('/api/delete_marriage', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        xref,
+        fam_xref: famXref,
+        marr_occurrence: marrIdx,
+        current_person: xref,
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      showDetail(xref, true);
+    } else {
+      alert('Delete failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Request failed: ' + e);
+  }
+}
+
+// Wire spouse-picker input to autocomplete
+document.addEventListener('input', e => {
+  if (e.target.id === 'event-modal-spouse-input') _renderSpouseResults(e.target.value);
+});
+
+// ---------------------------------------------------------------------------
 // Fact delete
 // ---------------------------------------------------------------------------
 
@@ -420,4 +543,12 @@ async function deleteFact(xref, evt) {
   } catch (e) {
     alert('Request failed: ' + e);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Exports (for Vitest unit tests via CommonJS require)
+// ---------------------------------------------------------------------------
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { _filterSpouseResults, _isFamEventTag };
 }

@@ -731,8 +731,13 @@ header h1 { font-size: 16px; font-weight: 600; }
 .marr-edit-btn { position: absolute; right: 8px; top: 8px; background: none; border: none;
   cursor: pointer; font-size: 12px; color: #64748b; padding: 2px 4px;
   border-radius: 4px; opacity: 0; transition: opacity .15s, color .15s; }
-.marr-card:hover .marr-edit-btn { opacity: 1; }
+.marr-del-btn  { position: absolute; right: 30px; top: 8px; background: none; border: none;
+  cursor: pointer; font-size: 12px; color: #64748b; padding: 2px 4px;
+  border-radius: 4px; opacity: 0; transition: opacity .15s, color .15s; }
+.marr-card:hover .marr-edit-btn,
+.marr-card:hover .marr-del-btn  { opacity: 1; }
 .marr-edit-btn:hover { color: #3b82f6 !important; }
+.marr-del-btn:hover  { color: #ef4444 !important; }
 .marr-card .marr-year { font-size: 12px; font-weight: 700; color: #94a3b8;
                         text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
 .marr-card .marr-prose { font-size: 15px; font-weight: 600; color: #f1f5f9; line-height: 1.4; }
@@ -740,6 +745,11 @@ header h1 { font-size: 16px; font-weight: 600; }
 .marr-card:has(.marr-link):hover { background: rgba(219,234,254,0.08); }
 .marr-card .marr-meta { font-size: 12px; color: #94a3b8; margin-top: 4px; }
 .marr-card .evt-note-inline { font-size: 12px; }
+/* ── Spouse picker (marriage/divorce add modal) ───────────── */
+#event-modal-spouse-results { max-height: 160px; overflow-y: auto; background: #0f172a;
+  border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
+.spouse-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.spouse-result-item:hover { background: #1e3a5f; }
 /* ── Alias modal ─────────────────────────────────────────── */
 #alias-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   z-index: 1000; align-items: center; justify-content: center; }
@@ -857,6 +867,8 @@ header h1 { font-size: 16px; font-weight: 600; }
         <option value="BIRT">Birth</option>
         <option value="DEAT">Death</option>
         <option value="BURI">Burial</option>
+        <option value="MARR">Marriage</option>
+        <option value="DIV">Divorce</option>
         <option value="RESI">Residence</option>
         <option value="OCCU">Occupation</option>
         <option value="CHR">Christening</option>
@@ -872,10 +884,15 @@ header h1 { font-size: 16px; font-weight: 600; }
         <option value="ADOP">Adoption</option>
         <option value="EDUC">Education</option>
         <option value="RETI">Retirement</option>
-        <option value="DIV">Divorce</option>
         <option value="CONF">Confirmation</option>
         <option value="PROB">Probate</option>
       </select>
+    </div>
+    <div class="event-modal-field" id="event-modal-spouse-row" style="display:none">
+      <label>Spouse / Other Party</label>
+      <input type="text" id="event-modal-spouse-input" placeholder="Search by name\u2026"
+             autocomplete="off" onkeydown="if(event.key==='Escape')closeEventModal()">
+      <div id="event-modal-spouse-results"></div>
     </div>
     <div class="event-modal-field" id="event-modal-inline-row">
       <label id="event-modal-inline-label">Value</label>

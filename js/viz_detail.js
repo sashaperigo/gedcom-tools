@@ -409,9 +409,13 @@ function showDetail(xref, forceRefresh = false) {
         const marrEditBtn = evt.fam_xref
           ? `<button class="marr-edit-btn" title="Edit marriage" onclick="event.stopPropagation();editEvent(${xrefQ},null,'MARR',${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.marr_idx ?? 0})">\u270f</button>`
           : '';
+        const marrDelBtn = evt.fam_xref
+          ? `<button class="marr-del-btn" title="Delete marriage" onclick="event.stopPropagation();deleteMarriage(${xrefQ},${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.marr_idx ?? 0})">\u2715</button>`
+          : '';
         html +=
           `<div class="marr-card"${marrClick}>` +
           marrEditBtn +
+          marrDelBtn +
           yearLabel +
           proseHtml +
           (meta && meta !== String(evtYear2) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +

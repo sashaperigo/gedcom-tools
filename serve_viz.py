@@ -419,6 +419,117 @@ def _edit_secondary_name(
 # FAM block helpers (for marriage editing)
 # ---------------------------------------------------------------------------
 
+def _get_sex(lines: list[str], xref: str) -> str | None:
+    """Return 'M', 'F', or None from the '1 SEX' tag in xref's INDI block."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'SEX':
+            return (m.group(3) or '').strip() or None
+    return None
+
+
+def _find_existing_fam(lines: list[str], xref1: str, xref2: str) -> str | None:
+    """Return the FAM xref where HUSB/WIFE are xref1 & xref2 (either order), or None."""
+    import re as _re
+    _FAM_HDR_RE = _re.compile(r'^0 (@F\d+@) FAM$')
+    fam_xref = None
+    husb = wife = None
+    in_fam = False
+    for line in lines:
+        m = _FAM_HDR_RE.match(line.strip())
+        if m:
+            # Check previous FAM before moving on
+            if in_fam and husb and wife:
+                pair = {husb, wife}
+                if pair == {xref1, xref2}:
+                    return fam_xref
+            fam_xref = m.group(1)
+            husb = wife = None
+            in_fam = True
+            continue
+        if line.startswith('0 ') and not _FAM_HDR_RE.match(line.strip()):
+            # End of any FAM block
+            if in_fam and husb and wife:
+                pair = {husb, wife}
+                if pair == {xref1, xref2}:
+                    return fam_xref
+            in_fam = False
+            fam_xref = husb = wife = None
+            continue
+        if in_fam:
+            tm = _TAG_RE.match(line)
+            if tm and int(tm.group(1)) == 1:
+                tag = tm.group(2)
+                val = (tm.group(3) or '').strip()
+                if tag == 'HUSB':
+                    husb = val
+                elif tag == 'WIFE':
+                    wife = val
+    # Check last FAM in file
+    if in_fam and husb and wife:
+        if {husb, wife} == {xref1, xref2}:
+            return fam_xref
+    return None
+
+
+def _next_fam_xref(lines: list[str]) -> str:
+    """Scan all lines for @FXXX@ references and return @F(max+1)@."""
+    import re as _re
+    pattern = _re.compile(r'@F(\d+)@')
+    max_n = 0
+    for line in lines:
+        for m in pattern.finditer(line):
+            max_n = max(max_n, int(m.group(1)))
+    return f'@F{max_n + 1}@'
+
+
+def _add_fams_to_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[str]:
+    """Insert '1 FAMS fam_xref' at the end of indi_xref's INDI block (idempotent)."""
+    indi_start, indi_end, err = _find_indi_block(lines, indi_xref)
+    if err:
+        return lines
+    target = f'1 FAMS {fam_xref}'
+    for i in range(indi_start + 1, indi_end):
+        if lines[i].strip() == target:
+            return lines   # already present
+    return lines[:indi_end] + [target] + lines[indi_end:]
+
+
+def _insert_fam_event(lines: list[str], fam_xref: str, event_tag: str, fields: dict) -> list[str]:
+    """Append a new MARR/DIV event block just before the end of the FAM record."""
+    _, fam_end, err = _find_fam_block(lines, fam_xref)
+    if err:
+        return lines
+    new_block = [f'1 {event_tag}']
+    for subtag in ('DATE', 'PLAC', 'ADDR', 'NOTE'):
+        val = (fields.get(subtag) or '').strip()
+        if val:
+            new_block.append(f'2 {subtag} {val}')
+    return lines[:fam_end] + new_block + lines[fam_end:]
+
+
+def _create_fam_with_event(
+    lines: list[str], husb_xref: str, wife_xref: str,
+    fam_xref: str, event_tag: str, fields: dict,
+) -> list[str]:
+    """Append a brand-new FAM record (with HUSB, WIFE, and one event) before TRLR."""
+    trlr_idx = next(
+        (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
+    )
+    # Find insertion point: after the last FAM block (before TRLR)
+    insert_at = trlr_idx
+    fam_block = [f'0 {fam_xref} FAM', f'1 HUSB {husb_xref}', f'1 WIFE {wife_xref}']
+    fam_block.append(f'1 {event_tag}')
+    for subtag in ('DATE', 'PLAC', 'ADDR', 'NOTE'):
+        val = (fields.get(subtag) or '').strip()
+        if val:
+            fam_block.append(f'2 {subtag} {val}')
+    return lines[:insert_at] + fam_block + lines[insert_at:]
+
+
 def _find_fam_block(lines: list[str], fam_xref: str) -> tuple[int | None, int | None, str | None]:
     """Return (fam_start, fam_end, err) for a FAM record."""
     fam_start = next(
@@ -826,6 +937,67 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                     indis, fams, sources = parse_gedcom(str(GED))
                     updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                    resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/delete_marriage':
+            xref      = body.get('xref', '')
+            fam_xref  = body.get('fam_xref', '')
+            marr_occ  = int(body.get('marr_occurrence') or 0)
+            event_tag = body.get('tag', 'MARR')
+            lines     = GED.read_text(encoding='utf-8').splitlines()
+            start, end, err = _find_fam_event_block(lines, fam_xref, event_tag, marr_occ)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                new_lines = lines[:start] + lines[end:]
+                _write_gedcom_atomic(new_lines)
+                print(f"[marriage-delete] {fam_xref} {event_tag}[{marr_occ}] deleted")
+                regenerate(body.get('current_person'))
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                fam = fams.get(fam_xref, {})
+                xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife'), xref) if x}
+                updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/add_marriage':
+            xref        = body.get('xref', '')
+            spouse_xref = body.get('spouse_xref', '')
+            tag         = body.get('tag', 'MARR')
+            fields      = body.get('fields', {})
+            if not spouse_xref:
+                resp = json.dumps({'ok': False, 'error': 'spouse_xref is required'}).encode()
+            else:
+                if 'DATE' in fields and fields['DATE']:
+                    fields['DATE'], _date_err = _normalize_event_date(fields['DATE'])
+                else:
+                    _date_err = None
+                if _date_err:
+                    resp = json.dumps({'ok': False, 'error': _date_err}).encode()
+                else:
+                    lines    = GED.read_text(encoding='utf-8').splitlines()
+                    existing = _find_existing_fam(lines, xref, spouse_xref)
+                    if existing:
+                        new_lines = _insert_fam_event(lines, existing, tag, fields)
+                    else:
+                        sex1    = _get_sex(lines, xref)
+                        sex2    = _get_sex(lines, spouse_xref)
+                        if sex1 == 'F' and sex2 != 'F':
+                            husb_xref, wife_xref = spouse_xref, xref
+                        elif sex2 == 'F' and sex1 != 'F':
+                            husb_xref, wife_xref = xref, spouse_xref
+                        else:
+                            husb_xref, wife_xref = xref, spouse_xref
+                        new_fam = _next_fam_xref(lines)
+                        new_lines = _create_fam_with_event(lines, husb_xref, wife_xref, new_fam, tag, fields)
+                        new_lines = _add_fams_to_indi(new_lines, xref, new_fam)
+                        new_lines = _add_fams_to_indi(new_lines, spouse_xref, new_fam)
+                    _write_gedcom_atomic(new_lines)
+                    print(f"[marriage-add] {xref} + {spouse_xref} {tag}")
+                    regenerate(body.get('current_person'))
+                    viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                    indis, fams, sources = parse_gedcom(str(GED))
+                    updated = build_people_json({xref, spouse_xref}, indis, fams=fams, sources=sources)
                     resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         else:
