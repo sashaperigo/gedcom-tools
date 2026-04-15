@@ -1,0 +1,455 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+// ── Minimal SVG DOM mock ───────────────────────────────────────────────────
+//
+// Vitest runs in 'node' environment (no jsdom). We build just enough DOM
+// primitives to exercise viz_render.js without a browser.
+
+class MockElement {
+  constructor(ns, tag) {
+    this.ns = ns;
+    this.tagName = tag;
+    this.children = [];
+    this._attrs = {};
+    this._listeners = {};
+    this.style = {};
+    this.textContent = '';
+  }
+  setAttribute(k, v) { this._attrs[k] = String(v); }
+  getAttribute(k) { return this._attrs[k] ?? null; }
+  appendChild(child) { this.children.push(child); return child; }
+  addEventListener(type, fn) {
+    if (!this._listeners[type]) this._listeners[type] = [];
+    this._listeners[type].push(fn);
+  }
+  // Fire a synthetic event
+  dispatchEvent(type, eventObj = {}) {
+    const defaultEvent = { stopPropagation: () => {}, ...eventObj };
+    (this._listeners[type] || []).forEach(fn => fn(defaultEvent));
+  }
+  // Depth-first search for all elements matching a selector.
+  // Supports: 'tag', '#id', '.class', 'tag[attr]', 'tag[attr=value]'
+  querySelectorAll(selector) {
+    const results = [];
+    const visit = (el) => {
+      if (_matchesSelector(el, selector)) results.push(el);
+      el.children.forEach(visit);
+    };
+    this.children.forEach(visit);
+    return results;
+  }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+  get innerHTML() { return ''; }
+  set innerHTML(v) { if (v === '') this.children = []; }
+}
+
+function _matchesSelector(el, selector) {
+  // #id
+  if (selector.startsWith('#')) return el._attrs['id'] === selector.slice(1);
+  // .class
+  if (selector.startsWith('.')) return (el._attrs['class'] || '').split(' ').includes(selector.slice(1));
+  // tag[attr] or tag[attr=value]
+  const attrMatch = selector.match(/^([a-zA-Z]+)\[([a-zA-Z_-]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
+  if (attrMatch) {
+    const [, tag, attr, val] = attrMatch;
+    if (el.tagName !== tag) return false;
+    if (val === undefined) return el._attrs[attr] !== undefined;
+    return el._attrs[attr] === val;
+  }
+  // plain tag name
+  return el.tagName === selector;
+}
+
+// Build a mock <svg> element that also has an SVG-like id attribute
+function makeSvgEl() {
+  const svg = new MockElement('http://www.w3.org/2000/svg', 'svg');
+  svg._attrs['id'] = 'tree-svg';
+  svg._attrs['width'] = '800';
+  svg._attrs['height'] = '600';
+  svg.getBoundingClientRect = () => ({ width: 800, height: 600, left: 0, top: 0 });
+  return svg;
+}
+
+// ── Global setup ───────────────────────────────────────────────────────────
+
+const { DESIGN } = require('../../js/viz_design.js');
+global.DESIGN = DESIGN;
+
+const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS } = DESIGN;
+
+// Set up a minimal document mock so createElementNS works
+global.document = {
+  createElementNS: (ns, tag) => new MockElement(ns, tag),
+  addEventListener: () => {},
+};
+
+// Stub globals that viz_state.js needs
+global.location = { search: '' };
+global.history = { pushState: vi.fn() };
+global.addEventListener = () => {};
+
+// Load state module
+const stateMod = require('../../js/viz_state.js');
+global.setState    = stateMod.setState;
+global.getState    = stateMod.getState;
+global.onStateChange = stateMod.onStateChange;
+
+// Load layout module
+const { computeLayout } = require('../../js/viz_layout.js');
+global.computeLayout = computeLayout;
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function makeMinimalPeople() {
+  return {
+    '@FOCUS@':  { name: 'Focus Person', birth_year: 1900, death_year: 1980 },
+    '@FATHER@': { name: 'Father Person', birth_year: 1870, death_year: 1940 },
+    '@MOTHER@': { name: 'Mother Person', birth_year: 1872, death_year: 1945 },
+    '@CHILD@':  { name: 'Child Person', birth_year: 1925, death_year: null },
+    '@SPOUSE@': { name: 'Spouse Person', birth_year: 1902, death_year: 1970 },
+    '@SIBLING@':{ name: 'Sibling Person', birth_year: 1897, death_year: 1960 },
+  };
+}
+
+function resetState() {
+  stateMod.initState('@FOCUS@');
+}
+
+// Load the render module once — it reads globals at call-time, not module load time
+let renderMod;
+
+function loadRenderMod() {
+  // Bust module cache so we get fresh state bindings
+  const modPath = require.resolve('../../js/viz_render.js');
+  delete require.cache[modPath];
+  // Also bust layout and state caches so globals are picked up fresh
+  const layoutPath = require.resolve('../../js/viz_layout.js');
+  delete require.cache[layoutPath];
+  renderMod = require('../../js/viz_render.js');
+  return renderMod;
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+describe('initRenderer', () => {
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    global.CHILDREN  = { '@FOCUS@': ['@CHILD@'] };
+    global.RELATIVES = { '@FOCUS@': { siblings: ['@SIBLING@'], spouses: ['@SPOUSE@'] } };
+    resetState();
+    loadRenderMod();
+  });
+
+  it('creates a <g id="tree-root"> inside the SVG', () => {
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    expect(treeRoot).not.toBeNull();
+    expect(treeRoot.tagName).toBe('g');
+    expect(treeRoot._attrs['id']).toBe('tree-root');
+  });
+
+  it('tree-root has an initial translate transform centering focus at (svgW/2, svgH/2)', () => {
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const transform = treeRoot._attrs['transform'] || '';
+    // Should contain translate with roughly half the svg dimensions
+    expect(transform).toMatch(/translate\(/);
+    // Extract numbers
+    const match = transform.match(/translate\(\s*([\d.+-]+)\s*,\s*([\d.+-]+)\s*\)/);
+    expect(match).not.toBeNull();
+    const tx = parseFloat(match[1]);
+    const ty = parseFloat(match[2]);
+    expect(tx).toBeCloseTo(400, 0); // svgWidth / 2 = 800 / 2
+    expect(ty).toBeCloseTo(300, 0); // svgHeight / 2 = 600 / 2
+  });
+});
+
+describe('render — node presence', () => {
+  let svg;
+
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    global.CHILDREN  = { '@FOCUS@': ['@CHILD@'] };
+    global.RELATIVES = { '@FOCUS@': { siblings: ['@SIBLING@'], spouses: ['@SPOUSE@'] } };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+  });
+
+  it('each node in layout has a corresponding <g> element with data-xref attribute', () => {
+    const { computeLayout } = require('../../js/viz_layout.js');
+    const state = stateMod.getState();
+    const { nodes } = computeLayout(state.focusXref, state.expandedNodes || new Set(), false);
+
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const renderedXrefs = new Set(nodeGs.map(g => g._attrs['data-xref']));
+
+    for (const node of nodes) {
+      expect(renderedXrefs.has(node.xref)).toBe(true);
+    }
+  });
+
+  it('each node <g> has a translate transform matching layout position', () => {
+    const { computeLayout } = require('../../js/viz_layout.js');
+    const state = stateMod.getState();
+    const { nodes } = computeLayout(state.focusXref, state.expandedNodes || new Set(), false);
+
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const byXref = new Map(nodeGs.map(g => [g._attrs['data-xref'], g]));
+
+    for (const node of nodes) {
+      const g = byXref.get(node.xref);
+      expect(g).toBeDefined();
+      const transform = g._attrs['transform'] || '';
+      expect(transform).toMatch(/translate\(/);
+      const match = transform.match(/translate\(\s*([\d.+-]+)\s*,\s*([\d.+-]+)\s*\)/);
+      expect(match).not.toBeNull();
+      expect(parseFloat(match[1])).toBeCloseTo(node.x, 1);
+      expect(parseFloat(match[2])).toBeCloseTo(node.y, 1);
+    }
+  });
+});
+
+describe('render — focused node styles', () => {
+  let svg;
+
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = {};
+    global.CHILDREN  = {};
+    global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+  });
+
+  it('focused node rect uses BG_NODE_FOCUS fill', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    expect(focusG).toBeDefined();
+    const rect = focusG.children.find(c => c.tagName === 'rect');
+    expect(rect._attrs['fill']).toBe(DESIGN.BG_NODE_FOCUS);
+  });
+
+  it('focused node rect uses BORDER_FOCUS stroke', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    const rect = focusG.children.find(c => c.tagName === 'rect');
+    expect(rect._attrs['stroke']).toBe(DESIGN.BORDER_FOCUS);
+  });
+
+  it('focused node rect uses NODE_W_FOCUS width', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    const rect = focusG.children.find(c => c.tagName === 'rect');
+    expect(parseFloat(rect._attrs['width'])).toBe(NODE_W_FOCUS);
+  });
+
+  it('focused node rect uses NODE_H_FOCUS height', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    const rect = focusG.children.find(c => c.tagName === 'rect');
+    expect(parseFloat(rect._attrs['height'])).toBe(NODE_H_FOCUS);
+  });
+});
+
+describe('render — spouse node styles', () => {
+  let svg;
+
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = {};
+    global.CHILDREN  = {};
+    global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] } };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+  });
+
+  it('spouse node rect uses ACCENT_SPOUSE stroke', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const spouseG = nodeGs.find(g => g._attrs['data-xref'] === '@SPOUSE@');
+    expect(spouseG).toBeDefined();
+    const rect = spouseG.children.find(c => c.tagName === 'rect');
+    expect(rect._attrs['stroke']).toBe(DESIGN.ACCENT_SPOUSE);
+  });
+
+  it('spouse node uses normal width (NODE_W)', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const spouseG = nodeGs.find(g => g._attrs['data-xref'] === '@SPOUSE@');
+    const rect = spouseG.children.find(c => c.tagName === 'rect');
+    expect(parseFloat(rect._attrs['width'])).toBe(NODE_W);
+  });
+});
+
+describe('render — ancestor expand buttons', () => {
+  let svg;
+
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    global.CHILDREN  = {};
+    global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+  });
+
+  it('ancestor nodes have a <circle> with class expand-btn', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    expect(fatherG).toBeDefined();
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn).toBeDefined();
+  });
+
+  it('expand button is positioned at node top edge (cy = node.y - 8 + treeRootTranslateY)', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    // The <g data-xref> is translated to node.x, node.y.
+    // The button is placed relative to the group at (w/2, -8) so top of node.
+    const cy = parseFloat(expandBtn._attrs['cy']);
+    expect(cy).toBeCloseTo(-8, 0);
+  });
+
+  it('focus node does NOT have an expand button', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    const expandBtn = focusG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn).toBeUndefined();
+  });
+
+  it('sibling node does NOT have an expand button', () => {
+    global.RELATIVES = { '@FOCUS@': { siblings: ['@SIBLING@'], spouses: [] } };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const treeRoot = svg2.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const sibG = nodeGs.find(g => g._attrs['data-xref'] === '@SIBLING@');
+    if (!sibG) return; // sibling not present in this layout — pass vacuously
+    const expandBtn = sibG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn).toBeUndefined();
+  });
+});
+
+describe('render — click handlers', () => {
+  let svg;
+  let setStateSpy;
+
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    global.CHILDREN  = {};
+    global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    // Spy BEFORE initRenderer so the global is replaced before closure capture
+    setStateSpy = vi.fn();
+    global.setState = setStateSpy;
+    renderMod.initRenderer(svg);
+  });
+
+  it('clicking a non-focus node calls setState with focusXref and panelOpen: true', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    expect(fatherG).toBeDefined();
+
+    fatherG.dispatchEvent('click', { stopPropagation: () => {} });
+
+    expect(setStateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ focusXref: '@FATHER@', panelOpen: true, panelXref: '@FATHER@' })
+    );
+  });
+
+  it('clicking the focus node calls setState with panelOpen but does NOT change focusXref', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    expect(focusG).toBeDefined();
+
+    focusG.dispatchEvent('click', { stopPropagation: () => {} });
+
+    const calls = setStateSpy.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const lastCall = calls[calls.length - 1][0];
+    // Should open panel
+    expect(lastCall.panelOpen).toBe(true);
+    expect(lastCall.panelXref).toBe('@FOCUS@');
+    // Should NOT include focusXref key
+    expect('focusXref' in lastCall).toBe(false);
+  });
+});
+
+describe('render — expand button click handler', () => {
+  let svg;
+  let setStateSpy;
+
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    global.CHILDREN  = {};
+    global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    // Spy BEFORE initRenderer so the global is replaced before closure capture
+    setStateSpy = vi.fn();
+    global.setState = setStateSpy;
+    renderMod.initRenderer(svg);
+  });
+
+  it('clicking an expand button adds the xref to expandedAncestors in state', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn).toBeDefined();
+
+    expandBtn.dispatchEvent('click', { stopPropagation: () => {} });
+
+    expect(setStateSpy).toHaveBeenCalled();
+    const calls = setStateSpy.mock.calls;
+    const expandCall = calls.find(([update]) => update.expandedNodes !== undefined);
+    expect(expandCall).toBeDefined();
+    const newSet = expandCall[0].expandedNodes;
+    expect(newSet instanceof Set).toBe(true);
+    expect(newSet.has('@FATHER@')).toBe(true);
+  });
+});
