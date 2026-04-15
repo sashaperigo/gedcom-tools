@@ -86,6 +86,12 @@ const _TYPE_TAGS = new Set(['EVEN','FACT','OCCU','TITL','EDUC','NATI','RELI']);
 let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null,
     _eventModalFamXref = null, _eventModalMARRIdx = null;
 
+// Pseudo-tags that expand to FACT with a fixed TYPE pre-filled.
+// Key: option value, Value: { label: display label, type: TYPE string to inject }
+const _FACT_PRESETS = {
+  'FACT:Languages': { label: 'Languages', type: 'Languages' },
+};
+
 function _updateEventModalFields(tag) {
   const inlineRow = document.getElementById('event-modal-inline-row');
   const inlineLbl = document.getElementById('event-modal-inline-label');
@@ -93,6 +99,27 @@ function _updateEventModalFields(tag) {
   const causeRow  = document.getElementById('event-modal-cause-row');
   const placeRow  = document.getElementById('event-modal-place-row');
   const addrRow   = document.getElementById('event-modal-addr-row');
+
+  const preset = _FACT_PRESETS[tag];
+  if (preset) {
+    // Preset FACT: show the type row pre-filled and read-only, hide inline,
+    // cause, place, and address — only date and note are relevant.
+    inlineRow.style.display = 'none';
+    typeRow.style.display   = '';
+    const typeInp = document.getElementById('event-modal-type');
+    if (typeInp && !typeInp.value) typeInp.value = preset.type;
+    typeInp.readOnly = true;
+    causeRow.style.display = 'none';
+    if (placeRow) placeRow.style.display = 'none';
+    if (addrRow)  addrRow.style.display  = 'none';
+    _updateSpouseRow(tag);
+    return;
+  }
+
+  // Clear any read-only state (and pre-filled value) set by a previous preset selection
+  const typeInp = document.getElementById('event-modal-type');
+  if (typeInp) { typeInp.readOnly = false; typeInp.value = ''; }
+
   if (_INLINE_TYPE_TAGS.has(tag)) {
     inlineRow.style.display = '';
     const labelMap = {OCCU:'Occupation',TITL:'Title',NATI:'Nationality',RELI:'Religion',EDUC:'Education'};
@@ -191,7 +218,9 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   _updateAddrSuggestions('');
   _updateEventModalFields(defaultTag);
   document.getElementById('event-modal-overlay').classList.add('open');
-  const focusId = _INLINE_TYPE_TAGS.has(defaultTag) ? 'event-modal-inline' : 'event-modal-date';
+  const focusId = _FACT_PRESETS[defaultTag] ? 'event-modal-note'
+                : _INLINE_TYPE_TAGS.has(defaultTag) ? 'event-modal-inline'
+                : 'event-modal-date';
   setTimeout(() => document.getElementById(focusId).focus(), 50);
 }
 
@@ -205,7 +234,10 @@ async function submitEventModal() {
   const xref     = _eventModalXref;
   const famXref  = _eventModalFamXref;
   const isAdd    = _eventModalIdx === null && !famXref;
-  const tag      = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
+  const rawTag   = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
+  // Resolve preset pseudo-tags (e.g. 'FACT:Languages') to their base GEDCOM tag.
+  const preset   = _FACT_PRESETS[rawTag];
+  const tag      = preset ? rawTag.split(':')[0] : rawTag;
   const typeRow  = document.getElementById('event-modal-type-row');
   const causeRow = document.getElementById('event-modal-cause-row');
   const fields = {

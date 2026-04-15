@@ -886,6 +886,7 @@ header h1 { font-size: 16px; font-weight: 600; }
         <option value="EMIG">Emigration</option>
         <option value="EVEN">Event</option>
         <option value="FACT">Fact</option>
+        <option value="FACT:Languages">Languages</option>
         <option value="NATI">Nationality</option>
         <option value="RELI">Religion</option>
         <option value="TITL">Title</option>
