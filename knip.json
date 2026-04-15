@@ -1,0 +1,9 @@
+{
+  "entry": ["js/*.js"],
+  "ignore": ["node_modules/**"],
+  "ignoreDependencies": [],
+  "ignoreExportsUsedInFile": true,
+  "rules": {
+    "files": "off"
+  }
+}

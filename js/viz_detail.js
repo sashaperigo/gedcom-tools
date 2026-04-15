@@ -672,8 +672,7 @@ if (typeof module !== 'undefined') {
     escHtml, linkify,
     fmtDate, fmtPlace, fmtAge,
     buildProse, dotColor,
-    sortEvents, collapseResidences,
-    EVENT_LABELS, _MONTH_ABBR,
+    collapseResidences,
     buildSourceBadgeHtml,
   };
 }
