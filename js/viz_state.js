@@ -19,6 +19,7 @@ function _xrefFromUrl(search) {
 }
 
 function _pushHistory(focusXref) {
+  if (typeof history === 'undefined') return;
   const clean = focusXref.replace(/@/g, '');
   history.pushState({ focusXref }, '', '?person=' + clean);
 }

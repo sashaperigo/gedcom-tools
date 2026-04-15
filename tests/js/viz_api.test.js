@@ -11,8 +11,6 @@ function makeFetchMock(responseData, ok = true) {
   });
 }
 
-let apiDeleteFact, apiAddSource, apiDeleteNote, apiAddNote;
-
 beforeEach(() => {
   // Reset module between tests to pick up fresh fetch stub
   vi.resetModules();

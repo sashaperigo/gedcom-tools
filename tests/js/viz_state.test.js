@@ -11,8 +11,6 @@ function makeURL(search = '') {
   return { search };
 }
 
-let initState, setState, onStateChange, getState;
-
 function loadModule(search = '') {
   // Reset module cache
   vi.resetModules();
