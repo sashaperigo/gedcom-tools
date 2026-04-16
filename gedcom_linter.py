@@ -2179,8 +2179,11 @@ def scan_conc_cont(path: str) -> list[tuple[int, str]]:
     """
     Return (lineno, description) for CONC/CONT anomalies:
       - Level is not exactly one greater than the most recent non-CONC/CONT line
-      - CONC value begins with a leading space (would be included literally in
-        the reassembled text)
+
+    Note: CONC values starting with a leading space are intentional and spec-compliant.
+    Per GEDCOM 5.5.5 (pp. 41, 43-44): splitting just before a space so the space
+    becomes the first character of the CONC value is the recommended technique to
+    preserve word boundaries. Readers must not strip leading white space from line values.
     """
     violations: list[tuple[int, str]] = []
     last_parent_level: int | None = None
@@ -2192,15 +2195,12 @@ def scan_conc_cont(path: str) -> list[tuple[int, str]]:
             if m:
                 level = int(m.group(1))
                 tag = m.group(2)
-                rest = m.group(3)
                 if last_parent_level is not None and level != last_parent_level + 1:
                     violations.append((
                         lineno,
                         f'{tag} at level {level} but parent is at level '
                         f'{last_parent_level} (expected level {last_parent_level + 1})',
                     ))
-                if tag == 'CONC' and rest.startswith('  '):
-                    violations.append((lineno, 'CONC value begins with a leading space'))
                 # CONC/CONT lines don't update last_parent_level
             else:
                 m2 = re.match(r'^(\d+)', line)

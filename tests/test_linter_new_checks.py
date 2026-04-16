@@ -583,16 +583,19 @@ class TestScanConcCont:
         assert len(result) >= 1
         assert any('level' in desc.lower() for _, desc in result)
 
-    def test_conc_leading_space_flagged(self, tmp_path):
+    def test_conc_leading_space_not_flagged(self, tmp_path):
+        # Per GEDCOM 5.5.5 (pp. 41, 43-44), leading spaces in CONC values are
+        # intentional (inter-word space placed at start of continuation line)
+        # and must not be flagged as errors.
         p = write_ged(tmp_path, """\
             0 HEAD
             0 @I1@ INDI
             1 NOTE Start of note
-            2 CONC  extra leading space
+            2 CONC  leading space is intentional word boundary
             0 TRLR
         """)
         result = scan_conc_cont(str(p))
-        assert any('leading space' in desc for _, desc in result)
+        assert result == []
 
 
 # ===========================================================================
