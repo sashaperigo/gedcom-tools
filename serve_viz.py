@@ -230,7 +230,14 @@ def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | 
                 j = i + 1
                 while j < indi_end:
                     sm = _TAG_RE.match(lines[j])
-                    if sm and int(sm.group(1)) == 2 and sm.group(2) in ('CONT', 'CONC'):
+                    # Accept CONT/CONC at any level, not just level 2.
+                    # Valid files always have them at exactly parent_level+1,
+                    # but files exported by some tools arrive with wrong levels
+                    # (e.g. 3 CONC under a 1 NOTE). We absorb them here so
+                    # edits replace the entire block rather than orphaning the
+                    # stray lines. The linter (scan_conc_cont) still flags
+                    # wrong-level lines as errors in the output file.
+                    if sm and sm.group(2) in ('CONT', 'CONC'):
                         j += 1
                     else:
                         break
@@ -257,6 +264,10 @@ def _chunk_note_line(text: str, first_tag: str, conc_tag: str) -> list[str]:
       - If the entire chunk is spaces (pathological), we split at _NOTE_LINE_MAX
         anyway to make forward progress.
     """
+    # Escape literal '@' to '@@' per GEDCOM spec: a bare '@' in a line value
+    # is the start of a pointer, so literal at-signs must be doubled.
+    text = text.replace('@', '@@')
+
     out = []
     tag = first_tag
     while len(text) > _NOTE_LINE_MAX:

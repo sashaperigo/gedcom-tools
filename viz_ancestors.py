@@ -36,6 +36,16 @@ _EVENT_TAGS = frozenset({
 # GEDCOM parsing
 # ---------------------------------------------------------------------------
 
+def _ged_val(raw: str) -> str:
+    """Decode a raw GEDCOM line value for display.
+
+    Applies two unescaping steps in order:
+      1. GEDCOM pointer escape: '@@' → '@'  (literal at-sign in a value)
+      2. HTML entity unescape: '&amp;' → '&' etc.  (carried over from some exports)
+    """
+    return html_mod.unescape(raw.replace('@@', '@'))
+
+
 def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     """
     Returns (indis, fams).
@@ -157,7 +167,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 elif tag == 'ADDR':
                     current_evt['addr'] = html_mod.unescape(val)
                 elif tag == 'NOTE':
-                    current_evt['note'] = html_mod.unescape(val)
+                    current_evt['note'] = _ged_val(val)
                     current_note = 'event'   # sentinel: subsequent CONT/CONC at lvl 3 belong here
                 elif tag == 'AGE':
                     current_evt['age'] = val
@@ -167,14 +177,14 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 current_evt['citations'][-1]['page'] = val
             elif lvl == 3 and tag in ('CONT', 'CONC') and current_note == 'event':
                 sep = '\n' if tag == 'CONT' else ''
-                current_evt['note'] += sep + html_mod.unescape(val)
+                current_evt['note'] += sep + _ged_val(val)
             elif lvl == 1 and tag == 'NOTE':
-                indis[xref]['notes'].append(html_mod.unescape(val))
+                indis[xref]['notes'].append(_ged_val(val))
                 current_note = len(indis[xref]['notes']) - 1
                 current_evt  = None
             elif lvl == 2 and tag in ('CONT', 'CONC') and isinstance(current_note, int):
                 sep = '\n' if tag == 'CONT' else ''
-                indis[xref]['notes'][current_note] += sep + html_mod.unescape(val)
+                indis[xref]['notes'][current_note] += sep + _ged_val(val)
             elif lvl == 1 and tag == 'FAMC' and indis[xref]['famc'] is None:
                 indis[xref]['famc'] = val
                 current_evt = current_note = None

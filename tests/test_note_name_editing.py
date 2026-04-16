@@ -124,6 +124,19 @@ class TestEncodeNoteLines:
         result = _encode_note_lines('Héllo wörld')
         assert result == ['1 NOTE Héllo wörld']
 
+    def test_at_sign_escaped(self):
+        # Bare '@' in a value would be misread as a pointer; must be doubled.
+        result = _encode_note_lines('user@example.com')
+        assert result == ['1 NOTE user@@example.com']
+
+    def test_multiple_at_signs_all_escaped(self):
+        result = _encode_note_lines('a@b and c@d')
+        assert result == ['1 NOTE a@@b and c@@d']
+
+    def test_at_sign_in_multiline_note(self):
+        result = _encode_note_lines('from: a@b.com\nto: c@d.org')
+        assert result == ['1 NOTE from: a@@b.com', '2 CONT to: c@@d.org']
+
     def test_output_is_list_not_generator(self):
         result = _encode_note_lines('x\ny')
         assert isinstance(result, list)
@@ -249,6 +262,39 @@ class TestFindNoteBlock:
         block = MULTI_NOTE_GED[start:end]
         assert not any('NOTE Second' in l for l in block)
 
+    def test_wrong_level_conc_absorbed_into_block(self):
+        # Files exported by some tools arrive with CONT/CONC at the wrong level
+        # (e.g. 3 CONC under a 1 NOTE). We absorb them so that editing the note
+        # replaces the whole block rather than orphaning the stray lines.
+        # The linter still flags wrong-level lines as errors in the output file.
+        ged = """\
+0 HEAD
+0 @I1@ INDI
+1 NAME Test /Person/
+1 NOTE First line
+2 CONT Second line
+3 CONC stray continuation at wrong level
+0 TRLR""".splitlines()
+        start, end, err = _find_note_block(ged, '@I1@', 0)
+        assert err is None
+        block = ged[start:end]
+        assert len(block) == 3  # NOTE + CONT + wrong-level CONC all included
+        assert any('3 CONC' in l for l in block)
+
+    def test_edit_replaces_wrong_level_conc_block_entirely(self):
+        # After editing, the wrong-level CONC line must be gone
+        ged = """\
+0 HEAD
+0 @I1@ INDI
+1 NAME Test /Person/
+1 NOTE First line
+2 CONT Second line
+3 CONC stray continuation at wrong level
+0 TRLR""".splitlines()
+        result = _apply_edit_note(ged, '@I1@', 0, 'Replacement text')
+        assert '3 CONC stray continuation at wrong level' not in result
+        assert '1 NOTE Replacement text' in result
+
 
 # ===========================================================================
 # Add note (simulates UI "add note" action)
@@ -349,12 +395,11 @@ class TestAddNote:
         result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'Ελληνικά και Türkçe')
         assert '1 NOTE Ελληνικά και Türkçe' in result
 
-    def test_note_with_at_sign_not_interpreted_as_pointer(self):
-        # Literal @ in note text — the encoding layer doesn't escape it here
-        # (escaping is done at the GEDCOM writer level), but the value must
-        # be preserved as given by the caller
+    def test_note_with_at_sign_escaped_to_double_at(self):
+        # '@' in note text must be written as '@@' so parsers don't mistake
+        # it for the start of a pointer.
         result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'email: user@example.com')
-        assert any('user@example.com' in l for l in result)
+        assert any('user@@example.com' in l for l in result)
 
     def test_unknown_xref_returns_error(self):
         _, _, err = _find_indi_block(_NO_NOTES_GED, '@NOBODY@')
