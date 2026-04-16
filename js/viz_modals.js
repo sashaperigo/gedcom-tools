@@ -2,6 +2,25 @@
 // Pure helpers exported for testing (node require-compatible at the bottom).
 
 // ---------------------------------------------------------------------------
+// Event label lookup (B3)
+// ---------------------------------------------------------------------------
+
+const _EVT_LABEL = {
+  BIRT:'Birth', DEAT:'Death', BURI:'Burial', CREM:'Cremation',
+  MARR:'Marriage', DIV:'Divorce', NATU:'Naturalization',
+  EMIG:'Emigration', IMMI:'Immigration', RESI:'Residence',
+  OCCU:'Occupation', EDUC:'Education', RELI:'Religion',
+  NATI:'Nationality', CENS:'Census', TITL:'Title',
+  ADOP:'Adoption', BAPM:'Baptism', CHR:'Christening',
+  CONF:'Confirmation', GRAD:'Graduation', WILL:'Will',
+  PROB:'Probate',
+};
+function _evtLabel(tag, typeVal) {
+  if ((tag === 'EVEN' || tag === 'FACT') && typeVal) return typeVal;
+  return _EVT_LABEL[tag] || tag;
+}
+
+// ---------------------------------------------------------------------------
 // Note edit / delete
 // ---------------------------------------------------------------------------
 
@@ -18,7 +37,7 @@ async function deleteNote(xref, noteIdx) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }
@@ -31,7 +50,7 @@ function addNote(xref) {
   document.getElementById('note-modal-title').textContent = 'Add Note';
   document.getElementById('note-modal-textarea').value = '';
   document.getElementById('note-modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('note-modal-textarea').focus(), 50);
+  setTimeout(() => { const el = document.getElementById('note-modal-textarea'); if (el) el.focus && el.focus(); }, 50);
 }
 
 function editNote(xref, noteIdx) {
@@ -40,7 +59,7 @@ function editNote(xref, noteIdx) {
   document.getElementById('note-modal-title').textContent = 'Edit Note';
   document.getElementById('note-modal-textarea').value = (PEOPLE[xref] && PEOPLE[xref].notes[noteIdx]) || '';
   document.getElementById('note-modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('note-modal-textarea').focus(), 50);
+  setTimeout(() => { const el = document.getElementById('note-modal-textarea'); if (el) el.focus && el.focus(); }, 50);
 }
 
 function closeNoteModal() {
@@ -67,7 +86,7 @@ async function submitNoteEdit() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -186,7 +205,6 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   _eventModalTag     = tag;
   _eventModalFamXref = famXref || null;
   _eventModalMARRIdx = (marrIdx !== undefined && marrIdx !== null) ? marrIdx : null;
-  document.getElementById('event-modal-title').textContent = 'Edit Event \u2014 ' + _personName(xref);
   document.getElementById('event-modal-save-btn').textContent = 'Save';
   document.getElementById('event-modal-tag-row').style.display = 'none';
   const events = (PEOPLE[xref] && PEOPLE[xref].events) || [];
@@ -194,6 +212,7 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   const evt = famXref
     ? (events.find(e => e.fam_xref === famXref && e.tag === tag && (marrIdx == null || e.marr_idx === marrIdx)) || {})
     : (events.find(e => e.tag === tag && e.event_idx === eventIdx) || {});
+  document.getElementById('event-modal-title').textContent = 'Edit ' + _evtLabel(tag, evt.type) + ' \u2014 ' + _personName(xref);
   const placeVal = evt.place || '';
   document.getElementById('event-modal-inline').value = evt.inline_val || '';
   document.getElementById('event-modal-type').value   = evt.type || '';
@@ -203,10 +222,25 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   document.getElementById('event-modal-note').value   = evt.note || '';
   document.getElementById('event-modal-addr').value   = evt.addr || '';
   _updateAddrSuggestions(placeVal);
+  // B4: pre-fill spouse for MARR events being edited
+  const spouseInp = document.getElementById('event-modal-spouse-input');
+  const spouseRes = document.getElementById('event-modal-spouse-results');
+  if (tag === 'MARR') {
+    const spouses = (typeof RELATIVES !== 'undefined' && RELATIVES[xref] && RELATIVES[xref].spouses) || [];
+    const spouseXref = spouses[0] || null;
+    const spouseName = spouseXref && PEOPLE[spouseXref] && PEOPLE[spouseXref].name;
+    if (spouseInp) spouseInp.value = spouseName || '';
+    if (spouseRes) spouseRes.innerHTML = '';
+    _eventModalSpouseXref = spouseXref;
+  } else {
+    if (spouseInp) spouseInp.value = '';
+    if (spouseRes) spouseRes.innerHTML = '';
+    _eventModalSpouseXref = null;
+  }
   _updateEventModalFields(tag);
   document.getElementById('event-modal-overlay').classList.add('open');
   const focusId = _INLINE_TYPE_TAGS.has(tag) ? 'event-modal-inline' : 'event-modal-date';
-  setTimeout(() => document.getElementById(focusId).focus(), 50);
+  setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 50);
 }
 
 function addEvent(xref, defaultTag = 'RESI', prefillType) {
@@ -294,7 +328,7 @@ async function submitEventModal() {
       if (data.ok) {
         if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
         window._openDetailKey = null;
-        showDetail(xref, true);
+        setState({ panelXref: xref, panelOpen: true });
       } else {
         alert('Save failed: ' + (data.error || 'unknown error'));
       }
@@ -328,7 +362,7 @@ async function submitEventModal() {
         for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
       }
       window._openDetailKey = null;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -395,7 +429,7 @@ async function deleteAlias(xref, evt) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else { alert('Delete failed: ' + (data.error || 'unknown error')); }
   } catch (e) { alert('Request failed: ' + e); }
 }
@@ -424,7 +458,7 @@ async function submitAliasModal() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else { alert('Save failed: ' + (data.error || 'unknown error')); }
   } catch (e) { alert('Request failed: ' + e); }
 }
@@ -477,7 +511,7 @@ async function submitNameModal() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -564,7 +598,7 @@ async function deleteMarriage(xref, famXref, marrIdx) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }
@@ -602,7 +636,7 @@ async function deleteFact(xref, evt) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }
@@ -644,8 +678,9 @@ function _buildSourcesModalContent(citations, sources) {
     return '<div class="src-modal-empty">No sources recorded for this fact.</div>';
   }
   return citations.map(c => {
-    const src = sources[c.sour_xref] || {};
-    const title = src.title || c.sour_xref || 'Unknown source';
+    const xrefKey = c.sourceXref || c.sour_xref;
+    const src = sources[xrefKey] || {};
+    const title = src.titl || src.title || xrefKey || 'Unknown source';
     const titleHtml = src.url
       ? `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
       : escHtml(title);
@@ -1047,5 +1082,7 @@ if (typeof module !== 'undefined' && module.exports) {
     showEditNameModal, showAddNoteModal, showAddCitationModal,
     showEditCitationModal, showEditSourceModal, showAddGodparentModal,
     showAddSourceModal,
+    _evtLabel, editEvent,
+    deleteNote, submitNoteEdit, editNote, deleteFact,
   };
 }

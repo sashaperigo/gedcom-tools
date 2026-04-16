@@ -693,26 +693,21 @@ class TestTemplateUIElements:
         type row is hidden."""
         assert "typeRow.style.display !== 'none'" in _FULL_SOURCE
 
-    def test_open_detail_key_cleared_before_show_detail(self):
+    def test_submit_event_modal_uses_setState(self):
         """
-        Regression: submitEventModal must null _openDetailKey before calling showDetail
-        so the early-return guard inside showDetail does not fire.
-
-        Without this fix: after saving an event while the same person's panel is open,
-        _openDetailKey still equals xref when showDetail(xref) is called, triggering
-        the early-return guard and leaving the panel displaying stale data.
+        After B2 fix: submitEventModal must call setState({ panelXref: xref, panelOpen: true })
+        instead of the old showDetail(xref, true) which was undefined and caused a ReferenceError.
         """
-        # Locate the submitEventModal function body in combined source
         fn_start = _FULL_SOURCE.find('async function submitEventModal(')
         assert fn_start != -1, 'submitEventModal must be present'
-        # Find the closing brace of the function (search for showDetail(xref, after fn_start)
+        # showDetail must NOT appear in submitEventModal (B2 fix)
         show_detail_pos = _FULL_SOURCE.find('showDetail(xref,', fn_start)
-        assert show_detail_pos != -1, 'showDetail(xref, ...) call must be present in submitEventModal'
-        # _openDetailKey = null must appear somewhere between fn_start and the showDetail call
-        null_assign_pos = _FULL_SOURCE.find('_openDetailKey = null', fn_start)
-        assert null_assign_pos != -1, '_openDetailKey must be nulled in submitEventModal'
-        assert null_assign_pos < show_detail_pos, \
-            '_openDetailKey = null must come BEFORE showDetail(xref, ...) so the re-render is not skipped'
+        assert show_detail_pos == -1, \
+            'showDetail(xref, ...) must NOT be present in submitEventModal after B2 fix; use setState instead'
+        # setState must be called with panelXref and panelOpen
+        set_state_pos = _FULL_SOURCE.find('setState({ panelXref: xref, panelOpen: true })', fn_start)
+        assert set_state_pos != -1, \
+            'submitEventModal must call setState({ panelXref: xref, panelOpen: true }) after B2 fix'
 
 
 # ---------------------------------------------------------------------------
