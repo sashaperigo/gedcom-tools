@@ -32,10 +32,9 @@ function _svgEl(tag, attrs) {
 // ---------------------------------------------------------------------------
 
 const EDGE_STYLES = {
-  ancestor:        { stroke: '#44447a', width: 1 },
-  descendant:      { stroke: '#2c2c54', width: 1 },
-  sibling_bracket: { stroke: '#2c2c54', width: 1 },
-  marriage:        { stroke: '#3a6a3a', width: 1.5 },
+  ancestor:   { stroke: '#44447a', width: 1 },
+  descendant: { stroke: '#2c2c54', width: 1 },
+  marriage:   { stroke: '#3a6a3a', width: 1.5 },
 };
 
 function _renderEdge(edge) {

@@ -370,6 +370,79 @@ describe('computeLayout — spouse siblings expanded', () => {
   });
 });
 
+// ── A1 regression: sibling_bracket edges must never be emitted ────────────
+
+describe('computeLayout — no sibling_bracket edges', () => {
+  it('emits zero sibling_bracket edges when focus has siblings', () => {
+    resetGlobals({
+      people: {
+        '@OLDER@':   { birth_year: 1870 },
+        '@FOCUS@':   { birth_year: 1873 },
+        '@YOUNGER@': { birth_year: 1876 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: ['@OLDER@', '@YOUNGER@'], spouses: [] },
+      },
+    });
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    expect(edges.filter(e => e.type === 'sibling_bracket').length).toBe(0);
+  });
+});
+
+// ── A2: Spouse placed immediately after focus, before younger siblings ─────
+
+describe('computeLayout — spouse before younger siblings', () => {
+  it('spouse x is NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 even when focus has younger sibling', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@YOUNGER@': { birth_year: 1905 },
+        '@SPOUSE@':  { birth_year: 1902 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: ['@YOUNGER@'], spouses: ['@SPOUSE@'] },
+      },
+    });
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    expect(spouse.x).toBe(NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2);
+  });
+
+  it('younger sibling x is greater than spouse x', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@YOUNGER@': { birth_year: 1905 },
+        '@SPOUSE@':  { birth_year: 1902 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: ['@YOUNGER@'], spouses: ['@SPOUSE@'] },
+      },
+    });
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouse  = nodes.find(n => n.xref === '@SPOUSE@');
+    const younger = nodes.find(n => n.xref === '@YOUNGER@');
+    expect(younger.x).toBeGreaterThan(spouse.x);
+  });
+
+  it('second spouse marriage edge x1 is firstSpouseX + NODE_W/2', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@SPOUSE1@': { birth_year: 1901 },
+        '@SPOUSE2@': { birth_year: 1920 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@', '@SPOUSE2@'] },
+      },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+    const marriageEdges = edges.filter(e => e.type === 'marriage');
+    expect(marriageEdges[1].x1).toBe(firstSpouseX + NODE_W / 2);
+  });
+});
+
 // ── Test 6: No overlap (6 siblings + spouse with 4 siblings expanded) ──────
 
 describe('computeLayout — no overlap', () => {

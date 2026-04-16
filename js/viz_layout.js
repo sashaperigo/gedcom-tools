@@ -94,26 +94,16 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
   // Focus node at x=0
   nodes.push({ xref: focusXref, x: 0, y: 0, generation: 0, role: 'focus' });
 
-  // Younger siblings: packed rightward. Closest younger sib center = +(FOCUS_TO_SIB).
-  if (youngerSibs.length > 0) {
-    nodes.push(..._packRow(
-      youngerSibs.map(xref => ({ xref })),
-      FOCUS_TO_SIB,
-      0,
-      'sibling',
-    ));
-  }
-
-  // Spouse: placed after the rightmost gen-0 node's right edge + MARRIAGE_GAP.
-  // The focus node is NODE_W_FOCUS wide; siblings/others are NODE_W wide.
-  const gen0Nodes  = nodes.filter(n => n.generation === 0);
-  const maxGen0X   = Math.max(...gen0Nodes.map(n => n.x));
-  const maxGen0NodeW = (maxGen0X === 0) ? NODE_W_FOCUS : NODE_W;
-  const spouseXrefs = RELATIVES[focusXref]?.spouses ?? [];
-  const spouseStartX = maxGen0X + maxGen0NodeW / 2 + MARRIAGE_GAP + NODE_W / 2;
+  // Spouses: placed immediately after focus (before younger siblings).
+  // firstSpouseX = NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 (= 80 + 60 + 70 = 210)
+  const spouseXrefs  = RELATIVES[focusXref]?.spouses ?? [];
+  const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+  // Track the rightmost center x placed (spouse or spouse sibling) to position younger sibs after.
+  let rightmostSpouseAreaX = null;
 
   spouseXrefs.forEach((spouseXref, si) => {
-    const thisSpouseX = spouseStartX + si * SLOT;
+    const thisSpouseX = firstSpouseX + si * SLOT;
+    rightmostSpouseAreaX = thisSpouseX;
     nodes.push({
       xref:       spouseXref,
       x:          thisSpouseX,
@@ -122,12 +112,10 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
       role:       'spouse',
     });
 
-    // Marriage edge: from right edge of the preceding node to this spouse's left edge.
-    // For the first spouse this is the rightmost non-spouse right edge; for subsequent
-    // spouses it is the right edge of the previous spouse.
+    // Marriage edge: focus right edge → first spouse; prev spouse right → next spouse.
     const edgeX1 = si === 0
-      ? maxGen0X + maxGen0NodeW / 2
-      : spouseStartX + (si - 1) * SLOT + NODE_W / 2;
+      ? NODE_W_FOCUS / 2
+      : firstSpouseX + (si - 1) * SLOT + NODE_W / 2;
     edges.push({
       x1:   edgeX1,
       y1:   NODE_H / 2,
@@ -140,24 +128,29 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     if (spouseSiblingsExpanded && si === 0) {
       const spouseSibs = _sortByBirthYear(RELATIVES[spouseXref]?.siblings ?? []);
       if (spouseSibs.length > 0) {
-        nodes.push(..._packRow(
+        const spouseSibNodes = _packRow(
           spouseSibs.map(xref => ({ xref })),
           thisSpouseX + SLOT,
           0,
           'spouse_sibling',
-        ));
+        );
+        nodes.push(...spouseSibNodes);
+        rightmostSpouseAreaX = spouseSibNodes[spouseSibNodes.length - 1].x;
       }
     }
   });
 
-  // Sibling bracket edge (if there are siblings)
-  if (allSibs.length > 0) {
-    const gen0WithSibs = nodes.filter(n => n.generation === 0 && (n.role === 'focus' || n.role === 'sibling'));
-    const minX = Math.min(...gen0WithSibs.map(n => n.x));
-    const maxX = Math.max(...gen0WithSibs.map(n => n.x)) + NODE_W;
-    // Bracket drawn half a node height above the row to connect siblings visually
-    const bracketY = -NODE_H / 2;
-    edges.push({ x1: minX, y1: bracketY, x2: maxX, y2: bracketY, type: 'sibling_bracket' });
+  // Younger siblings: packed after the rightmost spouse/spouse-sibling (or at FOCUS_TO_SIB if no spouses).
+  const youngerSibStartX = rightmostSpouseAreaX !== null
+    ? rightmostSpouseAreaX + NODE_W / 2 + H_GAP + NODE_W / 2
+    : FOCUS_TO_SIB;
+  if (youngerSibs.length > 0) {
+    nodes.push(..._packRow(
+      youngerSibs.map(xref => ({ xref })),
+      youngerSibStartX,
+      0,
+      'sibling',
+    ));
   }
 
   // ── Phase 2: Generation -1 (parents) ─────────────────────────────────────
