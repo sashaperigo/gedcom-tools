@@ -504,3 +504,78 @@ describe('render — expand button click handler', () => {
     expect(newSet.has('@FATHER@')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// D2  Died-young badge — stillborn / infant / child styling
+// ---------------------------------------------------------------------------
+//
+// Nodes whose person died young (stillborn, infant within ~1 year, or child
+// within ~13 years) must receive an amber badge drawn on the node group.
+// The old viz_render.js used data.age_at_death values 'STILLBORN', 'INFANT',
+// 'CHILD' supplied by the Python build_people_json.  The new renderer must
+// read the same field from PEOPLE[node.xref].age_at_death.
+
+describe('render — died-young badge', () => {
+  function makeSetupWithAgeAtDeath(ageAtDeath) {
+    return function setup() {
+      global.PEOPLE = {
+        '@FOCUS@': { name: 'Focus Person', birth_year: 1900, death_year: 1900, age_at_death: ageAtDeath },
+      };
+      global.PARENTS   = {};
+      global.CHILDREN  = {};
+      global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
+      stateMod.initState('@FOCUS@');
+      loadRenderMod();
+    };
+  }
+
+  it('stillborn node (birth_year === death_year, age_at_death = STILLBORN) gets amber badge circle', () => {
+    makeSetupWithAgeAtDeath('STILLBORN')();
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    expect(focusG).toBeDefined();
+    // Badge is an amber circle appended to the node group
+    const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+    expect(badgeCircle).toBeDefined();
+  });
+
+  it('infant node (age_at_death = INFANT) gets amber badge circle', () => {
+    makeSetupWithAgeAtDeath('INFANT')();
+    global.PEOPLE['@FOCUS@'].death_year = 1901; // died within ~1 year
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+    expect(badgeCircle).toBeDefined();
+  });
+
+  it('child node (age_at_death = CHILD) gets amber badge circle', () => {
+    makeSetupWithAgeAtDeath('CHILD')();
+    global.PEOPLE['@FOCUS@'].death_year = 1912;
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+    expect(badgeCircle).toBeDefined();
+  });
+
+  it('adult node (no age_at_death) does NOT get amber badge circle', () => {
+    makeSetupWithAgeAtDeath(undefined)();
+    global.PEOPLE['@FOCUS@'].birth_year = 1900;
+    global.PEOPLE['@FOCUS@'].death_year = 1970;
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+    expect(badgeCircle).toBeUndefined();
+  });
+});

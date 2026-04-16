@@ -842,3 +842,102 @@ class TestButtonWiringPatterns:
             "viz_panel.js must implement RESI rollup logic "
             "(collapseResidences function or equivalent _yearRange/_prevResi pattern)"
         )
+
+
+# ---------------------------------------------------------------------------
+# D1  Home button wiring — boot script must wire #home-btn to setState
+# ---------------------------------------------------------------------------
+
+class TestHomeBtnWiring:
+    """
+    D1: The #home-btn in the page header must be wired in the boot script
+    (DOMContentLoaded) to call setState({ focusXref: ROOT_XREF }).
+    """
+
+    def test_home_btn_listener_wired_in_boot_script(self):
+        """Boot script in _HTML_TEMPLATE must wire home-btn to setState with ROOT_XREF."""
+        assert "setState({ focusXref: ROOT_XREF })" in _HTML_TEMPLATE, (
+            "Boot script must contain: "
+            "homeBtn.addEventListener('click', () => setState({ focusXref: ROOT_XREF }))"
+        )
+
+    def test_home_btn_listener_references_home_btn_id(self):
+        """Boot script must reference the element id 'home-btn'."""
+        assert "home-btn" in _HTML_TEMPLATE, (
+            "Boot script must get element by id 'home-btn' to wire click handler"
+        )
+
+    def test_rendered_html_contains_home_btn_wiring(self, html):
+        """Rendered HTML must contain both home-btn and setState({ focusXref: ROOT_XREF })."""
+        assert "home-btn" in html
+        assert "setState({ focusXref: ROOT_XREF })" in html
+
+
+# ---------------------------------------------------------------------------
+# D3  No snippets_templating.styles.css 404
+# ---------------------------------------------------------------------------
+
+class TestNoSnippetsTemplating:
+    """
+    D3: The <link> tag referencing snippets_templating.styles.css is a stale
+    IDE artifact that causes a console 404 error.  It must not appear anywhere
+    in the rendered HTML.
+    """
+
+    def test_snippets_templating_not_in_template(self):
+        """_HTML_TEMPLATE must not reference snippets_templating."""
+        assert 'snippets_templating' not in _HTML_TEMPLATE, (
+            "Stale <link> referencing snippets_templating.styles.css found in template — "
+            "remove it to fix the console 404 error"
+        )
+
+    def test_snippets_templating_not_in_rendered_html(self, html):
+        """Rendered HTML must not contain snippets_templating."""
+        assert 'snippets_templating' not in html, (
+            "snippets_templating found in rendered HTML — remove the stale <link> tag"
+        )
+
+
+# ---------------------------------------------------------------------------
+# C1  detail-aka and detail-lifespan-row are in header, not body
+# ---------------------------------------------------------------------------
+
+class TestAkaLifespanInHeader:
+    """
+    C1: detail-aka and detail-lifespan-row must live inside detail-header-inner
+    (above the divider), not inside detail-body.
+    """
+
+    def test_detail_aka_before_detail_body(self):
+        """detail-aka must appear before detail-body in the template HTML."""
+        aka_pos  = _HTML_TEMPLATE.index('id="detail-aka"')
+        body_pos = _HTML_TEMPLATE.index('id="detail-body"')
+        assert aka_pos < body_pos, (
+            "detail-aka appears after detail-body — it must be in detail-header-inner"
+        )
+
+    def test_detail_lifespan_row_before_detail_body(self):
+        """detail-lifespan-row must appear before detail-body in the template HTML."""
+        lr_pos   = _HTML_TEMPLATE.index('id="detail-lifespan-row"')
+        body_pos = _HTML_TEMPLATE.index('id="detail-body"')
+        assert lr_pos < body_pos, (
+            "detail-lifespan-row appears after detail-body — it must be in detail-header-inner"
+        )
+
+
+# ---------------------------------------------------------------------------
+# C4  detail-panel top offset uses CSS variable
+# ---------------------------------------------------------------------------
+
+class TestPanelTopOffset:
+    """
+    C4: #detail-panel must use var(--header-h, 45px) for top offset so it
+    doesn't overlap the fixed page header.
+    """
+
+    def test_panel_css_uses_header_h_variable(self):
+        """CSS for #detail-panel must contain var(--header-h."""
+        # Find the #detail-panel CSS block in the template
+        assert 'var(--header-h' in _HTML_TEMPLATE, (
+            "#detail-panel CSS must use var(--header-h, 45px) for top, not top: 0"
+        )

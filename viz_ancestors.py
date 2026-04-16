@@ -1114,7 +1114,8 @@ header h1 { font-size: 16px; font-weight: 600; }
     <div id="detail-accent-bar"></div>
     <div id="detail-header-inner">
       <h2 id="detail-name"></h2>
-      <div id="detail-lifespan"></div>
+      <div id="detail-aka"></div>
+      <div id="detail-lifespan-row"></div>
       <div id="detail-nationalities"></div>
     </div>
     <div id="detail-header-btns">
@@ -1123,8 +1124,6 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
   <div id="detail-body">
-    <div id="detail-aka"></div>
-    <div id="detail-lifespan-row"></div>
     <div id="detail-notes"></div>
     <div id="detail-timeline">
       <div class="timeline-spine"></div>
@@ -1194,6 +1193,9 @@ document.addEventListener('DOMContentLoaded', function () {
   } catch(e) { console.error('[boot] initRenderer FAILED:', e); }
 
   onStateChange(function (state) { render(); });
+
+  const homeBtn = document.getElementById('home-btn');
+  if (homeBtn) homeBtn.addEventListener('click', () => setState({ focusXref: ROOT_XREF }));
 
   try {
     render();

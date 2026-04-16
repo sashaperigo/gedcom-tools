@@ -54,6 +54,29 @@ function _renderEdge(edge) {
 // Node rendering
 // ---------------------------------------------------------------------------
 
+// Append a small amber badge to a node <g> when the person died as a child,
+// infant, or stillborn.  Placed in the top-right corner of the node box.
+function _drawDiedYoungBadge(g, w, ageAtDeath) {
+  if (!ageAtDeath) return;
+  const cx = w - 11, cy = 11;
+  const titleText = ageAtDeath === 'STILLBORN' ? 'Stillborn'
+                  : ageAtDeath === 'INFANT'    ? 'Died in infancy'
+                  :                              'Died in childhood';
+  const circle = _svgEl('circle', { cx, cy, r: 8, fill: '#fbbf24', 'pointer-events': 'all' });
+  const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  titleEl.textContent = titleText;
+  circle.appendChild(titleEl);
+  g.appendChild(circle);
+  const sym = _svgEl('text', {
+    x: cx, y: cy + 3,
+    'text-anchor': 'middle', fill: '#1c1917',
+    'font-size': 9, 'font-weight': 700,
+    'font-family': 'system-ui, sans-serif', 'pointer-events': 'none',
+  });
+  sym.textContent = '\u2726';  // ✦ BLACK FOUR POINTED STAR
+  g.appendChild(sym);
+}
+
 function _truncateName(name, maxLen) {
   if (!name) return '?';
   if (name.length <= maxLen) return name;
@@ -176,6 +199,9 @@ function _renderNode(node, onNodeClick, onExpandClick) {
     yearsEl.textContent = years;
     g.appendChild(yearsEl);
   }
+
+  // Died-young badge (stillborn / infant / child)
+  _drawDiedYoungBadge(g, w, person.age_at_death);
 
   // Click handler
   g.addEventListener('click', (e) => {
