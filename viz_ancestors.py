@@ -1119,13 +1119,21 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
     <div id="detail-header-btns">
       <button id="panel-close-btn" title="Close">&#x2715;</button>
+      <button id="detail-set-root-btn" title="Browse tree with this person as root">&#x2302;</button>
     </div>
   </div>
   <div id="detail-body">
-    <div id="detail-events"></div>
-    <div id="detail-fact-sources"></div>
-    <div id="detail-person-sources"></div>
+    <div id="detail-aka"></div>
+    <div id="detail-lifespan-row"></div>
     <div id="detail-notes"></div>
+    <div id="detail-timeline">
+      <div class="timeline-spine"></div>
+      <div id="detail-events"></div>
+    </div>
+    <div id="detail-also-lived"></div>
+    <div id="detail-facts"></div>
+    <div id="detail-family"></div>
+    <div id="detail-sources"></div>
   </div>
 </div>
 <script>

@@ -6,7 +6,9 @@ const require = createRequire(import.meta.url);
 const { DESIGN } = require('../../js/viz_design.js');
 global.DESIGN = DESIGN;
 
-const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+const { NODE_W, NODE_W_FOCUS, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+// Focus-to-sibling gap: accounts for focus node being wider than NODE_W.
+const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
 
 const { computeLayout, _sortByBirthYear, _packRow } = require('../../js/viz_layout.js');
 
@@ -116,18 +118,18 @@ describe('computeLayout — focus with siblings', () => {
     expect(focus.x).toBe(0);
   });
 
-  it('older sibling is at x = -(NODE_W + H_GAP)', () => {
+  it('older sibling is at x = -FOCUS_TO_SIB (accounts for wider focus node)', () => {
     const { nodes } = computeLayout('@FOCUS@', new Set(), false);
     const older = nodes.find(n => n.xref === '@OLDER@');
     expect(older).toBeDefined();
-    expect(older.x).toBe(-(NODE_W + H_GAP));
+    expect(older.x).toBe(-FOCUS_TO_SIB);
   });
 
-  it('younger sibling is at x = +(NODE_W + H_GAP)', () => {
+  it('younger sibling is at x = +FOCUS_TO_SIB (accounts for wider focus node)', () => {
     const { nodes } = computeLayout('@FOCUS@', new Set(), false);
     const younger = nodes.find(n => n.xref === '@YOUNGER@');
     expect(younger).toBeDefined();
-    expect(younger.x).toBe(NODE_W + H_GAP);
+    expect(younger.x).toBe(FOCUS_TO_SIB);
   });
 
   it('all generation-0 nodes are at y=0', () => {
@@ -262,11 +264,12 @@ describe('computeLayout — focus with spouse', () => {
     expect(spouse.x).toBeGreaterThan(focus.x);
   });
 
-  it('spouse is at x = NODE_W + MARRIAGE_GAP (no siblings)', () => {
+  it('spouse is at x = NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 (no siblings)', () => {
     const { nodes } = computeLayout('@FOCUS@', new Set(), false);
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
-    // Focus is at x=0; its right edge is NODE_W. Spouse starts MARRIAGE_GAP beyond that.
-    expect(spouse.x).toBe(NODE_W + MARRIAGE_GAP);
+    // Focus at x=0 has width NODE_W_FOCUS; right edge = NODE_W_FOCUS/2.
+    // Spouse center = right edge + MARRIAGE_GAP + NODE_W/2.
+    expect(spouse.x).toBe(NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2);
   });
 
   it('spouse has role "spouse"', () => {
@@ -284,7 +287,8 @@ describe('computeLayout — focus with spouse', () => {
   it('marriage edge x1 is the right edge of the focus node (no siblings)', () => {
     const { edges } = computeLayout('@FOCUS@', new Set(), false);
     const me = edges.find(e => e.type === 'marriage');
-    expect(me.x1).toBe(NODE_W);   // focus at x=0; right edge = NODE_W
+    // Focus at x=0 has width NODE_W_FOCUS; right edge center = NODE_W_FOCUS/2.
+    expect(me.x1).toBe(NODE_W_FOCUS / 2);
   });
 });
 
@@ -307,11 +311,11 @@ describe('computeLayout — multi-spouse marriage edges', () => {
     const sp2 = nodes.find(n => n.xref === '@SPOUSE2@');
     const marriageEdges = edges.filter(e => e.type === 'marriage');
     expect(marriageEdges).toHaveLength(2);
-    // First edge: focus right edge → spouse1
-    expect(marriageEdges[0].x1).toBe(NODE_W);
+    // First edge: focus right edge (NODE_W_FOCUS/2) → spouse1 center
+    expect(marriageEdges[0].x1).toBe(NODE_W_FOCUS / 2);
     expect(marriageEdges[0].x2).toBe(sp1.x);
-    // Second edge: spouse1 right edge → spouse2
-    expect(marriageEdges[1].x1).toBe(sp1.x + NODE_W);
+    // Second edge: spouse1 right edge center (sp1.x + NODE_W/2) → spouse2 center
+    expect(marriageEdges[1].x1).toBe(sp1.x + NODE_W / 2);
     expect(marriageEdges[1].x2).toBe(sp2.x);
   });
 });

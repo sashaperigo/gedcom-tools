@@ -285,6 +285,12 @@ function renderPanel() {
     closeBtn.onclick = () => setState({ panelOpen: false });
   }
 
+  // ── Set-root button ───────────────────────────────────────────────────
+  const setRootBtn = document.getElementById('detail-set-root-btn');
+  if (setRootBtn) {
+    setRootBtn.onclick = () => setState({ focusXref: xref });
+  }
+
   // ── Lifespan bar ──────────────────────────────────────────────────────
   const by = data.birth_year ? parseInt(data.birth_year) : null;
   const dy = data.death_year ? parseInt(data.death_year) : null;
