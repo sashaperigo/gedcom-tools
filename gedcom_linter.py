@@ -2211,6 +2211,59 @@ def scan_conc_cont(path: str) -> list[tuple[int, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Bare @ sign detection  (spec 1.4 — pointer escape rule)
+# ---------------------------------------------------------------------------
+
+# A value that is entirely a pointer, e.g. '@I1@' or '@N_SOME_NOTE@'.
+_POINTER_VALUE_RE = re.compile(r'^@[^@]+@$')
+# Any @…@ sequence embedded in a value (pointer reference or calendar escape
+# such as @#DJULIAN@).  These are not bare at-signs.
+_AT_SEQ_RE = re.compile(r'@[^@\s]+@')
+
+
+def scan_bare_at_signs(path: str) -> list[tuple[int, str]]:
+    """Return (lineno, description) for line values that contain a bare '@'.
+
+    Per the GEDCOM spec, a literal '@' inside a line value must be written
+    as '@@'.  A single '@' that is not part of '@@', not the entire pointer
+    value '@XREF@', and not part of an embedded @…@ sequence (e.g. a
+    calendar escape like '@#DJULIAN@') is a spec violation that causes
+    most parsers to misread the value.
+
+    Common culprit: e-mail addresses written as 'user@example.com' instead
+    of 'user@@example.com'.
+    """
+    violations: list[tuple[int, str]] = []
+
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\r\n')
+            m = re.match(r'^\d+ (?:@[^@]+@ )?\S+(.*)', line)
+            if not m:
+                continue
+            rest = m.group(1)
+            if not rest.startswith(' '):
+                continue          # no value on this line
+            value = rest[1:]      # strip the single delimiter space
+
+            # Entire value is a pointer reference → fine
+            if _POINTER_VALUE_RE.match(value):
+                continue
+
+            # Strip escaped at-signs ('@@') and any embedded @…@ sequences
+            # (pointer refs embedded in text, calendar escapes, etc.), then
+            # check whether any bare '@' remains.
+            cleaned = _AT_SEQ_RE.sub('', value.replace('@@', ''))
+            if '@' in cleaned:
+                violations.append((
+                    lineno,
+                    f'bare \'@\' in value (should be \'@@\'): {value!r}',
+                ))
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Nickname extraction  (spec 2.2)
 # ---------------------------------------------------------------------------
 
@@ -4959,6 +5012,17 @@ def main():
                 print(f'  ... and {len(conc_issues) - 20} more.')
         else:
             print('OK: no CONC/CONT structure anomalies.')
+
+        bare_at_issues = scan_bare_at_signs(args.gedfile)
+        if bare_at_issues:
+            print(f'\n{_WARN} {len(bare_at_issues)} bare \'@\' sign(s) in values '
+                  '(should be \'@@\' per spec):')
+            for ln, desc in bare_at_issues[:20]:
+                print(f'  line {ln}: {desc}')
+            if len(bare_at_issues) > 20:
+                print(f'  ... and {len(bare_at_issues) - 20} more.')
+        else:
+            print("OK: no bare '@' signs found in values.")
 
         nickname_issues = scan_name_nicknames(args.gedfile)
         if nickname_issues:

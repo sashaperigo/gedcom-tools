@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 from gedcom_linter import (
+    scan_bare_at_signs,
     scan_html_entities,
     fix_html_entities,
     _decode_html_value,
@@ -595,6 +596,149 @@ class TestScanConcCont:
             0 TRLR
         """)
         result = scan_conc_cont(str(p))
+        assert result == []
+
+
+# ===========================================================================
+# scan_bare_at_signs
+# ===========================================================================
+
+class TestScanBareAtSigns:
+    # --- should be flagged ---
+
+    def test_email_in_note_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE contact: user@example.com
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert len(result) == 1
+        assert 'bare' in result[0][1]
+
+    def test_bare_at_in_cont_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE first line
+            2 CONT email: foo@bar.org
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert len(result) == 1
+
+    def test_bare_at_in_text_field_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL Notes from user@host.net
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert len(result) == 1
+
+    def test_multiple_bare_at_signs_each_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE a@b.com
+            1 NOTE c@d.org
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert len(result) == 2
+
+    def test_at_sign_not_forming_complete_sequence_flagged(self, tmp_path):
+        # '@foo' — starts with '@' but no closing '@'
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE @unfinished
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert len(result) == 1
+
+    # --- should NOT be flagged ---
+
+    def test_correctly_escaped_at_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE contact: user@@example.com
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert result == []
+
+    def test_pointer_value_not_flagged(self, tmp_path):
+        # '1 SOUR @S1@' — the entire value is a pointer, not a bare '@'
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 SOUR @S1@
+            0 @S1@ SOUR
+            1 TITL A source
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert result == []
+
+    def test_xref_on_level0_record_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Alice /Green/
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert result == []
+
+    def test_calendar_escape_not_flagged(self, tmp_path):
+        # '@#DJULIAN@' is a GEDCOM calendar escape, not a bare '@'
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE @#DJULIAN@ 1 JAN 1700
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert result == []
+
+    def test_note_with_no_at_sign_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE Just a plain note with no special characters.
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert result == []
+
+    def test_line_with_no_value_not_flagged(self, tmp_path):
+        # Tags with no value (e.g. bare event tags like '1 BIRT') must not crash
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1900
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
+        assert result == []
+
+    def test_embedded_pointer_in_text_not_flagged(self, tmp_path):
+        # '@S1@' embedded mid-value is a complete @…@ sequence — not a bare '@'
+        # (technically not great GEDCOM, but not the bug we're catching here)
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE See @S1@ for details
+            0 TRLR
+        """)
+        result = scan_bare_at_signs(str(p))
         assert result == []
 
 
