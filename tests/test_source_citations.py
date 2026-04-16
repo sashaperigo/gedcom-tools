@@ -200,7 +200,7 @@ class TestBuildPeopleJsonCitations:
 """))
         people = build_people_json({'@I1@'}, indis, sources=sources)
         birt = next(e for e in people['@I1@']['events'] if e['tag'] == 'BIRT')
-        assert birt['citations'] == [{'sour_xref': '@S1@', 'page': '101'}]
+        assert birt['citations'] == [{'sourceXref': '@S1@', 'page': '101'}]
 
     def test_empty_citations_in_event_output(self, tmp_path):
         """Events with no citations export an empty list, not None."""

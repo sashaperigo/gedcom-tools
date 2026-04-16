@@ -1099,6 +1099,123 @@ class TestEditSourceRecordContinuationLines:
                 assert prev_l1 is not None, f'Orphaned CONT at line {i}: {ln!r}'
 
 
+# ===========================================================================
+# Change 2a — citation serialisation contract: sourceXref (camelCase)
+# ===========================================================================
+
+class TestCitationSerialisationContract:
+    """
+    Assert that PEOPLE JSON embeds citations with key ``sourceXref`` (camelCase),
+    not ``sour_xref`` (snake_case), so the JS panel can resolve source titles.
+
+    Resolution chain:
+      SOURCES[PEOPLE[xref].events[0].citations[0].sourceXref].titl  →  non-empty string
+    """
+
+    def _setup_ged_with_citation(self, ged_path):
+        """
+        Inject a SOUR record and a BIRT citation into @I2@'s BIRT event.
+        Returns the expected source title.
+        """
+        text = ged_path.read_text(encoding='utf-8')
+        # Add SOUR record before TRLR
+        sour_block = (
+            '0 @S1@ SOUR\n'
+            '1 TITL Civil Registration Birth Record\n'
+        )
+        # Add citation under @I2@ BIRT
+        text = text.replace('1 BIRT\n2 DATE 1960\n', '1 BIRT\n2 DATE 1960\n2 SOUR @S1@\n3 PAGE p. 5\n')
+        text = text.replace('0 TRLR', sour_block + '0 TRLR')
+        ged_path.write_text(text, encoding='utf-8')
+        return 'Civil Registration Birth Record'
+
+    def test_citations_use_sourceXref_key(self, tmp_path):
+        """citations[n].sourceXref exists and citations[n].sour_xref does not."""
+        import viz_ancestors
+        ged = tmp_path / 'contract.ged'
+        import shutil, pathlib
+        shutil.copy(
+            str(pathlib.Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'),
+            str(ged),
+        )
+        expected_title = self._setup_ged_with_citation(ged)
+        indis, fams, sources = viz_ancestors.parse_gedcom(str(ged))
+        people = viz_ancestors.build_people_json(set(indis.keys()), indis, fams, sources)
+        birt_events = [e for e in people['@I2@']['events'] if e['tag'] == 'BIRT']
+        assert birt_events, 'Expected a BIRT event for @I2@'
+        cites = birt_events[0].get('citations', [])
+        assert cites, 'Expected at least one citation on @I2@ BIRT'
+        cite = cites[0]
+        assert 'sourceXref' in cite, (
+            f"Citation must use 'sourceXref' (camelCase); got keys: {list(cite.keys())}"
+        )
+        assert 'sour_xref' not in cite, (
+            "'sour_xref' must not be present in serialised citation"
+        )
+
+    def test_source_title_resolves_via_sourceXref(self, tmp_path):
+        """SOURCES[citation.sourceXref].titl returns the expected title."""
+        import viz_ancestors
+        import json as _json
+        ged = tmp_path / 'contract2.ged'
+        import shutil, pathlib
+        shutil.copy(
+            str(pathlib.Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'),
+            str(ged),
+        )
+        expected_title = self._setup_ged_with_citation(ged)
+        indis, fams, sources = viz_ancestors.parse_gedcom(str(ged))
+        people = viz_ancestors.build_people_json(set(indis.keys()), indis, fams, sources)
+        birt_events = [e for e in people['@I2@']['events'] if e['tag'] == 'BIRT']
+        cite = birt_events[0]['citations'][0]
+        source_xref = cite['sourceXref']
+        # Build the SOURCES dict the same way render_html does
+        sources_js = {
+            xref: {'titl': sour.get('titl') or ''}
+            for xref, sour in sources.items()
+        }
+        resolved_title = sources_js.get(source_xref, {}).get('titl', '')
+        assert resolved_title == expected_title, (
+            f"Expected title {expected_title!r}, got {resolved_title!r} "
+            f"via SOURCES[{source_xref!r}]"
+        )
+
+    def test_full_chain_round_trips_through_json(self, tmp_path):
+        """
+        End-to-end: generate HTML, parse the embedded PEOPLE+SOURCES JSON,
+        then verify SOURCES[citation.sourceXref].titl is non-empty.
+        """
+        import viz_ancestors
+        import json as _json, re as _re
+        ged = tmp_path / 'contract3.ged'
+        import shutil, pathlib
+        shutil.copy(
+            str(pathlib.Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'),
+            str(ged),
+        )
+        expected_title = self._setup_ged_with_citation(ged)
+        result = viz_ancestors.viz_ancestors(
+            str(ged), '@I2@',
+            str(tmp_path / 'out.html'),
+        )
+        html = (tmp_path / 'out.html').read_text(encoding='utf-8')
+        # Extract PEOPLE and SOURCES from the generated JS
+        m_people = _re.search(r'const PEOPLE = ({.*?});\n', html, _re.DOTALL)
+        m_sources = _re.search(r'const SOURCES = ({.*?});\n', html, _re.DOTALL)
+        assert m_people, 'Could not find PEOPLE JSON in generated HTML'
+        assert m_sources, 'Could not find SOURCES JSON in generated HTML'
+        people = _json.loads(m_people.group(1))
+        sources_js = _json.loads(m_sources.group(1))
+        birt_events = [e for e in people['@I2@']['events'] if e['tag'] == 'BIRT']
+        assert birt_events, 'Expected a BIRT event for @I2@'
+        cite = birt_events[0]['citations'][0]
+        assert 'sourceXref' in cite, f"Citation key must be 'sourceXref'; got: {list(cite.keys())}"
+        resolved_title = sources_js.get(cite['sourceXref'], {}).get('titl', '')
+        assert resolved_title == expected_title, (
+            f"Full chain failed: expected {expected_title!r}, got {resolved_title!r}"
+        )
+
+
 class TestAddPersonParentOf:
     """add_person with rel_type=parent_of."""
 

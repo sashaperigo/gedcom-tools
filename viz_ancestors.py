@@ -404,12 +404,22 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         tagged_events = []
         for e in info['events']:
             t = e['tag']
+            # Normalise citation keys: sour_xref → sourceXref so JS can resolve
+            # source titles via SOURCES[citation.sourceXref].titl.
+            normalised_cites = [
+                {
+                    'sourceXref': c['sour_xref'],
+                    **{k: v for k, v in c.items() if k != 'sour_xref'},
+                }
+                for c in e.get('citations', [])
+            ]
+            e_out = {**e, 'citations': normalised_cites}
             if e.get('_name_record'):
-                tagged_events.append({**e, 'event_idx': None})
+                tagged_events.append({**e_out, 'event_idx': None})
             else:
                 occ = tag_counters.get(t, 0)
                 tag_counters[t] = occ + 1
-                tagged_events.append({**e, 'event_idx': occ})
+                tagged_events.append({**e_out, 'event_idx': occ})
         events = [
             e for e in tagged_events
             if not any(_matches_exclusion(e, ex) for ex in excl_list)
