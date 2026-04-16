@@ -62,8 +62,10 @@ function _packRow(items, startX, y, role) {
  *   type: 'ancestor' | 'descendant' | 'sibling_bracket' | 'marriage'
  */
 function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
-  const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+  const { NODE_W, NODE_W_FOCUS, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
   const SLOT = NODE_W + H_GAP;
+  // Gap between focus node edge and nearest sibling: account for focus being wider than NODE_W.
+  const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
 
   const nodes = [];
   const edges = [];
@@ -79,12 +81,11 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
   const olderSibs  = sortedSibs.filter(x => (PEOPLE[x]?.birth_year ?? 9999) < focusBY);
   const youngerSibs = sortedSibs.filter(x => (PEOPLE[x]?.birth_year ?? 9999) >= focusBY);
 
-  // Older siblings: packed leftward using _packRow, oldest at leftmost x.
-  // With n older siblings, startX = -n*SLOT so the closest older sib lands at -SLOT.
+  // Older siblings: packed leftward. Closest older sib center = -(FOCUS_TO_SIB).
   if (olderSibs.length > 0) {
     nodes.push(..._packRow(
       olderSibs.map(xref => ({ xref })),
-      -olderSibs.length * SLOT,
+      -(FOCUS_TO_SIB + (olderSibs.length - 1) * SLOT),
       0,
       'sibling',
     ));
@@ -93,21 +94,23 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
   // Focus node at x=0
   nodes.push({ xref: focusXref, x: 0, y: 0, generation: 0, role: 'focus' });
 
-  // Younger siblings: packed rightward, closest younger sibling at +SLOT.
+  // Younger siblings: packed rightward. Closest younger sib center = +(FOCUS_TO_SIB).
   if (youngerSibs.length > 0) {
     nodes.push(..._packRow(
       youngerSibs.map(xref => ({ xref })),
-      SLOT,
+      FOCUS_TO_SIB,
       0,
       'sibling',
     ));
   }
 
   // Spouse: placed after the rightmost gen-0 node's right edge + MARRIAGE_GAP.
+  // The focus node is NODE_W_FOCUS wide; siblings/others are NODE_W wide.
   const gen0Nodes  = nodes.filter(n => n.generation === 0);
   const maxGen0X   = Math.max(...gen0Nodes.map(n => n.x));
+  const maxGen0NodeW = (maxGen0X === 0) ? NODE_W_FOCUS : NODE_W;
   const spouseXrefs = RELATIVES[focusXref]?.spouses ?? [];
-  const spouseStartX = maxGen0X + NODE_W + MARRIAGE_GAP;
+  const spouseStartX = maxGen0X + maxGen0NodeW / 2 + MARRIAGE_GAP + NODE_W / 2;
 
   spouseXrefs.forEach((spouseXref, si) => {
     const thisSpouseX = spouseStartX + si * SLOT;
@@ -123,8 +126,8 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     // For the first spouse this is the rightmost non-spouse right edge; for subsequent
     // spouses it is the right edge of the previous spouse.
     const edgeX1 = si === 0
-      ? maxGen0X + NODE_W
-      : spouseStartX + (si - 1) * SLOT + NODE_W;
+      ? maxGen0X + maxGen0NodeW / 2
+      : spouseStartX + (si - 1) * SLOT + NODE_W / 2;
     edges.push({
       x1:   edgeX1,
       y1:   NODE_H / 2,

@@ -1,5 +1,6 @@
 // Design tokens (Obsidian theme)
-const DESIGN = {
+// Use var (not const) so it becomes a window-level global in browser script tags
+var DESIGN = {
   // Colors
   BG_BASE:        '#07070d',
   BG_SURFACE:     '#0a0a18',

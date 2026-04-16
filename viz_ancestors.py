@@ -581,7 +581,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   background: #334155; color: #f1f5f9; }
 #search-results li b { font-weight: 700; color: #f1f5f9; }
 #search-results li .srch-dates { color: #64748b; font-size: 12px; margin-left: 4px; }
-#viewport { position: relative; overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; }
+#viewport { position: relative; overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; height: calc(100vh - var(--header-h, 45px)); }
 #viewport.dragging { cursor: grabbing; }
 #tree { display: block; width: 100%; height: 100%; }
 #gen-labels { position: absolute; left: 0; top: 0; bottom: 0; width: 90px;
@@ -611,10 +611,73 @@ header h1 { font-size: 16px; font-weight: 600; }
               margin-bottom: 10px; line-height: 1.5; }
 #detail-header-btns { display: flex; flex-direction: column; align-items: center;
                       flex-shrink: 0; align-self: flex-start; padding: 10px 10px 10px 4px; gap: 6px; }
-#detail-close { background: none; border: none; color: #475569;
-                font-size: 20px; cursor: pointer; padding: 2px;
-                line-height: 1; }
-#detail-close:hover { color: #f1f5f9; }
+#panel-close-btn { background: none; border: none; color: #475569;
+                   font-size: 20px; cursor: pointer; padding: 2px;
+                   line-height: 1; }
+#panel-close-btn:hover { color: #f1f5f9; }
+/* ── Panel lifespan + nationalities ────────────────────────── */
+#detail-lifespan { display: flex; align-items: center; gap: 6px; font-size: 13px;
+                   color: #94a3b8; margin-bottom: 8px; }
+.panel-birth-year, .panel-death-year { color: #94a3b8; }
+.panel-lifespan-sep { color: #475569; }
+.panel-age { font-size: 11px; color: #64748b; }
+#detail-nationalities { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+                        margin-bottom: 6px; }
+.panel-nati-pill { background: #1e3a5f; border: 1px solid #3b82f6; color: #93c5fd;
+                   font-size: 11px; border-radius: 12px; padding: 2px 10px; }
+.add-event-btn { background: none; border: 1px solid #334155; color: #64748b;
+                 border-radius: 4px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.add-event-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+/* ── Panel sections ─────────────────────────────────────────── */
+.panel-section { margin-bottom: 20px; }
+.panel-section-header { display: flex; align-items: center; justify-content: space-between;
+                        margin-bottom: 8px; }
+.panel-section-title { font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+                       text-transform: uppercase; color: #64748b; }
+.panel-section-add { background: none; border: 1px solid #334155; color: #64748b;
+                     border-radius: 4px; font-size: 13px; width: 22px; height: 22px;
+                     cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.panel-section-add:hover { border-color: #3b82f6; color: #3b82f6; }
+/* ── Fact rows ──────────────────────────────────────────────── */
+.panel-fact-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px;
+                  padding: 6px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+.panel-fact-label { font-weight: 600; color: #e2e8f0; min-width: 80px; }
+.panel-fact-meta { color: #94a3b8; flex: 1; }
+.panel-fact-cite-badge { background: #1e3a5f; color: #93c5fd; font-size: 10px;
+                          border-radius: 10px; padding: 1px 7px; cursor: pointer;
+                          white-space: nowrap; }
+/* ── Godparent pills ────────────────────────────────────────── */
+.panel-godparents { display: flex; flex-wrap: wrap; align-items: center;
+                    gap: 6px; margin-top: 4px; width: 100%; }
+.panel-godparents-label { font-size: 11px; color: #64748b; }
+.panel-godparent-pill { background: #1e3a2f; border: 1px solid #4ade80; color: #86efac;
+                        font-size: 11px; border-radius: 12px; padding: 2px 10px; cursor: pointer; }
+.panel-godparent-pill:hover { background: #1a3d2b; }
+.panel-add-godparent-btn { background: none; border: 1px solid #334155; color: #64748b;
+                           border-radius: 4px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.panel-add-godparent-btn:hover { border-color: #4ade80; color: #4ade80; }
+/* ── Citation rows ──────────────────────────────────────────── */
+.panel-cite-row { display: flex; align-items: center; gap: 6px; padding: 5px 0;
+                  border-bottom: 1px solid #1e293b; font-size: 12px; color: #94a3b8; }
+.panel-cite-tag { background: #1e2d40; color: #7dd3fc; font-size: 10px;
+                  border-radius: 3px; padding: 1px 6px; flex-shrink: 0; }
+.panel-cite-edit, .panel-cite-del { background: none; border: none; color: #475569;
+                                     cursor: pointer; font-size: 12px; padding: 1px 4px; }
+.panel-cite-edit:hover { color: #94a3b8; }
+.panel-cite-del:hover { color: #f87171; }
+.panel-source-card { padding: 6px 0; border-bottom: 1px solid #1e293b; }
+.panel-source-title { font-size: 12px; color: #94a3b8; display: flex;
+                      align-items: center; gap: 6px; }
+/* ── Note text ──────────────────────────────────────────────── */
+.panel-note-text { font-size: 13px; color: #f1f5f9; line-height: 1.75;
+                   white-space: pre-wrap; overflow-wrap: break-word;
+                   padding: 10px 14px; background: rgba(254,249,195,0.1);
+                   border-radius: 6px; border-left: 3px solid rgba(254,243,160,0.35);
+                   margin-bottom: 10px; max-height: 260px; overflow-y: auto; }
+/* ── Edit name button ───────────────────────────────────────── */
+.panel-edit-name-btn { background: none; border: none; color: #475569;
+                       cursor: pointer; font-size: 13px; padding: 0 4px; margin-left: 6px; }
+.panel-edit-name-btn:hover { color: #94a3b8; }
 #detail-set-root-btn { background: none; border: 1px solid #334155; border-radius: 5px;
                        color: #475569; font-size: 13px; cursor: pointer; padding: 3px 6px;
                        line-height: 1; white-space: nowrap; }
@@ -1041,24 +1104,18 @@ header h1 { font-size: 16px; font-weight: 600; }
     <div id="detail-accent-bar"></div>
     <div id="detail-header-inner">
       <h2 id="detail-name"></h2>
-      <div id="detail-aka"></div>
-      <div id="detail-lifespan-row"></div>
+      <div id="detail-lifespan"></div>
+      <div id="detail-nationalities"></div>
     </div>
     <div id="detail-header-btns">
-      <button id="detail-close" title="Close">&#x2715;</button>
-      <button id="detail-set-root-btn" title="Browse tree with this person as root">&#x2302;</button>
+      <button id="panel-close-btn" title="Close">&#x2715;</button>
     </div>
   </div>
   <div id="detail-body">
+    <div id="detail-events"></div>
+    <div id="detail-fact-sources"></div>
+    <div id="detail-person-sources"></div>
     <div id="detail-notes"></div>
-    <div id="detail-timeline">
-      <div class="timeline-spine"></div>
-      <div id="detail-events"></div>
-    </div>
-    <div id="detail-also-lived"></div>
-    <div id="detail-facts"></div>
-    <div id="detail-family"></div>
-    <div id="detail-sources"></div>
   </div>
 </div>
 <script>
@@ -1090,6 +1147,42 @@ const ALL_PLACES = __ALL_PLACES_JSON__;
 <script src="/js/viz_panel.js"></script>
 <script src="/js/viz_search.js"></script>
 <script src="/js/viz_modals.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  console.log('[boot] DOMContentLoaded fired');
+  console.log('[boot] ROOT_XREF =', ROOT_XREF);
+  console.log('[boot] typeof initState =', typeof initState);
+  console.log('[boot] typeof initRenderer =', typeof initRenderer);
+  console.log('[boot] typeof initPanel =', typeof initPanel);
+  console.log('[boot] typeof computeLayout =', typeof computeLayout);
+  console.log('[boot] typeof render =', typeof render);
+  console.log('[boot] PEOPLE keys (first 3):', Object.keys(PEOPLE || {}).slice(0, 3));
+
+  try {
+    initState(ROOT_XREF);
+    console.log('[boot] initState OK, state =', JSON.stringify(getState()));
+  } catch(e) { console.error('[boot] initState FAILED:', e); }
+
+  try {
+    initPanel(document.getElementById('detail-panel'));
+    console.log('[boot] initPanel OK');
+  } catch(e) { console.error('[boot] initPanel FAILED:', e); }
+
+  const svgEl = document.getElementById('tree');
+  console.log('[boot] svgEl =', svgEl);
+  try {
+    if (svgEl) initRenderer(svgEl);
+    console.log('[boot] initRenderer OK');
+  } catch(e) { console.error('[boot] initRenderer FAILED:', e); }
+
+  onStateChange(function (state) { render(); });
+
+  try {
+    render();
+    console.log('[boot] initial render OK');
+  } catch(e) { console.error('[boot] render FAILED:', e); }
+});
+</script>
 </body>
 </html>
 """
