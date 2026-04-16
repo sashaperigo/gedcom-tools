@@ -2264,6 +2264,68 @@ def scan_bare_at_signs(path: str) -> list[tuple[int, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Malformed xref detection  (spec 1.3)
+# ---------------------------------------------------------------------------
+
+# Level-0 record definition:  0 @XREF@ TAG [value]
+_XREF_DEFN_LINE_RE  = re.compile(r'^0 (@[^@]+@) \S+')
+# Pointer value (entire value is a pointer):  N TAG @XREF@
+_XREF_PTR_LINE_RE   = re.compile(r'^\d+ \S+ (@[^@]+@)\s*$')
+# Valid xref content: alphanumeric + underscore only (GEDCOM 5.5.5 is
+# alphanumeric-only; we allow underscore for the very common _-prefixed
+# convention used throughout the lineage-linked community).
+_XREF_INNER_VALID_RE = re.compile(r'^[A-Za-z0-9_]+$')
+_XREF_MAX_LEN = 22   # spec maximum including both '@' delimiters
+
+
+def scan_malformed_xrefs(path: str) -> list[tuple[int, str]]:
+    """Return (lineno, description) for xref identifiers that violate spec rules.
+
+    Checks applied to every xref definition (level-0 lines) and every
+    pointer value (lines whose entire value is @XREF@):
+
+      1. Length ≤ 22 characters including the '@' delimiters.
+      2. No spaces inside the xref.
+      3. First character after the opening '@' is alphanumeric or underscore.
+         (GEDCOM 5.5.5 restricts to alphanumeric; we also permit '_' for
+         the underscore-prefixed naming convention that is ubiquitous in
+         real-world files.)
+
+    Multiple violations on the same xref are reported separately so that
+    each rule failure is visible.
+    """
+    violations: list[tuple[int, str]] = []
+
+    def _check(lineno: int, xref: str) -> None:
+        inner = xref[1:-1]   # strip opening and closing '@'
+        if len(xref) > _XREF_MAX_LEN:
+            violations.append((
+                lineno,
+                f'xref too long ({len(xref)} chars, max {_XREF_MAX_LEN}): {xref!r}',
+            ))
+        if ' ' in inner:
+            violations.append((lineno, f'xref contains a space: {xref!r}'))
+        if inner and not re.match(r'^[A-Za-z0-9_]', inner):
+            violations.append((
+                lineno,
+                f'xref starts with invalid character {inner[0]!r}: {xref!r}',
+            ))
+
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\r\n')
+            m = _XREF_DEFN_LINE_RE.match(line)
+            if m:
+                _check(lineno, m.group(1))
+                continue
+            m = _XREF_PTR_LINE_RE.match(line)
+            if m:
+                _check(lineno, m.group(1))
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Nickname extraction  (spec 2.2)
 # ---------------------------------------------------------------------------
 
@@ -5012,6 +5074,16 @@ def main():
                 print(f'  ... and {len(conc_issues) - 20} more.')
         else:
             print('OK: no CONC/CONT structure anomalies.')
+
+        xref_issues = scan_malformed_xrefs(args.gedfile)
+        if xref_issues:
+            print(f'\n{_WARN} {len(xref_issues)} malformed xref identifier(s):')
+            for ln, desc in xref_issues[:20]:
+                print(f'  line {ln}: {desc}')
+            if len(xref_issues) > 20:
+                print(f'  ... and {len(xref_issues) - 20} more.')
+        else:
+            print('OK: all xref identifiers are well-formed.')
 
         bare_at_issues = scan_bare_at_signs(args.gedfile)
         if bare_at_issues:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from gedcom_linter import (
     scan_bare_at_signs,
+    scan_malformed_xrefs,
     scan_html_entities,
     fix_html_entities,
     _decode_html_value,
@@ -740,6 +741,178 @@ class TestScanBareAtSigns:
         """)
         result = scan_bare_at_signs(str(p))
         assert result == []
+
+
+# ===========================================================================
+# scan_malformed_xrefs
+# ===========================================================================
+
+class TestScanMalformedXrefs:
+    # --- should be flagged ---
+
+    def test_xref_too_long_on_definition_flagged(self, tmp_path):
+        # 23 chars total: @ + 21 chars + @ = too long
+        long_xref = '@' + 'A' * 21 + '@'
+        assert len(long_xref) == 23
+        p = write_ged(tmp_path, f"""\
+            0 HEAD
+            0 {long_xref} INDI
+            1 NAME Test /Person/
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert any('too long' in desc for _, desc in result)
+
+    def test_xref_too_long_on_pointer_flagged(self, tmp_path):
+        long_xref = '@' + 'S' * 21 + '@'
+        p = write_ged(tmp_path, f"""\
+            0 HEAD
+            0 @I1@ INDI
+            1 SOUR {long_xref}
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert any('too long' in desc for _, desc in result)
+
+    def test_xref_with_space_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I 1@ INDI
+            1 NAME Test /Person/
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert any('space' in desc for _, desc in result)
+
+    def test_xref_pointer_with_space_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 FAMC @F 1@
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert any('space' in desc for _, desc in result)
+
+    def test_xref_starting_with_hyphen_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @-I1@ INDI
+            1 NAME Test /Person/
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert any('invalid character' in desc for _, desc in result)
+
+    def test_xref_starting_with_dot_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @.FOO@ SOUR
+            1 TITL A source
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert any('invalid character' in desc for _, desc in result)
+
+    def test_xref_starting_with_hash_flagged(self, tmp_path):
+        # '#' is not alphanumeric or underscore
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @#BAD@ INDI
+            1 NAME Test /Person/
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert any('invalid character' in desc for _, desc in result)
+
+    def test_violation_includes_lineno(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I 1@ INDI
+            1 NAME Test /Person/
+            0 TRLR
+        """)
+        result = scan_malformed_xrefs(str(p))
+        assert len(result) >= 1
+        lineno, _ = result[0]
+        assert isinstance(lineno, int) and lineno > 0
+
+    # --- should NOT be flagged ---
+
+    def test_normal_xref_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Alice /Green/
+            0 TRLR
+        """)
+        assert scan_malformed_xrefs(str(p)) == []
+
+    def test_xref_with_underscore_not_flagged(self, tmp_path):
+        # Underscores are ubiquitous in real files (e.g. @S_SOME_SOURCE@)
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S_SOME_SOURCE_RECORD@ SOUR
+            1 TITL A source
+            0 TRLR
+        """)
+        assert scan_malformed_xrefs(str(p)) == []
+
+    def test_xref_starting_with_underscore_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @_HIDDEN@ INDI
+            1 NAME Private /Person/
+            0 TRLR
+        """)
+        assert scan_malformed_xrefs(str(p)) == []
+
+    def test_xref_starting_with_digit_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @123@ INDI
+            1 NAME Test /Person/
+            0 TRLR
+        """)
+        assert scan_malformed_xrefs(str(p)) == []
+
+    def test_xref_exactly_22_chars_not_flagged(self, tmp_path):
+        # 22 chars: @ + 20 chars + @ = exactly at the limit
+        xref = '@' + 'A' * 20 + '@'
+        assert len(xref) == 22
+        p = write_ged(tmp_path, f"""\
+            0 HEAD
+            0 {xref} SOUR
+            1 TITL Test
+            0 TRLR
+        """)
+        assert scan_malformed_xrefs(str(p)) == []
+
+    def test_pointer_value_not_flagged(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 FAMC @F1@
+            0 @F1@ FAM
+            0 TRLR
+        """)
+        assert scan_malformed_xrefs(str(p)) == []
+
+    def test_clean_file_produces_no_violations(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Alice /Green/
+            1 FAMS @F1@
+            0 @I2@ INDI
+            1 NAME Bob /Smith/
+            1 FAMS @F1@
+            0 @F1@ FAM
+            1 HUSB @I2@
+            1 WIFE @I1@
+            0 TRLR
+        """)
+        assert scan_malformed_xrefs(str(p)) == []
 
 
 # ===========================================================================
