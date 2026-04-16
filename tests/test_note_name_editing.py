@@ -24,7 +24,9 @@ os.environ.setdefault('GED_FILE', _FIXTURE_GED)
 
 import serve_viz  # noqa: E402
 from serve_viz import (           # noqa: E402
+    _chunk_note_line,
     _encode_note_lines,
+    _encode_event_note_lines,
     _find_note_block,
     _find_secondary_name_block,
     _add_secondary_name,
@@ -129,6 +131,58 @@ class TestEncodeNoteLines:
         text = 'a\nb\nc\nd'
         result = _encode_note_lines(text)
         assert len(result) == text.count('\n') + 1
+
+    def test_long_line_split_with_conc(self):
+        # A line exceeding 248 chars must be split into NOTE + CONC lines
+        long = 'x' * 300
+        result = _encode_note_lines(long)
+        assert result[0].startswith('1 NOTE ')
+        assert result[1].startswith('2 CONC ')
+        # Reconstituted text must equal original
+        body = result[0][len('1 NOTE '):]
+        for r in result[1:]:
+            body += r[len('2 CONC '):]
+        assert body == long
+
+    def test_long_line_word_boundary_leading_space(self):
+        # When splitting at a word boundary the space must lead the CONC value,
+        # not trail the NOTE line (per GEDCOM 5.5.5 pp. 41, 43-44).
+        from serve_viz import _NOTE_LINE_MAX
+        # Construct a line where the word boundary falls exactly at the limit
+        word_a = 'a' * (_NOTE_LINE_MAX - 1)  # just under limit
+        text = word_a + ' bb'                 # space at position _NOTE_LINE_MAX-1
+        result = _chunk_note_line(text, '1 NOTE', '2 CONC')
+        assert len(result) == 2
+        note_val = result[0][len('1 NOTE '):]
+        conc_val = result[1][len('2 CONC '):]
+        assert not note_val.endswith(' '),  "NOTE line must not have trailing space"
+        assert conc_val.startswith(' '),    "CONC value must carry the leading space"
+        # Full text must round-trip
+        assert note_val + conc_val == text
+
+
+# ===========================================================================
+# _encode_event_note_lines
+# ===========================================================================
+
+class TestEncodeEventNoteLines:
+    def test_single_line(self):
+        result = _encode_event_note_lines('a note')
+        assert result == ['2 NOTE a note']
+
+    def test_multiline(self):
+        result = _encode_event_note_lines('line one\nline two')
+        assert result == ['2 NOTE line one', '3 CONT line two']
+
+    def test_long_line_split_with_conc(self):
+        long = 'y' * 300
+        result = _encode_event_note_lines(long)
+        assert result[0].startswith('2 NOTE ')
+        assert result[1].startswith('3 CONC ')
+        body = result[0][len('2 NOTE '):]
+        for r in result[1:]:
+            body += r[len('3 CONC '):]
+        assert body == long
 
 
 # ===========================================================================

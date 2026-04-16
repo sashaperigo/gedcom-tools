@@ -47,7 +47,7 @@ else:
     sys.exit("Error: set the GED_FILE environment variable to the path of your .ged file")
 VIZ = Path(__file__).parent / "viz_ancestors.py"
 OUT = Path(os.environ.get("VIZ_OUT", "/tmp/viz.html"))
-PORT = 8080
+PORT = int(os.environ.get("PORT", 8080))
 
 _TAG_RE = re.compile(r'^(\d+) (\w+)(?: (.+))?$')
 
@@ -239,14 +239,23 @@ def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | 
     return None, None, f'Note index {note_idx} not found in {xref}'
 
 
-_NOTE_LINE_MAX = 248  # 255-char GEDCOM line limit minus 7 chars for "2 NOTE " prefix
+_NOTE_LINE_MAX = 248  # physical line value limit per GEDCOM 5.5.5 spec (p.42)
 
 
 def _chunk_note_line(text: str, first_tag: str, conc_tag: str) -> list[str]:
     """Split one logical note line into physical GEDCOM lines using CONC for long lines.
 
-    The spec warns that CONC splits must not occur at a trailing space (parsers
-    often strip them), so we walk back from the limit to find a non-space cut.
+    Splitting strategy per GEDCOM 5.5.5 (pp. 41, 43-44):
+      - When the character at the cut boundary is a space, we step back so the
+        cut falls just before the space.  The space then becomes the first
+        character of the next CONC value (leading space).  This is the
+        spec-recommended approach: "such leading white space is considerably
+        less likely to be lost than trailing white space."
+      - When the cut falls at a non-space character (mid-word), we split there
+        directly.  GEDCOM 5.5.5 readers must preserve all whitespace as-is, so
+        either approach is valid.
+      - If the entire chunk is spaces (pathological), we split at _NOTE_LINE_MAX
+        anyway to make forward progress.
     """
     out = []
     tag = first_tag
@@ -255,9 +264,9 @@ def _chunk_note_line(text: str, first_tag: str, conc_tag: str) -> list[str]:
         while cut > 0 and text[cut - 1] == ' ':
             cut -= 1
         if cut == 0:
-            cut = _NOTE_LINE_MAX  # no non-space found; split anyway
+            cut = _NOTE_LINE_MAX  # all spaces; split anyway to make progress
         out.append(f'{tag} {text[:cut]}')
-        text = text[cut:]
+        text = text[cut:]   # may start with ' ' (spec-compliant leading space)
         tag = conc_tag
     out.append(f'{tag} {text}')
     return out
