@@ -688,6 +688,190 @@ describe('renderPanel — source badge count', () => {
   });
 });
 
+// ── C2: NATI events render in detail-nationalities ────────────────────────
+
+describe('renderPanel — NATI events in detail-nationalities (C2)', () => {
+  it('NATI events render inside #detail-nationalities, not #detail-facts', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const natiEl   = makeFakeEl('detail-nationalities');
+    const factsEl  = makeFakeEl('detail-facts');
+    _state = { panelOpen: true, panelXref: '@NATI@' };
+
+    global.PEOPLE['@NATI@'] = {
+      name: 'Nationality Person',
+      birth_year: '1900', death_year: null,
+      sex: 'M',
+      events: [
+        { tag: 'NATI', inline_val: 'Greek', type: 'Greek', date: null, place: null, citations: [], event_idx: 0 },
+        { tag: 'NATI', inline_val: 'Ottoman', type: 'Ottoman', date: null, place: null, citations: [], event_idx: 1 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')           return panelEl;
+        if (id === 'detail-nationalities')   return natiEl;
+        if (id === 'detail-facts')           return factsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    // NATI events must render into detail-nationalities
+    expect(natiEl.innerHTML).toContain('Greek');
+    // detail-facts must NOT contain the nationality pills
+    expect(factsEl.innerHTML).not.toContain('Greek');
+  });
+
+  it('NATI events do not appear in detail-facts when rendered', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const natiEl   = makeFakeEl('detail-nationalities');
+    const factsEl  = makeFakeEl('detail-facts');
+    _state = { panelOpen: true, panelXref: '@NATI2@' };
+
+    global.PEOPLE['@NATI2@'] = {
+      name: 'Another Person',
+      birth_year: '1890', death_year: null,
+      sex: 'F',
+      events: [
+        { tag: 'NATI', inline_val: 'French', type: 'French', date: null, place: null, citations: [], event_idx: 0 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')           return panelEl;
+        if (id === 'detail-nationalities')   return natiEl;
+        if (id === 'detail-facts')           return factsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    // The nationality heading/pills must NOT be in detail-facts
+    expect(factsEl.innerHTML).not.toMatch(/Nationality/);
+  });
+});
+
+// ── C3: Collapsible family section ────────────────────────────────────────
+
+describe('renderPanel — collapsible family section (C3)', () => {
+  function makePersonWithFamily() {
+    global.PEOPLE = {
+      '@FAM@': {
+        name: 'Family Person',
+        birth_year: '1900', death_year: null,
+        sex: 'M',
+        events: [
+          { tag: 'MARR', date: '1925', place: 'Athens', spouse: 'Maria',
+            spouse_xref: '@SP@', fam_xref: '@F1@', marr_idx: 0,
+            citations: [], event_idx: null },
+        ],
+        notes: [], sources: [],
+      },
+      '@SP@': {
+        name: 'Maria Spouse',
+        birth_year: '1905', death_year: null,
+        sex: 'F', events: [], notes: [], sources: [],
+      },
+    };
+  }
+
+  it('family section subsections are hidden by default (collapsed state)', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const familyEl = makeFakeEl('detail-family');
+    _state = { panelOpen: true, panelXref: '@FAM@' };
+    makePersonWithFamily();
+
+    global.PARENTS  = { '@FAM@': ['@PA@', '@MA@'], '@SP@': [null, null] };
+    global.RELATIVES = {};
+    global.CHILDREN  = {};
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-family')  return familyEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    const html = familyEl.innerHTML;
+    // Subsections (parents, siblings, spouses) must be hidden by default
+    // They should either have display:none or be absent from the DOM
+    expect(html).toMatch(/display:\s*none|display:none/i);
+  });
+
+  it('toggle button is present with "Family ▶" label when collapsed', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const familyEl = makeFakeEl('detail-family');
+    _state = { panelOpen: true, panelXref: '@FAM@' };
+    makePersonWithFamily();
+
+    global.PARENTS  = { '@FAM@': ['@PA@', '@MA@'], '@SP@': [null, null] };
+    global.RELATIVES = {};
+    global.CHILDREN  = {};
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-family')  return familyEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    const html = familyEl.innerHTML;
+    // Toggle button with collapsed arrow must be present
+    expect(html).toContain('Family ▶');
+  });
+
+  it('all 3 subsections (parents, siblings/spouses, children) hidden when collapsed', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const familyEl = makeFakeEl('detail-family');
+    _state = { panelOpen: true, panelXref: '@FAM@' };
+    makePersonWithFamily();
+
+    global.PARENTS  = { '@FAM@': ['@PA@', '@MA@'], '@SP@': [null, null] };
+    global.RELATIVES = {
+      '@FAM@': { siblings: ['@SIB@'], spouses: ['@SP@'], half_siblings: [] },
+    };
+    global.CHILDREN  = { '@FAM@': ['@CH1@'] };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-family')  return familyEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    const html = familyEl.innerHTML;
+    // All subsection divs should have display:none
+    const hiddenMatches = html.match(/display:\s*none/gi) || [];
+    // At least 3 subsections should be hidden (parents, siblings, spouses+children)
+    expect(hiddenMatches.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe('renderPanel — person-level sources collapsed by default', () => {
   it('detail-sources section is present and collapsed (no expanded content without interaction)', () => {
     const panelEl  = makeFakeEl('detail-panel');

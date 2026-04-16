@@ -237,6 +237,12 @@ function _handleGodparentClick(godparentXref) {
 // ── Module state ──────────────────────────────────────────────────────────
 
 let _panelEl = null;
+let _familyOpen = false;
+
+function _toggleFamily() {
+  _familyOpen = !_familyOpen;
+  renderPanel();
+}
 
 // ── Main render function ──────────────────────────────────────────────────
 
@@ -380,9 +386,9 @@ function renderPanel() {
     }
   }
 
-  // ── Nationalities (facts section) ─────────────────────────────────────
-  const factsDiv = document.getElementById('detail-facts');
-  if (factsDiv) {
+  // ── Nationalities (header section) ───────────────────────────────────
+  const natiHeaderDiv = document.getElementById('detail-nationalities');
+  if (natiHeaderDiv) {
     const natiEvents = (data.events || []).map((e, i) => ({...e, _origIdx: i}))
       .filter(e => e.tag === 'NATI');
     const addNatiBtn = `<button class="add-event-btn" onclick="addEvent(${xrefQ},'NATI')">&#43; Add nationality</button>`;
@@ -397,12 +403,17 @@ function renderPanel() {
         const actions = `<span class="facts-pill-actions">${editBtn}${delBtn}</span>`;
         return `<span class="facts-pill-wrap"><span class="facts-pill">${escHtml(e.inline_val || '')}${dateStr}</span>${actions}</span>`;
       }).join('');
-      factsDiv.innerHTML = `<span class="facts-heading">Nationality</span><div class="facts-pills">${pills}${addNatiBtn}</div>`;
-      factsDiv.className = 'has-content';
+      natiHeaderDiv.innerHTML = `<div class="facts-pills">${pills}${addNatiBtn}</div>`;
     } else {
-      factsDiv.innerHTML = addNatiBtn;
-      factsDiv.className = 'has-content';
+      natiHeaderDiv.innerHTML = addNatiBtn;
     }
+  }
+
+  // ── Facts section (no longer includes NATI) ───────────────────────────
+  const factsDiv = document.getElementById('detail-facts');
+  if (factsDiv) {
+    factsDiv.innerHTML = '';
+    factsDiv.className = '';
   }
 
   // ── Timeline events ────────────────────────────────────────────────────
@@ -606,26 +617,26 @@ function renderPanel() {
       return ay < by_ ? -1 : ay > by_ ? 1 : 0;
     });
 
-    let fhtml = '';
+    let _parHtml = '', _sibHtml = '', _spChHtml = '';
 
     const [fa, mo] = (typeof PARENTS !== 'undefined' && PARENTS[xref]) || [null, null];
     if (fa || mo) {
-      fhtml += '<div class="family-sub"><span class="family-sub-heading">Parents</span>';
-      if (fa) fhtml += _pr(fa);
-      if (mo) fhtml += _pr(mo);
-      fhtml += '</div>';
+      _parHtml += '<div class="family-sub"><span class="family-sub-heading">Parents</span>';
+      if (fa) _parHtml += _pr(fa);
+      if (mo) _parHtml += _pr(mo);
+      _parHtml += '</div>';
     }
 
     const sibs = _sortByBirth(((typeof RELATIVES !== 'undefined' && RELATIVES[xref]) || {}).siblings || []);
     if (sibs.length) {
-      fhtml += '<div class="family-sub"><span class="family-sub-heading">Siblings</span>';
-      for (const sx of sibs) fhtml += _pr(sx);
-      fhtml += '</div>';
+      _sibHtml += '<div class="family-sub"><span class="family-sub-heading">Siblings</span>';
+      for (const sx of sibs) _sibHtml += _pr(sx);
+      _sibHtml += '</div>';
     }
 
     const halfSibGroups = ((typeof RELATIVES !== 'undefined' && RELATIVES[xref]) || {}).half_siblings || [];
     if (halfSibGroups.length) {
-      fhtml += '<div class="family-sub"><span class="family-sub-heading">Half-siblings</span>';
+      _sibHtml += '<div class="family-sub"><span class="family-sub-heading">Half-siblings</span>';
       for (const grp of halfSibGroups) {
         const sp = (typeof PEOPLE !== 'undefined') && PEOPLE[grp.shared_parent];
         const sharedName = sp ? escHtml(sp.name || '?') : '?';
@@ -636,46 +647,56 @@ function renderPanel() {
         const otherLink = grp.other_parent
           ? `<span class="family-link" onclick="setState({focusXref:${JSON.stringify(grp.other_parent).replace(/"/g, '&quot;')}})">${otherName}</span>`
           : `<span class="family-unknown">unknown</span>`;
-        fhtml += `<div class="family-halfsib-group">`;
-        fhtml += `<div class="family-halfsib-label">${sharedLink} &amp; ${otherLink}</div>`;
-        fhtml += '<div class="family-children">';
-        _sortByBirth(grp.half_sibs).forEach(cx => { fhtml += _pr(cx); });
-        fhtml += '</div></div>';
+        _sibHtml += `<div class="family-halfsib-group">`;
+        _sibHtml += `<div class="family-halfsib-label">${sharedLink} &amp; ${otherLink}</div>`;
+        _sibHtml += '<div class="family-children">';
+        _sortByBirth(grp.half_sibs).forEach(cx => { _sibHtml += _pr(cx); });
+        _sibHtml += '</div></div>';
       }
-      fhtml += '</div>';
+      _sibHtml += '</div>';
     }
 
     const marrEvts = (data.events || []).filter(e => e.tag === 'MARR');
     const allCh = (typeof CHILDREN !== 'undefined' && CHILDREN[xref]) || [];
     if (marrEvts.length || allCh.length) {
-      fhtml += '<div class="family-sub"><span class="family-sub-heading">Spouses &amp; Children</span>';
+      _spChHtml += '<div class="family-sub"><span class="family-sub-heading">Spouses &amp; Children</span>';
       const accounted = new Set();
       for (const marr of marrEvts) {
         const spXref = marr.spouse_xref;
         if (spXref) {
-          fhtml += _pr(spXref);
+          _spChHtml += _pr(spXref);
           const shared = _sortByBirth(allCh.filter(cx => {
             const [cfa, cmo] = (typeof PARENTS !== 'undefined' && PARENTS[cx]) || [null, null];
             return cfa === spXref || cmo === spXref;
           }));
           if (shared.length) {
-            fhtml += '<div class="family-children">';
-            shared.forEach(cx => { accounted.add(cx); fhtml += _pr(cx); });
-            fhtml += '</div>';
+            _spChHtml += '<div class="family-children">';
+            shared.forEach(cx => { accounted.add(cx); _spChHtml += _pr(cx); });
+            _spChHtml += '</div>';
           }
         }
       }
       const unaccounted = _sortByBirth(allCh.filter(cx => !accounted.has(cx)));
       if (unaccounted.length) {
-        fhtml += '<div class="family-children">';
-        unaccounted.forEach(cx => { fhtml += _pr(cx); });
-        fhtml += '</div>';
+        _spChHtml += '<div class="family-children">';
+        unaccounted.forEach(cx => { _spChHtml += _pr(cx); });
+        _spChHtml += '</div>';
       }
-      fhtml += '</div>';
+      _spChHtml += '</div>';
     }
 
-    familyDiv.innerHTML = fhtml;
-    familyDiv.className = fhtml ? 'has-content' : '';
+    const _hasFamily = _parHtml || _sibHtml || _spChHtml;
+    if (_hasFamily) {
+      const _arr = _familyOpen ? '\u25bc' : '\u25b6';
+      const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:0 0 10px 0">Family ${_arr}</button>`;
+      const _subStyle = _familyOpen ? '' : ' style="display:none"';
+      const _wrapSub = (html) => html ? html.replace(/^<div class="family-sub"/, `<div class="family-sub"${_subStyle}`) : '';
+      familyDiv.innerHTML = _toggleHtml + _wrapSub(_parHtml) + _wrapSub(_sibHtml) + _wrapSub(_spChHtml);
+      familyDiv.className = 'has-content';
+    } else {
+      familyDiv.innerHTML = '';
+      familyDiv.className = '';
+    }
   }
 
   // ── Sources (person-level, collapsed by default) ─────────────────────
