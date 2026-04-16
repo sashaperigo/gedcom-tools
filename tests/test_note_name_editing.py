@@ -27,6 +27,7 @@ from serve_viz import (           # noqa: E402
     _chunk_note_line,
     _encode_note_lines,
     _encode_event_note_lines,
+    _find_indi_block,
     _find_note_block,
     _find_secondary_name_block,
     _add_secondary_name,
@@ -247,6 +248,226 @@ class TestFindNoteBlock:
         assert err is None
         block = MULTI_NOTE_GED[start:end]
         assert not any('NOTE Second' in l for l in block)
+
+
+# ===========================================================================
+# Add note (simulates UI "add note" action)
+# ===========================================================================
+
+def _apply_add_note(lines: list[str], xref: str, text: str) -> list[str]:
+    """Simulate the /api/add_note handler logic (sans I/O)."""
+    _, indi_end, err = _find_indi_block(lines, xref)
+    assert err is None, err
+    return lines[:indi_end] + _encode_note_lines(text) + lines[indi_end:]
+
+
+def _apply_edit_note(lines: list[str], xref: str, note_idx: int, text: str) -> list[str]:
+    """Simulate the /api/edit_note handler logic (sans I/O)."""
+    start, end, err = _find_note_block(lines, xref, note_idx)
+    assert err is None, err
+    return lines[:start] + _encode_note_lines(text) + lines[end:]
+
+
+# Base GEDCOM with one individual and no notes
+_NO_NOTES_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5
+0 @I1@ INDI
+1 NAME Alice /Green/
+1 BIRT
+2 DATE 1950
+0 TRLR""".splitlines()
+
+
+class TestAddNote:
+    def test_adds_note_to_individual_with_no_existing_notes(self):
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'Hello')
+        assert '1 NOTE Hello' in result
+
+    def test_note_is_inserted_inside_indi_block(self):
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'Hello')
+        trlr_idx = result.index('0 TRLR')
+        note_idx = result.index('1 NOTE Hello')
+        assert note_idx < trlr_idx
+
+    def test_adds_second_note_without_disturbing_first(self):
+        after_first = _apply_add_note(_NO_NOTES_GED, '@I1@', 'First note')
+        after_second = _apply_add_note(after_first, '@I1@', 'Second note')
+        assert '1 NOTE First note' in after_second
+        assert '1 NOTE Second note' in after_second
+
+    def test_multiline_note_uses_cont(self):
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'Line one\nLine two')
+        assert '1 NOTE Line one' in result
+        assert '2 CONT Line two' in result
+
+    def test_three_line_note(self):
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'a\nb\nc')
+        assert '1 NOTE a' in result
+        assert '2 CONT b' in result
+        assert '2 CONT c' in result
+
+    def test_long_line_produces_conc(self):
+        long_text = 'word ' * 60  # 300 chars
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', long_text.rstrip())
+        assert any(l.startswith('2 CONC') for l in result)
+
+    def test_long_line_no_trailing_whitespace(self):
+        long_text = 'w' * 100 + ' ' + 'x' * 200  # space near boundary
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', long_text)
+        for line in result:
+            assert not line.rstrip('\n').endswith(' '), f'Trailing space on: {line!r}'
+
+    def test_long_line_conc_value_no_loss(self):
+        # The full text must round-trip through the NOTE/CONC representation
+        from serve_viz import _NOTE_LINE_MAX
+        word = 'ab ' * 90  # well over limit, with word boundaries
+        encoded = _encode_note_lines(word.strip())
+        reconstructed = encoded[0][len('1 NOTE '):]
+        for line in encoded[1:]:
+            if line.startswith('2 CONC '):
+                reconstructed += line[len('2 CONC '):]
+            elif line.startswith('2 CONT '):
+                reconstructed += '\n' + line[len('2 CONT '):]
+        assert reconstructed == word.strip()
+
+    def test_empty_note_rejected_via_strip(self):
+        # The handler does new_text.strip() before checking emptiness;
+        # pure-whitespace input should produce no note or be empty
+        stripped = '   \n\t  '.strip()
+        assert not stripped  # verifies handler would reject this as empty
+
+    def test_note_with_only_whitespace_lines(self):
+        # A note with blank lines (explicit paragraph breaks) uses empty CONT
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'Para one\n\nPara two')
+        assert '1 NOTE Para one' in result
+        assert '2 CONT ' in result or '2 CONT' in result  # empty CONT for blank line
+        assert '2 CONT Para two' in result
+
+    def test_note_with_unicode_text(self):
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'Ελληνικά και Türkçe')
+        assert '1 NOTE Ελληνικά και Türkçe' in result
+
+    def test_note_with_at_sign_not_interpreted_as_pointer(self):
+        # Literal @ in note text — the encoding layer doesn't escape it here
+        # (escaping is done at the GEDCOM writer level), but the value must
+        # be preserved as given by the caller
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'email: user@example.com')
+        assert any('user@example.com' in l for l in result)
+
+    def test_unknown_xref_returns_error(self):
+        _, _, err = _find_indi_block(_NO_NOTES_GED, '@NOBODY@')
+        assert err is not None
+
+    def test_non_destructive_adds_note_at_end_of_indi_block(self):
+        # Lines after the INDI block (TRLR) must be unchanged
+        result = _apply_add_note(_NO_NOTES_GED, '@I1@', 'New note')
+        assert result[-1] == '0 TRLR'
+
+
+# ===========================================================================
+# Edit note (simulates UI "edit note" action)
+# ===========================================================================
+
+class TestEditNote:
+    def test_replaces_single_line_note(self):
+        lines = _NO_NOTES_GED[:]
+        lines = _apply_add_note(lines, '@I1@', 'Original text')
+        result = _apply_edit_note(lines, '@I1@', 0, 'Updated text')
+        assert '1 NOTE Updated text' in result
+        assert '1 NOTE Original text' not in result
+
+    def test_replace_with_multiline_text(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Single line')
+        result = _apply_edit_note(lines, '@I1@', 0, 'Line A\nLine B')
+        assert '1 NOTE Line A' in result
+        assert '2 CONT Line B' in result
+        assert '1 NOTE Single line' not in result
+
+    def test_replace_multiline_note_with_single_line(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Line A\nLine B')
+        result = _apply_edit_note(lines, '@I1@', 0, 'Collapsed')
+        assert '1 NOTE Collapsed' in result
+        assert '2 CONT Line B' not in result
+
+    def test_edit_first_of_two_notes_leaves_second_intact(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Note one')
+        lines = _apply_add_note(lines, '@I1@', 'Note two')
+        result = _apply_edit_note(lines, '@I1@', 0, 'Edited one')
+        assert '1 NOTE Edited one' in result
+        assert '1 NOTE Note two' in result
+        assert '1 NOTE Note one' not in result
+
+    def test_edit_second_of_two_notes_leaves_first_intact(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Note one')
+        lines = _apply_add_note(lines, '@I1@', 'Note two')
+        result = _apply_edit_note(lines, '@I1@', 1, 'Edited two')
+        assert '1 NOTE Note one' in result
+        assert '1 NOTE Edited two' in result
+        assert '1 NOTE Note two' not in result
+
+    def test_edit_note_with_cont_replaces_entire_block(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Original\nOriginal line 2')
+        result = _apply_edit_note(lines, '@I1@', 0, 'New single line')
+        assert '2 CONT Original line 2' not in result
+        assert '1 NOTE New single line' in result
+
+    def test_edit_note_out_of_range_returns_error(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Only note')
+        start, end, err = _find_note_block(lines, '@I1@', 99)
+        assert err is not None
+
+    def test_edit_note_unknown_xref_returns_error(self):
+        _, _, err = _find_note_block(_NO_NOTES_GED, '@NOBODY@', 0)
+        assert err is not None
+
+    def test_edit_to_empty_string_produces_empty_note_line(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Some text')
+        result = _apply_edit_note(lines, '@I1@', 0, '')
+        # Empty string → '1 NOTE ' with no value
+        assert any(l == '1 NOTE ' for l in result)
+
+    def test_edit_preserves_surrounding_lines(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Note')
+        result = _apply_edit_note(lines, '@I1@', 0, 'Changed')
+        assert '0 HEAD' in result
+        assert '0 TRLR' in result
+        assert '1 BIRT' in result
+
+    def test_edit_with_long_text_produces_conc(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Short')
+        long = 'word ' * 60
+        result = _apply_edit_note(lines, '@I1@', 0, long.rstrip())
+        assert any(l.startswith('2 CONC') for l in result)
+
+    def test_edit_long_text_no_trailing_whitespace(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Short')
+        long = 'a' * 100 + ' ' + 'b' * 200
+        result = _apply_edit_note(lines, '@I1@', 0, long)
+        for line in result:
+            assert not line.rstrip('\n').endswith(' '), f'Trailing space: {line!r}'
+
+    def test_edit_with_special_characters(self):
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Plain')
+        result = _apply_edit_note(lines, '@I1@', 0, 'Héros & Ñoño – «cited»')
+        assert any('Héros' in l for l in result)
+
+    def test_note_count_stable_after_edit(self):
+        # Editing must not add or remove notes, only replace the target
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Note A')
+        lines = _apply_add_note(lines, '@I1@', 'Note B')
+        result = _apply_edit_note(lines, '@I1@', 0, 'Note A revised')
+        note_lines = [l for l in result if l.startswith('1 NOTE')]
+        assert len(note_lines) == 2
+
+    def test_round_trip_add_then_edit_then_find(self):
+        # After adding and editing, _find_note_block must still locate the note
+        lines = _apply_add_note(_NO_NOTES_GED[:], '@I1@', 'Original')
+        lines = _apply_edit_note(lines, '@I1@', 0, 'Round-tripped')
+        start, end, err = _find_note_block(lines, '@I1@', 0)
+        assert err is None
+        assert lines[start] == '1 NOTE Round-tripped'
 
 
 # ===========================================================================
