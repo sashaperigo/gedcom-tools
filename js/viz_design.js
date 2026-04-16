@@ -19,8 +19,8 @@ var DESIGN = {
   // Layout constants (replaces viz_constants.js)
   NODE_W:       140,  // normal node width
   NODE_W_FOCUS: 160,  // focused node width
-  NODE_H:       34,   // normal node height
-  NODE_H_FOCUS: 38,   // focused node height
+  NODE_H:       38,   // normal node height
+  NODE_H_FOCUS: 42,   // focused node height
   ROW_HEIGHT:   90,   // vertical distance between generation rows
   H_GAP:        12,   // gap between sibling nodes
   MARRIAGE_GAP: 60,   // gap between last sibling and spouse

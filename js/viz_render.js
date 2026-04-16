@@ -147,8 +147,8 @@ function _renderNode(node, onNodeClick, onExpandClick) {
   });
   g.appendChild(rect);
 
-  // Name text — centered inside the rect
-  const nameY = isFocus ? h * 0.48 : h * 0.52;
+  // Name text — in upper half of rect, leaving room for years below
+  const nameY = isFocus ? h * 0.40 : h * 0.42;
   const nameEl = _svgEl('text', {
     x: w / 2,
     y: nameY,
@@ -163,11 +163,11 @@ function _renderNode(node, onNodeClick, onExpandClick) {
   nameEl.textContent = displayName;
   g.appendChild(nameEl);
 
-  // Years text — below name
+  // Years text — below name with comfortable padding
   if (years) {
     const yearsEl = _svgEl('text', {
       x: w / 2,
-      y: h - 5,
+      y: h - 7,
       'text-anchor': 'middle',
       fill: yearFill,
       'font-size': 9,

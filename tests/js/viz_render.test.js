@@ -301,6 +301,57 @@ describe('render — spouse node styles', () => {
   });
 });
 
+describe('render — node pill text spacing', () => {
+  // The years line must sit far enough below the name center that the two
+  // elements don't visually overlap.  Minimum clearance: the years text y
+  // must be at least (nameY + 8) where nameY is the name's y attribute.
+  // This ensures at least 8px of gap (name half-height ≈ 6px + 2px padding).
+  let svg;
+
+  beforeEach(() => {
+    global.PEOPLE = makeMinimalPeople();
+    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    global.CHILDREN  = {};
+    global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+  });
+
+  it('years text y is at least 8px below name text y on a normal ancestor node', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    expect(fatherG).toBeDefined();
+    const texts = fatherG.children.filter(c => c.tagName === 'text');
+    // First text = name, second text = years
+    expect(texts.length).toBeGreaterThanOrEqual(2);
+    const nameY  = parseFloat(texts[0]._attrs['y']);
+    const yearsY = parseFloat(texts[1]._attrs['y']);
+    expect(yearsY).toBeGreaterThanOrEqual(nameY + 8);
+  });
+
+  it('years text y is at least 8px below name text y on the focused node', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+    expect(focusG).toBeDefined();
+    const texts = focusG.children.filter(c => c.tagName === 'text');
+    expect(texts.length).toBeGreaterThanOrEqual(2);
+    const nameY  = parseFloat(texts[0]._attrs['y']);
+    const yearsY = parseFloat(texts[1]._attrs['y']);
+    expect(yearsY).toBeGreaterThanOrEqual(nameY + 8);
+  });
+
+  it('NODE_H and NODE_H_FOCUS are tall enough to contain name + years without cramping', () => {
+    // With font-size 11 for name (≈7px rendered height) and 9 for years,
+    // we need at least 28px total node height to avoid cramping.
+    expect(NODE_H).toBeGreaterThanOrEqual(38);
+    expect(NODE_H_FOCUS).toBeGreaterThanOrEqual(42);
+  });
+});
+
 describe('render — ancestor expand buttons', () => {
   let svg;
 
