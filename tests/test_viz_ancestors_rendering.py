@@ -620,23 +620,22 @@ class TestExpansionButtonLogic:
 
 class TestPanelFactRendering:
     """
-    Redesign: the old buildProse function in viz_detail.js was replaced by
-    _buildFactRow in viz_panel.js. These tests verify the new panel renders
-    fact rows correctly.
+    Panel fact rendering — ported from viz_detail.js.
+    The new panel uses buildProse (ported wholesale) rather than _buildFactRow.
     """
 
-    def test_build_fact_row_exists_in_panel(self):
-        """viz_panel.js must define _buildFactRow for rendering life events."""
+    def test_buildProse_exists_in_panel(self):
+        """viz_panel.js must define buildProse for event rendering."""
         panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
-        assert 'function _buildFactRow' in panel_src, (
-            'viz_panel.js must define _buildFactRow for event rendering'
+        assert 'function buildProse' in panel_src, (
+            'viz_panel.js must define buildProse for event rendering (ported from viz_detail.js)'
         )
 
-    def test_panel_renders_life_events_section(self):
-        """viz_panel.js must emit a LIFE EVENTS section header."""
+    def test_panel_renders_section_headers(self):
+        """viz_panel.js must emit section headers like EARLY LIFE / LIFE / LATER LIFE."""
         panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
-        assert 'LIFE EVENTS' in panel_src, (
-            'viz_panel.js must emit a LIFE EVENTS section header'
+        assert 'EARLY LIFE' in panel_src or "'Early Life'" in panel_src or '"Early Life"' in panel_src, (
+            'viz_panel.js must emit timeline section headers (EARLY LIFE / LIFE / LATER LIFE)'
         )
 
 
@@ -757,7 +756,89 @@ class TestPanelTagLabels:
             "Per-group heading loop must be removed; panel uses flat _buildFactRow list"
 
     def test_panel_iterates_facts_array(self):
-        """viz_panel.js must iterate a facts array to render life events."""
+        """viz_panel.js must iterate events to render life events."""
         panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
-        assert 'for (const fact of facts)' in panel_src or 'facts.forEach' in panel_src, \
-            "viz_panel.js must iterate facts array to render life event rows"
+        assert (
+            'for (const fact of facts)' in panel_src
+            or 'facts.forEach' in panel_src
+            or 'for (const evt of sorted)' in panel_src
+            or 'for (const evt of allVisible)' in panel_src
+        ), "viz_panel.js must iterate events to render life event rows"
+
+
+# ---------------------------------------------------------------------------
+# Category 4 — Button wiring pattern checks
+# ---------------------------------------------------------------------------
+
+class TestButtonWiringPatterns:
+    """
+    Assert that viz_panel.js source contains correct function calls/patterns on
+    each button. Catches "button present but onclick removed" regressions.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _panel_src(self):
+        self.panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+
+    def test_set_root_button_uses_setState_and_focusXref(self):
+        """Home/set-root button must call setState with focusXref."""
+        assert 'setState' in self.panel_src and 'focusXref' in self.panel_src, (
+            "viz_panel.js must contain setState({ focusXref }) for the set-root/home button"
+        )
+
+    def test_add_event_button_wired(self):
+        """Add Event button must call an event-modal open function."""
+        assert 'addEvent' in self.panel_src or 'showAddEventModal' in self.panel_src or 'openAddEventModal' in self.panel_src, (
+            "viz_panel.js must wire Add Event button to an openAddEventModal (or equivalent) function"
+        )
+
+    def test_add_nationality_button_wired(self):
+        """Add Nationality button must call a nationality-modal open function."""
+        assert 'NATI' in self.panel_src, (
+            "viz_panel.js must reference NATI tag for Add Nationality functionality"
+        )
+
+    def test_edit_fact_button_wired(self):
+        """Edit fact button must reference an edit function."""
+        assert 'editEvent' in self.panel_src or 'showEditEventModal' in self.panel_src or 'openEditFactModal' in self.panel_src, (
+            "viz_panel.js must wire edit-fact buttons to an editEvent (or equivalent) function"
+        )
+
+    def test_source_contains_fmtDate(self):
+        """viz_panel.js must define fmtDate."""
+        assert 'function fmtDate' in self.panel_src, (
+            "viz_panel.js must define fmtDate — its absence is a silent regression"
+        )
+
+    def test_source_contains_fmtPlace(self):
+        """viz_panel.js must define fmtPlace."""
+        assert 'function fmtPlace' in self.panel_src, (
+            "viz_panel.js must define fmtPlace — its absence is a silent regression"
+        )
+
+    def test_source_contains_EARLY_LIFE(self):
+        """viz_panel.js must contain section logic for 'Early Life' events."""
+        # The source uses 'Early Life' as a variable value; the rendered output
+        # is uppercased at runtime via .toUpperCase(). Either form is acceptable.
+        assert 'Early Life' in self.panel_src or 'EARLY LIFE' in self.panel_src, (
+            "viz_panel.js must contain 'Early Life' or 'EARLY LIFE' section logic"
+        )
+
+    def test_source_contains_marr_card(self):
+        """viz_panel.js must contain marr-card class for marriage cards."""
+        assert 'marr-card' in self.panel_src, (
+            "viz_panel.js must render marr-card class for marriage events"
+        )
+
+    def test_source_contains_detail_aka(self):
+        """viz_panel.js must reference detail-aka element for aliases."""
+        assert 'detail-aka' in self.panel_src, (
+            "viz_panel.js must render aliases into the detail-aka element"
+        )
+
+    def test_source_contains_resi_rollup_logic(self):
+        """viz_panel.js must contain RESI rollup logic (collapseResidences or prevResi)."""
+        assert 'collapseResidences' in self.panel_src or 'prevResi' in self.panel_src or '_yearRange' in self.panel_src, (
+            "viz_panel.js must implement RESI rollup logic "
+            "(collapseResidences function or equivalent _yearRange/_prevResi pattern)"
+        )

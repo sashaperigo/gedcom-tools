@@ -175,8 +175,8 @@ describe('renderPanel', () => {
   });
 
   it('renders birth and death years', () => {
-    const panelEl    = makeFakeEl('detail-panel');
-    const lifespanEl = makeFakeEl('detail-lifespan');
+    const panelEl       = makeFakeEl('detail-panel');
+    const lifespanRowEl = makeFakeEl('detail-lifespan-row');
     _state = { panelOpen: true, panelXref: '@I2@' };
 
     global.PEOPLE['@I2@'] = {
@@ -187,8 +187,8 @@ describe('renderPanel', () => {
 
     global.document = {
       getElementById: (id) => {
-        if (id === 'detail-panel')    return panelEl;
-        if (id === 'detail-lifespan') return lifespanEl;
+        if (id === 'detail-panel')        return panelEl;
+        if (id === 'detail-lifespan-row') return lifespanRowEl;
         return makeFakeEl(id);
       },
       addEventListener: () => {},
@@ -197,8 +197,8 @@ describe('renderPanel', () => {
     initPanel(panelEl);
     renderPanel();
 
-    expect(lifespanEl.innerHTML).toContain('1880');
-    expect(lifespanEl.innerHTML).toContain('1950');
+    expect(lifespanRowEl.innerHTML).toContain('1880');
+    expect(lifespanRowEl.innerHTML).toContain('1950');
   });
 
   it('renders fact rows for each fact', () => {
@@ -362,5 +362,367 @@ describe('renderPanel', () => {
       // If not exported, just verify the HTML contains the godparent name
       expect(eventsEl.innerHTML).toContain('Kostas Manolakis');
     }
+  });
+});
+
+// ── Tests for restored features from old viz_detail.js ─────────────────────
+
+describe('renderPanel — restored section headers', () => {
+  it('renders EARLY LIFE section header for person born 1820, died 1871', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@EARLY@' };
+
+    global.PEOPLE['@EARLY@'] = {
+      name: 'Early Person',
+      birth_year: '1820', death_year: '1871',
+      sex: 'M',
+      events: [
+        { tag: 'BIRT', date: '1820', place: 'Athens, Greece', citations: [], event_idx: 0 },
+        { tag: 'RESI', date: '1835', place: 'Smyrna, Turkey', citations: [], event_idx: 0 },
+        { tag: 'DEAT', date: '1871', place: 'Constantinople', citations: [], event_idx: 0 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    expect(eventsEl.innerHTML).toContain('EARLY LIFE');
+  });
+
+  it('renders LATER LIFE section header for death/burial events', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@LATE@' };
+
+    global.PEOPLE['@LATE@'] = {
+      name: 'Later Person',
+      birth_year: '1880', death_year: '1960',
+      sex: 'F',
+      events: [
+        { tag: 'BIRT', date: '1880', place: '', citations: [], event_idx: 0 },
+        { tag: 'DEAT', date: '1960', place: '', citations: [], event_idx: 0 },
+        { tag: 'BURI', date: '1960', place: '', citations: [], event_idx: 0 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    expect(eventsEl.innerHTML).toContain('LATER LIFE');
+  });
+});
+
+describe('renderPanel — RESI rollup', () => {
+  it('rolls up consecutive RESI events at same place into a year range', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@RESI@' };
+
+    global.PEOPLE['@RESI@'] = {
+      name: 'Resi Person',
+      birth_year: '1940', death_year: null,
+      sex: 'M',
+      events: [
+        { tag: 'RESI', date: '1970', place: 'Columbus, Franklin, Ohio, USA', citations: [], event_idx: 0 },
+        { tag: 'RESI', date: '1985', place: 'Columbus, Franklin, Ohio, USA', citations: [], event_idx: 1 },
+        { tag: 'RESI', date: '1998', place: 'Columbus, Franklin, Ohio, USA', citations: [], event_idx: 2 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    // Should contain the year range (not three separate rows)
+    expect(eventsEl.innerHTML).toMatch(/1970.*1998|1970\u20131998/);
+    // Should not contain three separate year entries
+    const matches = (eventsEl.innerHTML.match(/1985/g) || []);
+    expect(matches.length).toBe(0);  // 1985 should be absorbed into the range
+  });
+});
+
+describe('renderPanel — EVEN tag uses type label', () => {
+  it('EVEN event renders type field as label, not "EVEN"', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@EVEN@' };
+
+    global.PEOPLE['@EVEN@'] = {
+      name: 'Event Person',
+      birth_year: '1920', death_year: null,
+      sex: 'M',
+      events: [
+        { tag: 'EVEN', type: 'Military Service', date: '1943', place: '', citations: [], event_idx: 0 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    expect(eventsEl.innerHTML).toContain('Military Service');
+    // "EVEN" as a visible label must not appear (may appear in data-tag or class)
+    // The prose/heading text should not read "EVEN"
+    expect(eventsEl.innerHTML).not.toMatch(/>EVEN</);
+  });
+});
+
+describe('renderPanel — blank fact filter', () => {
+  it('event with no date, place, inline_val, or note is absent from rendered output', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@BLANK@' };
+    const beforeLen = eventsEl.innerHTML.length;
+
+    global.PEOPLE['@BLANK@'] = {
+      name: 'Blank Person',
+      birth_year: null, death_year: null,
+      sex: 'M',
+      events: [
+        { tag: 'RESI', date: null, place: null, inline_val: null, note: null, citations: [], event_idx: 0 },
+        { tag: 'BIRT', date: '1900', place: '', citations: [], event_idx: 0 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    // The blank RESI should not create a "Residence" row
+    // We count how many event rows appear — only BIRT should be visible
+    const html = eventsEl.innerHTML;
+    // BIRT event renders as 'Born 1900' (via buildProse)
+    expect(html).toContain('Born');
+    // Blank RESI must not render a Residence row
+    expect(html).not.toContain('Residence');
+  });
+});
+
+describe('renderPanel — aliases (AKA)', () => {
+  it('detail-aka section contains alias entries for _name_record events', () => {
+    const panelEl = makeFakeEl('detail-panel');
+    const akaEl   = makeFakeEl('detail-aka');
+    _state = { panelOpen: true, panelXref: '@AKA@' };
+
+    global.PEOPLE['@AKA@'] = {
+      name: 'Main Name',
+      birth_year: null, death_year: null,
+      sex: 'M',
+      events: [
+        { tag: 'NAME', _name_record: true, _name_occurrence: 0, note: 'First Alias', type: 'AKA', date: null, place: null, citations: [], event_idx: null },
+        { tag: 'NAME', _name_record: true, _name_occurrence: 1, note: 'Second Alias', type: 'AKA', date: null, place: null, citations: [], event_idx: null },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')  return panelEl;
+        if (id === 'detail-aka')    return akaEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    expect(akaEl.innerHTML).toContain('First Alias');
+    expect(akaEl.innerHTML).toContain('Second Alias');
+  });
+});
+
+describe('renderPanel — marriage card', () => {
+  it('MARR event renders a .marr-card element', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@MARR@' };
+
+    global.PEOPLE['@MARR@'] = {
+      name: 'Married Person',
+      birth_year: '1900', death_year: null,
+      sex: 'M',
+      events: [
+        { tag: 'MARR', date: '1925', place: 'Athens', spouse: 'Maria', spouse_xref: '@SP@',
+          fam_xref: '@F1@', marr_idx: 0, citations: [], event_idx: null },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    expect(eventsEl.innerHTML).toContain('marr-card');
+  });
+});
+
+describe('renderPanel — event note in italics', () => {
+  it('event note is wrapped in italic element or evt-note-inline class', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@NOTE@' };
+
+    global.PEOPLE['@NOTE@'] = {
+      name: 'Noted Person',
+      birth_year: '1900', death_year: null,
+      sex: 'M',
+      events: [
+        { tag: 'BIRT', date: '1900', place: 'Smyrna', note: 'Born at dawn', citations: [], event_idx: 0 },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    const html = eventsEl.innerHTML;
+    expect(html).toContain('Born at dawn');
+    // Must be in an italic element or .evt-note-inline
+    expect(html).toMatch(/(<i>|evt-note-inline)/);
+  });
+});
+
+describe('renderPanel — source badge count', () => {
+  it('event with 3 citations renders badge text "3 src"', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const eventsEl = makeFakeEl('detail-events');
+    _state = { panelOpen: true, panelXref: '@SRC@' };
+
+    global.PEOPLE['@SRC@'] = {
+      name: 'Sourced Person',
+      birth_year: '1900', death_year: null,
+      sex: 'M',
+      events: [
+        {
+          tag: 'BIRT', date: '1900', place: 'Smyrna',
+          citations: [
+            { sourceXref: '@S1@', page: null },
+            { sourceXref: '@S2@', page: null },
+            { sourceXref: '@S3@', page: null },
+          ],
+          event_idx: 0,
+        },
+      ],
+      notes: [], sources: [],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')   return panelEl;
+        if (id === 'detail-events')  return eventsEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    expect(eventsEl.innerHTML).toContain('3 src');
+  });
+});
+
+describe('renderPanel — person-level sources collapsed by default', () => {
+  it('detail-sources section is present and collapsed (no expanded content without interaction)', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const sourcesEl = makeFakeEl('detail-sources');
+    _state = { panelOpen: true, panelXref: '@SRCP@' };
+
+    global.PEOPLE['@SRCP@'] = {
+      name: 'Person With Sources',
+      birth_year: '1900', death_year: null,
+      sex: 'M',
+      events: [],
+      notes: [],
+      sources: [
+        { title: 'Birth Register 1900', url: null },
+        { title: 'Census 1910', url: null },
+      ],
+    };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')    return panelEl;
+        if (id === 'detail-sources')  return sourcesEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    const html = sourcesEl.innerHTML;
+    // Should render a Sources heading/toggle
+    expect(html).toContain('Sources');
+    // Content should initially be hidden (wrapped in a display:none container or toggle class)
+    // The old code used a notes-body hidden container pattern
+    expect(html).toMatch(/notes-body|sources-body|display.*none|collapsed/i);
   });
 });

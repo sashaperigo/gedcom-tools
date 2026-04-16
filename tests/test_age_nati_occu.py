@@ -181,9 +181,16 @@ class TestDeatAgeDisplay:
         assert 'function fmtAge' in _FULL_SOURCE
 
     def test_deat_age_branch_in_prose(self):
-        # The DEAT case must reference fact.age and call fmtAge
-        assert 'fact.age' in _FULL_SOURCE
-        assert 'fmtAge(fact.age)' in _FULL_SOURCE
+        # The DEAT case must reference the age field and call fmtAge.
+        # The variable may be named 'fact' or 'evt' depending on the impl.
+        assert ('fact.age' in _FULL_SOURCE or 'evt.age' in _FULL_SOURCE), (
+            "DEAT prose must reference the .age field"
+        )
+        assert (
+            'fmtAge(fact.age)' in _FULL_SOURCE
+            or 'fmtAge(evt.age)' in _FULL_SOURCE
+            or 'fmtAge(age)' in _FULL_SOURCE
+        ), "DEAT prose must call fmtAge on the age field"
 
     def test_deat_age_prose_in_rendered_html(self, people, indis, fams, parsed):
         tree = build_tree_json('@I1@', indis, fams)
@@ -300,9 +307,10 @@ class TestOccuProse:
     """
 
     def test_occu_prose_uses_inline_val(self):
-        # The OCCU case must use fact.inline_val (the value on the 1 OCCU line), not type
-        assert 'fact.inline_val' in _FULL_SOURCE, (
-            "OCCU prose must use fact.inline_val for the job title"
+        # The OCCU case must use inline_val (the value on the 1 OCCU line), not type.
+        # The variable may be named 'fact' or 'evt' depending on the impl.
+        assert ('fact.inline_val' in _FULL_SOURCE or 'evt.inline_val' in _FULL_SOURCE), (
+            "OCCU prose must use inline_val for the job title"
         )
         assert 'Worked as' in _FULL_SOURCE, (
             "OCCU prose must still include 'Worked as' prefix"
