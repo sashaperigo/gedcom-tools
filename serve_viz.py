@@ -1088,10 +1088,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 else:
                     event_idx = int(body['event_idx'])
                     start, end, err = _find_event_block(lines, xref, tag, event_idx)
+                if err and fam_xref:
+                    # FAM has no event tag yet (placeholder from viz) — insert it
+                    new_lines = _insert_fam_event(lines, fam_xref, tag, updates)
+                    err = None
                 if err:
                     resp = json.dumps({'ok': False, 'error': err}).encode()
                 else:
-                    new_lines = _edit_event_fields(lines, start, end, updates)
+                    new_lines = _edit_event_fields(lines, start, end, updates) if start is not None else new_lines
                     _write_gedcom_atomic(new_lines)
                     print(f"[event-edit] {fam_xref or xref} {tag} updated")
                     regenerate(body.get('current_person'))

@@ -849,6 +849,16 @@ header h1 { font-size: 16px; font-weight: 600; }
 #alias-modal-overlay.open { display: flex; }
 #alias-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 420px; max-width: 90vw; }
+/* ── Add-godparent modal ─────────────────────────────────── */
+#add-godparent-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#add-godparent-modal-overlay.open { display: flex; }
+#add-godparent-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#add-godparent-modal-results { max-height: 160px; overflow-y: auto; background: #0f172a;
+  border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
+.godparent-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.godparent-result-item:hover { background: #1e3a5f; }
 /* ── Sources viewer modal ────────────────────────────────── */
 #sources-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   z-index: 1000; align-items: center; justify-content: center; }
@@ -1059,8 +1069,13 @@ header h1 { font-size: 16px; font-weight: 600; }
   <div id="alias-modal">
     <h3 id="alias-modal-title">Add Secondary Name</h3>
     <div class="event-modal-field">
-      <label>Name</label>
-      <input type="text" id="alias-modal-name" placeholder="e.g. Paul Kemerli"
+      <label>Given Name(s)</label>
+      <input type="text" id="alias-modal-given" placeholder="e.g. Paul"
+             onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="alias-modal-surname" placeholder="e.g. Kemerli"
              onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
     </div>
     <div class="event-modal-field">
@@ -1078,6 +1093,21 @@ header h1 { font-size: 16px; font-weight: 600; }
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeAliasModal()">Cancel</button>
       <button class="event-modal-save" id="alias-modal-save-btn" onclick="submitAliasModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="add-godparent-modal-overlay" onclick="if(event.target===this)closeAddGodparentModal()">
+  <div id="add-godparent-modal">
+    <h3 id="add-godparent-modal-title">Add Godparent</h3>
+    <div class="event-modal-field">
+      <label>Search by name</label>
+      <input type="text" id="add-godparent-modal-search" placeholder="Type a name\u2026"
+             onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
+      <div id="add-godparent-modal-results"></div>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddGodparentModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddGodparentModal()">Add</button>
     </div>
   </div>
 </div>
