@@ -405,3 +405,34 @@ class TestAddMarriageEndpoint:
             'xref': '@I2@', 'tag': 'MARR', 'fields': {},
         })
         assert resp['ok'] is False
+
+
+# ===========================================================================
+# /api/edit_event  – FAM with no existing MARR tag (placeholder fallback)
+# ===========================================================================
+
+class TestEditEventFallbackInsert:
+
+    def test_edit_marr_on_fam_with_no_marr_inserts_event(self, live_server):
+        """@F1@ has HUSB/WIFE but no MARR; editing it should insert the event."""
+        ged, post, _ = live_server
+        resp = post('/api/edit_event', {
+            'xref': '@I2@', 'tag': 'MARR', 'fam_xref': '@F1@',
+            'marr_occurrence': 0,
+            'updates': {'DATE': '1984', 'PLAC': 'Ann Arbor, Michigan, USA'},
+        })
+        assert resp['ok'] is True
+        text = ged.read_text(encoding='utf-8')
+        assert '1 MARR' in text
+        assert '2 DATE 1984' in text
+        assert '2 PLAC Ann Arbor, Michigan, USA' in text
+
+    def test_edit_marr_fallback_returns_people(self, live_server):
+        ged, post, _ = live_server
+        resp = post('/api/edit_event', {
+            'xref': '@I2@', 'tag': 'MARR', 'fam_xref': '@F1@',
+            'marr_occurrence': 0,
+            'updates': {'DATE': '1984'},
+        })
+        assert 'people' in resp
+        assert '@I2@' in resp['people']

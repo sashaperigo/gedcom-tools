@@ -993,8 +993,13 @@ header h1 { font-size: 16px; font-weight: 600; }
   <div id="alias-modal">
     <h3 id="alias-modal-title">Add Secondary Name</h3>
     <div class="event-modal-field">
-      <label>Name</label>
-      <input type="text" id="alias-modal-name" placeholder="e.g. Paul Kemerli"
+      <label>Given Name(s)</label>
+      <input type="text" id="alias-modal-given" placeholder="e.g. Paul"
+             onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="alias-modal-surname" placeholder="e.g. Kemerli"
              onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
     </div>
     <div class="event-modal-field">

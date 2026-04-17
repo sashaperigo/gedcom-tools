@@ -360,13 +360,17 @@ function openAliasModal(xref, nameOccurrence, currentName, currentType, isNameRe
   document.getElementById('alias-modal-title').textContent =
     (isAdd ? 'Add Secondary Name \u2014 ' : 'Edit Name \u2014 ') + _personName(xref);
   document.getElementById('alias-modal-save-btn').textContent = isAdd ? 'Add' : 'Save';
-  document.getElementById('alias-modal-name').value = currentName || '';
+  // Split currentName into given/surname for pre-fill
+  const nameParts = (currentName || '').trim();
+  const lastSpace = nameParts.lastIndexOf(' ');
+  document.getElementById('alias-modal-given').value = lastSpace > -1 ? nameParts.slice(0, lastSpace) : nameParts;
+  document.getElementById('alias-modal-surname').value = lastSpace > -1 ? nameParts.slice(lastSpace + 1) : '';
   // Set the dropdown; fall back to AKA if the value isn't in the list
   const sel = document.getElementById('alias-modal-type');
   const opt = [...sel.options].find(o => o.value === (currentType || 'AKA'));
   sel.value = opt ? opt.value : 'AKA';
   document.getElementById('alias-modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('alias-modal-name').focus(), 50);
+  setTimeout(() => document.getElementById('alias-modal-given').focus(), 50);
 }
 
 function closeAliasModal() {
@@ -404,9 +408,11 @@ async function submitAliasModal() {
   const xref      = _aliasModalXref;
   const nameOcc   = _aliasModalNameOccurrence;
   const isAdd     = nameOcc === null || nameOcc === undefined;
-  const name      = document.getElementById('alias-modal-name').value.trim();
+  const given     = document.getElementById('alias-modal-given').value.trim();
+  const surname   = document.getElementById('alias-modal-surname').value.trim();
+  const name      = [given, surname].filter(Boolean).join(' ');
   const nameType  = document.getElementById('alias-modal-type').value;
-  if (!name) { alert('Please enter a name.'); return; }
+  if (!name) { alert('Please enter a given name or surname.'); return; }
   closeAliasModal();
   let endpoint, body;
   if (isAdd) {
