@@ -4325,6 +4325,10 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_bare_events(path, dry_run=dry_run)
     fixes_applied += fix_sole_event_type_alternate(path, dry_run=dry_run)
     fixes_applied += fix_sort_events(path, dry_run=dry_run)
+    # fix_sort_events round-trips through parse/write, which can reformat NOTE
+    # records into long lines with trailing spaces before CONC. Re-run both
+    # long-line wrapping and whitespace stripping after it.
+    fixes_applied += fix_long_lines(path, dry_run=dry_run)
     # Run whitespace strip again — some fixers (e.g. fix_name_pieces) can
     # introduce trailing whitespace on blank CONT lines.
     fixes_applied += fix_trailing_whitespace(path, dry_run=dry_run)

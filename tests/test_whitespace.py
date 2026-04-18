@@ -8,18 +8,26 @@ but can cause issues with GEDCOM parsers and diffs.
 Run `gedcom-lint --fix-whitespace yourfile.ged` to auto-fix.
 """
 import os
+import re
 import pytest
 
 GED_PATH = os.environ.get("GED_FILE", "")
+
+_CONC_RE = re.compile(r"^\d+ CONC")
 
 
 def collect_trailing_whitespace(path: str):
     violations = []
     with open(path, encoding="utf-8") as f:
-        for lineno, raw in enumerate(f, 1):
-            stripped = raw.rstrip("\n")
-            if stripped != stripped.rstrip():
-                violations.append((lineno, stripped))
+        lines = f.readlines()
+    for i, raw in enumerate(lines):
+        stripped = raw.rstrip("\n")
+        if stripped != stripped.rstrip():
+            # Trailing space before a CONC continuation is semantically valid
+            # in GEDCOM 5.5.1/5.5.5 (the space is the inter-word separator).
+            next_raw = lines[i + 1] if i + 1 < len(lines) else ""
+            if not _CONC_RE.match(next_raw.strip()):
+                violations.append((i + 1, stripped))
     return violations
 
 

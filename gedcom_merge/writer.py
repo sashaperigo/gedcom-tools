@@ -73,10 +73,14 @@ def _split_value(level: int, tag: str, value: str) -> list[str]:
             if len(remaining) <= max_val_len:
                 lines.append(prefix + remaining)
                 break
-            # Split here
+            # Split here — move any trailing space to the start of the next
+            # CONC value (GEDCOM 5.5.5 recommendation: leading space on the
+            # continuation line is less likely to be lost than trailing space).
             chunk = remaining[:max_val_len]
+            while chunk.endswith(' ') and len(chunk) > 0:
+                chunk = chunk[:-1]
             lines.append(prefix + chunk)
-            remaining = remaining[max_val_len:]
+            remaining = remaining[len(chunk):]
             # Continuation
             prefix = f'{lvl_to_use + (0 if first else 0)} CONC '
             prefix = f'{lvl_to_use + 1} CONC '
