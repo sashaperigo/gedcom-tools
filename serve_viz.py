@@ -766,15 +766,23 @@ def _find_fact_for_citation(
     """
     Given a fact_key like 'BIRT:0', return the line index of the end of that fact
     block — i.e., where to insert a citation.  Returns (insert_pos, err).
-    If fact_key is None or 'SOUR:null'/empty, returns (indi_end, None) for
-    a person-level citation (to be inserted as 1 SOUR).
+    If fact_key is None or 'SOUR:null'/empty, returns the end of the record
+    (for a person-level citation at level 1). For FAM xrefs (@F...@) only a
+    fact_key is valid; person-level citations on FAM are not supported.
     """
-    indi_start, indi_end, err = _find_indi_block(lines, xref)
-    if err:
-        return None, err
-
-    if not fact_key or fact_key.startswith('SOUR:') or fact_key == 'null':
-        return indi_end, None
+    is_fam = xref.startswith('@F')
+    if is_fam:
+        fam_start, fam_end, err = _find_fam_block(lines, xref)
+        if err:
+            return None, err
+        if not fact_key or fact_key.startswith('SOUR:') or fact_key == 'null':
+            return fam_end, None
+    else:
+        indi_start, indi_end, err = _find_indi_block(lines, xref)
+        if err:
+            return None, err
+        if not fact_key or fact_key.startswith('SOUR:') or fact_key == 'null':
+            return indi_end, None
 
     parts = fact_key.split(':')
     if len(parts) != 2:
@@ -785,7 +793,10 @@ def _find_fact_for_citation(
     except ValueError:
         occurrence = 0
 
-    start, end, err = _find_event_block(lines, xref, tag, occurrence)
+    if is_fam:
+        start, end, err = _find_fam_event_block(lines, xref, tag, occurrence)
+    else:
+        start, end, err = _find_event_block(lines, xref, tag, occurrence)
     if err:
         return None, err
     return end, None
@@ -808,27 +819,33 @@ def _find_citation_block(
     block_end: exclusive end of that citation block
     citation_level: 1 or 2
     """
-    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    is_fam = xref.startswith('@F')
+    if is_fam:
+        rec_start, rec_end, err = _find_fam_block(lines, xref)
+    else:
+        rec_start, rec_end, err = _find_indi_block(lines, xref)
     if err:
         return None, None, None, err
 
     parts = citation_key.split(':')
 
-    # Person-level: 'SOUR:N'
+    # Person-level: 'SOUR:N' (INDI only — FAM has no level-1 SOUR concept here)
     if parts[0] == 'SOUR' and len(parts) == 2:
+        if is_fam:
+            return None, None, None, f'Person-level citations not supported on FAM records'
         try:
             cite_n = int(parts[1])
         except ValueError:
             return None, None, None, f'Invalid citation_key: {citation_key!r}'
         count = 0
-        for i in range(indi_start + 1, indi_end):
+        for i in range(rec_start + 1, rec_end):
             m = _TAG_RE.match(lines[i])
             if not m:
                 continue
             if int(m.group(1)) == 1 and m.group(2) == 'SOUR':
                 if count == cite_n:
                     j = i + 1
-                    while j < indi_end:
+                    while j < rec_end:
                         sm = _TAG_RE.match(lines[j])
                         if sm and int(sm.group(1)) <= 1:
                             break
@@ -847,7 +864,10 @@ def _find_citation_block(
     except ValueError:
         return None, None, None, f'Invalid citation_key: {citation_key!r}'
 
-    fact_start, fact_end, err = _find_event_block(lines, xref, fact_tag, fact_n)
+    if is_fam:
+        fact_start, fact_end, err = _find_fam_event_block(lines, xref, fact_tag, fact_n)
+    else:
+        fact_start, fact_end, err = _find_event_block(lines, xref, fact_tag, fact_n)
     if err:
         return None, None, None, err
 
@@ -1409,10 +1429,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             text      = (body.get('text') or '').strip()
             note      = (body.get('note') or '').strip()
             lines     = GED.read_text(encoding='utf-8').splitlines()
+            is_fam    = xref.startswith('@F')
 
             # Determine insertion point and citation level
             if not fact_key or fact_key == 'null' or str(fact_key).startswith('SOUR:'):
-                # Person-level citation at level 1
+                # Person-level citation at level 1 (INDI only — FAM has no level-1 SOUR semantics here)
+                if is_fam:
+                    self.send_error(400, 'fact_key is required when adding a citation on a FAM record')
+                    return
                 _, indi_end, err = _find_indi_block(lines, xref)
                 if err:
                     self.send_error(400, err)
@@ -1431,7 +1455,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             print(f"[citation-add] {xref} {fact_key} → {sour_xref}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
             indis, fams, sources = parse_gedcom(str(GED))
-            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            if is_fam and xref in fams:
+                fam = fams[xref]
+                xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife')) if x}
+            else:
+                xrefs_to_refresh = {xref}
+            updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
             resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/edit_citation':
@@ -1475,7 +1504,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             print(f"[citation-delete] {xref} {citation_key}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
             indis, fams, sources = parse_gedcom(str(GED))
-            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            if xref.startswith('@F') and xref in fams:
+                fam = fams[xref]
+                xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife')) if x}
+            else:
+                xrefs_to_refresh = {xref}
+            updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
             resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         # ------------------------------------------------------------------ #

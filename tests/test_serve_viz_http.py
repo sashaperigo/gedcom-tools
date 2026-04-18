@@ -961,6 +961,110 @@ class TestDeleteCitationEndpoint:
 
 
 # ===========================================================================
+# /api/add_citation and /api/delete_citation on FAM records (MARR/DIV)
+# ===========================================================================
+
+class TestFamCitationEndpoints:
+    """Citation endpoints must accept @F..@ xrefs and operate on MARR/DIV events
+    living in FAM blocks, not INDI blocks."""
+
+    def _add_source(self, post):
+        return post('/api/add_source', {
+            'titl': 'Marriage Register', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+
+    def test_add_citation_to_fam_marr_writes_sour_under_marr(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.12', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        # The new SOUR line must sit inside @F5@'s MARR block, at level 2.
+        lines = text.splitlines()
+        in_f5 = False
+        in_marr = False
+        found = False
+        for ln in lines:
+            if ln.startswith('0 @F5@ FAM'):
+                in_f5 = True; continue
+            if in_f5 and ln.startswith('0 '):
+                break
+            if in_f5 and ln == '1 MARR':
+                in_marr = True; continue
+            if in_marr and ln.startswith('1 '):
+                in_marr = False
+            if in_marr and ln == f'2 SOUR {sour_xref}':
+                found = True
+        assert found, f'2 SOUR {sour_xref} not found inside @F5@\'s MARR block'
+        assert '3 PAGE p.12' in text
+
+    def test_add_citation_response_refreshes_both_spouses(self, live_server):
+        """Adding a MARR citation on @F5@ must refresh both @I1@ and @I12@ in the
+        response so each spouse's panel shows the new citation count."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.12', 'text': '', 'note': '',
+        })
+        assert 'people' in resp
+        assert '@I1@' in resp['people']
+        assert '@I12@' in resp['people']
+        for spouse in ('@I1@', '@I12@'):
+            marr = next(e for e in resp['people'][spouse]['events'] if e['tag'] == 'MARR')
+            assert any(c.get('sourceXref') == sour_xref for c in marr.get('citations', [])), \
+                f'MARR citation not reflected in refreshed {spouse}.events'
+
+    def test_delete_fam_marr_citation_removes_sour_block(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.12', 'text': '', 'note': '',
+        })
+        resp = post('/api/delete_citation', {
+            'xref': '@F5@', 'citation_key': 'MARR:0:0',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert f'2 SOUR {sour_xref}' not in text
+        assert '3 PAGE p.12' not in text
+
+    def test_delete_fam_response_refreshes_both_spouses(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.12', 'text': '', 'note': '',
+        })
+        resp = post('/api/delete_citation', {
+            'xref': '@F5@', 'citation_key': 'MARR:0:0',
+        })
+        assert '@I1@' in resp.get('people', {})
+        assert '@I12@' in resp.get('people', {})
+        for spouse in ('@I1@', '@I12@'):
+            marr = next(e for e in resp['people'][spouse]['events'] if e['tag'] == 'MARR')
+            assert not any(c.get('sourceXref') == sour_xref for c in marr.get('citations', [])), \
+                f'deleted citation still appears on {spouse}.MARR'
+
+    def test_invalid_fam_xref_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        sour_xref = self._add_source(post)
+        try:
+            post('/api/add_citation', {
+                'xref': '@F9999@', 'sour_xref': sour_xref,
+                'fact_key': 'MARR:0', 'page': '', 'text': '', 'note': '',
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+
+# ===========================================================================
 # /api/add_person
 # ===========================================================================
 
