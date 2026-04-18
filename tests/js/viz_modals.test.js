@@ -994,3 +994,53 @@ describe('openSourcesModal and closeSourcesModal', () => {
     expect(list.innerHTML).toContain('src-modal-add-btn');
   });
 });
+
+// ── _buildSourcesModalContent — FAM events (MARR/DIV) ──────────────────────
+
+describe('_buildSourcesModalContent — FAM events use fam_xref + marr_idx/div_idx', () => {
+  const SOURCES = { '@S1@': { titl: 'Marriage Register' } };
+
+  it('MARR event: delete button uses fam_xref and MARR:<marr_idx>', () => {
+    const evt = {
+      tag: 'MARR', date: '1920', event_idx: null,
+      marr_idx: 2, fam_xref: '@F5@',
+      citations: [{ sourceXref: '@S1@', page: '12' }],
+    };
+    const html = _buildSourcesModalContent(evt.citations, SOURCES, '@I1@', evt);
+    expect(html).toContain('@F5@');
+    expect(html).toContain('MARR:2:0');
+    // onclick for delete should use @F5@, not the panel INDI xref
+    expect(html).toMatch(/deleteSourceFromModal\(\s*&quot;@F5@&quot;/);
+  });
+
+  it('MARR event: "+ Add source" button uses fam_xref and MARR:<marr_idx>', () => {
+    const evt = {
+      tag: 'MARR', date: '1920', event_idx: null,
+      marr_idx: 0, fam_xref: '@F5@',
+      citations: [],
+    };
+    const html = _buildSourcesModalContent(evt.citations, SOURCES, '@I1@', evt);
+    expect(html).toMatch(/showAddCitationModal\(\s*&quot;@F5@&quot;\s*,\s*&quot;MARR:0&quot;/);
+  });
+
+  it('DIV event: uses fam_xref and DIV:<div_idx>', () => {
+    const evt = {
+      tag: 'DIV', date: '1925', event_idx: null,
+      div_idx: 1, fam_xref: '@F5@',
+      citations: [{ sourceXref: '@S1@', page: null }],
+    };
+    const html = _buildSourcesModalContent(evt.citations, SOURCES, '@I1@', evt);
+    expect(html).toMatch(/showAddCitationModal\(\s*&quot;@F5@&quot;\s*,\s*&quot;DIV:1&quot;/);
+    expect(html).toMatch(/deleteSourceFromModal\(\s*&quot;@F5@&quot;\s*,\s*&quot;DIV:1:0&quot;/);
+  });
+
+  it('INDI event: still uses panel xref and event_idx (backward compat)', () => {
+    const evt = {
+      tag: 'BIRT', date: '1900', event_idx: 0,
+      citations: [{ sourceXref: '@S1@', page: null }],
+    };
+    const html = _buildSourcesModalContent(evt.citations, SOURCES, '@I1@', evt);
+    expect(html).toMatch(/deleteSourceFromModal\(\s*&quot;@I1@&quot;\s*,\s*&quot;BIRT:0:0&quot;/);
+    expect(html).toMatch(/showAddCitationModal\(\s*&quot;@I1@&quot;\s*,\s*&quot;BIRT:0&quot;/);
+  });
+});

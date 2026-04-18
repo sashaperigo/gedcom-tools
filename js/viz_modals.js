@@ -711,9 +711,21 @@ function _refreshSourcesModalContent() {
 }
 
 function _buildSourcesModalContent(citations, sources, xref, evt) {
-  const xrefQ     = JSON.stringify(String(xref || '')).replace(/"/g, '&quot;');
   const tag       = (evt && evt.tag) || '';
-  const eventOcc  = (evt && evt.event_idx != null) ? evt.event_idx : 0;
+  // FAM-originated events (MARR/DIV) carry fam_xref + marr_idx/div_idx.
+  // Citations on those events live on the FAM record, so we must address
+  // them via the FAM xref — not the INDI xref of the currently-viewed person.
+  const isFamEvt  = !!(evt && evt.fam_xref);
+  const targetXref = isFamEvt ? evt.fam_xref : xref;
+  let eventOcc;
+  if (isFamEvt) {
+    eventOcc = (tag === 'DIV')
+      ? (evt.div_idx != null ? evt.div_idx : 0)
+      : (evt.marr_idx != null ? evt.marr_idx : 0);
+  } else {
+    eventOcc = (evt && evt.event_idx != null) ? evt.event_idx : 0;
+  }
+  const xrefQ     = JSON.stringify(String(targetXref || '')).replace(/"/g, '&quot;');
   const factKey   = tag ? `${tag}:${eventOcc}` : '';
   const factKeyQ  = JSON.stringify(factKey).replace(/"/g, '&quot;');
 
@@ -752,7 +764,11 @@ async function deleteSourceFromModal(xref, citationKey) {
   try {
     const resp = await apiDeleteCitation(xref, citationKey);
     if (resp && resp.ok) {
-      if (resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+      // FAM citations refresh both spouses; merge every returned person so
+      // other panels stay in sync if the user navigates to a spouse next.
+      if (resp.people) {
+        for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+      }
       _refreshSourcesModalContent();
       if (typeof renderPanel === 'function') renderPanel();
     } else {
@@ -929,7 +945,10 @@ async function submitAddCitationModal() {
   if (!sourceXref) { alert('Please select a source.'); return; }
   try {
     const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note);
-    if (resp && resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+    // FAM citations refresh both spouses; merge every returned person.
+    if (resp && resp.people) {
+      for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+    }
     // If the Sources modal is still open (we arrived here from its "+ Add source"
     // button), refresh its content in place instead of closing it.
     if (_sourcesModalXref != null) _refreshSourcesModalContent();
