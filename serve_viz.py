@@ -680,9 +680,12 @@ def _edit_event_fields(
 
 
 def _insert_new_event(
-    lines: list[str], xref: str, event_tag: str, fields: dict
+    lines: list[str], xref: str, event_tag: str, fields: dict,
 ) -> tuple[list[str], str | None]:
     """Insert a new event block just before the end of xref's INDI record."""
+    event_tag = (event_tag or '').strip().upper()
+    if not event_tag or not re.match(r'^[A-Z_][A-Z0-9_]*$', event_tag):
+        return lines, f'Invalid event tag: {event_tag!r}'
     _, indi_end, err = _find_indi_block(lines, xref)
     if err:
         return lines, err
@@ -699,7 +702,303 @@ def _insert_new_event(
                 new_block.extend(_encode_event_note_lines(val))
             else:
                 new_block.append(f'2 {subtag} {val}')
-    return lines[:indi_end] + new_block + lines[indi_end:], None
+    new_lines = lines[:indi_end] + new_block + lines[indi_end:]
+    return new_lines, None
+
+
+# ---------------------------------------------------------------------------
+# Source record helpers
+# ---------------------------------------------------------------------------
+
+def _next_sour_xref(lines: list[str]) -> str:
+    """Scan all lines for @Sn@ references and return @S(max+1)@."""
+    pattern = re.compile(r'@S(\d+)@')
+    max_n = 0
+    for line in lines:
+        for m in pattern.finditer(line):
+            max_n = max(max_n, int(m.group(1)))
+    return f'@S{max_n + 1}@'
+
+
+def _find_sour_block(lines: list[str], sour_xref: str) -> tuple[int | None, int | None, str | None]:
+    """Return (sour_start, sour_end, err) for a SOUR record."""
+    sour_start = next(
+        (i for i, l in enumerate(lines) if l.strip() == f'0 {sour_xref} SOUR'), None
+    )
+    if sour_start is None:
+        return None, None, f'Source {sour_xref} not found'
+    sour_end = next(
+        (i for i in range(sour_start + 1, len(lines)) if lines[i].startswith('0 ')),
+        len(lines),
+    )
+    return sour_start, sour_end, None
+
+
+_SOUR_OPTIONAL_TAGS = ('AUTH', 'PUBL', 'REPO', 'NOTE')
+
+
+def _build_sour_block(xref: str, titl: str, auth: str, publ: str, repo: str, note: str) -> list[str]:
+    """Build GEDCOM lines for a SOUR record."""
+    block = [f'0 {xref} SOUR', f'1 TITL {titl}']
+    for tag, val in (('AUTH', auth), ('PUBL', publ), ('REPO', repo), ('NOTE', note)):
+        if val and val.strip():
+            block.append(f'1 {tag} {val.strip()}')
+    return block
+
+
+# ---------------------------------------------------------------------------
+# Citation helpers
+# ---------------------------------------------------------------------------
+
+def _next_indi_xref(lines: list[str]) -> str:
+    """Scan all lines for @In@ references and return @I(max+1)@."""
+    pattern = re.compile(r'@I(\d+)@')
+    max_n = 0
+    for line in lines:
+        for m in pattern.finditer(line):
+            max_n = max(max_n, int(m.group(1)))
+    return f'@I{max_n + 1}@'
+
+
+def _find_fact_for_citation(
+    lines: list[str], xref: str, fact_key: str | None
+) -> tuple[int | None, str | None]:
+    """
+    Given a fact_key like 'BIRT:0', return the line index of the end of that fact
+    block — i.e., where to insert a citation.  Returns (insert_pos, err).
+    If fact_key is None or 'SOUR:null'/empty, returns (indi_end, None) for
+    a person-level citation (to be inserted as 1 SOUR).
+    """
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None, err
+
+    if not fact_key or fact_key.startswith('SOUR:') or fact_key == 'null':
+        return indi_end, None
+
+    parts = fact_key.split(':')
+    if len(parts) != 2:
+        return None, f'Invalid fact_key format: {fact_key!r}'
+    tag = parts[0]
+    try:
+        occurrence = int(parts[1])
+    except ValueError:
+        occurrence = 0
+
+    start, end, err = _find_event_block(lines, xref, tag, occurrence)
+    if err:
+        return None, err
+    return end, None
+
+
+def _find_citation_block(
+    lines: list[str], xref: str, citation_key: str
+) -> tuple[int | None, int | None, int | None, str | None]:
+    """
+    Parse citation_key and locate the citation block.
+
+    citation_key formats:
+      'BIRT:0:0'  → fact tag BIRT, fact occurrence 0, citation occurrence 0 within that fact
+                    → citation is at level 2 (2 SOUR ...)
+      'SOUR:0'    → person-level citation 0
+                    → citation is at level 1 (1 SOUR ...)
+
+    Returns (block_start, block_end, citation_level, err).
+    block_start: index of the '2 SOUR ...' or '1 SOUR ...' line
+    block_end: exclusive end of that citation block
+    citation_level: 1 or 2
+    """
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None, None, None, err
+
+    parts = citation_key.split(':')
+
+    # Person-level: 'SOUR:N'
+    if parts[0] == 'SOUR' and len(parts) == 2:
+        try:
+            cite_n = int(parts[1])
+        except ValueError:
+            return None, None, None, f'Invalid citation_key: {citation_key!r}'
+        count = 0
+        for i in range(indi_start + 1, indi_end):
+            m = _TAG_RE.match(lines[i])
+            if not m:
+                continue
+            if int(m.group(1)) == 1 and m.group(2) == 'SOUR':
+                if count == cite_n:
+                    j = i + 1
+                    while j < indi_end:
+                        sm = _TAG_RE.match(lines[j])
+                        if sm and int(sm.group(1)) <= 1:
+                            break
+                        j += 1
+                    return i, j, 1, None
+                count += 1
+        return None, None, None, f'Person-level citation {cite_n} not found in {xref}'
+
+    # Fact-level: 'TAG:fact_n:cite_n'
+    if len(parts) != 3:
+        return None, None, None, f'Invalid citation_key format: {citation_key!r}'
+    fact_tag, fact_n_s, cite_n_s = parts
+    try:
+        fact_n = int(fact_n_s)
+        cite_n = int(cite_n_s)
+    except ValueError:
+        return None, None, None, f'Invalid citation_key: {citation_key!r}'
+
+    fact_start, fact_end, err = _find_event_block(lines, xref, fact_tag, fact_n)
+    if err:
+        return None, None, None, err
+
+    count = 0
+    for i in range(fact_start + 1, fact_end):
+        m = _TAG_RE.match(lines[i])
+        if not m:
+            continue
+        if int(m.group(1)) == 2 and m.group(2) == 'SOUR':
+            if count == cite_n:
+                j = i + 1
+                while j < fact_end:
+                    sm = _TAG_RE.match(lines[j])
+                    if sm and int(sm.group(1)) <= 2:
+                        break
+                    j += 1
+                return i, j, 2, None
+            count += 1
+    return None, None, None, f'Citation {cite_n} not found in {fact_tag}[{fact_n}] of {xref}'
+
+
+def _build_citation_lines(sour_xref: str, page: str, text: str, note: str, base_level: int) -> list[str]:
+    """
+    Build the citation block lines at base_level.
+    base_level=1 → person-level (1 SOUR, 2 PAGE, 2 DATA, 3 TEXT, 2 NOTE)
+    base_level=2 → fact-level   (2 SOUR, 3 PAGE, 3 DATA, 4 TEXT, 3 NOTE)
+    """
+    b = base_level
+    lines_out = [f'{b} SOUR {sour_xref}']
+    if page and page.strip():
+        lines_out.append(f'{b+1} PAGE {page.strip()}')
+    if text and text.strip():
+        lines_out.append(f'{b+1} DATA')
+        lines_out.append(f'{b+2} TEXT {text.strip()}')
+    if note and note.strip():
+        lines_out.append(f'{b+1} NOTE {note.strip()}')
+    return lines_out
+
+
+def _update_citation_block(
+    lines: list[str], block_start: int, block_end: int,
+    citation_level: int, page: str, text: str, note: str
+) -> list[str]:
+    """
+    Replace citation block (block_start..block_end) with updated PAGE/TEXT/NOTE values.
+    Preserves the SOUR xref header line.
+    """
+    header = lines[block_start]  # '2 SOUR @S1@' or '1 SOUR @S1@'
+    b = citation_level
+    sour_xref_val = (header.split(' ', 2) + [''])[2].strip()
+    new_block = _build_citation_lines(sour_xref_val, page, text, note, b)
+    return lines[:block_start] + new_block + lines[block_end:]
+
+
+# ---------------------------------------------------------------------------
+# Person creation helpers
+# ---------------------------------------------------------------------------
+
+def _get_famc_for_indi(lines: list[str], xref: str) -> str | None:
+    """Return the first FAMC xref for the given individual, or None."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'FAMC':
+            return (m.group(3) or '').strip() or None
+    return None
+
+
+def _get_famc_for_indi_all(lines: list[str], xref: str) -> list[str]:
+    """Return all FAMC xrefs for the given individual (empty list if none)."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return []
+    out = []
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'FAMC':
+            v = (m.group(3) or '').strip()
+            if v:
+                out.append(v)
+    return out
+
+
+def _get_fams_for_indi(lines: list[str], xref: str) -> list[str]:
+    """Return all FAMS xrefs for the given individual."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return []
+    result = []
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'FAMS':
+            val = (m.group(3) or '').strip()
+            if val:
+                result.append(val)
+    return result
+
+
+def _add_chil_to_fam(lines: list[str], fam_xref: str, chil_xref: str) -> list[str]:
+    """Append '1 CHIL chil_xref' just before end of fam_xref's FAM block."""
+    _, fam_end, err = _find_fam_block(lines, fam_xref)
+    if err:
+        return lines
+    return lines[:fam_end] + [f'1 CHIL {chil_xref}'] + lines[fam_end:]
+
+
+def _create_bare_fam(lines: list[str], fam_xref: str, husb_xref: str | None, wife_xref: str | None) -> list[str]:
+    """Insert a new FAM record (no events) before TRLR."""
+    trlr_idx = next(
+        (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
+    )
+    fam_block = [f'0 {fam_xref} FAM']
+    if husb_xref:
+        fam_block.append(f'1 HUSB {husb_xref}')
+    if wife_xref:
+        fam_block.append(f'1 WIFE {wife_xref}')
+    return lines[:trlr_idx] + fam_block + lines[trlr_idx:]
+
+
+def _add_famc_to_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[str]:
+    """Insert '1 FAMC fam_xref' at the end of indi_xref's INDI block (idempotent)."""
+    indi_start, indi_end, err = _find_indi_block(lines, indi_xref)
+    if err:
+        return lines
+    target = f'1 FAMC {fam_xref}'
+    for i in range(indi_start + 1, indi_end):
+        if lines[i].strip() == target:
+            return lines
+    return lines[:indi_end] + [target] + lines[indi_end:]
+
+
+def _remove_chil_from_fam(lines: list[str], fam_xref: str, chil_xref: str) -> list[str]:
+    """Remove '1 CHIL chil_xref' from the FAM block (idempotent)."""
+    fam_start, fam_end, err = _find_fam_block(lines, fam_xref)
+    if err:
+        return lines
+    target = f'1 CHIL {chil_xref}'
+    return [l for idx, l in enumerate(lines)
+            if not (fam_start <= idx < fam_end and l.strip() == target)]
+
+
+def _remove_famc_from_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[str]:
+    """Remove '1 FAMC fam_xref' from the INDI block (idempotent)."""
+    indi_start, indi_end, err = _find_indi_block(lines, indi_xref)
+    if err:
+        return lines
+    target = f'1 FAMC {fam_xref}'
+    return [l for idx, l in enumerate(lines)
+            if not (indi_start <= idx < indi_end and l.strip() == target)]
 
 
 # ---------------------------------------------------------------------------
@@ -1023,6 +1322,499 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     indis, fams, sources = parse_gedcom(str(GED))
                     updated = build_people_json({xref, spouse_xref}, indis, fams=fams, sources=sources)
                     resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        # ------------------------------------------------------------------ #
+        # Source endpoints                                                    #
+        # ------------------------------------------------------------------ #
+
+        elif parsed.path == '/api/add_source':
+            titl = (body.get('titl') or '').strip()
+            if not titl:
+                self.send_error(400, 'titl is required')
+                return
+            auth = (body.get('auth') or '').strip()
+            publ = (body.get('publ') or '').strip()
+            repo = (body.get('repo') or '').strip()
+            note = (body.get('note') or '').strip()
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            new_xref = _next_sour_xref(lines)
+            sour_block = _build_sour_block(new_xref, titl, auth, publ, repo, note)
+            trlr_idx = next(
+                (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
+            )
+            new_lines = lines[:trlr_idx] + sour_block + lines[trlr_idx:]
+            _write_gedcom_atomic(new_lines)
+            print(f"[source-add] {new_xref} {titl!r}")
+            resp = json.dumps({'xref': new_xref}).encode()
+
+        elif parsed.path == '/api/edit_source_record':
+            xref = (body.get('xref') or '').strip()
+            titl = (body.get('titl') or '').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            sour_start, sour_end, err = _find_sour_block(lines, xref)
+            if err:
+                self.send_error(400, err)
+                return
+            auth = (body.get('auth') or '').strip()
+            publ = (body.get('publ') or '').strip()
+            repo = (body.get('repo') or '').strip()
+            note = (body.get('note') or '').strip()
+            new_block = [f'0 {xref} SOUR']
+            if titl:
+                new_block.append(f'1 TITL {titl}')
+            for tag, val in (('AUTH', auth), ('PUBL', publ), ('REPO', repo), ('NOTE', note)):
+                if val:
+                    new_block.append(f'1 {tag} {val}')
+            # Keep any unmanaged level-1 sub-tags (e.g. custom extensions),
+            # but skip managed tags AND all of their subordinate (level > 1)
+            # continuation lines so we don't orphan CONT/CONC lines.
+            managed = {'TITL', 'AUTH', 'PUBL', 'REPO', 'NOTE'}
+            skip_children = False
+            for line in lines[sour_start + 1: sour_end]:
+                m = _TAG_RE.match(line)
+                if m:
+                    lvl = int(m.group(1))
+                    if lvl == 1:
+                        # New level-1 tag: decide whether to include it
+                        skip_children = m.group(2) in managed
+                        if skip_children:
+                            continue
+                    elif skip_children:
+                        # Child of a managed tag — drop continuation lines too
+                        continue
+                new_block.append(line)
+            new_lines = lines[:sour_start] + new_block + lines[sour_end:]
+            _write_gedcom_atomic(new_lines)
+            print(f"[source-edit] {xref}")
+            resp = json.dumps({'ok': True}).encode()
+
+        # ------------------------------------------------------------------ #
+        # Citation endpoints                                                  #
+        # ------------------------------------------------------------------ #
+
+        elif parsed.path == '/api/add_citation':
+            xref      = (body.get('xref') or '').strip()
+            sour_xref = (body.get('sour_xref') or '').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            if not sour_xref:
+                self.send_error(400, 'sour_xref is required')
+                return
+            fact_key  = body.get('fact_key') or None
+            page      = (body.get('page') or '').strip()
+            text      = (body.get('text') or '').strip()
+            note      = (body.get('note') or '').strip()
+            lines     = GED.read_text(encoding='utf-8').splitlines()
+
+            # Determine insertion point and citation level
+            if not fact_key or fact_key == 'null' or str(fact_key).startswith('SOUR:'):
+                # Person-level citation at level 1
+                _, indi_end, err = _find_indi_block(lines, xref)
+                if err:
+                    self.send_error(400, err)
+                    return
+                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1)
+                new_lines  = lines[:indi_end] + cite_lines + lines[indi_end:]
+            else:
+                insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
+                if err:
+                    self.send_error(400, err)
+                    return
+                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=2)
+                new_lines  = lines[:insert_pos] + cite_lines + lines[insert_pos:]
+
+            _write_gedcom_atomic(new_lines)
+            print(f"[citation-add] {xref} {fact_key} → {sour_xref}")
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/edit_citation':
+            xref         = (body.get('xref') or '').strip()
+            citation_key = (body.get('citation_key') or '').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            if not citation_key:
+                self.send_error(400, 'citation_key is required')
+                return
+            page = (body.get('page') or '').strip()
+            text = (body.get('text') or '').strip()
+            note = (body.get('note') or '').strip()
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            block_start, block_end, cite_level, err = _find_citation_block(lines, xref, citation_key)
+            if err:
+                self.send_error(400, err)
+                return
+            new_lines = _update_citation_block(lines, block_start, block_end, cite_level, page, text, note)
+            _write_gedcom_atomic(new_lines)
+            print(f"[citation-edit] {xref} {citation_key}")
+            resp = json.dumps({'ok': True}).encode()
+
+        elif parsed.path == '/api/delete_citation':
+            xref         = (body.get('xref') or '').strip()
+            citation_key = (body.get('citation_key') or '').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            if not citation_key:
+                self.send_error(400, 'citation_key is required')
+                return
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            block_start, block_end, _, err = _find_citation_block(lines, xref, citation_key)
+            if err:
+                self.send_error(400, err)
+                return
+            new_lines = lines[:block_start] + lines[block_end:]
+            _write_gedcom_atomic(new_lines)
+            print(f"[citation-delete] {xref} {citation_key}")
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        # ------------------------------------------------------------------ #
+        # Person / relationship endpoints                                     #
+        # ------------------------------------------------------------------ #
+
+        elif parsed.path == '/api/add_person':
+            given     = (body.get('given') or '').strip()
+            surn      = (body.get('surn') or '').strip()
+            sex       = (body.get('sex') or 'U').strip().upper()
+            birth_yr  = (body.get('birth_year') or '').strip()
+            rel_type  = (body.get('rel_type') or '').strip()
+            rel_xref  = (body.get('rel_xref') or '').strip()
+
+            if not given:
+                self.send_error(400, 'given is required')
+                return
+            if not rel_xref:
+                self.send_error(400, 'rel_xref is required')
+                return
+            if rel_type not in ('child_of', 'parent_of', 'spouse_of', 'sibling_of'):
+                self.send_error(400, f'rel_type must be one of child_of, parent_of, spouse_of, sibling_of')
+                return
+
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            new_xref = _next_indi_xref(lines)
+
+            # Build the new INDI block
+            name_val = f'{given} /{surn}/' if surn else given
+            new_indi = [f'0 {new_xref} INDI', f'1 NAME {name_val}']
+            if surn:
+                new_indi += [f'2 GIVN {given}', f'2 SURN {surn}']
+            if sex in ('M', 'F'):
+                new_indi.append(f'1 SEX {sex}')
+            if birth_yr:
+                new_indi += ['1 BIRT', f'2 DATE {birth_yr}']
+
+            # Insert new INDI before TRLR
+            trlr_idx = next(
+                (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
+            )
+            lines = lines[:trlr_idx] + new_indi + lines[trlr_idx:]
+
+            # Handle relationship
+            if rel_type == 'child_of':
+                # Caller may specify a co-parent:
+                #   other_parent_xref = '@Ix@' → find/create FAM with both parents
+                #   other_parent_xref = ''     → create new FAM with rel_xref only
+                #   key absent (None)          → legacy: reuse first FAMS of rel_xref
+                other_parent_xref = body.get('other_parent_xref')
+
+                def _mk_bare_fam_with(a_xref, b_xref):
+                    """Create a bare FAM with a_xref and optional b_xref, assigning
+                    HUSB/WIFE based on sex. Returns (lines, fam_xref)."""
+                    fam_xref_local = _next_fam_xref(lines)
+                    a_sex = _get_sex(lines, a_xref) if a_xref else None
+                    b_sex = _get_sex(lines, b_xref) if b_xref else None
+                    if a_sex == 'F' and b_sex != 'F':
+                        husb, wife = b_xref, a_xref
+                    elif b_sex == 'F' and a_sex != 'F':
+                        husb, wife = a_xref, b_xref
+                    else:
+                        husb, wife = a_xref, b_xref
+                    return fam_xref_local, husb, wife
+
+                if other_parent_xref is None:
+                    existing_fams = _get_fams_for_indi(lines, rel_xref)
+                    if existing_fams:
+                        fam_xref = existing_fams[0]
+                    else:
+                        fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
+                        lines = _create_bare_fam(lines, fam_xref, husb, wife)
+                        lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                elif other_parent_xref == '':
+                    fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
+                    lines = _create_bare_fam(lines, fam_xref, husb, wife)
+                    lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                else:
+                    # Look for an existing FAM that already pairs rel_xref with other_parent_xref
+                    shared_fams = [
+                        f for f in _get_fams_for_indi(lines, rel_xref)
+                        if f in _get_fams_for_indi(lines, other_parent_xref)
+                    ]
+                    if shared_fams:
+                        fam_xref = shared_fams[0]
+                    else:
+                        fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, other_parent_xref)
+                        lines = _create_bare_fam(lines, fam_xref, husb, wife)
+                        lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                        lines = _add_fams_to_indi(lines, other_parent_xref, fam_xref)
+                lines = _add_chil_to_fam(lines, fam_xref, new_xref)
+                lines = _add_famc_to_indi(lines, new_xref, fam_xref)
+
+            elif rel_type == 'parent_of':
+                # New INDI is a parent of rel_xref. Find rel_xref's FAMC family.
+                famc_xref = _get_famc_for_indi(lines, rel_xref)
+                if famc_xref:
+                    fam_xref = famc_xref
+                    # Guard: check whether the HUSB/WIFE slot is already occupied
+                    slot = 'WIFE' if sex == 'F' else 'HUSB'
+                    fam_start, fam_end, ferr = _find_fam_block(lines, fam_xref)
+                    if not ferr:
+                        slot_occupied = any(
+                            _TAG_RE.match(l) and _TAG_RE.match(l).group(2) == slot
+                            for l in lines[fam_start:fam_end]
+                        )
+                        if slot_occupied:
+                            self.send_error(400, f'Family {fam_xref} already has a {slot}')
+                            return
+                        lines = lines[:fam_end] + [f'1 {slot} {new_xref}'] + lines[fam_end:]
+                else:
+                    fam_xref = _next_fam_xref(lines)
+                    if sex == 'F':
+                        lines = _create_bare_fam(lines, fam_xref, None, new_xref)
+                    else:
+                        lines = _create_bare_fam(lines, fam_xref, new_xref, None)
+                    lines = _add_chil_to_fam(lines, fam_xref, rel_xref)
+                    lines = _add_famc_to_indi(lines, rel_xref, fam_xref)
+                lines = _add_fams_to_indi(lines, new_xref, fam_xref)
+
+            elif rel_type == 'spouse_of':
+                rel_sex = _get_sex(lines, rel_xref)
+                fam_xref = _next_fam_xref(lines)
+                if sex == 'F' and rel_sex != 'F':
+                    husb_xref, wife_xref = rel_xref, new_xref
+                elif rel_sex == 'F' and sex != 'F':
+                    husb_xref, wife_xref = new_xref, rel_xref
+                else:
+                    husb_xref, wife_xref = new_xref, rel_xref
+                lines = _create_bare_fam(lines, fam_xref, husb_xref, wife_xref)
+                lines = _add_fams_to_indi(lines, new_xref, fam_xref)
+                lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+
+            elif rel_type == 'sibling_of':
+                # Add new INDI to the same FAMC family as rel_xref
+                famc_xref = _get_famc_for_indi(lines, rel_xref)
+                if famc_xref:
+                    fam_xref = famc_xref
+                else:
+                    fam_xref = _next_fam_xref(lines)
+                    lines = _create_bare_fam(lines, fam_xref, None, None)
+                    lines = _add_chil_to_fam(lines, fam_xref, rel_xref)
+                    lines = _add_famc_to_indi(lines, rel_xref, fam_xref)
+                lines = _add_chil_to_fam(lines, fam_xref, new_xref)
+                lines = _add_famc_to_indi(lines, new_xref, fam_xref)
+
+            _write_gedcom_atomic(lines)
+            print(f"[person-add] {new_xref} {name_val} ({rel_type} {rel_xref})")
+            regenerate(body.get('current_person'))
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({rel_xref, new_xref}, indis, fams=fams, sources=sources)
+            family_maps = viz.build_family_maps(indis, fams)
+            resp = json.dumps({'ok': True, 'xref': new_xref, 'people': updated,
+                               'family_maps': family_maps}).encode()
+
+        # ------------------------------------------------------------------ #
+        # Change / delete one of a child's parents                            #
+        # ------------------------------------------------------------------ #
+
+        elif parsed.path == '/api/change_parent':
+            xref                = (body.get('xref') or '').strip()
+            current_parent_xref = (body.get('current_parent_xref') or '').strip()
+            new_parent_xref     = (body.get('new_parent_xref') or '').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            if not current_parent_xref:
+                self.send_error(400, 'current_parent_xref is required')
+                return
+
+            lines = GED.read_text(encoding='utf-8').splitlines()
+
+            # Locate the child's FAMC that includes current_parent_xref as HUSB/WIFE
+            old_fam = None
+            for famc in _get_famc_for_indi_all(lines, xref):
+                fam_start, fam_end, err = _find_fam_block(lines, famc)
+                if err:
+                    continue
+                husb = wife = None
+                for i in range(fam_start + 1, fam_end):
+                    m = _TAG_RE.match(lines[i])
+                    if not m:
+                        continue
+                    lvl, tag, val = int(m.group(1)), m.group(2), (m.group(3) or '').strip()
+                    if lvl == 1 and tag == 'HUSB':
+                        husb = val
+                    elif lvl == 1 and tag == 'WIFE':
+                        wife = val
+                if current_parent_xref in (husb, wife):
+                    old_fam = (famc, husb, wife)
+                    break
+            if old_fam is None:
+                self.send_error(400, f'{current_parent_xref} is not a parent of {xref}')
+                return
+            old_fam_xref, old_husb, old_wife = old_fam
+            other_parent = old_wife if current_parent_xref == old_husb else old_husb
+
+            # Decide target FAM
+            target_fam = None
+            if new_parent_xref and other_parent:
+                shared = [f for f in _get_fams_for_indi(lines, new_parent_xref)
+                          if f in _get_fams_for_indi(lines, other_parent)]
+                target_fam = shared[0] if shared else None
+            if target_fam is None and (new_parent_xref or other_parent):
+                target_fam = _next_fam_xref(lines)
+                def _slot_for(px):
+                    return 'WIFE' if _get_sex(lines, px) == 'F' else 'HUSB'
+                husb_x = wife_x = None
+                parents_present = [p for p in (new_parent_xref, other_parent) if p]
+                if len(parents_present) == 1:
+                    p = parents_present[0]
+                    if _slot_for(p) == 'WIFE':
+                        wife_x = p
+                    else:
+                        husb_x = p
+                else:
+                    a, b = parents_present
+                    a_slot = _slot_for(a); b_slot = _slot_for(b)
+                    if a_slot == 'WIFE' and b_slot != 'WIFE':
+                        husb_x, wife_x = b, a
+                    elif b_slot == 'WIFE' and a_slot != 'WIFE':
+                        husb_x, wife_x = a, b
+                    else:
+                        husb_x, wife_x = a, b
+                lines = _create_bare_fam(lines, target_fam, husb_x, wife_x)
+                if new_parent_xref:
+                    lines = _add_fams_to_indi(lines, new_parent_xref, target_fam)
+                if other_parent:
+                    lines = _add_fams_to_indi(lines, other_parent, target_fam)
+
+            if target_fam != old_fam_xref:
+                lines = _remove_chil_from_fam(lines, old_fam_xref, xref)
+                lines = _remove_famc_from_indi(lines, xref, old_fam_xref)
+                if target_fam is not None:
+                    lines = _add_chil_to_fam(lines, target_fam, xref)
+                    lines = _add_famc_to_indi(lines, xref, target_fam)
+
+            _write_gedcom_atomic(lines)
+            print(f"[parent-change] {xref} {current_parent_xref} -> {new_parent_xref or '(none)'} (fam {old_fam_xref} -> {target_fam or '(none)'})")
+            regenerate(body.get('current_person'))
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            refresh = {xref, current_parent_xref}
+            if new_parent_xref:
+                refresh.add(new_parent_xref)
+            if other_parent:
+                refresh.add(other_parent)
+            updated = build_people_json(refresh, indis, fams=fams, sources=sources)
+            family_maps = viz.build_family_maps(indis, fams)
+            resp = json.dumps({'ok': True, 'people': updated,
+                               'family_maps': family_maps}).encode()
+
+        # ------------------------------------------------------------------ #
+        # Godparent endpoints                                                 #
+        # ------------------------------------------------------------------ #
+
+        elif parsed.path == '/api/add_godparent':
+            xref           = (body.get('xref') or '').strip()
+            godparent_xref = (body.get('godparent_xref') or '').strip()
+            rela           = (body.get('rela') or 'Godparent').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            if not godparent_xref:
+                self.send_error(400, 'godparent_xref is required')
+                return
+            if rela not in ('Godparent', 'Godfather', 'Godmother'):
+                resp = json.dumps({'ok': False,
+                                    'error': f'rela must be Godparent/Godfather/Godmother; got {rela!r}'}).encode()
+            else:
+                lines = GED.read_text(encoding='utf-8').splitlines()
+                _, indi_end, err = _find_indi_block(lines, xref)
+                if err:
+                    self.send_error(400, err)
+                    return
+                asso_block = [f'1 ASSO {godparent_xref}', f'2 RELA {rela}']
+                new_lines  = lines[:indi_end] + asso_block + lines[indi_end:]
+                _write_gedcom_atomic(new_lines)
+                print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})")
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/delete_godparent':
+            xref           = (body.get('xref') or '').strip()
+            godparent_xref = (body.get('godparent_xref') or '').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            if not godparent_xref:
+                self.send_error(400, 'godparent_xref is required')
+                return
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            indi_start, indi_end, err = _find_indi_block(lines, xref)
+            if err:
+                self.send_error(400, err)
+                return
+            # Find the specific ASSO block for godparent_xref with RELA Godparent
+            asso_start = asso_end = None
+            for i in range(indi_start + 1, indi_end):
+                m = _TAG_RE.match(lines[i])
+                if not m or int(m.group(1)) != 1 or m.group(2) != 'ASSO':
+                    continue
+                val = (m.group(3) or '').strip()
+                if val != godparent_xref:
+                    continue
+                # Check that the next subordinate line is RELA Godparent
+                j = i + 1
+                while j < indi_end:
+                    sm = _TAG_RE.match(lines[j])
+                    if sm and int(sm.group(1)) <= 1:
+                        break
+                    if sm and int(sm.group(1)) == 2 and sm.group(2) == 'RELA':
+                        rela_val = (sm.group(3) or '').strip()
+                        if rela_val in ('Godparent', 'Godfather', 'Godmother'):
+                            asso_start = i
+                            # end of this ASSO block
+                            k = i + 1
+                            while k < indi_end:
+                                skm = _TAG_RE.match(lines[k])
+                                if skm and int(skm.group(1)) <= 1:
+                                    break
+                                k += 1
+                            asso_end = k
+                    j += 1
+                if asso_start is not None:
+                    break
+            if asso_start is None:
+                self.send_error(400, f'Godparent ASSO {godparent_xref} not found in {xref}')
+                return
+            new_lines = lines[:asso_start] + lines[asso_end:]
+            _write_gedcom_atomic(new_lines)
+            print(f"[godparent-delete] {xref} ← {godparent_xref}")
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         else:
             self.send_error(404)

@@ -121,7 +121,7 @@ function navigate(personId) {
   list.classList.remove('open');
   list.innerHTML = '';
   input.value = '';
-  changeRoot(personId);
+  setState({ focusXref: personId, panelOpen: true, panelXref: personId });
 }
 
 // ---------------------------------------------------------------------------

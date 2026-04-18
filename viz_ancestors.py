@@ -29,6 +29,7 @@ _EVENT_TAGS = frozenset({
     'BIRT', 'DEAT', 'BURI', 'RESI', 'OCCU', 'CHR', 'BAPM',
     'NATU', 'IMMI', 'EVEN', 'FACT', 'NATI', 'RELI', 'TITL',
     'ADOP', 'EDUC', 'RETI', 'DIV', 'CONF', 'PROB',
+    'NCHI', 'DSCR',
 })
 
 
@@ -64,6 +65,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     current_evt       = None   # current event dict being built
     current_note      = None   # index into notes[] for CONT assembly
     current_sour_xref = None   # xref of the 1 SOUR citation currently being parsed
+    current_asso      = None   # dict being built for an in-progress 1 ASSO block
     secondary_name_n  = 0      # counter for secondary NAME records within current INDI
 
     for line in lines:
@@ -73,6 +75,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             indis[xref] = {
                 'name': None, 'birth_year': None, 'death_year': None,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [], 'source_urls': {},
+                'asso': [],
             }
             ctx                = ('indi', xref)
             current_evt        = None
@@ -92,7 +95,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
         m = _SOUR_RE.match(line)
         if m:
             xref = m.group(1)
-            sources[xref] = None
+            sources[xref] = {'titl': None, 'auth': None, 'publ': None, 'repo': None, 'note': None}
             ctx          = ('sour', xref)
             current_evt  = None
             current_note = None
@@ -118,6 +121,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = ctx[1]
             if lvl == 1 and tag != 'SOUR':
                 current_sour_xref = None
+            if lvl == 1 and tag != 'ASSO':
+                current_asso = None
             if lvl == 1 and tag == 'NAME' and indis[xref]['name'] is None:
                 name = re.sub(r'/', '', html_mod.unescape(val))
                 name = re.sub(r'\s+', ' ', name).strip()
@@ -141,7 +146,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 # For tags where the inline value IS the semantic type (e.g. "1 OCCU Consul",
                 # "1 TITL Knight", "1 NATI French"), seed type from it.  A later 2 TYPE sub-tag
                 # will override.  EVEN/FACT carry no inline value and use 2 TYPE exclusively.
-                _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
+                _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC', 'NCHI', 'DSCR'})
                 inline_type = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
                 initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
                 evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None, 'age': None, 'citations': []}
@@ -196,6 +201,12 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     indis[xref]['source_xrefs'].append(val)
                 current_sour_xref = val
                 current_evt = current_note = None
+            elif lvl == 1 and tag == 'ASSO' and val.startswith('@'):
+                current_asso = {'xref': val, 'rela': None}
+                indis[xref]['asso'].append(current_asso)
+                current_evt = current_note = None
+            elif lvl == 2 and tag == 'RELA' and current_asso is not None:
+                current_asso['rela'] = html_mod.unescape(val)
             elif lvl == 3 and tag == 'WWW' and current_sour_xref is not None:
                 if current_sour_xref not in indis[xref]['source_urls']:
                     indis[xref]['source_urls'][current_sour_xref] = val
@@ -235,8 +246,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
 
         elif ctx[0] == 'sour':
             xref = ctx[1]
-            if lvl == 1 and tag == 'TITL':
-                sources[xref] = val
+            if lvl == 1 and tag in ('TITL', 'AUTH', 'PUBL', 'NOTE'):
+                sources[xref][tag.lower()] = val
+            elif lvl == 1 and tag == 'REPO':
+                sources[xref]['repo'] = val
 
     return indis, fams, sources
 
@@ -396,7 +409,8 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         if sources:
             source_urls = info.get('source_urls', {})
             for sxref in info.get('source_xrefs', []):
-                title = sources.get(sxref)
+                sour = sources.get(sxref) or {}
+                title = sour.get('titl') if isinstance(sour, dict) else sour
                 if title and title not in seen_src_titles:
                     seen_src_titles.add(title)
                     src_list.append({'title': title, 'url': source_urls.get(sxref) or None})
@@ -411,12 +425,29 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         tagged_events = []
         for e in info['events']:
             t = e['tag']
+            # Normalise citation keys: sour_xref → sourceXref so JS can resolve
+            # source titles via SOURCES[citation.sourceXref].titl.
+            normalised_cites = [
+                {
+                    'sourceXref': c['sour_xref'],
+                    **{k: v for k, v in c.items() if k != 'sour_xref'},
+                }
+                for c in e.get('citations', [])
+            ]
+            e_out = {**e, 'citations': normalised_cites}
+            # Attach godparent ASSOs (stored at the INDI level) to BAPM/CHR
+            # events so the panel can render them as pills.
+            if t in ('BAPM', 'CHR'):
+                e_out['asso'] = [
+                    {'xref': a['xref'], 'rela': a.get('rela')}
+                    for a in info.get('asso', []) or []
+                ]
             if e.get('_name_record'):
-                tagged_events.append({**e, 'event_idx': None})
+                tagged_events.append({**e_out, 'event_idx': None})
             else:
                 occ = tag_counters.get(t, 0)
                 tag_counters[t] = occ + 1
-                tagged_events.append({**e, 'event_idx': occ})
+                tagged_events.append({**e_out, 'event_idx': occ})
         events = [
             e for e in tagged_events
             if not any(_matches_exclusion(e, ex) for ex in excl_list)
@@ -546,6 +577,27 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
     return result
 
 
+def build_family_maps(indis: dict, fams: dict, tree: dict | None = None) -> dict:
+    """Return {'parents', 'children', 'relatives'} — the three maps the client
+    uses to render the Family panel section. Call after a structural edit so the
+    client can replace its stale globals in-place."""
+    parents: dict[str, list] = {}
+    children: dict[str, list] = {}
+    for xref, info in indis.items():
+        famc = info.get('famc')
+        if famc and famc in fams:
+            fam = fams[famc]
+            fa, mo = fam.get('husb'), fam.get('wife')
+            parents[xref] = [fa, mo]
+            for p in (fa, mo):
+                if p:
+                    children.setdefault(p, []).append(xref)
+        else:
+            parents[xref] = [None, None]
+    relatives = build_relatives_json(tree or {}, indis, fams)
+    return {'parents': parents, 'children': children, 'relatives': relatives}
+
+
 # ---------------------------------------------------------------------------
 # HTML rendering
 # ---------------------------------------------------------------------------
@@ -588,7 +640,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   background: #334155; color: #f1f5f9; }
 #search-results li b { font-weight: 700; color: #f1f5f9; }
 #search-results li .srch-dates { color: #64748b; font-size: 12px; margin-left: 4px; }
-#viewport { position: relative; overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; }
+#viewport { position: relative; overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; height: calc(100vh - var(--header-h, 45px)); }
 #viewport.dragging { cursor: grabbing; }
 #tree { display: block; width: 100%; height: 100%; }
 #gen-labels { position: absolute; left: 0; top: 0; bottom: 0; width: 90px;
@@ -618,10 +670,74 @@ header h1 { font-size: 16px; font-weight: 600; }
               margin-bottom: 10px; line-height: 1.5; }
 #detail-header-btns { display: flex; flex-direction: column; align-items: center;
                       flex-shrink: 0; align-self: flex-start; padding: 10px 10px 10px 4px; gap: 6px; }
-#detail-close { background: none; border: none; color: #475569;
-                font-size: 20px; cursor: pointer; padding: 2px;
-                line-height: 1; }
-#detail-close:hover { color: #f1f5f9; }
+#panel-close-btn { background: none; border: none; color: #475569;
+                   font-size: 20px; cursor: pointer; padding: 2px;
+                   line-height: 1; }
+#panel-close-btn:hover { color: #f1f5f9; }
+/* ── Panel lifespan + nationalities ────────────────────────── */
+#detail-lifespan { display: flex; align-items: center; gap: 6px; font-size: 13px;
+                   color: #94a3b8; margin-bottom: 8px; }
+.panel-birth-year, .panel-death-year { color: #94a3b8; }
+.panel-lifespan-sep { color: #475569; }
+.panel-age { font-size: 11px; color: #64748b; }
+#detail-nationalities { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+                        margin-bottom: 6px; }
+.panel-nati-pill { background: #1e3a5f; border: 1px solid #3b82f6; color: #93c5fd;
+                   font-size: 11px; border-radius: 12px; padding: 2px 10px; }
+.add-event-btn { background: none; border: 1px solid #334155; color: #64748b;
+                 border-radius: 4px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.add-event-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+/* ── Panel sections ─────────────────────────────────────────── */
+.panel-section { margin-bottom: 20px; }
+.panel-section-header { display: flex; align-items: center; justify-content: space-between;
+                        margin-bottom: 8px; }
+.panel-section-title { font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+                       text-transform: uppercase; color: #64748b; }
+.panel-section-add { background: none; border: 1px solid #334155; color: #64748b;
+                     border-radius: 4px; font-size: 13px; width: 22px; height: 22px;
+                     cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.panel-section-add:hover { border-color: #3b82f6; color: #3b82f6; }
+/* ── Fact rows ──────────────────────────────────────────────── */
+.panel-fact-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px;
+                  padding: 6px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+.panel-fact-label { font-weight: 600; color: #e2e8f0; min-width: 80px; }
+.panel-fact-meta { color: #94a3b8; flex: 1; }
+.panel-fact-cite-badge { background: #1e3a5f; color: #93c5fd; font-size: 10px;
+                          border-radius: 10px; padding: 1px 7px; cursor: pointer;
+                          white-space: nowrap; }
+/* ── Godparent pills ────────────────────────────────────────── */
+.panel-godparents { display: flex; flex-wrap: wrap; align-items: center;
+                    gap: 6px; margin-top: 4px; width: 100%; }
+.panel-godparents-label { font-size: 11px; color: #64748b; }
+.panel-godparent-pill { background: #1e3a2f; border: 1px solid #4ade80; color: #86efac;
+                        font-size: 11px; border-radius: 12px; padding: 5px 12px; cursor: pointer; }
+.panel-godparent-pill:hover { background: #1a3d2b; }
+.panel-godparent-role { color: #4ade80; font-size: 10px; }
+.panel-add-godparent-btn { background: none; border: 1px solid #334155; color: #64748b;
+                           border-radius: 4px; font-size: 11px; padding: 5px 10px; cursor: pointer; }
+.panel-add-godparent-btn:hover { border-color: #4ade80; color: #4ade80; }
+/* ── Citation rows ──────────────────────────────────────────── */
+.panel-cite-row { display: flex; align-items: center; gap: 6px; padding: 5px 0;
+                  border-bottom: 1px solid #1e293b; font-size: 12px; color: #94a3b8; }
+.panel-cite-tag { background: #1e2d40; color: #7dd3fc; font-size: 10px;
+                  border-radius: 3px; padding: 1px 6px; flex-shrink: 0; }
+.panel-cite-edit, .panel-cite-del { background: none; border: none; color: #475569;
+                                     cursor: pointer; font-size: 12px; padding: 1px 4px; }
+.panel-cite-edit:hover { color: #94a3b8; }
+.panel-cite-del:hover { color: #f87171; }
+.panel-source-card { padding: 6px 0; border-bottom: 1px solid #1e293b; }
+.panel-source-title { font-size: 12px; color: #94a3b8; display: flex;
+                      align-items: center; gap: 6px; }
+/* ── Note text ──────────────────────────────────────────────── */
+.panel-note-text { font-size: 13px; color: #f1f5f9; line-height: 1.75;
+                   white-space: pre-wrap; overflow-wrap: break-word;
+                   padding: 10px 14px; background: rgba(254,249,195,0.1);
+                   border-radius: 6px; border-left: 3px solid rgba(254,243,160,0.35);
+                   margin-bottom: 10px; max-height: 260px; overflow-y: auto; }
+/* ── Edit name button ───────────────────────────────────────── */
+.panel-edit-name-btn { background: none; border: none; color: #475569;
+                       cursor: pointer; font-size: 13px; padding: 0 4px; margin-left: 6px; }
+.panel-edit-name-btn:hover { color: #94a3b8; }
 #detail-set-root-btn { background: none; border: 1px solid #334155; border-radius: 5px;
                        color: #475569; font-size: 13px; cursor: pointer; padding: 3px 6px;
                        line-height: 1; white-space: nowrap; }
@@ -783,10 +899,45 @@ header h1 { font-size: 16px; font-weight: 600; }
 #alias-modal-overlay.open { display: flex; }
 #alias-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 420px; max-width: 90vw; }
+/* ── Add-godparent modal ─────────────────────────────────── */
+#add-godparent-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#add-godparent-modal-overlay.open { display: flex; }
+#add-godparent-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#add-godparent-modal-results { max-height: 160px; overflow-y: auto; background: #0f172a;
+  border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
+.godparent-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.godparent-result-item:hover { background: #1e3a5f; }
+/* ── Add-person modal ────────────────────────────────────── */
+#add-person-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#add-person-modal-overlay.open { display: flex; }
+#add-person-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#change-parent-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#change-parent-modal-overlay.open { display: flex; }
+#change-parent-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#change-parent-modal-results { max-height: 160px; overflow-y: auto; background: #0f172a;
+  border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
+.change-parent-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.change-parent-result-item:hover { background: #1e3a5f; }
+.family-add-btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 0 0; }
+.family-add-btn { background: #1e3a5f; border: 1px solid #334155; border-radius: 10px;
+  color: #cbd5e1; font-size: 11px; padding: 3px 9px; cursor: pointer; }
+.family-add-btn:hover { background: #2a4a70; color: #e2e8f0; }
 /* ── Sources viewer modal ────────────────────────────────── */
 #sources-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   z-index: 1000; align-items: center; justify-content: center; }
 #sources-modal-overlay.open { display: flex; }
+#add-citation-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1100; align-items: center; justify-content: center; }
+#add-citation-modal-overlay.open { display: flex; }
+#add-citation-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#add-citation-modal h3 { margin: 0 0 12px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 #sources-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
 #sources-modal-header { display: flex; align-items: flex-start; justify-content: space-between;
@@ -796,14 +947,25 @@ header h1 { font-size: 16px; font-weight: 600; }
   font-size: 18px; line-height: 1; padding: 0 0 0 8px; flex-shrink: 0; }
 #sources-modal-close:hover { color: #94a3b8; }
 #sources-modal-list { margin: 0; }
-.src-modal-item { padding: 10px 0; border-bottom: 1px solid #1e3a52; }
+.src-modal-item { padding: 10px 0; border-bottom: 1px solid #1e3a52;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .src-modal-item:last-child { border-bottom: none; padding-bottom: 0; }
+.src-modal-item-body { flex: 1; min-width: 0; }
 .src-modal-title { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
 .src-modal-title a { color: #93c5fd; text-underline-offset: 2px;
   text-decoration-color: rgba(147,197,253,0.4); }
 .src-modal-title a:hover { text-decoration-color: rgba(147,197,253,0.8); }
 .src-modal-page { font-size: 11px; color: #64748b; margin-top: 3px; }
-.src-modal-empty { font-size: 13px; color: #475569; }
+.src-modal-empty { font-size: 13px; color: #475569; padding: 10px 0; }
+.src-modal-delete-btn { background: none; border: none; color: #64748b; cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+.src-modal-delete-btn:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+.src-modal-add { margin-top: 14px; padding-top: 12px; border-top: 1px solid #1e3a52; }
+.src-modal-add-btn { background: rgba(147,197,253,0.1); color: #93c5fd;
+  border: 1px solid rgba(147,197,253,0.3); border-radius: 4px; padding: 6px 12px;
+  font-size: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
+.src-modal-add-btn:hover { background: rgba(147,197,253,0.18);
+  border-color: rgba(147,197,253,0.55); }
 /* ── Citation badge on fact rows ─────────────────────────── */
 .evt-src-badge { font-size: 10px; color: #475569; background: rgba(71,85,105,0.15);
   border: 1px solid rgba(71,85,105,0.3); border-radius: 3px; padding: 1px 5px;
@@ -811,6 +973,10 @@ header h1 { font-size: 16px; font-weight: 600; }
   background .15s; position: absolute; right: 46px; top: 3px; line-height: 1.4; }
 .evt-src-badge:hover { color: #93c5fd; border-color: rgba(147,197,253,0.5);
   background: rgba(147,197,253,0.08); }
+.evt-src-badge-empty { color: #334155; border-color: rgba(71,85,105,0.2);
+  background: transparent; }
+.evt-src-badge-empty:hover { color: #93c5fd; border-color: rgba(147,197,253,0.4);
+  background: rgba(147,197,253,0.06); }
 #alias-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 /* ── Timeline ───────────────────────────────────────────── */
 #detail-timeline { position: relative; padding-left: 28px; }
@@ -865,6 +1031,11 @@ header h1 { font-size: 16px; font-weight: 600; }
   border-top: 1px solid #1e3a52; padding-top: 12px; margin: 18px 0 10px 0; }
 .family-sub:first-child .family-sub-heading { margin-top: 0; }
 .family-row { display: flex; align-items: baseline; gap: 6px; padding: 4px 0; font-size: 13px; }
+.family-parent-actions { display: inline-flex; gap: 2px; margin-left: 6px; opacity: 0; transition: opacity 0.15s; }
+.family-row:hover .family-parent-actions { opacity: 1; }
+.family-parent-btn { background: none; border: none; cursor: pointer; color: #64748b; font-size: 11px; padding: 0 4px; }
+.family-parent-btn:hover { color: #3b82f6; }
+.family-parent-btn.del:hover { color: #ef4444; }
 .family-link { color: #93c5fd; text-decoration: none; cursor: pointer; }
 .family-link:hover { color: #bfdbfe; text-decoration: underline; }
 .family-years { color: #475569; font-size: 12px; }
@@ -918,7 +1089,9 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
     <div class="event-modal-field" id="event-modal-tag-row">
       <label>Event Type</label>
-      <select id="event-modal-tag" onkeydown="if(event.key==='Escape')closeEventModal()">
+      <select id="event-modal-tag"
+              onchange="_eventModalAddTag=this.value;_updateEventModalFields(this.value);"
+              onkeydown="if(event.key==='Escape')closeEventModal()">
         <option value="BIRT">Birth</option>
         <option value="DEAT">Death</option>
         <option value="BURI">Burial</option>
@@ -1020,6 +1193,78 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
+<div id="add-godparent-modal-overlay" onclick="if(event.target===this)closeAddGodparentModal()">
+  <div id="add-godparent-modal">
+    <h3 id="add-godparent-modal-title">Add Godparent</h3>
+    <div class="event-modal-field">
+      <label>Role</label>
+      <select id="add-godparent-modal-rela"
+              onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
+        <option value="Godparent">Godparent</option>
+        <option value="Godfather">Godfather</option>
+        <option value="Godmother">Godmother</option>
+      </select>
+    </div>
+    <div class="event-modal-field">
+      <label>Search by name</label>
+      <input type="text" id="add-godparent-modal-search" placeholder="Type a name\u2026"
+             onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
+      <div id="add-godparent-modal-results"></div>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddGodparentModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddGodparentModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="add-person-modal-overlay" onclick="if(event.target===this)closeAddPersonModal()">
+  <div id="add-person-modal" onkeydown="if(event.key==='Escape')closeAddPersonModal()">
+    <h3 id="add-person-modal-title">Add Person</h3>
+    <div class="event-modal-field">
+      <label>Given name</label>
+      <input type="text" id="add-person-modal-given" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="add-person-modal-surname" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Sex</label>
+      <select id="add-person-modal-sex">
+        <option value="U">Unknown</option>
+        <option value="M">Male</option>
+        <option value="F">Female</option>
+      </select>
+    </div>
+    <div class="event-modal-field">
+      <label>Birth year</label>
+      <input type="text" id="add-person-modal-birth-year" inputmode="numeric" autocomplete="off">
+    </div>
+    <div class="event-modal-field" id="add-person-modal-other-parent-row" style="display:none">
+      <label>Other parent</label>
+      <select id="add-person-modal-other-parent"></select>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddPersonModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddPersonModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="change-parent-modal-overlay" onclick="if(event.target===this)closeChangeParentModal()">
+  <div id="change-parent-modal">
+    <h3 id="change-parent-modal-title">Change Parent</h3>
+    <div class="event-modal-field">
+      <label>Search by name (blank = no parent)</label>
+      <input type="text" id="change-parent-modal-search" placeholder="Type a name\u2026"
+             onkeydown="if(event.key==='Escape')closeChangeParentModal()">
+      <div id="change-parent-modal-results"></div>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeChangeParentModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitChangeParentModal()">Save</button>
+    </div>
+  </div>
+</div>
 <div id="sources-modal-overlay" onclick="if(event.target===this)closeSourcesModal()">
   <div id="sources-modal">
     <div id="sources-modal-header">
@@ -1027,6 +1272,31 @@ header h1 { font-size: 16px; font-weight: 600; }
       <button id="sources-modal-close" onclick="closeSourcesModal()" title="Close">&times;</button>
     </div>
     <div id="sources-modal-list"></div>
+  </div>
+</div>
+<div id="add-citation-modal-overlay" onclick="if(event.target===this)closeAddCitationModal()">
+  <div id="add-citation-modal" onkeydown="if(event.key==='Escape')closeAddCitationModal()">
+    <h3 id="add-citation-modal-title">Add Citation</h3>
+    <div class="event-modal-field">
+      <label>Source</label>
+      <select id="add-citation-modal-source"></select>
+    </div>
+    <div class="event-modal-field">
+      <label>Page / reference</label>
+      <input type="text" id="add-citation-modal-page" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Quoted text (optional)</label>
+      <textarea id="add-citation-modal-text" rows="3"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>Note (optional)</label>
+      <textarea id="add-citation-modal-note" rows="2"></textarea>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddCitationModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddCitationModal()">Add</button>
+    </div>
   </div>
 </div>
 <div id="name-modal-overlay" onclick="if(event.target===this)closeNameModal()">
@@ -1055,9 +1325,10 @@ header h1 { font-size: 16px; font-weight: 600; }
       <h2 id="detail-name"></h2>
       <div id="detail-aka"></div>
       <div id="detail-lifespan-row"></div>
+      <div id="detail-nationalities"></div>
     </div>
     <div id="detail-header-btns">
-      <button id="detail-close" title="Close">&#x2715;</button>
+      <button id="panel-close-btn" title="Close">&#x2715;</button>
       <button id="detail-set-root-btn" title="Browse tree with this person as root">&#x2302;</button>
     </div>
   </div>
@@ -1080,35 +1351,73 @@ window.addEventListener('error', e => {
 window.addEventListener('unhandledrejection', e => {
   console.error('[UNHANDLED REJECTION]', e.reason);
 });
-const TREE = __TREE_JSON__;
 const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const SOURCES = __SOURCES_JSON__;
-const RELATIVES = __RELATIVES_JSON__;
-const PARENTS = __PARENTS_JSON__;
-const CHILDREN = {};
+let RELATIVES = __RELATIVES_JSON__;
+let PARENTS = __PARENTS_JSON__;
+let CHILDREN = {};
 for (const [cx, [fa, mo]] of Object.entries(PARENTS)) {
   for (const p of [fa, mo]) { if (p) { (CHILDREN[p] = CHILDREN[p] || []).push(cx); } }
+}
+function _applyFamilyMaps(fm) {
+  if (!fm) return;
+  if (fm.parents)   PARENTS   = fm.parents;
+  if (fm.children)  CHILDREN  = fm.children;
+  if (fm.relatives) RELATIVES = fm.relatives;
 }
 const ROOT_XREF = __ROOT_XREF_JSON__;
 const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;
 const ALL_PLACES = __ALL_PLACES_JSON__;
-let currentTree = Object.assign({}, TREE);
-const expandedRelatives = new Set([1]);
-const expandedChildrenOf = new Set(); // xrefs whose children are currently shown
-let _relPosCache = new Map();
-// Maps "${anchorKey}:${sibIdx}" → current spouse index (0-based) for siblings with multiple spouses
-let _sibSpouseIdx = new Map();
-const visibleKeys = new Set();
-let _posCache = new Map();
 </script>
-<script src="/js/viz_constants.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="/js/viz_design.js"></script>
+<script src="/js/viz_state.js"></script>
+<script src="/js/viz_api.js"></script>
 <script src="/js/viz_layout.js"></script>
 <script src="/js/viz_render.js"></script>
-<script src="/js/viz_detail.js"></script>
+<script src="/js/viz_panel.js"></script>
 <script src="/js/viz_search.js"></script>
 <script src="/js/viz_modals.js"></script>
-<script src="/js/viz_init.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  console.log('[boot] DOMContentLoaded fired');
+  console.log('[boot] ROOT_XREF =', ROOT_XREF);
+  console.log('[boot] typeof initState =', typeof initState);
+  console.log('[boot] typeof initRenderer =', typeof initRenderer);
+  console.log('[boot] typeof initPanel =', typeof initPanel);
+  console.log('[boot] typeof computeLayout =', typeof computeLayout);
+  console.log('[boot] typeof render =', typeof render);
+  console.log('[boot] PEOPLE keys (first 3):', Object.keys(PEOPLE || {}).slice(0, 3));
+
+  try {
+    initState(ROOT_XREF);
+    console.log('[boot] initState OK, state =', JSON.stringify(getState()));
+  } catch(e) { console.error('[boot] initState FAILED:', e); }
+
+  try {
+    initPanel(document.getElementById('detail-panel'));
+    console.log('[boot] initPanel OK');
+  } catch(e) { console.error('[boot] initPanel FAILED:', e); }
+
+  const svgEl = document.getElementById('tree');
+  console.log('[boot] svgEl =', svgEl);
+  try {
+    if (svgEl) initRenderer(svgEl);
+    console.log('[boot] initRenderer OK');
+  } catch(e) { console.error('[boot] initRenderer FAILED:', e); }
+
+  onStateChange(function (state) { render(); });
+
+  const homeBtn = document.getElementById('home-btn');
+  if (homeBtn) homeBtn.addEventListener('click', () => setState({ focusXref: ROOT_XREF }));
+
+  try {
+    render();
+    console.log('[boot] initial render OK');
+  } catch(e) { console.error('[boot] render FAILED:', e); }
+});
+</script>
 </body>
 </html>
 """
@@ -1174,15 +1483,22 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     root_xref_json      = json.dumps(root_xref or '')
     addr_by_place_json  = json.dumps(build_addr_by_place(indis))
     all_places_json     = json.dumps(build_all_places(indis, fams))
-    # Build global SOURCES dict: {xref: {title, url}} for citation lookups
+    # Build global SOURCES dict: {xref: {titl, auth, publ, repo, note, url}}
     source_urls_global: dict[str, str] = {}
     for indi_info in indis.values():
         for sxref, url in indi_info.get('source_urls', {}).items():
             if url and sxref not in source_urls_global:
                 source_urls_global[sxref] = url
     sources_js = {
-        xref: {'title': title or '', 'url': source_urls_global.get(xref) or None}
-        for xref, title in (sources or {}).items()
+        xref: {
+            'titl': sour.get('titl') or '',
+            'auth': sour.get('auth') or '',
+            'publ': sour.get('publ') or '',
+            'repo': sour.get('repo') or '',
+            'note': sour.get('note') or '',
+            'url': source_urls_global.get(xref) or None,
+        }
+        for xref, sour in (sources or {}).items()
     }
     sources_json = json.dumps(sources_js)
     return (

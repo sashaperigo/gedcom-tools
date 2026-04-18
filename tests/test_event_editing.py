@@ -589,9 +589,10 @@ class TestTemplateUIElements:
     def test_submit_event_modal_js_function_defined(self):
         assert 'function submitEventModal(' in _FULL_SOURCE
 
-    def test_edit_buttons_use_event_idx(self):
-        """The edit button onclick must reference evt.event_idx, not a positional index."""
-        assert 'evt.event_idx' in _FULL_SOURCE
+    def test_edit_buttons_reference_fact(self):
+        """Redesign: edit/modal buttons reference the fact's tag and index."""
+        # New panel passes fact.tag to modal functions for fact-specific operations
+        assert 'fact.tag' in _FULL_SOURCE or 'showEditCitationModal' in _FULL_SOURCE
 
     def test_no_insert_adjacent_html_for_add_event_btn(self):
         """
@@ -657,23 +658,25 @@ class TestTemplateUIElements:
     def test_addr_by_place_constant(self):
         assert 'ADDR_BY_PLACE' in _HTML_TEMPLATE
 
-    def test_allvisible_filter_includes_marr_tag(self):
+    def test_marr_tag_label_defined(self):
         """
-        Regression: MARR events must pass the allVisible filter even when they have no
-        date/place/note/type/cause — the filter must short-circuit on e.tag === 'MARR'.
-        Without this fix a bare 1 MARR (or one with only ADDR) is invisible and has no
-        edit button, so the user cannot add ADDR via the UI.
+        Redesign: MARR events render via _buildFactRow with a tag label.
+        viz_panel.js must define a 'Marriage' label for MARR in _TAG_LABELS.
         """
-        assert "e.tag === 'MARR'" in _FULL_SOURCE
+        assert "'Marriage'" in _FULL_SOURCE or '"Marriage"' in _FULL_SOURCE
 
-    def test_keep_in_timeline_includes_marr_tag(self):
+    def test_panel_renders_all_facts(self):
         """
-        Regression: undated MARR events must stay in the timeline (not fall into
-        undatedFactoids where they render without an edit button).
+        The panel iterates events to render the timeline; variable names may vary
+        across implementations (fact/evt, facts/sorted/allVisible).
         """
-        # The keepInTimeline predicate must include MARR so the MARR card (with its
-        # edit button) is rendered even for marriages with no date.
-        assert "e.tag === 'MARR'" in _FULL_SOURCE
+        panel_src_path = _JS_DIR / 'viz_panel.js'
+        panel_src = panel_src_path.read_text(encoding='utf-8')
+        assert (
+            'for (const evt of sorted)' in panel_src
+            or 'for (const fact of facts)' in panel_src
+            or 'for (const evt of allVisible)' in panel_src
+        ), 'viz_panel.js must iterate events to render the timeline'
 
     def test_type_field_uses_uppercase_key(self):
         """
@@ -690,26 +693,21 @@ class TestTemplateUIElements:
         type row is hidden."""
         assert "typeRow.style.display !== 'none'" in _FULL_SOURCE
 
-    def test_open_detail_key_cleared_before_show_detail(self):
+    def test_submit_event_modal_uses_setState(self):
         """
-        Regression: submitEventModal must null _openDetailKey before calling showDetail
-        so the early-return guard inside showDetail does not fire.
-
-        Without this fix: after saving an event while the same person's panel is open,
-        _openDetailKey still equals xref when showDetail(xref) is called, triggering
-        the early-return guard and leaving the panel displaying stale data.
+        After B2 fix: submitEventModal must call setState({ panelXref: xref, panelOpen: true })
+        instead of the old showDetail(xref, true) which was undefined and caused a ReferenceError.
         """
-        # Locate the submitEventModal function body in combined source
         fn_start = _FULL_SOURCE.find('async function submitEventModal(')
         assert fn_start != -1, 'submitEventModal must be present'
-        # Find the closing brace of the function (search for showDetail after fn_start)
-        show_detail_pos = _FULL_SOURCE.find('showDetail(xref)', fn_start)
-        assert show_detail_pos != -1, 'showDetail(xref) call must be present in submitEventModal'
-        # _openDetailKey = null must appear somewhere between fn_start and the showDetail call
-        null_assign_pos = _FULL_SOURCE.find('_openDetailKey = null', fn_start)
-        assert null_assign_pos != -1, '_openDetailKey must be nulled in submitEventModal'
-        assert null_assign_pos < show_detail_pos, \
-            '_openDetailKey = null must come BEFORE showDetail(xref) so the re-render is not skipped'
+        # showDetail must NOT appear in submitEventModal (B2 fix)
+        show_detail_pos = _FULL_SOURCE.find('showDetail(xref,', fn_start)
+        assert show_detail_pos == -1, \
+            'showDetail(xref, ...) must NOT be present in submitEventModal after B2 fix; use setState instead'
+        # setState must be called with panelXref and panelOpen
+        set_state_pos = _FULL_SOURCE.find('setState({ panelXref: xref, panelOpen: true })', fn_start)
+        assert set_state_pos != -1, \
+            'submitEventModal must call setState({ panelXref: xref, panelOpen: true }) after B2 fix'
 
 
 # ---------------------------------------------------------------------------

@@ -2,582 +2,553 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
-// ── Constants ──────────────────────────────────────────────────────────────
-const C = require('../../js/viz_constants.js');
-const { NODE_W, NODE_H, H_GAP, V_GAP, BTN_PAD, MARGIN_X, MARGIN_TOP, BTN_ZONE } = C;
+// Inject DESIGN as a global so viz_layout.js can read it
+const { DESIGN } = require('../../js/viz_design.js');
+global.DESIGN = DESIGN;
 
-// Inject constants as globals so viz_layout.js can read them
-Object.assign(global, C);
+const { NODE_W, NODE_W_FOCUS, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+// Focus-to-sibling gap: accounts for focus node being wider than NODE_W.
+const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
 
-// ── Layout functions ───────────────────────────────────────────────────────
-const {
-  genOf, slotOf, isMaleKey,
-  _buildSibSlots, _subtreeWidth,
-  computePositions, computeRelativePositions,
-  hasHiddenParents, hasVisibleParents,
-  maxVisibleGen, nodePos,
-} = require('../../js/viz_layout.js');
+const { computeLayout, _sortByBirthYear, _packRow } = require('../../js/viz_layout.js');
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── helpers ────────────────────────────────────────────────────────────────
 
-/** Build a minimal tree with root + n ancestor generations fully populated. */
-function fullTree(gens) {
-  const tree = {};
-  for (let g = 0; g <= gens; g++) {
-    const start = Math.pow(2, g), end = Math.pow(2, g + 1);
-    for (let k = start; k < end; k++) tree[k] = `xref${k}`;
-  }
-  return tree;
+function resetGlobals({ people = {}, parents = {}, children = {}, relatives = {} } = {}) {
+  global.PEOPLE    = people;
+  global.PARENTS   = parents;
+  global.CHILDREN  = children;
+  global.RELATIVES = relatives;
 }
 
-function resetGlobals(opts = {}) {
-  global.currentTree        = opts.tree        ?? { 1: 'root' };
-  global.visibleKeys        = opts.visible      ?? new Set([1]);
-  global.expandedRelatives  = opts.expanded     ?? new Set([1]);
-  global.expandedChildrenOf = opts.expandedCh   ?? new Set();
-  global.PEOPLE             = opts.people       ?? {};
-  global.RELATIVES          = opts.relatives    ?? {};
-  global.CHILDREN           = opts.children     ?? {};
-  global._posCache          = new Map();
-  global._relPosCache       = new Map();
-  global._sibSlots          = new Map();
-  global._sibSpouseIdx      = new Map();
-}
+// ── _sortByBirthYear ───────────────────────────────────────────────────────
 
-const SLOT = NODE_W + H_GAP;
-
-// ── genOf / slotOf ─────────────────────────────────────────────────────────
-
-describe('genOf / slotOf', () => {
-  it('root (key=1) is gen 0 slot 0', () => {
-    expect(genOf(1)).toBe(0);
-    expect(slotOf(1)).toBe(0);
-  });
-  it('keys 2,3 are gen 1', () => {
-    expect(genOf(2)).toBe(1);
-    expect(genOf(3)).toBe(1);
-  });
-  it('slot increases left-to-right within a generation', () => {
-    expect(slotOf(4)).toBe(0);
-    expect(slotOf(5)).toBe(1);
-    expect(slotOf(6)).toBe(2);
-    expect(slotOf(7)).toBe(3);
-  });
-});
-
-// ── isMaleKey ─────────────────────────────────────────────────────────────
-
-describe('isMaleKey', () => {
-  it('even keys > 1 are male', () => {
-    resetGlobals();
-    expect(isMaleKey(2)).toBe(true);
-    expect(isMaleKey(4)).toBe(true);
-    expect(isMaleKey(6)).toBe(true);
-  });
-  it('odd keys > 1 are female', () => {
-    resetGlobals();
-    expect(isMaleKey(3)).toBe(false);
-    expect(isMaleKey(5)).toBe(false);
-  });
-  it('key=1 uses GEDCOM sex field (M)', () => {
-    resetGlobals({ tree: { 1: 'root' }, people: { root: { sex: 'M' } } });
-    expect(isMaleKey(1)).toBe(true);
-  });
-  it('key=1 uses GEDCOM sex field (F)', () => {
-    resetGlobals({ tree: { 1: 'root' }, people: { root: { sex: 'F' } } });
-    expect(isMaleKey(1)).toBe(false);
-  });
-});
-
-// ── _subtreeWidth ──────────────────────────────────────────────────────────
-
-describe('_subtreeWidth', () => {
-  beforeEach(() => resetGlobals());
-
-  it('leaf node (no visible parents) = 1', () => {
-    global.visibleKeys = new Set([1]);
-    const cache = new Map();
-    expect(_subtreeWidth(1, cache)).toBe(1);
-  });
-
-  it('root + father only = 1 (father IS the one slot)', () => {
-    // Width represents ancestor slots; a single parent with no further ancestors
-    // still only takes 1 slot — the root is centered above it.
-    global.visibleKeys = new Set([1, 2]);
-    const cache = new Map();
-    expect(_subtreeWidth(1, cache)).toBe(1);
-  });
-
-  it('root + mother only = 1', () => {
-    global.visibleKeys = new Set([1, 3]);
-    const cache = new Map();
-    expect(_subtreeWidth(1, cache)).toBe(1);
-  });
-
-  it('root + both parents, no grandparents = 2', () => {
-    global.visibleKeys = new Set([1, 2, 3]);
-    const cache = new Map();
-    // Each parent takes 1 slot, no gap (neither has visible ancestors) → total 2
-    expect(_subtreeWidth(1, cache)).toBe(2);
-  });
-
-  it('root + both parents + all 4 grandparents gets gap slot', () => {
-    global.visibleKeys = new Set([1, 2, 3, 4, 5, 6, 7]);
-    global.currentTree = fullTree(2);
-    const cache = new Map();
-    const w = _subtreeWidth(1, cache);
-    // Father subtree: 2 grandparents → width 2
-    // Mother subtree: 2 grandparents → width 2
-    // Both have ancestors → +1 gap = 5
-    expect(w).toBe(5);
-  });
-
-  it('asymmetric: father has 2 ancestors, mother has none', () => {
-    global.visibleKeys = new Set([1, 2, 3, 4, 5]);
-    global.currentTree = { 1:'r', 2:'f', 3:'m', 4:'ff', 5:'fm' };
-    const cache = new Map();
-    // father subtree width = 2, mother = 1, no gap (mother has no ancestors)
-    expect(_subtreeWidth(1, cache)).toBe(3);
-  });
-
-  it('caches results (second call returns same value without recursing)', () => {
-    global.visibleKeys = new Set([1, 2, 3]);
-    const cache = new Map();
-    _subtreeWidth(1, cache);
-    const cached = cache.get(1);
-    _subtreeWidth(1, cache);   // should read from cache
-    expect(cache.get(1)).toBe(cached);
-  });
-});
-
-// ── computePositions ───────────────────────────────────────────────────────
-
-describe('computePositions — single root', () => {
-  beforeEach(() => {
-    resetGlobals({
-      tree: { 1: 'root' },
-      visible: new Set([1]),
-      people: { root: { sex: 'M' } },
-    });
-  });
-
-  it('places root near MARGIN_X, MARGIN_TOP + BTN_ZONE', () => {
-    // The layout centers the root within its 1-slot width:
-    // x = MARGIN_X + (slotW - NODE_W)/2 = MARGIN_X + H_GAP/2
-    computePositions();
-    const pos = global._posCache.get(1);
-    const SLOT = NODE_W + H_GAP;
-    expect(pos.x).toBeCloseTo(MARGIN_X + (SLOT - NODE_W) / 2);
-    expect(pos.y).toBeCloseTo(MARGIN_TOP + BTN_ZONE);
-  });
-});
-
-describe('computePositions — generation spacing', () => {
-  beforeEach(() => {
-    resetGlobals({
-      tree: fullTree(2),
-      visible: new Set([1, 2, 3]),
-      people: { xref1: { sex: 'M' } },
-    });
-  });
-
-  it('each generation is exactly (NODE_H + V_GAP) above the next', () => {
-    computePositions();
-    const rootY   = global._posCache.get(1).y;
-    const fatherY = global._posCache.get(2).y;
-    expect(fatherY).toBeCloseTo(rootY - (NODE_H + V_GAP));
-  });
-
-  it('parents are above root (lower y value)', () => {
-    computePositions();
-    const rootY   = global._posCache.get(1).y;
-    const fatherY = global._posCache.get(2).y;
-    const motherY = global._posCache.get(3).y;
-    expect(fatherY).toBeLessThan(rootY);
-    expect(motherY).toBeLessThan(rootY);
-  });
-
-  it('father is to the left of mother', () => {
-    computePositions();
-    const fx = global._posCache.get(2).x;
-    const mx = global._posCache.get(3).x;
-    expect(fx).toBeLessThan(mx);
-  });
-});
-
-describe('computePositions — couple compaction', () => {
-  it('moves isolated father adjacent to mother when gap > slotW', () => {
-    // Build a 4-gen tree where mother has 4 grandparents (pushing her far right)
-    // but father has no ancestors at all.  The gap must exceed slotW to trigger.
-    // Mother (key 3) → grandparents (6,7) → great-grandparents (12,13,14,15)
-    const tree = {
-      1:'root', 2:'f', 3:'m',
-      6:'mm', 7:'mf',
-      12:'mmm', 13:'mmf', 14:'mfm', 15:'mff',
+describe('_sortByBirthYear', () => {
+  it('sorts by birth_year ascending', () => {
+    global.PEOPLE = {
+      '@I1@': { birth_year: 1900 },
+      '@I2@': { birth_year: 1880 },
+      '@I3@': { birth_year: 1920 },
     };
-    resetGlobals({
-      tree,
-      visible: new Set([1, 2, 3, 6, 7, 12, 13, 14, 15]),
-      people: { root: { sex: 'M' } },
-    });
-    computePositions();
-    const fp = global._posCache.get(2);
-    const mp = global._posCache.get(3);
-    // After compaction, father is placed just to the left of mother: gap = H_GAP
-    const gap = mp.x - (fp.x + NODE_W);
-    expect(gap).toBeCloseTo(H_GAP);
+    expect(_sortByBirthYear(['@I1@', '@I2@', '@I3@'])).toEqual(['@I2@', '@I1@', '@I3@']);
+  });
+
+  it('treats missing birth_year as 9999 (sorts last)', () => {
+    global.PEOPLE = {
+      '@I1@': { birth_year: 1900 },
+      '@I2@': {},
+    };
+    expect(_sortByBirthYear(['@I1@', '@I2@'])).toEqual(['@I1@', '@I2@']);
   });
 });
 
-// ── computeRelativePositions — Pass 1 (root children) ─────────────────────
+// ── _packRow ───────────────────────────────────────────────────────────────
 
-describe('computeRelativePositions — Pass 1: root children', () => {
+describe('_packRow', () => {
+  it('packs single item at x=0 with generation and role', () => {
+    const items = [{ xref: '@I1@' }];
+    const nodes = _packRow(items, 0, 0, 'focus');
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]).toMatchObject({ xref: '@I1@', x: 0, y: 0, generation: 0, role: 'focus' });
+  });
+
+  it('packs two items with NODE_W + H_GAP spacing', () => {
+    const items = [{ xref: '@I1@' }, { xref: '@I2@' }];
+    const nodes = _packRow(items, 0, 0, 'sibling');
+    expect(nodes[0].x).toBe(0);
+    expect(nodes[1].x).toBe(NODE_W + H_GAP);
+  });
+});
+
+// ── computeLayout — shape ──────────────────────────────────────────────────
+
+describe('computeLayout — return shape', () => {
+  it('returns { nodes, edges }', () => {
+    resetGlobals({ people: { '@I1@': { birth_year: 1900 } } });
+    const result = computeLayout('@I1@', new Set(), false);
+    expect(result).toHaveProperty('nodes');
+    expect(result).toHaveProperty('edges');
+    expect(Array.isArray(result.nodes)).toBe(true);
+    expect(Array.isArray(result.edges)).toBe(true);
+  });
+});
+
+// ── Test 1: Focus-only tree ────────────────────────────────────────────────
+
+describe('computeLayout — focus-only tree', () => {
+  beforeEach(() => {
+    resetGlobals({ people: { '@I1@': { birth_year: 1900 } } });
+  });
+
+  it('has exactly one node', () => {
+    const { nodes } = computeLayout('@I1@', new Set(), false);
+    expect(nodes).toHaveLength(1);
+  });
+
+  it('focus node is at x=0, y=0, generation=0, role=focus', () => {
+    const { nodes } = computeLayout('@I1@', new Set(), false);
+    const focus = nodes.find(n => n.xref === '@I1@');
+    expect(focus).toBeDefined();
+    expect(focus.x).toBe(0);
+    expect(focus.y).toBe(0);
+    expect(focus.generation).toBe(0);
+    expect(focus.role).toBe('focus');
+  });
+});
+
+// ── Test 2: Focus with siblings (birth order) ─────────────────────────────
+
+describe('computeLayout — focus with siblings', () => {
   beforeEach(() => {
     resetGlobals({
-      tree: { 1: 'root', 2: 'father', 3: 'mother' },
-      visible: new Set([1, 2, 3]),
       people: {
-        root:   { sex: 'M' },
-        father: {},
-        mother: {},
-        ch0: {}, ch1: {}, ch2: {},
+        '@OLDER@':  { birth_year: 1870 },
+        '@FOCUS@':  { birth_year: 1873 },
+        '@YOUNGER@': { birth_year: 1876 },
       },
-      relatives: { root: { siblings: [], spouses: [], sib_spouses: {} } },
-      children: { root: ['ch0', 'ch1', 'ch2'] },
-      expandedCh: new Set(['root']),
+      relatives: {
+        '@FOCUS@': { siblings: ['@OLDER@', '@YOUNGER@'], spouses: [] },
+      },
     });
-    computePositions();
   });
 
-  it('places children below root', () => {
-    computeRelativePositions();
-    const rootY = global._posCache.get(1).y;
-    for (let i = 0; i < 3; i++) {
-      const ch = global._relPosCache.get(`ch:${i}`);
-      expect(ch).toBeDefined();
-      expect(ch.y).toBeGreaterThan(rootY);
-    }
+  it('focus is at x=0', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const focus = nodes.find(n => n.xref === '@FOCUS@');
+    expect(focus.x).toBe(0);
   });
 
-  it('children are centered below the root–spouse couple midpoint', () => {
-    // No spouse on root; stemX = root center
-    computeRelativePositions();
-    const rootPos = global._posCache.get(1);
-    const stemX = rootPos.x + NODE_W / 2;
-    const chXs = [0, 1, 2].map(i => global._relPosCache.get(`ch:${i}`).x + NODE_W / 2);
-    const centerX = (Math.min(...chXs) + Math.max(...chXs)) / 2;
-    expect(centerX).toBeCloseTo(stemX);
+  it('older sibling is at x = -FOCUS_TO_SIB (accounts for wider focus node)', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const older = nodes.find(n => n.xref === '@OLDER@');
+    expect(older).toBeDefined();
+    expect(older.x).toBe(-FOCUS_TO_SIB);
+  });
+
+  it('younger sibling is at x = +FOCUS_TO_SIB (accounts for wider focus node)', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const younger = nodes.find(n => n.xref === '@YOUNGER@');
+    expect(younger).toBeDefined();
+    expect(younger.x).toBe(FOCUS_TO_SIB);
+  });
+
+  it('all generation-0 nodes are at y=0', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    nodes.filter(n => n.generation === 0).forEach(n => {
+      expect(n.y).toBe(0);
+    });
   });
 });
 
-// ── computeRelativePositions — Pass 3 (collision resolution) ───────────────
+// ── Test 3: Focus with parents ─────────────────────────────────────────────
 
-describe('computeRelativePositions — Pass 3: sibling-children vs root-children', () => {
-  /**
-   * Setup:
-   *   root (key 1) — has 1 sibling and 1 child
-   *
-   * Sibling direction is determined by the ANCHOR's sex (isMaleKey(k) for the
-   * ancestor key), NOT the sibling's own sex.
-   *   - Male anchor (root sex='M') → all siblings go LEFT
-   *   - Female anchor (root sex='F') → all siblings go RIGHT
-   *
-   * sib's child lands at the same Y as root's child; Pass 3 must push it out.
-   */
-  function setupSiblingChildCollision(anchorSex) {
-    const sibXref = 'sib1';
+describe('computeLayout — focus with parents', () => {
+  beforeEach(() => {
     resetGlobals({
-      tree: { 1: 'root', 2: 'father', 3: 'mother' },
-      visible: new Set([1, 2, 3]),
       people: {
-        root:    { sex: anchorSex },
-        father:  {},
-        mother:  {},
-        sib1:    {},
-        ch0: {}, sibch0: {},
+        '@FOCUS@':  { birth_year: 1900 },
+        '@FATHER@': { birth_year: 1870 },
+        '@MOTHER@': { birth_year: 1872 },
       },
-      relatives: {
-        root: { siblings: [sibXref], spouses: [], sib_spouses: {} },
+      parents: {
+        '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      },
+    });
+  });
+
+  it('father is at x < 0, y = -ROW_HEIGHT', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const father = nodes.find(n => n.xref === '@FATHER@');
+    expect(father).toBeDefined();
+    expect(father.x).toBeLessThan(0);
+    expect(father.y).toBe(-ROW_HEIGHT);
+  });
+
+  it('mother is at x > 0, y = -ROW_HEIGHT', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    expect(mother).toBeDefined();
+    expect(mother.x).toBeGreaterThan(0);
+    expect(mother.y).toBe(-ROW_HEIGHT);
+  });
+
+  it('parent nodes have generation = -1', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const parents = nodes.filter(n => n.generation === -1);
+    expect(parents).toHaveLength(2);
+  });
+
+  it('edges include an ancestor edge for each parent', () => {
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const ancestorEdges = edges.filter(e => e.type === 'ancestor');
+    expect(ancestorEdges.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ── Test 4: Focus with children ────────────────────────────────────────────
+
+describe('computeLayout — focus with children', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@': { birth_year: 1900 },
+        '@C1@':    { birth_year: 1925 },
+        '@C2@':    { birth_year: 1927 },
+        '@C3@':    { birth_year: 1929 },
       },
       children: {
-        root:  ['ch0'],
-        sib1:  ['sibch0'],
+        '@FOCUS@': ['@C1@', '@C2@', '@C3@'],
       },
-      expandedCh: new Set(['root', 'sib1']),
     });
-    computePositions();
-  }
-
-  it('left (male anchor) sibling-children do not overlap root-children after shift', () => {
-    setupSiblingChildCollision('M');  // male anchor → siblings go left
-    computeRelativePositions();
-    const ch0   = global._relPosCache.get('ch:0');
-    const sibCh = [...global._relPosCache.entries()]
-      .find(([k]) => k.startsWith('sibch:'));
-    expect(ch0).toBeDefined();
-    expect(sibCh).toBeDefined();
-    const [, sibChEntry] = sibCh;
-    // Sibling is to the left → its child must be entirely left of root-children
-    expect(sibChEntry.x + NODE_W + H_GAP).toBeLessThanOrEqual(ch0.x);
   });
 
-  it('right (female anchor) sibling-children do not overlap root-children after shift', () => {
-    setupSiblingChildCollision('F');  // female anchor → siblings go right
-    computeRelativePositions();
-    const ch0   = global._relPosCache.get('ch:0');
-    const sibCh = [...global._relPosCache.entries()]
-      .find(([k]) => k.startsWith('sibch:'));
-    expect(ch0).toBeDefined();
-    expect(sibCh).toBeDefined();
-    const [, sibChEntry] = sibCh;
-    // Sibling is to the right → its child must be entirely right of root-children
-    expect(sibChEntry.x).toBeGreaterThanOrEqual(ch0.x + NODE_W + H_GAP);
+  it('children are at y = +ROW_HEIGHT', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    ['@C1@', '@C2@', '@C3@'].forEach(xref => {
+      const child = nodes.find(n => n.xref === xref);
+      expect(child).toBeDefined();
+      expect(child.y).toBe(ROW_HEIGHT);
+    });
+  });
+
+  it('children have generation = +1', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const children = nodes.filter(n => n.generation === 1);
+    expect(children).toHaveLength(3);
+  });
+
+  it('children are centered under the focus node center', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const focus = nodes.find(n => n.xref === '@FOCUS@');
+    const focusCenterX = focus.x + NODE_W / 2;
+    const childXs = ['@C1@', '@C2@', '@C3@'].map(xref => {
+      const n = nodes.find(c => c.xref === xref);
+      return n.x + NODE_W / 2;
+    });
+    const centerX = (Math.min(...childXs) + Math.max(...childXs)) / 2;
+    expect(centerX).toBeCloseTo(focusCenterX);
+  });
+
+  it('children are evenly spaced', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const childXs = ['@C1@', '@C2@', '@C3@']
+      .map(xref => nodes.find(n => n.xref === xref).x)
+      .sort((a, b) => a - b);
+    const gap1 = childXs[1] - childXs[0];
+    const gap2 = childXs[2] - childXs[1];
+    expect(gap1).toBeCloseTo(gap2);
+    expect(gap1).toBeCloseTo(NODE_W + H_GAP);
   });
 });
 
-describe('computeRelativePositions — Pass 3: sibling-children vs ancestor nodes', () => {
-  /**
-   * Root has a parent (key 2). Parent has a sibling (sib_of_parent) with children.
-   * Those children land at y(gen 0) = the same Y as root.
-   * Pass 3 must push sib_of_parent's children outward so they don't overlap root.
-   */
-  it('sibling-children of a parent do not overlap root node X range', () => {
-    const tree = { 1: 'root', 2: 'father', 3: 'mother' };
+// ── Test 5: Focus with spouse ──────────────────────────────────────────────
+
+describe('computeLayout — focus with spouse', () => {
+  beforeEach(() => {
     resetGlobals({
-      tree,
-      visible: new Set([1, 2, 3]),
       people: {
-        root:          { sex: 'M' },
-        father:        {},
-        mother:        {},
-        sib_of_father: { sex: 'M' },
-        sibch0: {},
+        '@FOCUS@': { birth_year: 1900 },
+        '@SPOUSE@': { birth_year: 1902 },
       },
       relatives: {
-        father: { siblings: ['sib_of_father'], spouses: [], sib_spouses: {} },
+        '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] },
       },
-      children: { sib_of_father: ['sibch0'] },
-      expandedCh: new Set(['sib_of_father']),
-      expanded: new Set([1, 2]),
     });
-    computePositions();
-    computeRelativePositions();
+  });
 
-    const rootPos = global._posCache.get(1);
-    const sibCh   = [...global._relPosCache.entries()]
-      .find(([k]) => k.startsWith('sibch:'));
-    expect(sibCh).toBeDefined();
-    const [, sibChEntry] = sibCh;
+  it('spouse is to the right of focus (no siblings)', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const focus  = nodes.find(n => n.xref === '@FOCUS@');
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    expect(spouse).toBeDefined();
+    expect(spouse.x).toBeGreaterThan(focus.x);
+  });
 
-    // sibch must NOT overlap root node horizontally at the same Y
-    const noOverlap =
-      sibChEntry.x + NODE_W + H_GAP <= rootPos.x  ||
-      sibChEntry.x >= rootPos.x + NODE_W + H_GAP;
-    expect(noOverlap).toBe(true);
+  it('spouse is at x = NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 (no siblings)', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    // Focus at x=0 has width NODE_W_FOCUS; right edge = NODE_W_FOCUS/2.
+    // Spouse center = right edge + MARRIAGE_GAP + NODE_W/2.
+    expect(spouse.x).toBe(NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2);
+  });
+
+  it('spouse has role "spouse"', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    expect(spouse.role).toBe('spouse');
+  });
+
+  it('edges include a marriage edge', () => {
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const marriageEdges = edges.filter(e => e.type === 'marriage');
+    expect(marriageEdges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('marriage edge x1 is the right edge of the focus node (no siblings)', () => {
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const me = edges.find(e => e.type === 'marriage');
+    // Focus at x=0 has width NODE_W_FOCUS; right edge center = NODE_W_FOCUS/2.
+    expect(me.x1).toBe(NODE_W_FOCUS / 2);
   });
 });
 
-// ── maxVisibleGen ──────────────────────────────────────────────────────────
+// ── Test 5c: Multi-spouse marriage edges ───────────────────────────────────
 
-describe('maxVisibleGen', () => {
-  beforeEach(() => resetGlobals({ tree: {}, visible: new Set(), people: {}, relatives: {} }));
-
-  it('returns 0 when only root is visible (key=1, gen=0)', () => {
-    global.visibleKeys = new Set([1]);
-    expect(maxVisibleGen()).toBe(0);
-  });
-
-  it('returns 1 when root + both parents visible (keys 1,2,3)', () => {
-    global.visibleKeys = new Set([1, 2, 3]);
-    expect(maxVisibleGen()).toBe(1);
-  });
-
-  it('returns 2 when a full 3-generation tree is visible (keys 1–7)', () => {
-    global.visibleKeys = new Set([1, 2, 3, 4, 5, 6, 7]);
-    expect(maxVisibleGen()).toBe(2);
-  });
-
-  it('handles an asymmetric tree (only paternal line)', () => {
-    // keys 1, 2, 4 → gen 0, 1, 2 → max is 2
-    global.visibleKeys = new Set([1, 2, 4]);
-    expect(maxVisibleGen()).toBe(2);
-  });
-});
-
-// ── nodePos ────────────────────────────────────────────────────────────────
-
-describe('nodePos', () => {
-  beforeEach(() => resetGlobals({ tree: {}, visible: new Set(), people: {}, relatives: {} }));
-
-  it('returns cached position when key is in _posCache', () => {
-    global._posCache = new Map([[1, { x: 100, y: 200 }]]);
-    expect(nodePos(1)).toEqual({ x: 100, y: 200 });
-  });
-
-  it('returns {x:0, y:0} when key is not in _posCache', () => {
-    global._posCache = new Map();
-    expect(nodePos(99)).toEqual({ x: 0, y: 0 });
-  });
-});
-
-// ── hasHiddenParents ───────────────────────────────────────────────────────
-
-describe('hasHiddenParents', () => {
-  function setup(treeKeys, visKeys) {
-    const tree = {};
-    treeKeys.forEach(k => { tree[k] = `xref${k}`; });
-    global.currentTree = tree;
-    global.visibleKeys = new Set(visKeys);
-  }
-
-  it('returns true when both parents are in the tree but neither is visible', () => {
-    setup([1, 2, 3], [1]);   // key=1 is root; parents are keys 2,3 (in tree, not visible)
-    expect(hasHiddenParents(1)).toBe(true);
-  });
-
-  it('returns false when neither parent is in the tree at all', () => {
-    setup([1], [1]);          // key=1 has no parents in tree
-    expect(hasHiddenParents(1)).toBe(false);
-  });
-
-  it('returns false when father is visible', () => {
-    setup([1, 2, 3], [1, 2]); // father (key=2) is visible
-    expect(hasHiddenParents(1)).toBe(false);
-  });
-
-  it('returns false when mother is visible', () => {
-    setup([1, 2, 3], [1, 3]); // mother (key=3) is visible
-    expect(hasHiddenParents(1)).toBe(false);
-  });
-
-  it('returns false when both parents are visible', () => {
-    setup([1, 2, 3], [1, 2, 3]);
-    expect(hasHiddenParents(1)).toBe(false);
-  });
-
-  it('returns true when only one parent is in tree and it is not visible', () => {
-    setup([1, 2], [1]);       // only father in tree, not visible
-    expect(hasHiddenParents(1)).toBe(true);
-  });
-});
-
-// ── hasVisibleParents ──────────────────────────────────────────────────────
-
-describe('hasVisibleParents', () => {
-  function setup(visKeys) {
-    global.visibleKeys = new Set(visKeys);
-  }
-
-  it('returns true when father (key*2) is visible', () => {
-    setup([1, 2]);
-    expect(hasVisibleParents(1)).toBe(true);
-  });
-
-  it('returns true when mother (key*2+1) is visible', () => {
-    setup([1, 3]);
-    expect(hasVisibleParents(1)).toBe(true);
-  });
-
-  it('returns false when neither parent is visible', () => {
-    setup([1]);
-    expect(hasVisibleParents(1)).toBe(false);
-  });
-
-  it('returns true when both parents are visible', () => {
-    setup([1, 2, 3]);
-    expect(hasVisibleParents(1)).toBe(true);
-  });
-});
-
-describe('computeRelativePositions — Pass 3: direction correctness', () => {
-  // Direction is determined by anchor sex (isMaleKey(anchorKey)), not sibling sex.
-
-  it('male anchor → sibling-children pushed left of root', () => {
+describe('computeLayout — multi-spouse marriage edges', () => {
+  it('second spouse marriage edge starts at right edge of first spouse', () => {
     resetGlobals({
-      tree: { 1: 'root', 2: 'father', 3: 'mother' },
-      visible: new Set([1, 2, 3]),
       people: {
-        root:   { sex: 'M' },   // male anchor → siblings go left
-        father: {},
-        mother: {},
-        sib1:   {},
-        ch0: {}, sibch0: {},
-      },
-      relatives: { root: { siblings: ['sib1'], spouses: [], sib_spouses: {} } },
-      children:  { root: ['ch0'], sib1: ['sibch0'] },
-      expandedCh: new Set(['root', 'sib1']),
-    });
-    computePositions();
-    computeRelativePositions();
-    const rootPos = global._posCache.get(1);
-    const sibCh   = [...global._relPosCache.entries()]
-      .find(([k]) => k.startsWith('sibch:'));
-    expect(sibCh).toBeDefined();
-    expect(sibCh[1].x + NODE_W).toBeLessThanOrEqual(rootPos.x);
-  });
-
-  it('female anchor → sibling-children pushed right of root', () => {
-    resetGlobals({
-      tree: { 1: 'root', 2: 'father', 3: 'mother' },
-      visible: new Set([1, 2, 3]),
-      people: {
-        root:   { sex: 'F' },   // female anchor → siblings go right
-        father: {},
-        mother: {},
-        sib1:   {},
-        ch0: {}, sibch0: {},
-      },
-      relatives: { root: { siblings: ['sib1'], spouses: [], sib_spouses: {} } },
-      children:  { root: ['ch0'], sib1: ['sibch0'] },
-      expandedCh: new Set(['root', 'sib1']),
-    });
-    computePositions();
-    computeRelativePositions();
-    const rootPos = global._posCache.get(1);
-    const sibCh   = [...global._relPosCache.entries()]
-      .find(([k]) => k.startsWith('sibch:'));
-    expect(sibCh).toBeDefined();
-    expect(sibCh[1].x).toBeGreaterThanOrEqual(rootPos.x + NODE_W);
-  });
-});
-
-describe('computeRelativePositions — Pass 3: multiple sibling groups', () => {
-  it('two sibling groups with children are both shifted away from root-children', () => {
-    // Two anchors: male root (sib goes left) and female parent (sib goes right).
-    // We test that two separate sibling groups both resolve their children collisions.
-    // Simpler: use root (male) with two siblings; both go left.
-    // After Pass 3, all their children must be to the left of root-children.
-    resetGlobals({
-      tree: { 1: 'root', 2: 'father', 3: 'mother' },
-      visible: new Set([1, 2, 3]),
-      people: {
-        root:   { sex: 'M' },   // male anchor → both siblings go left
-        father: {},
-        mother: {},
-        sib_a:  {},
-        sib_b:  {},
-        ch0: {}, sibch_a0: {}, sibch_b0: {},
+        '@FOCUS@':   { birth_year: 1900 },
+        '@SPOUSE1@': { birth_year: 1901 },
+        '@SPOUSE2@': { birth_year: 1920 },
       },
       relatives: {
-        root: { siblings: ['sib_a', 'sib_b'], spouses: [], sib_spouses: {} },
+        '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@', '@SPOUSE2@'] },
       },
-      children: {
-        root:  ['ch0'],
-        sib_a: ['sibch_a0'],
-        sib_b: ['sibch_b0'],
-      },
-      expandedCh: new Set(['root', 'sib_a', 'sib_b']),
     });
-    computePositions();
-    computeRelativePositions();
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const sp1 = nodes.find(n => n.xref === '@SPOUSE1@');
+    const sp2 = nodes.find(n => n.xref === '@SPOUSE2@');
+    const marriageEdges = edges.filter(e => e.type === 'marriage');
+    expect(marriageEdges).toHaveLength(2);
+    // First edge: focus right edge (NODE_W_FOCUS/2) → spouse1 center
+    expect(marriageEdges[0].x1).toBe(NODE_W_FOCUS / 2);
+    expect(marriageEdges[0].x2).toBe(sp1.x);
+    // Second edge: spouse1 right edge center (sp1.x + NODE_W/2) → spouse2 center
+    expect(marriageEdges[1].x1).toBe(sp1.x + NODE_W / 2);
+    expect(marriageEdges[1].x2).toBe(sp2.x);
+  });
+});
 
-    const ch0 = global._relPosCache.get('ch:0');
-    const allSibCh = [...global._relPosCache.entries()]
-      .filter(([k]) => k.startsWith('sibch:'));
+// ── Test 5b: Spouse siblings expanded ─────────────────────────────────────
 
-    // All sibling-children must be to the left of root-children
-    for (const [, e] of allSibCh) {
-      expect(e.x + NODE_W + H_GAP).toBeLessThanOrEqual(ch0.x);
-    }
+describe('computeLayout — spouse siblings expanded', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@SPOUSE@': { birth_year: 1902 },
+        '@SS1@':    { birth_year: 1895 },
+        '@SS2@':    { birth_year: 1898 },
+      },
+      relatives: {
+        '@FOCUS@':  { siblings: [], spouses: ['@SPOUSE@'] },
+        '@SPOUSE@': { siblings: ['@SS1@', '@SS2@'], spouses: [] },
+      },
+    });
+  });
+
+  it('spouse siblings appear to the right of the spouse', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    const ss1    = nodes.find(n => n.xref === '@SS1@');
+    const ss2    = nodes.find(n => n.xref === '@SS2@');
+    expect(ss1).toBeDefined();
+    expect(ss2).toBeDefined();
+    expect(ss1.x).toBeGreaterThan(spouse.x);
+    expect(ss2.x).toBeGreaterThan(spouse.x);
+  });
+
+  it('first spouse sibling is exactly one SLOT to the right of the spouse', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    // spouse siblings sorted by birth_year; @SS1@ (1895) comes first
+    const ss1 = nodes.find(n => n.xref === '@SS1@');
+    expect(ss1.x).toBe(spouse.x + NODE_W + H_GAP);
+  });
+
+  it('spouse siblings have role "spouse_sibling"', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const spouseSibs = nodes.filter(n => n.role === 'spouse_sibling');
+    expect(spouseSibs).toHaveLength(2);
+  });
+
+  it('spouse siblings do NOT appear when spouseSiblingsExpanded is false', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouseSibs = nodes.filter(n => n.role === 'spouse_sibling');
+    expect(spouseSibs).toHaveLength(0);
+  });
+});
+
+// ── A1 regression: sibling_bracket edges must never be emitted ────────────
+
+describe('computeLayout — no sibling_bracket edges', () => {
+  it('emits zero sibling_bracket edges when focus has siblings', () => {
+    resetGlobals({
+      people: {
+        '@OLDER@':   { birth_year: 1870 },
+        '@FOCUS@':   { birth_year: 1873 },
+        '@YOUNGER@': { birth_year: 1876 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: ['@OLDER@', '@YOUNGER@'], spouses: [] },
+      },
+    });
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    expect(edges.filter(e => e.type === 'sibling_bracket').length).toBe(0);
+  });
+});
+
+// ── A2: Spouse placed immediately after focus, before younger siblings ─────
+
+describe('computeLayout — spouse before younger siblings', () => {
+  it('spouse x is NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 even when focus has younger sibling', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@YOUNGER@': { birth_year: 1905 },
+        '@SPOUSE@':  { birth_year: 1902 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: ['@YOUNGER@'], spouses: ['@SPOUSE@'] },
+      },
+    });
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+    expect(spouse.x).toBe(NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2);
+  });
+
+  it('younger sibling x is greater than spouse x', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@YOUNGER@': { birth_year: 1905 },
+        '@SPOUSE@':  { birth_year: 1902 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: ['@YOUNGER@'], spouses: ['@SPOUSE@'] },
+      },
+    });
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const spouse  = nodes.find(n => n.xref === '@SPOUSE@');
+    const younger = nodes.find(n => n.xref === '@YOUNGER@');
+    expect(younger.x).toBeGreaterThan(spouse.x);
+  });
+
+  it('second spouse marriage edge x1 is firstSpouseX + NODE_W/2', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@SPOUSE1@': { birth_year: 1901 },
+        '@SPOUSE2@': { birth_year: 1920 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@', '@SPOUSE2@'] },
+      },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+    const marriageEdges = edges.filter(e => e.type === 'marriage');
+    expect(marriageEdges[1].x1).toBe(firstSpouseX + NODE_W / 2);
+  });
+});
+
+// ── Test 6: No overlap (6 siblings + spouse with 4 siblings expanded) ──────
+
+describe('computeLayout — no overlap', () => {
+  it('all nodes in generation 0 have distinct x values', () => {
+    const sibs = ['@S1@', '@S2@', '@S3@', '@S4@', '@S5@', '@S6@'];
+    const spouseSibs = ['@SS1@', '@SS2@', '@SS3@', '@SS4@'];
+    const people = {
+      '@FOCUS@':  { birth_year: 1900 },
+      '@SPOUSE@': { birth_year: 1901 },
+      '@S1@': { birth_year: 1880 },
+      '@S2@': { birth_year: 1882 },
+      '@S3@': { birth_year: 1884 },
+      '@S4@': { birth_year: 1903 },
+      '@S5@': { birth_year: 1905 },
+      '@S6@': { birth_year: 1907 },
+      '@SS1@': { birth_year: 1890 },
+      '@SS2@': { birth_year: 1892 },
+      '@SS3@': { birth_year: 1894 },
+      '@SS4@': { birth_year: 1910 },
+    };
+    const relatives = {
+      '@FOCUS@':  { siblings: sibs,       spouses: ['@SPOUSE@'] },
+      '@SPOUSE@': { siblings: spouseSibs, spouses: [] },
+    };
+    resetGlobals({ people, relatives });
+
+    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const gen0 = nodes.filter(n => n.generation === 0);
+    const xs = gen0.map(n => n.x);
+    const uniqueXs = new Set(xs);
+    expect(uniqueXs.size).toBe(xs.length);
+  });
+});
+
+// ── Test 7: Grandparent expansion ─────────────────────────────────────────
+
+describe('computeLayout — grandparent expansion', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@FATHER@': { birth_year: 1870 },
+        '@MOTHER@': { birth_year: 1872 },
+        '@GFF@':    { birth_year: 1840 },
+        '@GFM@':    { birth_year: 1842 },
+      },
+      parents: {
+        '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+        '@FATHER@': ['@GFF@', '@GFM@'],
+      },
+    });
+  });
+
+  it('grandparents appear at y = -2 * ROW_HEIGHT when father is in expandedAncestors', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@']), false);
+    const gff = nodes.find(n => n.xref === '@GFF@');
+    const gfm = nodes.find(n => n.xref === '@GFM@');
+    expect(gff).toBeDefined();
+    expect(gfm).toBeDefined();
+    expect(gff.y).toBe(-2 * ROW_HEIGHT);
+    expect(gfm.y).toBe(-2 * ROW_HEIGHT);
+  });
+
+  it('grandparents do NOT appear when father is NOT in expandedAncestors', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const gff = nodes.find(n => n.xref === '@GFF@');
+    expect(gff).toBeUndefined();
+  });
+
+  it('grandparent nodes have generation = -2', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@']), false);
+    const grandparents = nodes.filter(n => n.generation === -2);
+    expect(grandparents).toHaveLength(2);
+  });
+});
+
+// ── Test 8: Only one parent ────────────────────────────────────────────────
+
+describe('computeLayout — single parent', () => {
+  it('single mother is centered above focus at x=0', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@MOTHER@': { birth_year: 1870 },
+      },
+      parents: { '@FOCUS@': [null, '@MOTHER@'] },
+    });
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    expect(mother).toBeDefined();
+    expect(mother.x).toBe(0);
+    expect(mother.y).toBe(-ROW_HEIGHT);
+  });
+
+  it('single father is centered above focus at x=0', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@FATHER@': { birth_year: 1870 },
+      },
+      parents: { '@FOCUS@': ['@FATHER@', null] },
+    });
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const father = nodes.find(n => n.xref === '@FATHER@');
+    expect(father).toBeDefined();
+    expect(father.x).toBe(0);
+    expect(father.y).toBe(-ROW_HEIGHT);
   });
 });

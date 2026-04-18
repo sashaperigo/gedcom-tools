@@ -2,6 +2,25 @@
 // Pure helpers exported for testing (node require-compatible at the bottom).
 
 // ---------------------------------------------------------------------------
+// Event label lookup (B3)
+// ---------------------------------------------------------------------------
+
+const _EVT_LABEL = {
+  BIRT:'Birth', DEAT:'Death', BURI:'Burial', CREM:'Cremation',
+  MARR:'Marriage', DIV:'Divorce', NATU:'Naturalization',
+  EMIG:'Emigration', IMMI:'Immigration', RESI:'Residence',
+  OCCU:'Occupation', EDUC:'Education', RELI:'Religion',
+  NATI:'Nationality', CENS:'Census', TITL:'Title',
+  ADOP:'Adoption', BAPM:'Baptism', CHR:'Christening',
+  CONF:'Confirmation', GRAD:'Graduation', WILL:'Will',
+  PROB:'Probate',
+};
+function _evtLabel(tag, typeVal) {
+  if ((tag === 'EVEN' || tag === 'FACT') && typeVal) return typeVal;
+  return _EVT_LABEL[tag] || tag;
+}
+
+// ---------------------------------------------------------------------------
 // Note edit / delete
 // ---------------------------------------------------------------------------
 
@@ -18,7 +37,7 @@ async function deleteNote(xref, noteIdx) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }
@@ -31,7 +50,7 @@ function addNote(xref) {
   document.getElementById('note-modal-title').textContent = 'Add Note';
   document.getElementById('note-modal-textarea').value = '';
   document.getElementById('note-modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('note-modal-textarea').focus(), 50);
+  setTimeout(() => { const el = document.getElementById('note-modal-textarea'); if (el) el.focus && el.focus(); }, 50);
 }
 
 function editNote(xref, noteIdx) {
@@ -40,7 +59,7 @@ function editNote(xref, noteIdx) {
   document.getElementById('note-modal-title').textContent = 'Edit Note';
   document.getElementById('note-modal-textarea').value = (PEOPLE[xref] && PEOPLE[xref].notes[noteIdx]) || '';
   document.getElementById('note-modal-overlay').classList.add('open');
-  setTimeout(() => document.getElementById('note-modal-textarea').focus(), 50);
+  setTimeout(() => { const el = document.getElementById('note-modal-textarea'); if (el) el.focus && el.focus(); }, 50);
 }
 
 function closeNoteModal() {
@@ -67,7 +86,7 @@ async function submitNoteEdit() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -84,7 +103,7 @@ const _INLINE_TYPE_TAGS = new Set(['OCCU','TITL','NATI','RELI','EDUC']);
 const _TYPE_TAGS = new Set(['EVEN','FACT','OCCU','TITL','EDUC','NATI','RELI']);
 
 let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null,
-    _eventModalFamXref = null, _eventModalMARRIdx = null;
+    _eventModalFamXref = null, _eventModalMARRIdx = null, _eventModalAddTag = null;
 
 // Fact presets — each key is the pseudo-tag used in the UI (option value).
 // baseTag:     the real GEDCOM tag submitted to the server
@@ -120,12 +139,13 @@ function _updateEventModalFields(tag) {
       inlineLbl.textContent   = preset.inlineLabel;
       typeRow.style.display   = 'none';
     } else {
-      // FACT: show type row pre-filled and read-only, hide inline field
+      // FACT: the preset label is already in the modal title, so hide both the
+      // inline row and the TYPE row. The server still receives TYPE because
+      // submitEventModal falls back to preset.type when the type row is hidden.
       inlineRow.style.display = 'none';
-      typeRow.style.display   = '';
+      typeRow.style.display   = 'none';
       const typeInp = document.getElementById('event-modal-type');
-      if (typeInp && !typeInp.value) typeInp.value = preset.type;
-      if (typeInp) typeInp.readOnly = true;
+      if (typeInp) { typeInp.value = preset.type; typeInp.readOnly = true; }
     }
     _updateSpouseRow(tag);
     return;
@@ -186,7 +206,6 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   _eventModalTag     = tag;
   _eventModalFamXref = famXref || null;
   _eventModalMARRIdx = (marrIdx !== undefined && marrIdx !== null) ? marrIdx : null;
-  document.getElementById('event-modal-title').textContent = 'Edit Event \u2014 ' + _personName(xref);
   document.getElementById('event-modal-save-btn').textContent = 'Save';
   document.getElementById('event-modal-tag-row').style.display = 'none';
   const events = (PEOPLE[xref] && PEOPLE[xref].events) || [];
@@ -194,6 +213,7 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   const evt = famXref
     ? (events.find(e => e.fam_xref === famXref && e.tag === tag && (marrIdx == null || e.marr_idx === marrIdx)) || {})
     : (events.find(e => e.tag === tag && e.event_idx === eventIdx) || {});
+  document.getElementById('event-modal-title').textContent = 'Edit ' + _evtLabel(tag, evt.type) + ' \u2014 ' + _personName(xref);
   const placeVal = evt.place || '';
   document.getElementById('event-modal-inline').value = evt.inline_val || '';
   document.getElementById('event-modal-type').value   = evt.type || '';
@@ -203,21 +223,43 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   document.getElementById('event-modal-note').value   = evt.note || '';
   document.getElementById('event-modal-addr').value   = evt.addr || '';
   _updateAddrSuggestions(placeVal);
+  // B4: pre-fill spouse for MARR events being edited
+  const spouseInp = document.getElementById('event-modal-spouse-input');
+  const spouseRes = document.getElementById('event-modal-spouse-results');
+  if (tag === 'MARR') {
+    const spouseXref = evt.spouse_xref || null;
+    const spouseName = evt.spouse || (spouseXref && PEOPLE[spouseXref] && PEOPLE[spouseXref].name) || '';
+    if (spouseInp) spouseInp.value = spouseName;
+    if (spouseRes) spouseRes.innerHTML = '';
+    _eventModalSpouseXref = spouseXref;
+  } else {
+    if (spouseInp) spouseInp.value = '';
+    if (spouseRes) spouseRes.innerHTML = '';
+    _eventModalSpouseXref = null;
+  }
   _updateEventModalFields(tag);
   document.getElementById('event-modal-overlay').classList.add('open');
   const focusId = _INLINE_TYPE_TAGS.has(tag) ? 'event-modal-inline' : 'event-modal-date';
-  setTimeout(() => document.getElementById(focusId).focus(), 50);
+  setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 50);
 }
 
 function addEvent(xref, defaultTag = 'RESI', prefillType) {
   _eventModalXref    = xref;
   _eventModalIdx     = null;
   _eventModalTag     = null;
+  _eventModalAddTag  = defaultTag;
   _eventModalFamXref = null;
   _eventModalSpouseXref = null;
-  document.getElementById('event-modal-title').textContent = 'Add Event \u2014 ' + _personName(xref);
+  const _preset = _FACT_PRESETS[defaultTag];
+  const _title  = _preset
+    ? 'Add ' + _preset.label + ' \u2014 ' + _personName(xref)
+    : 'Add Event \u2014 ' + _personName(xref);
+  document.getElementById('event-modal-title').textContent = _title;
   document.getElementById('event-modal-save-btn').textContent = 'Add';
-  document.getElementById('event-modal-tag-row').style.display = '';
+  // Preset fact adds (Languages, Literacy, DSCR, NCHI, …) lock the event type —
+  // the title already says what you're adding, and the dropdown doesn't carry
+  // the preset pseudo-tag as an option anyway.
+  document.getElementById('event-modal-tag-row').style.display = _preset ? 'none' : '';
   document.getElementById('event-modal-tag').value    = defaultTag;
   document.getElementById('event-modal-inline').value = '';
   document.getElementById('event-modal-type').value   = prefillType || '';
@@ -251,7 +293,12 @@ async function submitEventModal() {
   const xref     = _eventModalXref;
   const famXref  = _eventModalFamXref;
   const isAdd    = _eventModalIdx === null && !famXref;
-  const rawTag   = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
+  // For adds, use the stored _eventModalAddTag (which may hold a preset pseudo-tag
+  // like 'FACT:Languages' that isn't in the select's <option> list). Fall back to
+  // the select value if the user changed the event type via the dropdown.
+  const rawTag   = isAdd
+    ? (_eventModalAddTag || document.getElementById('event-modal-tag').value)
+    : _eventModalTag;
   // Resolve preset pseudo-tags to their real GEDCOM tag (e.g. 'FACT:Languages' → 'FACT').
   const preset   = _FACT_PRESETS[rawTag];
   const tag      = preset ? preset.baseTag : rawTag;
@@ -264,10 +311,13 @@ async function submitEventModal() {
     NOTE:        document.getElementById('event-modal-note').value.trim(),
     ADDR:        document.getElementById('event-modal-addr').value.trim(),
   };
-  // Only include TYPE when the row is visible; omitting it preserves existing 2 TYPE sub-tags
-  // for events (like MARR) where the type row is hidden.
+  // Include TYPE when the row is visible. For preset FACT adds (Languages,
+  // Literacy, …) the row is hidden but the server still needs the TYPE value,
+  // so we pull it from the preset itself.
   if (typeRow && typeRow.style.display !== 'none') {
     fields.TYPE = document.getElementById('event-modal-type').value.trim();
+  } else if (isAdd && preset && !preset.showInline && preset.type) {
+    fields.TYPE = preset.type;
   }
   // Only include CAUS when the cause row is visible (DEAT events)
   if (causeRow && causeRow.style.display !== 'none') {
@@ -294,7 +344,7 @@ async function submitEventModal() {
       if (data.ok) {
         if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
         window._openDetailKey = null;
-        showDetail(xref, true);
+        setState({ panelXref: xref, panelOpen: true });
       } else {
         alert('Save failed: ' + (data.error || 'unknown error'));
       }
@@ -328,7 +378,7 @@ async function submitEventModal() {
         for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
       }
       window._openDetailKey = null;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -399,7 +449,7 @@ async function deleteAlias(xref, evt) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else { alert('Delete failed: ' + (data.error || 'unknown error')); }
   } catch (e) { alert('Request failed: ' + e); }
 }
@@ -430,7 +480,7 @@ async function submitAliasModal() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else { alert('Save failed: ' + (data.error || 'unknown error')); }
   } catch (e) { alert('Request failed: ' + e); }
 }
@@ -483,7 +533,7 @@ async function submitNameModal() {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Save failed: ' + (data.error || 'unknown error'));
     }
@@ -570,7 +620,7 @@ async function deleteMarriage(xref, famXref, marrIdx) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }
@@ -608,7 +658,7 @@ async function deleteFact(xref, evt) {
     const data = await resp.json();
     if (data.ok) {
       if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
-      showDetail(xref, true);
+      setState({ panelXref: xref, panelOpen: true });
     } else {
       alert('Delete failed: ' + (data.error || 'unknown error'));
     }
@@ -621,8 +671,27 @@ async function deleteFact(xref, evt) {
 // Sources viewer modal
 // ---------------------------------------------------------------------------
 
+let _sourcesModalXref = null;
+let _sourcesModalEventIdx = null;
+
 function openSourcesModal(xref, eventIdx) {
-  const evt = PEOPLE[xref] && PEOPLE[xref].events[eventIdx];
+  _sourcesModalXref     = xref;
+  _sourcesModalEventIdx = eventIdx;
+  _refreshSourcesModalContent();
+  document.getElementById('sources-modal-overlay').classList.add('open');
+}
+
+function closeSourcesModal() {
+  document.getElementById('sources-modal-overlay').classList.remove('open');
+  _sourcesModalXref = null;
+  _sourcesModalEventIdx = null;
+}
+
+function _refreshSourcesModalContent() {
+  const xref     = _sourcesModalXref;
+  const eventIdx = _sourcesModalEventIdx;
+  if (xref == null || eventIdx == null) return;
+  const evt       = PEOPLE[xref] && PEOPLE[xref].events && PEOPLE[xref].events[eventIdx];
   const citations = (evt && evt.citations) || [];
   const sources   = (typeof SOURCES !== 'undefined') ? SOURCES : {};
 
@@ -635,29 +704,706 @@ function openSourcesModal(xref, eventIdx) {
     const year = evt.date ? (' \u00b7 ' + (evt.date.match(/\b\d{4}\b/) || [''])[0]) : '';
     label = tag + type + year;
   }
-  document.getElementById('sources-modal-title').textContent = label || 'Sources';
-  document.getElementById('sources-modal-list').innerHTML =
-    _buildSourcesModalContent(citations, sources);
-  document.getElementById('sources-modal-overlay').classList.add('open');
+  const titleEl = document.getElementById('sources-modal-title');
+  const listEl  = document.getElementById('sources-modal-list');
+  if (titleEl) titleEl.textContent = label || 'Sources';
+  if (listEl)  listEl.innerHTML    = _buildSourcesModalContent(citations, sources, xref, evt);
 }
 
-function closeSourcesModal() {
-  document.getElementById('sources-modal-overlay').classList.remove('open');
-}
+function _buildSourcesModalContent(citations, sources, xref, evt) {
+  const xrefQ     = JSON.stringify(String(xref || '')).replace(/"/g, '&quot;');
+  const tag       = (evt && evt.tag) || '';
+  const eventOcc  = (evt && evt.event_idx != null) ? evt.event_idx : 0;
+  const factKey   = tag ? `${tag}:${eventOcc}` : '';
+  const factKeyQ  = JSON.stringify(factKey).replace(/"/g, '&quot;');
 
-function _buildSourcesModalContent(citations, sources) {
+  let html = '';
   if (!citations || citations.length === 0) {
-    return '<div class="src-modal-empty">No sources recorded for this fact.</div>';
+    html += '<div class="src-modal-empty">No sources recorded for this fact.</div>';
+  } else {
+    html += citations.map((c, idx) => {
+      const xrefKey = c.sourceXref || c.sour_xref;
+      const src = sources[xrefKey] || {};
+      const title = src.titl || src.title || xrefKey || 'Unknown source';
+      const titleHtml = src.url
+        ? `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
+        : escHtml(title);
+      const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
+      const citeKey  = `${tag}:${eventOcc}:${idx}`;
+      const citeKeyQ = JSON.stringify(citeKey).replace(/"/g, '&quot;');
+      return (
+        `<div class="src-modal-item">` +
+          `<div class="src-modal-item-body"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>` +
+          `<button class="src-modal-delete-btn" title="Remove this citation" ` +
+            `onclick="deleteSourceFromModal(${xrefQ},${citeKeyQ})">\u00d7</button>` +
+        `</div>`
+      );
+    }).join('');
   }
-  return citations.map(c => {
-    const src = sources[c.sour_xref] || {};
-    const title = src.title || c.sour_xref || 'Unknown source';
-    const titleHtml = src.url
-      ? `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
-      : escHtml(title);
-    const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
-    return `<div class="src-modal-item"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>`;
-  }).join('');
+  html += `<div class="src-modal-add">` +
+          `<button class="src-modal-add-btn" ` +
+            `onclick="showAddCitationModal(${xrefQ},${factKeyQ})">+ Add source</button>` +
+          `</div>`;
+  return html;
+}
+
+async function deleteSourceFromModal(xref, citationKey) {
+  if (typeof confirm === 'function' && !confirm('Remove this citation?')) return;
+  try {
+    const resp = await apiDeleteCitation(xref, citationKey);
+    if (resp && resp.ok) {
+      if (resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+      _refreshSourcesModalContent();
+      if (typeof renderPanel === 'function') renderPanel();
+    } else {
+      alert('Delete failed: ' + ((resp && resp.error) || 'unknown'));
+    }
+  } catch (e) {
+    alert('Delete failed: ' + e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Task 14 — New modals
+// ---------------------------------------------------------------------------
+
+// ── Helper: _personName (already defined above) ───────────────────────────
+
+// ── showEditNameModal ─────────────────────────────────────────────────────
+
+let _editNameModalXref = null;
+
+function showEditNameModal(xref) {
+  _editNameModalXref = xref;
+  const name = (_personName(xref) || '').trim();
+
+  // Parse "Given /Surname/" GEDCOM format or fallback heuristic
+  const surnameMatch = name.match(/^(.*?)\s*\/([^/]*)\/\s*(.*)$/);
+  let given = '', surname = '';
+  if (surnameMatch) {
+    given   = (surnameMatch[1] + ' ' + (surnameMatch[3] || '')).trim();
+    surname = surnameMatch[2].trim();
+  } else {
+    const parts = name.split(' ');
+    surname = parts.length > 1 ? parts.pop() : '';
+    given   = parts.join(' ');
+  }
+
+  const titleEl    = document.getElementById('edit-name-modal-title');
+  const givenEl    = document.getElementById('edit-name-modal-given');
+  const surnameEl  = document.getElementById('edit-name-modal-surname');
+  const overlayEl  = document.getElementById('edit-name-modal-overlay');
+
+  if (titleEl)   titleEl.textContent = 'Edit Name \u2014 ' + name;
+  if (givenEl)   givenEl.value   = given;
+  if (surnameEl) surnameEl.value = surname;
+  if (overlayEl) overlayEl.classList.add('open');
+
+  if (givenEl) setTimeout(() => givenEl.focus && givenEl.focus(), 50);
+}
+
+function closeEditNameModal() {
+  const overlayEl = document.getElementById('edit-name-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _editNameModalXref = null;
+}
+
+async function submitEditNameModal() {
+  const xref    = _editNameModalXref;
+  const givenEl   = document.getElementById('edit-name-modal-given');
+  const surnameEl = document.getElementById('edit-name-modal-surname');
+  const given   = givenEl   ? givenEl.value.trim()   : '';
+  const surname = surnameEl ? surnameEl.value.trim() : '';
+  closeEditNameModal();
+  try {
+    await apiEditName(xref, given, surname);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showAddNoteModal ──────────────────────────────────────────────────────
+
+let _addNoteModalXref = null;
+
+function showAddNoteModal(xref) {
+  _addNoteModalXref = xref;
+
+  const titleEl   = document.getElementById('add-note-modal-title');
+  const textEl    = document.getElementById('add-note-modal-text');
+  const overlayEl = document.getElementById('add-note-modal-overlay');
+
+  if (titleEl)   titleEl.textContent = 'Add Note';
+  if (textEl)    textEl.value = '';
+  if (overlayEl) overlayEl.classList.add('open');
+
+  if (textEl) setTimeout(() => textEl.focus && textEl.focus(), 50);
+}
+
+function closeAddNoteModal() {
+  const overlayEl = document.getElementById('add-note-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addNoteModalXref = null;
+}
+
+async function submitAddNoteModal() {
+  const xref   = _addNoteModalXref;
+  const textEl = document.getElementById('add-note-modal-text');
+  const text   = textEl ? textEl.value.trim() : '';
+  closeAddNoteModal();
+  if (!text) return;
+  try {
+    await apiAddNote(xref, text);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showAddCitationModal ──────────────────────────────────────────────────
+
+// `factKey` is the server-side fact key: either null/undefined for a person-level
+// citation, or "TAG:N" (e.g. "BIRT:0") for a fact-level citation. Tests in the
+// suite still pass a bare tag like "BIRT" — the backend accepts that too when
+// there is only one occurrence, but the canonical format is "TAG:N".
+let _addCitationModalXref = null, _addCitationModalFactKey = null;
+
+function showAddCitationModal(xref, factKey) {
+  _addCitationModalXref    = xref;
+  _addCitationModalFactKey = factKey;
+
+  const overlayEl  = document.getElementById('add-citation-modal-overlay');
+  const sourceEl   = document.getElementById('add-citation-modal-source');
+  const pageEl     = document.getElementById('add-citation-modal-page');
+  const textEl     = document.getElementById('add-citation-modal-text');
+  const noteEl     = document.getElementById('add-citation-modal-note');
+  const titleEl    = document.getElementById('add-citation-modal-title');
+
+  const displayTag = factKey ? String(factKey).split(':')[0] : '';
+  if (titleEl)   titleEl.textContent = displayTag ? `Add Citation — ${displayTag}` : 'Add Person Source';
+  if (pageEl)    pageEl.value  = '';
+  if (textEl)    textEl.value  = '';
+  if (noteEl)    noteEl.value  = '';
+
+  // Populate sourceXref select from global SOURCES, sorted alphabetically by title
+  // (case-insensitive) so users can find a specific source.
+  if (sourceEl && typeof SOURCES !== 'undefined') {
+    sourceEl.innerHTML = '<option value="">— select source —</option>';
+    const entries = Object.entries(SOURCES).map(([sxref, src]) => ({
+      sxref, label: (src && src.titl) || sxref,
+    }));
+    entries.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+    for (const { sxref, label } of entries) {
+      const opt = (typeof document !== 'undefined' && document.createElement)
+        ? document.createElement('option')
+        : { value: '', textContent: '' };
+      opt.value       = sxref;
+      opt.textContent = label;
+      if (sourceEl.appendChild) sourceEl.appendChild(opt);
+    }
+  }
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (sourceEl)  setTimeout(() => sourceEl.focus && sourceEl.focus(), 50);
+}
+
+function closeAddCitationModal() {
+  const overlayEl = document.getElementById('add-citation-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addCitationModalXref = _addCitationModalFactKey = null;
+}
+
+async function submitAddCitationModal() {
+  const xref       = _addCitationModalXref;
+  const factKey    = _addCitationModalFactKey;
+  const sourceEl   = document.getElementById('add-citation-modal-source');
+  const pageEl     = document.getElementById('add-citation-modal-page');
+  const textEl     = document.getElementById('add-citation-modal-text');
+  const noteEl     = document.getElementById('add-citation-modal-note');
+  const sourceXref = sourceEl ? sourceEl.value : '';
+  const page       = pageEl   ? pageEl.value.trim()   : '';
+  const text       = textEl   ? textEl.value.trim()   : '';
+  const note       = noteEl   ? noteEl.value.trim()   : '';
+  closeAddCitationModal();
+  if (!sourceXref) { alert('Please select a source.'); return; }
+  try {
+    const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note);
+    if (resp && resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+    // If the Sources modal is still open (we arrived here from its "+ Add source"
+    // button), refresh its content in place instead of closing it.
+    if (_sourcesModalXref != null) _refreshSourcesModalContent();
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showEditCitationModal ─────────────────────────────────────────────────
+
+let _editCitationXref = null, _editCitationFactTag = null, _editCitationIndex = null;
+let _editCitationSourceXref = null;
+
+function showEditCitationModal(xref, factTag, citationIndex) {
+  _editCitationXref      = xref;
+  _editCitationFactTag   = factTag;
+  _editCitationIndex     = citationIndex;
+
+  // Locate the citation data
+  const person = (typeof PEOPLE !== 'undefined') && PEOPLE[xref];
+  let cite = null;
+  if (person) {
+    if (factTag === null || factTag === undefined) {
+      // person-level source
+      cite = (person.sources || [])[citationIndex] || null;
+    } else {
+      const fact = (person.facts || []).find(f => f.tag === factTag);
+      if (fact) cite = (fact.citations || [])[citationIndex] || null;
+    }
+  }
+  _editCitationSourceXref = cite ? (cite.sourceXref || null) : null;
+
+  const overlayEl  = document.getElementById('edit-citation-modal-overlay');
+  const pageEl     = document.getElementById('edit-citation-modal-page');
+  const textEl     = document.getElementById('edit-citation-modal-text');
+  const noteEl     = document.getElementById('edit-citation-modal-note');
+  const titleEl    = document.getElementById('edit-citation-modal-title');
+  const viewSrcBtn = document.getElementById('edit-citation-view-source-btn');
+
+  if (titleEl) titleEl.textContent = 'Edit Citation' + (factTag ? ' \u2014 ' + factTag : '');
+  if (pageEl)  pageEl.value  = (cite && cite.page)  || '';
+  if (textEl)  textEl.value  = (cite && cite.text)  || '';
+  if (noteEl)  noteEl.value  = (cite && cite.note)  || '';
+
+  if (viewSrcBtn && _editCitationSourceXref) {
+    const sxref = _editCitationSourceXref;
+    viewSrcBtn.onclick = () => showEditSourceModal(sxref);
+    viewSrcBtn.style   = viewSrcBtn.style || {};
+    viewSrcBtn.style.display = '';
+  } else if (viewSrcBtn) {
+    viewSrcBtn.style = viewSrcBtn.style || {};
+    viewSrcBtn.style.display = 'none';
+  }
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (pageEl)    setTimeout(() => pageEl.focus && pageEl.focus(), 50);
+}
+
+function closeEditCitationModal() {
+  const overlayEl = document.getElementById('edit-citation-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _editCitationXref = _editCitationFactTag = _editCitationIndex = null;
+}
+
+async function submitEditCitationModal() {
+  const xref    = _editCitationXref;
+  const factTag = _editCitationFactTag;
+  const index   = _editCitationIndex;
+  const pageEl  = document.getElementById('edit-citation-modal-page');
+  const textEl  = document.getElementById('edit-citation-modal-text');
+  const noteEl  = document.getElementById('edit-citation-modal-note');
+  const page    = pageEl ? pageEl.value.trim() : '';
+  const text    = textEl ? textEl.value.trim() : '';
+  const note    = noteEl ? noteEl.value.trim() : '';
+  closeEditCitationModal();
+  try {
+    await apiEditCitation(xref, factTag ? `${factTag}:${index}` : `SOUR:${index}`, page, text, note);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showEditSourceModal ───────────────────────────────────────────────────
+
+let _editSourceXref = null;
+
+function showEditSourceModal(sourceXref) {
+  _editSourceXref = sourceXref;
+  const src = (typeof SOURCES !== 'undefined' && SOURCES[sourceXref]) || {};
+
+  const overlayEl  = document.getElementById('edit-source-modal-overlay');
+  const titlEl     = document.getElementById('edit-source-modal-titl');
+  const authEl     = document.getElementById('edit-source-modal-auth');
+  const publEl     = document.getElementById('edit-source-modal-publ');
+  const repoEl     = document.getElementById('edit-source-modal-repo');
+  const noteEl     = document.getElementById('edit-source-modal-note');
+  const warningEl  = document.getElementById('edit-source-modal-warning');
+  const titleEl    = document.getElementById('edit-source-modal-title');
+
+  if (titleEl)   titleEl.textContent = 'Edit Source Record';
+  if (warningEl) warningEl.textContent = 'Changes to this source record affect all citations that reference it.';
+  if (titlEl)    titlEl.value = src.titl || '';
+  if (authEl)    authEl.value = src.auth || '';
+  if (publEl)    publEl.value = src.publ || '';
+  if (repoEl)    repoEl.value = src.repo || '';
+  if (noteEl)    noteEl.value = src.note || '';
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (titlEl)    setTimeout(() => titlEl.focus && titlEl.focus(), 50);
+}
+
+function closeEditSourceModal() {
+  const overlayEl = document.getElementById('edit-source-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _editSourceXref = null;
+}
+
+async function submitEditSourceModal() {
+  const sourceXref = _editSourceXref;
+  const titlEl = document.getElementById('edit-source-modal-titl');
+  const authEl = document.getElementById('edit-source-modal-auth');
+  const publEl = document.getElementById('edit-source-modal-publ');
+  const repoEl = document.getElementById('edit-source-modal-repo');
+  const noteEl = document.getElementById('edit-source-modal-note');
+  const fields = {
+    titl: titlEl ? titlEl.value.trim() : '',
+    auth: authEl ? authEl.value.trim() : '',
+    publ: publEl ? publEl.value.trim() : '',
+    repo: repoEl ? repoEl.value.trim() : '',
+    note: noteEl ? noteEl.value.trim() : '',
+  };
+  if (!fields.titl) { alert('Title is required.'); return; }
+  closeEditSourceModal();
+  try {
+    await apiEditSourceRecord(sourceXref, fields);
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── showAddGodparentModal ─────────────────────────────────────────────────
+
+let _addGodparentXref = null, _addGodparentSelectedXref = null;
+
+function showAddGodparentModal(xref) {
+  _addGodparentXref         = xref;
+  _addGodparentSelectedXref = null;
+
+  const overlayEl  = document.getElementById('add-godparent-modal-overlay');
+  const searchEl   = document.getElementById('add-godparent-modal-search');
+  const resultsEl  = document.getElementById('add-godparent-modal-results');
+  const titleEl    = document.getElementById('add-godparent-modal-title');
+  const relaEl     = document.getElementById('add-godparent-modal-rela');
+
+  if (titleEl)  titleEl.textContent = 'Add Godparent';
+  if (searchEl) searchEl.value = '';
+  if (resultsEl) resultsEl.innerHTML = '';
+  if (relaEl)   relaEl.value = 'Godparent';
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (searchEl)  setTimeout(() => searchEl.focus && searchEl.focus(), 50);
+}
+
+function closeAddGodparentModal() {
+  const overlayEl = document.getElementById('add-godparent-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addGodparentXref = _addGodparentSelectedXref = null;
+}
+
+function _renderGodparentResults(query) {
+  const container = document.getElementById('add-godparent-modal-results');
+  if (!container) return;
+  const q = query.trim().toLowerCase();
+  if (!q) { container.innerHTML = ''; return; }
+  const hits = (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
+    .filter(p => p.name && p.name.toLowerCase().includes(q))
+    .slice(0, 12);
+  container.innerHTML = hits.map(p =>
+    `<div class="godparent-result-item" data-xref="${escHtml(p.id)}" data-name="${escHtml(p.name)}">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
+  ).join('');
+}
+
+function _selectGodparent(xref, name) {
+  const inp = document.getElementById('add-godparent-modal-search');
+  const res = document.getElementById('add-godparent-modal-results');
+  if (inp) inp.value = name;
+  if (res) res.innerHTML = '';
+  _addGodparentSelectedXref = xref;
+}
+
+document.addEventListener('click', e => {
+  const item = e.target.closest('.godparent-result-item');
+  if (item) _selectGodparent(item.dataset.xref, item.dataset.name);
+});
+
+document.addEventListener('input', e => {
+  if (e.target.id === 'add-godparent-modal-search') _renderGodparentResults(e.target.value);
+});
+
+async function submitAddGodparentModal() {
+  const xref          = _addGodparentXref;
+  const godparentXref = _addGodparentSelectedXref;
+  const relaEl        = document.getElementById('add-godparent-modal-rela');
+  const rela          = (relaEl && relaEl.value) || 'Godparent';
+  closeAddGodparentModal();
+  if (!godparentXref) { alert('Please select a godparent from the search results.'); return; }
+  try {
+    const resp = await apiAddGodparent(xref, godparentXref, rela);
+    if (resp && resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+    if (typeof renderPanel !== 'undefined') renderPanel();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ── openAddPersonModal ────────────────────────────────────────────────────
+
+let _addPersonRelXref = null, _addPersonRelType = null;
+const _ADD_PERSON_REL_LABELS = {
+  parent_of:  'Parent',
+  sibling_of: 'Sibling',
+  spouse_of:  'Spouse',
+  child_of:   'Child',
+};
+
+function openAddPersonModal(xref, relType) {
+  _addPersonRelXref = xref;
+  _addPersonRelType = relType;
+
+  const overlayEl  = document.getElementById('add-person-modal-overlay');
+  const titleEl    = document.getElementById('add-person-modal-title');
+  const givenEl    = document.getElementById('add-person-modal-given');
+  const surnEl     = document.getElementById('add-person-modal-surname');
+  const sexEl      = document.getElementById('add-person-modal-sex');
+  const byEl       = document.getElementById('add-person-modal-birth-year');
+  const otherRowEl = document.getElementById('add-person-modal-other-parent-row');
+  const otherSelEl = document.getElementById('add-person-modal-other-parent');
+
+  const label = _ADD_PERSON_REL_LABELS[relType] || 'Person';
+  if (titleEl) titleEl.textContent = 'Add ' + label;
+  if (givenEl) givenEl.value = '';
+  if (surnEl)  surnEl.value = '';
+  if (sexEl)   sexEl.value = 'U';
+  if (byEl)    byEl.value = '';
+
+  if (relType === 'child_of' && otherSelEl && otherRowEl) {
+    const person = PEOPLE[xref] || {};
+    const seen = new Set();
+    const spouses = [];
+    for (const e of (person.events || [])) {
+      if (e.tag === 'MARR' && e.spouse_xref && !seen.has(e.spouse_xref)) {
+        seen.add(e.spouse_xref);
+        spouses.push({ xref: e.spouse_xref, name: e.spouse || (PEOPLE[e.spouse_xref] && PEOPLE[e.spouse_xref].name) || e.spouse_xref });
+      }
+    }
+    const opts = spouses.map(s => `<option value="${escHtml(s.xref)}">${escHtml(s.name)}</option>`).join('')
+               + '<option value="__none__">No other parent (new family)</option>';
+    otherSelEl.innerHTML = opts;
+    otherSelEl.value = spouses.length ? spouses[0].xref : '__none__';
+    otherRowEl.style.display = '';
+  } else if (otherRowEl) {
+    otherRowEl.style.display = 'none';
+  }
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (givenEl)   setTimeout(() => givenEl.focus && givenEl.focus(), 50);
+}
+
+function closeAddPersonModal() {
+  const overlayEl = document.getElementById('add-person-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addPersonRelXref = _addPersonRelType = null;
+}
+
+// ── changeParent (pencil + X next to a parent row) ────────────────────────
+
+let _changeParentChildXref = null, _changeParentCurrentXref = null, _changeParentNewXref = null;
+
+function openChangeParentModal(childXref, currentParentXref) {
+  _changeParentChildXref   = childXref;
+  _changeParentCurrentXref = currentParentXref;
+  _changeParentNewXref     = null;
+
+  const overlayEl = document.getElementById('change-parent-modal-overlay');
+  const titleEl   = document.getElementById('change-parent-modal-title');
+  const searchEl  = document.getElementById('change-parent-modal-search');
+  const resultsEl = document.getElementById('change-parent-modal-results');
+
+  const curName = (PEOPLE[currentParentXref] && PEOPLE[currentParentXref].name) || currentParentXref;
+  if (titleEl)   titleEl.textContent = 'Change parent: ' + curName;
+  if (searchEl)  searchEl.value = '';
+  if (resultsEl) resultsEl.innerHTML = '';
+  if (overlayEl) overlayEl.classList.add('open');
+  if (searchEl)  setTimeout(() => searchEl.focus && searchEl.focus(), 50);
+}
+
+function closeChangeParentModal() {
+  const overlayEl = document.getElementById('change-parent-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _changeParentChildXref = _changeParentCurrentXref = _changeParentNewXref = null;
+}
+
+function _renderChangeParentResults(query) {
+  const container = document.getElementById('change-parent-modal-results');
+  if (!container) return;
+  const q = query.trim().toLowerCase();
+  if (!q) { container.innerHTML = ''; return; }
+  const hits = (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
+    .filter(p => p.name && p.name.toLowerCase().includes(q))
+    .slice(0, 12);
+  container.innerHTML = hits.map(p =>
+    `<div class="change-parent-result-item" data-xref="${escHtml(p.id)}" data-name="${escHtml(p.name)}">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
+  ).join('');
+}
+
+function _selectChangeParent(xref, name) {
+  const inp = document.getElementById('change-parent-modal-search');
+  const res = document.getElementById('change-parent-modal-results');
+  if (inp) inp.value = name;
+  if (res) res.innerHTML = '';
+  _changeParentNewXref = xref;
+}
+
+document.addEventListener('click', e => {
+  const item = e.target.closest('.change-parent-result-item');
+  if (item) _selectChangeParent(item.dataset.xref, item.dataset.name);
+});
+
+document.addEventListener('input', e => {
+  if (e.target.id === 'change-parent-modal-search') {
+    _changeParentNewXref = null;
+    _renderChangeParentResults(e.target.value);
+  }
+});
+
+async function submitChangeParentModal() {
+  const childXref = _changeParentChildXref;
+  const currentXref = _changeParentCurrentXref;
+  const newXref = _changeParentNewXref;  // may be null when user cleared / never selected
+  const searchEl = document.getElementById('change-parent-modal-search');
+  const searchVal = searchEl ? searchEl.value.trim() : '';
+
+  // If the user typed text but didn't pick a result, refuse to proceed.
+  if (searchVal && !newXref) {
+    alert('Please select a person from the search results, or clear the field to remove the parent.');
+    return;
+  }
+
+  await _postChangeParent(childXref, currentXref, newXref || '');
+  closeChangeParentModal();
+}
+
+async function removeParent(childXref, parentXref) {
+  const name = (PEOPLE[parentXref] && PEOPLE[parentXref].name) || parentXref;
+  if (!confirm(`Remove ${name} as a parent? The other parent and siblings are preserved.`)) return;
+  await _postChangeParent(childXref, parentXref, '');
+}
+
+async function _postChangeParent(childXref, currentXref, newXref) {
+  try {
+    const resp = await fetch('/api/change_parent', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        xref: childXref,
+        current_parent_xref: currentXref,
+        new_parent_xref: newXref,
+        current_person: window._currentPerson || null,
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      if (typeof _applyFamilyMaps === 'function') _applyFamilyMaps(data.family_maps);
+      window._openDetailKey = null;
+      setState({ panelXref: childXref, panelOpen: true });
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Request failed: ' + e);
+  }
+}
+
+async function submitAddPersonModal() {
+  const given = (document.getElementById('add-person-modal-given').value || '').trim();
+  const surn  = (document.getElementById('add-person-modal-surname').value || '').trim();
+  const sex   = document.getElementById('add-person-modal-sex').value || 'U';
+  const birthYear = (document.getElementById('add-person-modal-birth-year').value || '').trim();
+  const relXref = _addPersonRelXref;
+  const relType = _addPersonRelType;
+
+  if (!given) { alert('Given name is required.'); return; }
+  if (!relXref || !relType) { alert('Missing relationship context.'); return; }
+
+  const body = {
+    given, surn, sex, birth_year: birthYear,
+    rel_type: relType, rel_xref: relXref,
+    current_person: window._currentPerson || null,
+  };
+  if (relType === 'child_of') {
+    const otherSelEl = document.getElementById('add-person-modal-other-parent');
+    const v = otherSelEl ? otherSelEl.value : '';
+    body.other_parent_xref = (v === '__none__') ? '' : v;
+  }
+
+  try {
+    const resp = await fetch('/api/add_person', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      if (typeof _applyFamilyMaps === 'function') _applyFamilyMaps(data.family_maps);
+      closeAddPersonModal();
+      window._openDetailKey = null;
+      setState({ panelXref: relXref, panelOpen: true });
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Request failed: ' + e);
+  }
+}
+
+// ── showAddSourceModal ────────────────────────────────────────────────────
+
+function showAddSourceModal() {
+  const overlayEl = document.getElementById('add-source-modal-overlay');
+  const titlEl    = document.getElementById('add-source-modal-titl');
+  const authEl    = document.getElementById('add-source-modal-auth');
+  const publEl    = document.getElementById('add-source-modal-publ');
+  const repoEl    = document.getElementById('add-source-modal-repo');
+  const noteEl    = document.getElementById('add-source-modal-note');
+
+  if (titlEl) titlEl.value = '';
+  if (authEl) authEl.value = '';
+  if (publEl) publEl.value = '';
+  if (repoEl) repoEl.value = '';
+  if (noteEl) noteEl.value = '';
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (titlEl)    setTimeout(() => titlEl.focus && titlEl.focus(), 50);
+}
+
+function closeAddSourceModal() {
+  const overlayEl = document.getElementById('add-source-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+}
+
+async function submitAddSourceModal() {
+  const titlEl = document.getElementById('add-source-modal-titl');
+  const authEl = document.getElementById('add-source-modal-auth');
+  const publEl = document.getElementById('add-source-modal-publ');
+  const repoEl = document.getElementById('add-source-modal-repo');
+  const noteEl = document.getElementById('add-source-modal-note');
+  const titl   = titlEl ? titlEl.value.trim() : '';
+  const auth   = authEl ? authEl.value.trim() : '';
+  const publ   = publEl ? publEl.value.trim() : '';
+  const repo   = repoEl ? repoEl.value.trim() : '';
+  const note   = noteEl ? noteEl.value.trim() : '';
+  if (!titl) { alert('Title is required.'); return; }
+  closeAddSourceModal();
+  try {
+    await apiAddSource(titl, auth, publ, repo, note);
+    if (typeof setState !== 'undefined') setState({});   // trigger re-render
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -668,5 +1414,11 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
     openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
+    deleteSourceFromModal,
+    showEditNameModal, showAddNoteModal, showAddCitationModal,
+    showEditCitationModal, showEditSourceModal, showAddGodparentModal,
+    showAddSourceModal,
+    _evtLabel, editEvent,
+    deleteNote, submitNoteEdit, editNote, deleteFact,
   };
 }

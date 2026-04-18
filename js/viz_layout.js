@@ -1,377 +1,276 @@
-// Layout engine for the ancestor tree SVG visualiser.
+// Layout engine for the hourglass-style family tree visualiser.
 //
-// Reads the following module-level globals (set by the HTML template before
-// this file loads, or injected via global.* in tests):
-//
-//   NODE_W, NODE_H, H_GAP, V_GAP, BTN_PAD, MARGIN_X, MARGIN_TOP, BTN_ZONE
-//   visibleKeys        — Set of Ahnentafel integer keys currently shown
-//   currentTree        — Map of key → xref  (Ahnentafel tree)
-//   expandedRelatives  — Set of keys whose relatives panel is open
-//   expandedChildrenOf — Set of xrefs whose children are shown
-//   PEOPLE             — Map of xref → {sex, birth_year, …}
-//   RELATIVES          — Map of xref → {siblings, spouses, sib_spouses, …}
-//   CHILDREN           — Map of xref → [child xref, …]
-//
-// Writes to:
-//   _posCache          — Map of key → {x, y}  (ancestor positions)
-//   _relPosCache       — Map of key-string → {x, y, xref, …}  (relative positions)
-//   _sibSlots          — Map (internal, cleared on each computePositions call)
-//   _sibSpouseIdx      — Map of "${anchorKey}:${sibIdx}" → current spouse index
+// Reads the following globals (set by the HTML template or injected in tests):
+//   DESIGN     — from viz_design.js: NODE_W, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP
+//   PEOPLE     — { [xref]: { name, sex, birth_year, death_year, ... } }
+//   PARENTS    — { [xref]: [fatherXref|null, motherXref|null] }
+//   CHILDREN   — { [xref]: [childXref, ...] }
+//   RELATIVES  — { [xref]: { siblings: [...], spouses: [...] } }
 
 // ---------------------------------------------------------------------------
-// Ahnentafel helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
-function genOf(k) { return Math.floor(Math.log2(k)); }
-function slotOf(k) { return k - Math.pow(2, genOf(k)); }
-
-function maxVisibleGen() {
-  let mx = 0;
-  for (const k of visibleKeys) mx = Math.max(mx, genOf(k));
-  return mx;
+/**
+ * Sort an array of xrefs by birth_year ascending.
+ * Unknown birth_year (missing or undefined) sorts last (treated as 9999).
+ */
+function _sortByBirthYear(xrefs) {
+  return [...xrefs].sort((a, b) => {
+    const ay = PEOPLE[a]?.birth_year ?? 9999;
+    const by = PEOPLE[b]?.birth_year ?? 9999;
+    return ay - by;
+  });
 }
 
-// True if key k represents a male: even keys (fathers) are male; key 1 uses GEDCOM sex field.
-function isMaleKey(k) {
-  if (k === 1) return PEOPLE[currentTree[1]]?.sex === 'M';
-  return k % 2 === 0;
-}
-
-// ---------------------------------------------------------------------------
-// Subtree width
-// ---------------------------------------------------------------------------
-
-// Pre-computed new sibling slot counts per key (excludes already-visible ancestors).
-// Built before layout so _subtreeWidth can use it.
-const _sibSlots = new Map();
-function _buildSibSlots() {
-  _sibSlots.clear();
-  const visXrefs = new Set([...visibleKeys].map(k => currentTree[k]).filter(Boolean));
-  for (const k of expandedRelatives) {
-    if (k === 1) continue;  // root handled separately; no layout slot needed
-    const rels = RELATIVES[currentTree[k]];
-    if (!rels) continue;
-    const n = rels.siblings.filter(xref => !visXrefs.has(xref)).length;
-    if (n > 0) _sibSlots.set(k, n);
-  }
-}
-
-function _subtreeWidth(k, cache) {
-  if (cache.has(k)) return cache.get(k);
-  const fk = 2*k, mk = 2*k+1;
-  const hasFather = visibleKeys.has(fk);
-  const hasMother = visibleKeys.has(mk);
-  let w;
-  if (!hasFather && !hasMother) {
-    w = 1;
-  } else {
-    const fw = hasFather ? _subtreeWidth(fk, cache) : 0;
-    const mw = hasMother ? _subtreeWidth(mk, cache) : 0;
-    // Add 1 gap slot when both sides have visible ancestors so the two parent
-    // groups don't run into each other.
-    const fHasAnc = hasFather && (visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1));
-    const mHasAnc = hasMother && (visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1));
-    // QUICK FIX: inject a fixed 1-slot gap when both sides have ancestors.
-    // This prevents the two parent groups from touching but is too blunt —
-    // it applies the same gap at every level regardless of actual subtree density,
-    // and doesn't handle asymmetric cases (e.g. one side much wider than the other).
-    // A proper fix would use a Reingold-Tilford-style contour algorithm to compute
-    // the minimal separation that avoids overlap at each level.
-    // See: https://github.com/sashaperigo/gedcom-tools/issues/5
-    w = Math.max(1, fw + mw + (fHasAnc && mHasAnc ? 1 : 0));
-  }
-  // Reserve sibling slots (non-root only; root siblings are placed outside layout bounds)
-  w += _sibSlots.get(k) || 0;
-  cache.set(k, w);
-  return w;
+/**
+ * Pack an array of items into nodes starting at startX, all at the given y.
+ * Items are laid out left-to-right with NODE_W + H_GAP spacing.
+ * @param {Array<{xref: string}>} items
+ * @param {number} startX
+ * @param {number} y
+ * @param {string} role
+ * @returns {Node[]}
+ */
+function _packRow(items, startX, y, role) {
+  const { NODE_W, H_GAP } = DESIGN;
+  return items.map((item, i) => ({
+    xref:       item.xref,
+    x:          startX + i * (NODE_W + H_GAP),
+    y,
+    generation: Math.round(y / DESIGN.ROW_HEIGHT),
+    role,
+  }));
 }
 
 // ---------------------------------------------------------------------------
-// Ancestor position layout
+// computeLayout
 // ---------------------------------------------------------------------------
 
-function computePositions() {
-  _posCache = new Map();
-  _buildSibSlots();
-  const maxGen = maxVisibleGen();
-  const slotW  = NODE_W + H_GAP;
-  const wCache = new Map();
-  _subtreeWidth(1, wCache);
+/**
+ * Compute the full layout for a given focus person.
+ *
+ * @param {string} focusXref - xref of the person at the center of the tree
+ * @param {Set<string>} expandedAncestors - set of xrefs whose parents are shown
+ * @param {boolean} spouseSiblingsExpanded - whether to show spouse's sibling row
+ * @returns {{ nodes: Node[], edges: Edge[] }}
+ *
+ * Node: { xref, x, y, generation, role }
+ *   role: 'focus' | 'ancestor' | 'descendant' | 'sibling' | 'spouse' | 'spouse_sibling'
+ *
+ * Edge: { x1, y1, x2, y2, type }
+ *   type: 'ancestor' | 'descendant' | 'sibling_bracket' | 'marriage'
+ */
+function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
+  const { NODE_W, NODE_W_FOCUS, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+  const SLOT = NODE_W + H_GAP;
+  // Gap between focus node edge and nearest sibling: account for focus being wider than NODE_W.
+  const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
 
-  function layout(k, xStart) {
-    const w      = wCache.get(k) || 1;
-    const sibN   = _sibSlots.get(k) || 0;
-    const male   = isMaleKey(k);
-    // Male non-root with siblings: shift node right so siblings fit to its left.
-    // Female non-root: siblings extend right; node stays at natural left edge of its ancestor slots.
-    const leftShift  = (male && k !== 1) ? sibN : 0;
-    const ancestorW  = w - sibN;          // slots used by actual ancestor subtree
+  const nodes = [];
+  const edges = [];
 
-    const fk = 2*k, mk = 2*k+1;
-    const hasFather = visibleKeys.has(fk);
-    const hasMother = visibleKeys.has(mk);
-    const g  = genOf(k);
-    const x  = xStart + leftShift * slotW + (ancestorW * slotW - NODE_W) / 2;
-    const y  = MARGIN_TOP + BTN_ZONE + (maxGen - g) * (NODE_H + V_GAP);
-    _posCache.set(k, {x, y});
+  // ── Phase 1 & 2: Generation 0 (focus row) ────────────────────────────────
 
-    // Lay out children so parents center above the full sibling group (not just the ancestor subtree).
-    // Shifting by sibN/2 slots places parents above the midpoint of the combined anchor+sibling row.
-    const fHasAnc = hasFather && (visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1));
-    const mHasAnc = hasMother && (visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1));
-    const familyGap = (fHasAnc && mHasAnc) ? slotW : 0;
-    let offset = xStart + (sibN / 2) * slotW;
-    if (hasFather) { const fw = wCache.get(fk) || 1; layout(fk, offset); offset += fw * slotW; }
-    offset += familyGap;
-    if (hasMother) { layout(mk, offset); }
-  }
-  layout(1, MARGIN_X);
+  const focusBY = PEOPLE[focusXref]?.birth_year ?? 9999;
 
-  // Couple compaction: move an isolated parent (no visible ancestors, no expanded siblings)
-  // adjacent to their partner when the gap between them exceeds one slot.
-  // This prevents e.g. a father with no ancestors from being placed far left of a mother
-  // whose large subtree pushed her far right.
-  for (const k of visibleKeys) {
-    const fk = 2*k, mk = 2*k+1;
-    if (!visibleKeys.has(fk) || !visibleKeys.has(mk)) continue;
-    const fp = _posCache.get(fk), mp = _posCache.get(mk);
-    if (!fp || !mp) continue;
-    const fHasAncestors = visibleKeys.has(2*fk) || visibleKeys.has(2*fk+1);
-    const mHasAncestors = visibleKeys.has(2*mk) || visibleKeys.has(2*mk+1);
-    const fHasSiblings  = (_sibSlots.get(fk) || 0) > 0;
-    const mHasSiblings  = (_sibSlots.get(mk) || 0) > 0;
-    const gap = mp.x - (fp.x + NODE_W + H_GAP);
-    if (!fHasAncestors && !fHasSiblings && gap > slotW) {
-      _posCache.set(fk, {x: mp.x - NODE_W - H_GAP, y: fp.y});
-    } else if (!mHasAncestors && !mHasSiblings && gap > slotW) {
-      _posCache.set(mk, {x: fp.x + NODE_W + H_GAP, y: mp.y});
-    }
-  }
-}
+  // Siblings split around focus by birth year.
+  // Tie (same birth year as focus) falls into youngerSibs (placed right).
+  const allSibs    = RELATIVES[focusXref]?.siblings ?? [];
+  const sortedSibs = _sortByBirthYear(allSibs);
+  const olderSibs  = sortedSibs.filter(x => (PEOPLE[x]?.birth_year ?? 9999) < focusBY);
+  const youngerSibs = sortedSibs.filter(x => (PEOPLE[x]?.birth_year ?? 9999) >= focusBY);
 
-function nodePos(k) {
-  return _posCache.get(k) || {x: 0, y: 0};
-}
-
-// ---------------------------------------------------------------------------
-// Relative (sibling / spouse / child) position layout
-// ---------------------------------------------------------------------------
-
-function computeRelativePositions() {
-  _relPosCache.clear();
-  const slotW = NODE_W + H_GAP;
-  // Build xref → Ahnentafel key map for all visible ancestors
-  const xrefToKey = new Map();
-  for (const k of visibleKeys) {
-    const xref = currentTree[k];
-    if (xref) xrefToKey.set(xref, k);
+  // Older siblings: packed leftward. Closest older sib center = -(FOCUS_TO_SIB).
+  if (olderSibs.length > 0) {
+    nodes.push(..._packRow(
+      olderSibs.map(xref => ({ xref })),
+      -(FOCUS_TO_SIB + (olderSibs.length - 1) * SLOT),
+      0,
+      'sibling',
+    ));
   }
 
-  for (const k of expandedRelatives) {
-    if (!_posCache.has(k)) continue;
-    const {x, y} = _posCache.get(k);
-    const rels = RELATIVES[currentTree[k]];
-    if (!rels) continue;
-    const male = isMaleKey(k);
+  // Focus node at x=0
+  nodes.push({ xref: focusXref, x: 0, y: 0, generation: 0, role: 'focus' });
 
-    // Spouses always go to the RIGHT of the anchor
-    let newSpIdx = 0;
-    rels.spouses.forEach((xref, j) => {
-      const existingKey = xrefToKey.get(xref);
-      if (existingKey !== undefined) {
-        const pos = _posCache.get(existingKey);
-        if (pos) _relPosCache.set(`sp:${k}:${j}`, {x: pos.x, y: pos.y, xref, existing: true});
-      } else {
-        _relPosCache.set(`sp:${k}:${j}`, {x: x + NODE_W + H_GAP + newSpIdx * slotW, y, xref, existing: false});
-        newSpIdx++;
-      }
+  // Spouses: placed immediately after focus (before younger siblings).
+  // firstSpouseX = NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 (= 80 + 60 + 70 = 210)
+  const spouseXrefs  = RELATIVES[focusXref]?.spouses ?? [];
+  const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+  // Track the rightmost center x placed (spouse or spouse sibling) to position younger sibs after.
+  let rightmostSpouseAreaX = null;
+
+  spouseXrefs.forEach((spouseXref, si) => {
+    const thisSpouseX = firstSpouseX + si * SLOT;
+    rightmostSpouseAreaX = thisSpouseX;
+    nodes.push({
+      xref:       spouseXref,
+      x:          thisSpouseX,
+      y:          0,
+      generation: 0,
+      role:       'spouse',
     });
 
-    // Siblings: males go LEFT, females go RIGHT (after any new spouses).
-    // Each sibling group occupies 1 + (number of sibling's spouses) slots.
-    // Sort chronologically so the leftmost sibling is always the earliest born.
-    // For male anchors (siblings left), first-iterated lands nearest the anchor
-    // (rightmost among siblings), so we reverse the sorted order.
-    // We preserve the original array index as the cache key so _sibSpouseIdx
-    // (spouse cycle state) remains stable across re-renders.
-    const _sibsSorted = rels.siblings
-      .map((xref, origIdx) => ({xref, origIdx, by: (PEOPLE[xref] || {}).birth_year || 9999}))
-      .sort((a, b) => a.by - b.by);
-    if (male) _sibsSorted.reverse();
-
-    let newSibOffset = 0;
-    _sibsSorted.forEach(({xref, origIdx: i}) => {
-      const sibSpouses = (rels.sib_spouses || {})[xref] || [];
-      const existingKey = xrefToKey.get(xref);
-      if (existingKey !== undefined) {
-        const pos = _posCache.get(existingKey);
-        if (pos) _relPosCache.set(`sib:${k}:${i}`, {x: pos.x, y: pos.y, xref, existing: true});
-        // Sibling already in tree — no new slot consumed, skip its spouses here
-      } else {
-        const sibX = male
-          ? x - (newSibOffset + 1) * slotW - BTN_PAD                          // left of anchor, with button clearance
-          : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset) * slotW; // right, after spouses, with button clearance
-        _relPosCache.set(`sib:${k}:${i}`, {x: sibX, y, xref, existing: false});
-
-        // Show only the currently-selected spouse (one slot reserved if any spouses exist)
-        if (sibSpouses.length > 0) {
-          const spIdx = _sibSpouseIdx.get(`${k}:${i}`) || 0;
-          const spXref = sibSpouses[spIdx];
-          const existingSpKey = xrefToKey.get(spXref);
-          if (existingSpKey !== undefined) {
-            const pos = _posCache.get(existingSpKey);
-            if (pos) _relPosCache.set(`sibsp:${k}:${i}`, {x: pos.x, y: pos.y, xref: spXref, existing: true, total: sibSpouses.length, spIdx});
-          } else {
-            const spX = male
-              ? x - (newSibOffset + 2) * slotW - BTN_PAD
-              : x + NODE_W + H_GAP + BTN_PAD + (newSpIdx + newSibOffset + 1) * slotW;
-            _relPosCache.set(`sibsp:${k}:${i}`, {x: spX, y, xref: spXref, existing: false, total: sibSpouses.length, spIdx});
-          }
-        }
-
-        newSibOffset += 1 + (sibSpouses.length > 0 ? 1 : 0);
-      }
+    // Marriage edge: focus right edge → first spouse; prev spouse right → next spouse.
+    const edgeX1 = si === 0
+      ? NODE_W_FOCUS / 2
+      : firstSpouseX + (si - 1) * SLOT + NODE_W / 2;
+    edges.push({
+      x1:   edgeX1,
+      y1:   NODE_H / 2,
+      x2:   thisSpouseX,
+      y2:   NODE_H / 2,
+      type: 'marriage',
     });
-  }
 
-  // Helper: compute spouse-line midpoint for a node, or fall back to node bottom-center
-  function _spouseMidX(nx, ny, spouseEntry) {
-    if (spouseEntry && !spouseEntry.existing) {
-      const [lx, rx2] = spouseEntry.x < nx ? [spouseEntry.x + NODE_W, nx] : [nx + NODE_W, spouseEntry.x];
-      return {stemX: (lx + rx2) / 2, stemY: ny + NODE_H / 2};
+    // Spouse's siblings (if expanded and this is the primary spouse)
+    if (spouseSiblingsExpanded && si === 0) {
+      const spouseSibs = _sortByBirthYear(RELATIVES[spouseXref]?.siblings ?? []);
+      if (spouseSibs.length > 0) {
+        const spouseSibNodes = _packRow(
+          spouseSibs.map(xref => ({ xref })),
+          thisSpouseX + SLOT,
+          0,
+          'spouse_sibling',
+        );
+        nodes.push(...spouseSibNodes);
+        rightmostSpouseAreaX = spouseSibNodes[spouseSibNodes.length - 1].x;
+      }
     }
-    return {stemX: nx + NODE_W / 2, stemY: ny + NODE_H};
+  });
+
+  // Younger siblings: packed after the rightmost spouse/spouse-sibling (or at FOCUS_TO_SIB if no spouses).
+  const youngerSibStartX = rightmostSpouseAreaX !== null
+    ? rightmostSpouseAreaX + NODE_W / 2 + H_GAP + NODE_W / 2
+    : FOCUS_TO_SIB;
+  if (youngerSibs.length > 0) {
+    nodes.push(..._packRow(
+      youngerSibs.map(xref => ({ xref })),
+      youngerSibStartX,
+      0,
+      'sibling',
+    ));
   }
 
-  // Children below any expanded node (root or siblings)
-  // Pass 1: root children
-  const rootXref = currentTree[1];
-  if (expandedChildrenOf.has(rootXref) && _posCache.has(1)) {
-    const {x: rx, y: ry} = _posCache.get(1);
-    const children = CHILDREN[rootXref] || [];
-    if (children.length > 0) {
-      const {stemX, stemY} = _spouseMidX(rx, ry, _relPosCache.get('sp:1:0'));
-      const totalW = children.length * slotW - H_GAP;
-      const startX = stemX - totalW / 2;
-      children.forEach((cx, i) => {
-        _relPosCache.set(`ch:${i}`, {x: startX + i * slotW, y: ry + NODE_H + V_GAP, xref: cx, stemX, stemY});
+  // ── Phase 2: Generation -1 (parents) ─────────────────────────────────────
+
+  const focusParents = PARENTS[focusXref] ?? [];
+  const fatherXref   = focusParents[0] ?? null;
+  const motherXref   = focusParents[1] ?? null;
+
+  if (fatherXref || motherXref) {
+    if (fatherXref && motherXref) {
+      // Both parents: father left of focus, mother right
+      const parentOffset = SLOT / 2;
+      const fatherX = 0 - parentOffset;
+      const motherX = 0 + parentOffset;
+
+      nodes.push({ xref: fatherXref, x: fatherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+      nodes.push({ xref: motherXref, x: motherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+
+      // H-shaped connector: two verticals down from each parent, horizontal crossbar,
+      // then a vertical drop from the midpoint to the focus node.
+      const midY = -ROW_HEIGHT / 2;
+      edges.push({ x1: fatherX + NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: fatherX + NODE_W / 2, y2: midY, type: 'ancestor' });
+      edges.push({ x1: motherX + NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
+      edges.push({ x1: fatherX + NODE_W / 2, y1: midY, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
+      edges.push({ x1: NODE_W / 2, y1: midY, x2: NODE_W / 2, y2: 0, type: 'ancestor' });
+
+      // Recurse into grandparents for each expanded ancestor
+      _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
+      _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
+    } else {
+      // Single parent: centered above focus
+      const singleParent = fatherXref || motherXref;
+      nodes.push({ xref: singleParent, x: 0, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+      const midY = -ROW_HEIGHT / 2;
+      edges.push({ x1: NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: NODE_W / 2, y2: midY, type: 'ancestor' });
+      edges.push({ x1: NODE_W / 2, y1: midY, x2: NODE_W / 2, y2: 0, type: 'ancestor' });
+
+      _placeAncestors(singleParent, 0, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
+    }
+  }
+
+  // ── Phase 2: Generation +1 (children) ────────────────────────────────────
+
+  const childXrefs = CHILDREN[focusXref] ?? [];
+  if (childXrefs.length > 0) {
+    const n      = childXrefs.length;
+    const totalW = n * NODE_W + (n - 1) * H_GAP;
+    // Focus is at x=0; its center is at NODE_W/2.
+    // Start children so their row center aligns with the focus center.
+    const startX = NODE_W / 2 - totalW / 2;
+
+    childXrefs.forEach((xref, i) => {
+      const cx = startX + i * SLOT;
+      nodes.push({ xref, x: cx, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
+
+      // Edge from focus bottom to child top
+      edges.push({
+        x1:   NODE_W / 2,
+        y1:   NODE_H,
+        x2:   cx + NODE_W / 2,
+        y2:   ROW_HEIGHT,
+        type: 'descendant',
       });
-    }
-  }
-  // Pass 2: sibling children — iterate over already-placed sibling entries
-  for (const [key, entry] of [..._relPosCache.entries()]) {
-    if (!key.startsWith('sib:') || key.startsWith('sibsp:') || entry.existing) continue;
-    const {x: sibX, y: sibY, xref: sibXref} = entry;
-    if (!expandedChildrenOf.has(sibXref)) continue;
-    const sibChildren = CHILDREN[sibXref] || [];
-    if (!sibChildren.length) continue;
-    const [, k, i] = key.split(':');
-    const {stemX, stemY} = _spouseMidX(sibX, sibY, _relPosCache.get(`sibsp:${k}:${i}`));
-    const totalW = sibChildren.length * slotW - H_GAP;
-    const startX = stemX - totalW / 2;
-    sibChildren.forEach((cx, j) => {
-      _relPosCache.set(`sibch:${k}:${i}:${j}`, {x: startX + j * slotW, y: sibY + NODE_H + V_GAP, xref: cx, stemX, stemY});
     });
   }
 
-  // Pass 3: resolve collisions — push sibling groups outward if their children
-  // overlap ANY fixed node (ancestor or root-children) at the same Y level.
-  // Math: a sibling of a generation-G ancestor has children at y(G-1), which is
-  // the exact same Y as generation-(G-1) ancestor nodes.  Pass 3 must check
-  // _posCache (ancestors) not just ch: (root's own children).
-  {
-    // Build Y → {minX, maxX} for all fixed nodes.
-    // Pad ancestor nodes by BTN_PAD on both sides to account for the expand/
-    // relatives-toggle buttons that sit just outside the node box.
-    const occupiedByY = new Map();
-    const _mergeOcc = (y, xMin, xMax) => {
-      if (!occupiedByY.has(y)) { occupiedByY.set(y, {minX: xMin, maxX: xMax}); return; }
-      const b = occupiedByY.get(y);
-      b.minX = Math.min(b.minX, xMin);
-      b.maxX = Math.max(b.maxX, xMax);
-    };
-    for (const [, pos] of _posCache.entries())
-      _mergeOcc(pos.y, pos.x - BTN_PAD, pos.x + NODE_W + BTN_PAD);
-    for (const [k, e] of _relPosCache.entries()) {
-      if (k.startsWith('ch:')) _mergeOcc(e.y, e.x, e.x + NODE_W);
-    }
+  return { nodes, edges };
+}
 
-    // Group sibling-child entries by their parent sibling key
-    const sibChGroups = new Map();
-    for (const [k, e] of _relPosCache.entries()) {
-      if (!k.startsWith('sibch:')) continue;
-      const parts = k.split(':');
-      const parentKey = `sib:${parts[1]}:${parts[2]}`;
-      if (!sibChGroups.has(parentKey)) sibChGroups.set(parentKey, []);
-      sibChGroups.get(parentKey).push([k, e]);
-    }
+// ---------------------------------------------------------------------------
+// Recursive ancestor placement
+// ---------------------------------------------------------------------------
 
-    // Track anchors already processed so a second sibling group for the same
-    // anchor doesn't double-shift the whole row.
-    const processedAnchors = new Set();
+function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges) {
+  const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
+  const SLOT = NODE_W + H_GAP;
 
-    for (const [parentKey, chEntries] of sibChGroups.entries()) {
-      const sibEntry = _relPosCache.get(parentKey);
-      if (!sibEntry || sibEntry.existing) continue;
+  if (!expandedAncestors.has(xref)) return;
 
-      const sibChY = chEntries[0][1].y;
-      const occupied = occupiedByY.get(sibChY);
-      if (!occupied) continue;
+  const parentPair = PARENTS[xref] ?? [];
+  const fatherXref = parentPair[0] ?? null;
+  const motherXref = parentPair[1] ?? null;
 
-      const sibChMinX = Math.min(...chEntries.map(([, e]) => e.x));
-      const sibChMaxX = Math.max(...chEntries.map(([, e]) => e.x)) + NODE_W;
+  if (!fatherXref && !motherXref) return;
 
-      // No overlap — nothing to fix
-      if (sibChMaxX <= occupied.minX || sibChMinX >= occupied.maxX) continue;
+  const nextGen = generation - 1;
+  const nextY   = nextGen * ROW_HEIGHT;
 
-      const [, anchorK] = parentKey.split(':');
-      if (processedAnchors.has(anchorK)) continue;
-      processedAnchors.add(anchorK);
+  if (fatherXref && motherXref) {
+    const parentOffset = SLOT / 2;
+    const fatherX = x - parentOffset;
+    const motherX = x + parentOffset;
 
-      // Compare the sibling's center to the occupied zone's center to determine
-      // which way to push.  Using rootNodeX was wrong: it's at the bottom-center
-      // of the tree and has no relationship to where the collision is happening.
-      const occupiedCenter = (occupied.minX + occupied.maxX) / 2;
-      const isLeft = (sibEntry.x + NODE_W / 2) < occupiedCenter;
-      const shift = isLeft
-        ? occupied.minX - H_GAP - sibChMaxX   // negative → push left
-        : occupied.maxX + H_GAP - sibChMinX;  // positive → push right
+    nodes.push({ xref: fatherXref, x: fatherX, y: nextY, generation: nextGen, role: 'ancestor' });
+    nodes.push({ xref: motherXref, x: motherX, y: nextY, generation: nextGen, role: 'ancestor' });
 
-      // Shift the ENTIRE sibling row for this anchor so all siblings (and their
-      // spouses / children) move together and don't collide with each other.
-      for (const [cacheKey, cacheEntry] of _relPosCache.entries()) {
-        if (cacheEntry.existing) continue;
-        if (!cacheKey.startsWith('sib')) continue;   // sib:, sibsp:, sibch:
-        if (cacheKey.split(':')[1] !== anchorK) continue;
-        cacheEntry.x += shift;
-        if (cacheEntry.stemX !== undefined) cacheEntry.stemX += shift;
-      }
-    }
+    const midY = nextY + ROW_HEIGHT / 2;
+    edges.push({ x1: fatherX + NODE_W / 2, y1: nextY + NODE_H, x2: fatherX + NODE_W / 2, y2: midY, type: 'ancestor' });
+    edges.push({ x1: motherX + NODE_W / 2, y1: nextY + NODE_H, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
+    edges.push({ x1: fatherX + NODE_W / 2, y1: midY, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
+    edges.push({ x1: x + NODE_W / 2, y1: midY, x2: x + NODE_W / 2, y2: y, type: 'ancestor' });
+
+    _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, nodes, edges);
+    _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, nodes, edges);
+  } else {
+    const singleParent = fatherXref || motherXref;
+    nodes.push({ xref: singleParent, x, y: nextY, generation: nextGen, role: 'ancestor' });
+
+    const midY = nextY + ROW_HEIGHT / 2;
+    edges.push({ x1: x + NODE_W / 2, y1: nextY + NODE_H, x2: x + NODE_W / 2, y2: midY, type: 'ancestor' });
+    edges.push({ x1: x + NODE_W / 2, y1: midY, x2: x + NODE_W / 2, y2: y, type: 'ancestor' });
+
+    _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, nodes, edges);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Visibility helpers
-// ---------------------------------------------------------------------------
-
-function hasHiddenParents(k) {
-  return ((2 * k) in currentTree || (2 * k + 1) in currentTree) &&
-         !visibleKeys.has(2 * k) && !visibleKeys.has(2 * k + 1);
-}
-
-function hasVisibleParents(k) {
-  return visibleKeys.has(2 * k) || visibleKeys.has(2 * k + 1);
-}
-
-// ---------------------------------------------------------------------------
-// Node export (for tests)
+// Exports (for tests and other modules)
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined') {
-  module.exports = {
-    genOf, slotOf, isMaleKey, maxVisibleGen,
-    _buildSibSlots, _subtreeWidth,
-    computePositions, computeRelativePositions, nodePos,
-    hasHiddenParents, hasVisibleParents,
-  };
+  module.exports = { computeLayout, _sortByBirthYear, _packRow };
 }

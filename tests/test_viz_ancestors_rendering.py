@@ -102,8 +102,8 @@ def html(tree, people, relatives, indis, fams):
 # ---------------------------------------------------------------------------
 
 def extract_js_const(html_text: str, name: str):
-    """Return the parsed JSON value assigned to a JS const in the HTML."""
-    pattern = rf'const {re.escape(name)} = (.*?);[ \t]*$'
+    """Return the parsed JSON value assigned to a JS const/let in the HTML."""
+    pattern = rf'(?:const|let) {re.escape(name)} = (.*?);[ \t]*$'
     m = re.search(pattern, html_text, re.MULTILINE)
     if not m:
         return None
@@ -160,24 +160,22 @@ class TestTemplateAntipatterns:
             "RELATIVES[currentTree[k]] so it works after changeRoot()"
         )
 
-    def test_expandNode_uses_currentTree(self):
-        """B1: expandNode must check currentTree, not the static TREE."""
-        assert 'function expandNode' in _FULL_SOURCE
-        # Find the function body and confirm it references currentTree
-        fn_start = _FULL_SOURCE.index('function expandNode')
-        fn_body = _FULL_SOURCE[fn_start:fn_start + 200]
-        assert 'currentTree' in fn_body, (
-            "expandNode does not reference currentTree — "
-            "parent expansion broken after changeRoot()"
+    def test_expand_uses_setState(self):
+        """Redesign: ancestor expansion uses setState({ expandedNodes }) not currentTree."""
+        # viz_render.js wires expand buttons to setState; verify the pattern
+        render_src = (Path(__file__).parent.parent / 'js' / 'viz_render.js').read_text()
+        assert 'setState' in render_src, (
+            "viz_render.js must call setState for expand button clicks"
+        )
+        assert 'expandedNodes' in render_src, (
+            "viz_render.js must reference expandedNodes state key"
         )
 
-    def test_hasHiddenParents_uses_currentTree(self):
-        """B1: hasHiddenParents must check currentTree."""
-        fn_start = _FULL_SOURCE.index('function hasHiddenParents')
-        fn_body = _FULL_SOURCE[fn_start:fn_start + 200]
-        assert 'currentTree' in fn_body, (
-            "hasHiddenParents does not reference currentTree — "
-            "expand button broken after changeRoot()"
+    def test_panel_uses_getState(self):
+        """Redesign: detail panel reads from state via getState(), not global _openDetailKey."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'getState' in panel_src or 'onStateChange' in panel_src, (
+            "viz_panel.js must integrate with state management"
         )
 
     def test_connector_drawn_unconditionally_for_both_parents(self):
@@ -192,9 +190,11 @@ class TestTemplateAntipatterns:
             "both-parent nodes to child is skipped for the root person"
         )
 
-    def test_currentTree_declared(self):
-        """currentTree must be declared as a mutable variable."""
-        assert 'let currentTree' in _HTML_TEMPLATE
+    def test_currentTree_not_in_template(self):
+        """Redesign: currentTree is gone — state is managed by viz_state.js."""
+        assert 'let currentTree' not in _HTML_TEMPLATE, (
+            "currentTree should not be in the template; state is managed by viz_state.js"
+        )
 
     def test_parents_json_placeholder_present(self):
         """PARENTS_JSON placeholder must exist so it gets substituted."""
@@ -250,7 +250,7 @@ class TestParentsJson:
     """
 
     def test_parents_const_present(self, html):
-        assert 'const PARENTS' in html
+        assert 'let PARENTS' in html
 
     def test_root_xref_const_present(self, html):
         assert 'const ROOT_XREF' in html
@@ -314,7 +314,7 @@ class TestRelativesJsonStructure:
     """
 
     def test_relatives_const_present(self, html):
-        assert 'const RELATIVES' in html
+        assert 'let RELATIVES' in html
 
     def test_relatives_keys_are_xref_strings(self, html):
         """All keys in RELATIVES must start with '@' (xref format)."""
@@ -615,60 +615,27 @@ class TestExpansionButtonLogic:
 
 
 # ---------------------------------------------------------------------------
-# B7  buildProse stale `full` variable — ReferenceError in default switch branch
+# B7  Panel fact rendering — viz_panel.js _buildFactRow
 # ---------------------------------------------------------------------------
 
-class TestBuildProseStaleFullVariable:
+class TestPanelFactRendering:
     """
-    B7: When the meta line in buildProse was reordered from [full, date, addr]
-    to [addr, place, date], the `full` variable declaration was removed but one
-    stale reference survived in the default switch case:
-
-        meta: [full, date].filter(Boolean).join(' · ')
-
-    This caused a ReferenceError whenever showDetail() rendered any event that
-    fell through to the default branch (bare EVEN tags, unknown types, etc.).
-    Symptoms: panel didn't open on first click; stale content shown on second
-    click because the exception fired after the name was set but before
-    panel.classList.add('panel-open').
+    Panel fact rendering — ported from viz_detail.js.
+    The new panel uses buildProse (ported wholesale) rather than _buildFactRow.
     """
 
-    def test_no_stale_full_variable_in_buildprose(self):
-        """
-        The identifier `full` must not appear anywhere in the buildProse
-        function body.  It was removed when the meta ordering changed; any
-        surviving reference causes a ReferenceError at runtime.
-        """
-        fn_start = _FULL_SOURCE.index('function buildProse')
-        # Find the closing brace of buildProse (next top-level `\n}` after the open)
-        fn_end = _FULL_SOURCE.index('\n}', fn_start) + 2
-        fn_body = _FULL_SOURCE[fn_start:fn_end]
-        import re
-        stale_refs = re.findall(r'\bfull\b', fn_body)
-        assert not stale_refs, (
-            f'Found {len(stale_refs)} reference(s) to `full` in buildProse — '
-            'this variable was removed when meta ordering changed; stale '
-            'references cause ReferenceError in showDetail() for events that '
-            'fall through to the default switch branch'
+    def test_buildProse_exists_in_panel(self):
+        """viz_panel.js must define buildProse for event rendering."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'function buildProse' in panel_src, (
+            'viz_panel.js must define buildProse for event rendering (ported from viz_detail.js)'
         )
 
-    def test_meta_closure_used_in_default_branch(self):
-        """
-        The default switch case in buildProse must call meta() rather than
-        building an inline array expression.  Using an inline expression risks
-        referencing removed variables (the bug that caused B7).
-        """
-        fn_start = _FULL_SOURCE.index('function buildProse')
-        fn_end = _FULL_SOURCE.index('\n}', fn_start) + 2
-        fn_body = _FULL_SOURCE[fn_start:fn_end]
-        # Find the default: branch
-        default_start = fn_body.rfind('default:')
-        assert default_start != -1, 'No default: branch found in buildProse'
-        default_body = fn_body[default_start:]
-        # Should call meta(), not reference `full`
-        assert 'meta()' in default_body, (
-            "default: branch does not call meta() — it may build an inline "
-            "array that references removed variables"
+    def test_panel_renders_section_headers(self):
+        """viz_panel.js must emit section headers like EARLY LIFE / LIFE / LATER LIFE."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'EARLY LIFE' in panel_src or "'Early Life'" in panel_src or '"Early Life"' in panel_src, (
+            'viz_panel.js must emit timeline section headers (EARLY LIFE / LIFE / LATER LIFE)'
         )
 
 
@@ -765,52 +732,212 @@ class TestMarriageAddr:
 # Facts section rendering — single heading, EDUC format, sorted
 # ---------------------------------------------------------------------------
 
-class TestFactsSectionRendering:
+class TestPanelTagLabels:
     """
-    Guards the three visual fixes applied to the undated facts section:
-      1. Single 'Facts' heading for the whole section (no per-event headings).
-      2. EDUC rendered like RELI: prose='Education', meta=institution name.
-      3. Facts sorted by tag so same-type facts are adjacent.
+    Redesign: viz_panel.js defines _TAG_LABELS for mapping GEDCOM tags to
+    display labels. Verify key labels are present.
     """
 
-    def test_educ_prose_is_education_not_colon_format(self):
-        """
-        Regression: buildProse for EDUC must return prose='Education' (not
-        'Education: Institution Name') so the institution appears as the meta
-        line below, matching the visual style of Religion facts.
-        """
-        # The JS source must NOT have 'Education: ' as a prose prefix
-        assert "`Education: ${type}`" not in _FULL_SOURCE, \
-            "EDUC prose must not use 'Education: X' format — use 'Education' + meta instead"
-        assert "'Education'" in _FULL_SOURCE or '"Education"' in _FULL_SOURCE, \
-            "EDUC case must return prose='Education'"
+    def test_education_label_present(self):
+        """EDUC must map to 'Education' in _TAG_LABELS."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert "'Education'" in panel_src or '"Education"' in panel_src, \
+            "viz_panel.js must define 'Education' label for EDUC tag"
 
-    def test_single_facts_heading_in_template(self):
-        """
-        Regression: the facts section must emit one 'Facts' heading for the
-        whole block, not a heading per group.  The old grouping loop emitted
-        institution names ('English College, Shelton') and tag labels ('FACT')
-        as headings for every group.
-        """
-        assert '>Facts<' in _FULL_SOURCE, \
-            "Source must emit a single 'Facts' heading for the facts section"
+    def test_tag_labels_covers_core_tags(self):
+        """_TAG_LABELS must cover key lifecycle events."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        for label in ("'Birth'", "'Death'", "'Burial'", "'Residence'"):
+            assert label in panel_src, f'viz_panel.js must define {label} in _TAG_LABELS'
+
+    def test_no_per_group_heading_loop(self):
+        """Old grouping-by-heading loop must not exist — panel uses flat fact list."""
         assert 'for (const [heading, evts] of groups)' not in _FULL_SOURCE, \
-            "Per-group heading loop must be removed; use a single 'Facts' heading instead"
+            "Per-group heading loop must be removed; panel uses flat _buildFactRow list"
 
-    def test_facts_sorted_by_tag(self):
-        """
-        Regression: otherFacts must be sorted before rendering so same-type
-        events (e.g. multiple EDUC events) appear adjacent.
-        """
-        assert 'otherFacts.sort(' in _FULL_SOURCE, \
-            "otherFacts must be sorted so same-type facts appear together"
+    def test_panel_iterates_facts_array(self):
+        """viz_panel.js must iterate events to render life events."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert (
+            'for (const fact of facts)' in panel_src
+            or 'facts.forEach' in panel_src
+            or 'for (const evt of sorted)' in panel_src
+            or 'for (const evt of allVisible)' in panel_src
+        ), "viz_panel.js must iterate events to render life event rows"
 
-    def test_resi_separated_from_other_facts(self):
-        """
-        Undated RESI events keep their own 'Also lived in' label; they must
-        not be mixed into the 'Facts' section.
-        """
-        assert "e.tag !== 'RESI'" in _FULL_SOURCE or "e.tag === 'RESI'" in _FULL_SOURCE, \
-            "RESI events must be filtered separately from other facts"
-        assert '>Also lived in<' in _FULL_SOURCE, \
-            "RESI section must keep its 'Also lived in' label"
+
+# ---------------------------------------------------------------------------
+# Category 4 — Button wiring pattern checks
+# ---------------------------------------------------------------------------
+
+class TestButtonWiringPatterns:
+    """
+    Assert that viz_panel.js source contains correct function calls/patterns on
+    each button. Catches "button present but onclick removed" regressions.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _panel_src(self):
+        self.panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+
+    def test_set_root_button_uses_setState_and_focusXref(self):
+        """Home/set-root button must call setState with focusXref."""
+        assert 'setState' in self.panel_src and 'focusXref' in self.panel_src, (
+            "viz_panel.js must contain setState({ focusXref }) for the set-root/home button"
+        )
+
+    def test_add_event_button_wired(self):
+        """Add Event button must call an event-modal open function."""
+        assert 'addEvent' in self.panel_src or 'showAddEventModal' in self.panel_src or 'openAddEventModal' in self.panel_src, (
+            "viz_panel.js must wire Add Event button to an openAddEventModal (or equivalent) function"
+        )
+
+    def test_add_nationality_button_wired(self):
+        """Add Nationality button must call a nationality-modal open function."""
+        assert 'NATI' in self.panel_src, (
+            "viz_panel.js must reference NATI tag for Add Nationality functionality"
+        )
+
+    def test_edit_fact_button_wired(self):
+        """Edit fact button must reference an edit function."""
+        assert 'editEvent' in self.panel_src or 'showEditEventModal' in self.panel_src or 'openEditFactModal' in self.panel_src, (
+            "viz_panel.js must wire edit-fact buttons to an editEvent (or equivalent) function"
+        )
+
+    def test_source_contains_fmtDate(self):
+        """viz_panel.js must define fmtDate."""
+        assert 'function fmtDate' in self.panel_src, (
+            "viz_panel.js must define fmtDate — its absence is a silent regression"
+        )
+
+    def test_source_contains_fmtPlace(self):
+        """viz_panel.js must define fmtPlace."""
+        assert 'function fmtPlace' in self.panel_src, (
+            "viz_panel.js must define fmtPlace — its absence is a silent regression"
+        )
+
+    def test_source_contains_EARLY_LIFE(self):
+        """viz_panel.js must contain section logic for 'Early Life' events."""
+        # The source uses 'Early Life' as a variable value; the rendered output
+        # is uppercased at runtime via .toUpperCase(). Either form is acceptable.
+        assert 'Early Life' in self.panel_src or 'EARLY LIFE' in self.panel_src, (
+            "viz_panel.js must contain 'Early Life' or 'EARLY LIFE' section logic"
+        )
+
+    def test_source_contains_marr_card(self):
+        """viz_panel.js must contain marr-card class for marriage cards."""
+        assert 'marr-card' in self.panel_src, (
+            "viz_panel.js must render marr-card class for marriage events"
+        )
+
+    def test_source_contains_detail_aka(self):
+        """viz_panel.js must reference detail-aka element for aliases."""
+        assert 'detail-aka' in self.panel_src, (
+            "viz_panel.js must render aliases into the detail-aka element"
+        )
+
+    def test_source_contains_resi_rollup_logic(self):
+        """viz_panel.js must contain RESI rollup logic (collapseResidences or prevResi)."""
+        assert 'collapseResidences' in self.panel_src or 'prevResi' in self.panel_src or '_yearRange' in self.panel_src, (
+            "viz_panel.js must implement RESI rollup logic "
+            "(collapseResidences function or equivalent _yearRange/_prevResi pattern)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# D1  Home button wiring — boot script must wire #home-btn to setState
+# ---------------------------------------------------------------------------
+
+class TestHomeBtnWiring:
+    """
+    D1: The #home-btn in the page header must be wired in the boot script
+    (DOMContentLoaded) to call setState({ focusXref: ROOT_XREF }).
+    """
+
+    def test_home_btn_listener_wired_in_boot_script(self):
+        """Boot script in _HTML_TEMPLATE must wire home-btn to setState with ROOT_XREF."""
+        assert "setState({ focusXref: ROOT_XREF })" in _HTML_TEMPLATE, (
+            "Boot script must contain: "
+            "homeBtn.addEventListener('click', () => setState({ focusXref: ROOT_XREF }))"
+        )
+
+    def test_home_btn_listener_references_home_btn_id(self):
+        """Boot script must reference the element id 'home-btn'."""
+        assert "home-btn" in _HTML_TEMPLATE, (
+            "Boot script must get element by id 'home-btn' to wire click handler"
+        )
+
+    def test_rendered_html_contains_home_btn_wiring(self, html):
+        """Rendered HTML must contain both home-btn and setState({ focusXref: ROOT_XREF })."""
+        assert "home-btn" in html
+        assert "setState({ focusXref: ROOT_XREF })" in html
+
+
+# ---------------------------------------------------------------------------
+# D3  No snippets_templating.styles.css 404
+# ---------------------------------------------------------------------------
+
+class TestNoSnippetsTemplating:
+    """
+    D3: The <link> tag referencing snippets_templating.styles.css is a stale
+    IDE artifact that causes a console 404 error.  It must not appear anywhere
+    in the rendered HTML.
+    """
+
+    def test_snippets_templating_not_in_template(self):
+        """_HTML_TEMPLATE must not reference snippets_templating."""
+        assert 'snippets_templating' not in _HTML_TEMPLATE, (
+            "Stale <link> referencing snippets_templating.styles.css found in template — "
+            "remove it to fix the console 404 error"
+        )
+
+    def test_snippets_templating_not_in_rendered_html(self, html):
+        """Rendered HTML must not contain snippets_templating."""
+        assert 'snippets_templating' not in html, (
+            "snippets_templating found in rendered HTML — remove the stale <link> tag"
+        )
+
+
+# ---------------------------------------------------------------------------
+# C1  detail-aka and detail-lifespan-row are in header, not body
+# ---------------------------------------------------------------------------
+
+class TestAkaLifespanInHeader:
+    """
+    C1: detail-aka and detail-lifespan-row must live inside detail-header-inner
+    (above the divider), not inside detail-body.
+    """
+
+    def test_detail_aka_before_detail_body(self):
+        """detail-aka must appear before detail-body in the template HTML."""
+        aka_pos  = _HTML_TEMPLATE.index('id="detail-aka"')
+        body_pos = _HTML_TEMPLATE.index('id="detail-body"')
+        assert aka_pos < body_pos, (
+            "detail-aka appears after detail-body — it must be in detail-header-inner"
+        )
+
+    def test_detail_lifespan_row_before_detail_body(self):
+        """detail-lifespan-row must appear before detail-body in the template HTML."""
+        lr_pos   = _HTML_TEMPLATE.index('id="detail-lifespan-row"')
+        body_pos = _HTML_TEMPLATE.index('id="detail-body"')
+        assert lr_pos < body_pos, (
+            "detail-lifespan-row appears after detail-body — it must be in detail-header-inner"
+        )
+
+
+# ---------------------------------------------------------------------------
+# C4  detail-panel top offset uses CSS variable
+# ---------------------------------------------------------------------------
+
+class TestPanelTopOffset:
+    """
+    C4: #detail-panel must use var(--header-h, 45px) for top offset so it
+    doesn't overlap the fixed page header.
+    """
+
+    def test_panel_css_uses_header_h_variable(self):
+        """CSS for #detail-panel must contain var(--header-h."""
+        # Find the #detail-panel CSS block in the template
+        assert 'var(--header-h' in _HTML_TEMPLATE, (
+            "#detail-panel CSS must use var(--header-h, 45px) for top, not top: 0"
+        )

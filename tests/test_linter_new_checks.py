@@ -54,6 +54,8 @@ from gedcom_linter import (
     fix_name_piece_case,
     scan_unknown_surname,
     fix_unknown_surname,
+    scan_asso_without_rela,
+    scan_sour_without_titl,
 )
 
 
@@ -2973,3 +2975,226 @@ class TestFixHtmlEntities:
         fix_html_entities(str(p))
         for line in p.read_text(encoding='utf-8').splitlines():
             assert line == line.rstrip(), f'trailing whitespace: {line!r}'
+
+
+# ===========================================================================
+# scan_asso_without_rela
+# ===========================================================================
+
+class TestScanAssoWithoutRela:
+
+    def test_asso_with_rela_no_violation(self, tmp_path):
+        """ASSO with a RELA subordinate → no violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Godfather /One/
+            1 SEX M
+            0 @I2@ INDI
+            1 NAME Child /Test/
+            1 SEX F
+            1 ASSO @I1@
+            2 RELA Godparent
+            0 TRLR
+        """)
+        result = scan_asso_without_rela(str(p))
+        assert result == []
+
+    def test_asso_without_rela_detected(self, tmp_path):
+        """ASSO with no RELA subordinate → violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Godfather /One/
+            1 SEX M
+            0 @I2@ INDI
+            1 NAME Child /Test/
+            1 SEX F
+            1 ASSO @I1@
+            0 TRLR
+        """)
+        result = scan_asso_without_rela(str(p))
+        assert len(result) == 1
+        lineno, xref = result[0]
+        assert xref == '@I2@'
+        assert isinstance(lineno, int)
+
+    def test_multiple_asso_missing_rela(self, tmp_path):
+        """Multiple ASSO blocks missing RELA → all reported."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 SEX M
+            0 @I2@ INDI
+            1 SEX M
+            0 @I3@ INDI
+            1 NAME Child /Test/
+            1 SEX F
+            1 ASSO @I1@
+            1 ASSO @I2@
+            0 TRLR
+        """)
+        result = scan_asso_without_rela(str(p))
+        assert len(result) == 2
+
+    def test_asso_rela_at_level1_stops_search(self, tmp_path):
+        """A new level-1 tag before RELA means ASSO has no RELA."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 SEX M
+            0 @I2@ INDI
+            1 NAME Child /Test/
+            1 SEX F
+            1 ASSO @I1@
+            1 NOTE This interrupts before RELA
+            0 TRLR
+        """)
+        result = scan_asso_without_rela(str(p))
+        assert len(result) == 1
+        _, xref = result[0]
+        assert xref == '@I2@'
+
+    def test_asso_rela_after_other_level2_tags(self, tmp_path):
+        """RELA may appear after other level-2 subordinates and still be valid."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 SEX M
+            0 @I2@ INDI
+            1 NAME Child /Test/
+            1 SEX F
+            1 ASSO @I1@
+            2 NOTE Some note about the association
+            2 RELA Godparent
+            0 TRLR
+        """)
+        result = scan_asso_without_rela(str(p))
+        assert result == []
+
+    def test_asso_on_non_indi_ignored(self, tmp_path):
+        """ASSO tags not on INDI records should not be checked."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @F1@ FAM
+            1 ASSO @I1@
+            0 TRLR
+        """)
+        result = scan_asso_without_rela(str(p))
+        assert result == []
+
+    def test_no_asso_tags_no_violation(self, tmp_path):
+        """File with no ASSO tags → empty result."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Test /Person/
+            1 SEX M
+            0 TRLR
+        """)
+        result = scan_asso_without_rela(str(p))
+        assert result == []
+
+    def test_lineno_is_the_asso_line(self, tmp_path):
+        """The lineno returned should point to the ASSO tag line."""
+        content = textwrap.dedent("""\
+            0 HEAD
+            0 @I1@ INDI
+            1 SEX M
+            0 @I2@ INDI
+            1 NAME Child /Test/
+            1 SEX F
+            1 ASSO @I1@
+            0 TRLR
+        """)
+        p = tmp_path / 'test.ged'
+        p.write_text(content, encoding='utf-8')
+        result = scan_asso_without_rela(str(p))
+        assert len(result) == 1
+        lineno, _ = result[0]
+        lines = content.splitlines()
+        # lineno is 1-indexed; the ASSO line should contain '1 ASSO'
+        assert '1 ASSO' in lines[lineno - 1]
+
+
+# ===========================================================================
+# scan_sour_without_titl
+# ===========================================================================
+
+class TestScanSourWithoutTitl:
+
+    def test_sour_with_titl_no_violation(self, tmp_path):
+        """SOUR record with a TITL → no violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL My Source Title
+            0 TRLR
+        """)
+        result = scan_sour_without_titl(str(p))
+        assert result == []
+
+    def test_sour_without_titl_detected(self, tmp_path):
+        """SOUR record with no TITL → violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 AUTH Some Author
+            0 TRLR
+        """)
+        result = scan_sour_without_titl(str(p))
+        assert result == ['@S1@']
+
+    def test_multiple_sour_some_missing_titl(self, tmp_path):
+        """Only SOUR records without TITL are returned."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 TITL First Source
+            0 @S2@ SOUR
+            1 AUTH No Title Author
+            0 @S3@ SOUR
+            1 TITL Third Source
+            0 @S4@ SOUR
+            1 AUTH Another No Title
+            0 TRLR
+        """)
+        result = scan_sour_without_titl(str(p))
+        assert set(result) == {'@S2@', '@S4@'}
+        assert '@S1@' not in result
+        assert '@S3@' not in result
+
+    def test_no_sour_records_no_violation(self, tmp_path):
+        """File with no SOUR records → empty result."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME Test /Person/
+            0 TRLR
+        """)
+        result = scan_sour_without_titl(str(p))
+        assert result == []
+
+    def test_inline_sour_citations_not_checked(self, tmp_path):
+        """Inline SOUR citations on events are not top-level SOUR records."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 SOUR @S1@
+            0 TRLR
+        """)
+        result = scan_sour_without_titl(str(p))
+        assert result == []
+
+    def test_sour_with_only_subordinate_sour_counted(self, tmp_path):
+        """A 0-level SOUR record with subordinate SOUR citation (not TITL) → violation."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @S1@ SOUR
+            1 AUTH Author Name
+            1 PUBL Publisher
+            0 TRLR
+        """)
+        result = scan_sour_without_titl(str(p))
+        assert '@S1@' in result

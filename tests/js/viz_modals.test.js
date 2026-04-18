@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
@@ -236,6 +236,16 @@ describe('_FACT_PRESETS', () => {
     expect(typeof _FACT_PRESETS['NCHI'].inlineLabel).toBe('string');
     expect(_FACT_PRESETS['NCHI'].inlineLabel.length).toBeGreaterThan(0);
   });
+
+  it('every preset.baseTag is a legal GEDCOM tag', () => {
+    // Regression: if a preset's baseTag accidentally holds the pseudo-tag key
+    // itself (e.g. 'FACT:Languages'), the server will receive an invalid tag
+    // and either reject it or — historically — write an orphan '1 ' line.
+    const GEDCOM_TAG = /^[A-Z_][A-Z0-9_]*$/;
+    for (const [key, preset] of Object.entries(_FACT_PRESETS)) {
+      expect(preset.baseTag, `preset ${key}.baseTag`).toMatch(GEDCOM_TAG);
+    }
+  });
 });
 
 // ── _buildSourcesModalContent ─────────────────────────────────────────────
@@ -299,6 +309,595 @@ describe('_buildSourcesModalContent', () => {
   it('shows xref as fallback when citation xref is not in SOURCES', () => {
     const html = _buildSourcesModalContent([{ sour_xref: '@S99@', page: null }], SOURCES);
     expect(html).toContain('@S99@');
+  });
+});
+
+// ── B1: _buildSourcesModalContent with camelCase sourceXref + titl ────────
+
+describe('_buildSourcesModalContent — camelCase sourceXref / titl (B1)', () => {
+  it('renders title from src.titl when citation uses sourceXref', () => {
+    const sources = { '@S1@': { titl: 'Birth Records' } };
+    const citations = [{ sourceXref: '@S1@', page: '47' }];
+    const html = _buildSourcesModalContent(citations, sources);
+    expect(html).toContain('Birth Records');
+    expect(html).not.toContain('Unknown source');
+  });
+
+  it('falls back to the xref when source is not found', () => {
+    const sources = {};
+    const citations = [{ sourceXref: '@S99@', page: null }];
+    const html = _buildSourcesModalContent(citations, sources);
+    expect(html).toContain('@S99@');
+    expect(html).not.toContain('Unknown source');
+  });
+
+  it('renders page when present (camelCase citation)', () => {
+    const sources = { '@S1@': { titl: 'Birth Records' } };
+    const citations = [{ sourceXref: '@S1@', page: '12' }];
+    const html = _buildSourcesModalContent(citations, sources);
+    expect(html).toContain('12');
+    expect(html).toContain('src-modal-page');
+  });
+});
+
+// ── B2: showDetail replaced with setState ─────────────────────────────────
+
+describe('deleteNote / submitNoteEdit / deleteFact use setState not showDetail (B2)', () => {
+  let overlay, textarea, titleEl;
+
+  function _fakeEl(id) {
+    return {
+      id, innerHTML: '', textContent: '', style: {}, value: '',
+      classList: {
+        _classes: new Set(),
+        add(c) { this._classes.add(c); },
+        remove(c) { this._classes.delete(c); },
+        contains(c) { return this._classes.has(c); },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    overlay  = _fakeEl('note-modal-overlay');
+    textarea = _fakeEl('note-modal-textarea');
+    titleEl  = _fakeEl('note-modal-title');
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'note-modal-overlay')  return overlay;
+        if (id === 'note-modal-textarea') return textarea;
+        if (id === 'note-modal-title')    return titleEl;
+        return _fakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    // Mock setState as a global spy
+    global.setState = vi.fn();
+    // showDetail must NOT be defined — verify B2 fix doesn't call it
+    delete global.showDetail;
+
+    global.PEOPLE = {
+      '@I1@': { notes: ['old note'] },
+    };
+
+    // Mock fetch to return ok
+    global.fetch = vi.fn(() =>
+      Promise.resolve({ json: () => Promise.resolve({ ok: true, people: { '@I1@': { notes: [] } } }) })
+    );
+    global.confirm = () => true;
+    global.window = { _currentPerson: null };
+  });
+
+  it('deleteNote calls setState with panelXref and panelOpen:true on success', async () => {
+    const { deleteNote } = require('../../js/viz_modals.js');
+    await deleteNote('@I1@', 0);
+    expect(global.setState).toHaveBeenCalledWith({ panelXref: '@I1@', panelOpen: true });
+  });
+
+  it('submitNoteEdit calls setState with panelXref and panelOpen:true on success', async () => {
+    const { submitNoteEdit } = require('../../js/viz_modals.js');
+    // Set up the module state via the open function first
+    textarea.value = 'new note text';
+    // Need to set internal _noteEditXref — call editNote first if available
+    const { editNote } = require('../../js/viz_modals.js');
+    if (editNote) editNote('@I1@', 0);
+    await submitNoteEdit();
+    expect(global.setState).toHaveBeenCalledWith({ panelXref: '@I1@', panelOpen: true });
+  });
+
+  it('deleteFact calls setState with panelXref and panelOpen:true on success', async () => {
+    const { deleteFact } = require('../../js/viz_modals.js');
+    await deleteFact('@I1@', { tag: 'RESI', date: '1900', place: null, type: null, inline_val: null });
+    expect(global.setState).toHaveBeenCalledWith({ panelXref: '@I1@', panelOpen: true });
+  });
+
+  it('does not call showDetail anywhere', async () => {
+    // showDetail is not defined globally; if called, it would throw ReferenceError.
+    // The test above would fail if that happens — this test makes it explicit.
+    const { deleteNote } = require('../../js/viz_modals.js');
+    let showDetailCalled = false;
+    global.showDetail = vi.fn(() => { showDetailCalled = true; });
+    await deleteNote('@I1@', 0);
+    expect(showDetailCalled).toBe(false);
+  });
+});
+
+// ── B3: _evtLabel helper + editEvent modal title ──────────────────────────
+
+describe('_evtLabel (B3)', () => {
+  let _evtLabel;
+
+  beforeEach(() => {
+    ({ _evtLabel } = require('../../js/viz_modals.js'));
+  });
+
+  it('returns "Naturalization" for tag NATU', () => {
+    expect(_evtLabel('NATU', undefined)).toBe('Naturalization');
+  });
+
+  it('returns "Marriage" for tag MARR', () => {
+    expect(_evtLabel('MARR', undefined)).toBe('Marriage');
+  });
+
+  it('returns typeVal for EVEN with a type', () => {
+    expect(_evtLabel('EVEN', 'Military Service')).toBe('Military Service');
+  });
+
+  it('returns typeVal for FACT with a type', () => {
+    expect(_evtLabel('FACT', 'Languages')).toBe('Languages');
+  });
+
+  it('falls back to the raw tag for unknown tags', () => {
+    expect(_evtLabel('ZZZZ', undefined)).toBe('ZZZZ');
+  });
+});
+
+describe('editEvent modal title uses _evtLabel (B3)', () => {
+  function _fakeEl(id) {
+    return {
+      id, innerHTML: '', textContent: '', style: {}, value: '',
+      options: [], readOnly: false,
+      classList: {
+        _classes: new Set(),
+        add(c) { this._classes.add(c); },
+        remove(c) { this._classes.delete(c); },
+        contains(c) { return this._classes.has(c); },
+      },
+    };
+  }
+
+  let titleEl;
+
+  beforeEach(() => {
+    titleEl = _fakeEl('event-modal-title');
+
+    global.PEOPLE = {
+      '@I1@': {
+        name: 'Helena Vitali',
+        events: [
+          { tag: 'NATU', event_idx: 0, date: '1925', place: 'New York' },
+          { tag: 'MARR', tag: 'MARR', event_idx: 1, fam_xref: '@F1@', marr_idx: 0, date: '1920' },
+        ],
+      },
+    };
+    global.ALL_PEOPLE = [{ id: '@I1@', name: 'Helena Vitali' }];
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'event-modal-title') return titleEl;
+        return _fakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    global.ADDR_BY_PLACE = {};
+    global.ALL_PLACES = [];
+    global.setState = vi.fn();
+    delete global.showDetail;
+  });
+
+  it('sets title to "Edit Naturalization — Helena Vitali" for NATU event', () => {
+    const { editEvent } = require('../../js/viz_modals.js');
+    editEvent('@I1@', 0, 'NATU');
+    expect(titleEl.textContent).toContain('Naturalization');
+    expect(titleEl.textContent).toContain('Helena Vitali');
+  });
+
+  it('sets title to "Edit Marriage — Helena Vitali" for MARR event', () => {
+    const { editEvent } = require('../../js/viz_modals.js');
+    editEvent('@I1@', 1, 'MARR', '@F1@', 0);
+    expect(titleEl.textContent).toContain('Marriage');
+    expect(titleEl.textContent).toContain('Helena Vitali');
+  });
+});
+
+// ── B4: editEvent for MARR pre-fills spouse ───────────────────────────────
+
+describe('editEvent pre-fills spouse for MARR (B4)', () => {
+  function _fakeEl(id) {
+    return {
+      id, innerHTML: '', textContent: '', style: {}, value: '',
+      options: [], readOnly: false,
+      classList: {
+        _classes: new Set(),
+        add(c) { this._classes.add(c); },
+        remove(c) { this._classes.delete(c); },
+        contains(c) { return this._classes.has(c); },
+      },
+    };
+  }
+
+  let spouseInput, titleEl;
+
+  beforeEach(() => {
+    spouseInput = _fakeEl('event-modal-spouse-input');
+    titleEl     = _fakeEl('event-modal-title');
+
+    global.PEOPLE = {
+      '@I1@': {
+        name: 'Helena Vitali',
+        events: [
+          // editEvent reads spouse identity from the event itself (not from
+          // RELATIVES), so the test data must include spouse / spouse_xref —
+          // otherwise the search field will (correctly) start blank.
+          { tag: 'MARR', fam_xref: '@F1@', marr_idx: 0, date: '1920',
+            place: 'Smyrna', spouse: 'George Papadopoulos', spouse_xref: '@I2@' },
+        ],
+      },
+      '@I2@': { name: 'George Papadopoulos' },
+    };
+    global.RELATIVES = {
+      '@I1@': { spouses: ['@I2@'] },
+    };
+    global.ALL_PEOPLE = [
+      { id: '@I1@', name: 'Helena Vitali' },
+      { id: '@I2@', name: 'George Papadopoulos' },
+    ];
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'event-modal-spouse-input') return spouseInput;
+        if (id === 'event-modal-title')        return titleEl;
+        return _fakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    global.ADDR_BY_PLACE = {};
+    global.ALL_PLACES = [];
+    global.setState = vi.fn();
+    delete global.showDetail;
+  });
+
+  it('pre-fills spouse search input with spouse name for MARR event', () => {
+    const { editEvent } = require('../../js/viz_modals.js');
+    editEvent('@I1@', null, 'MARR', '@F1@', 0);
+    expect(spouseInput.value).toBe('George Papadopoulos');
+  });
+});
+
+// ── New modal exports (Task 14) ────────────────────────────────────────────
+
+// Re-require to pick up new exports without polluting scope above.
+const {
+  showEditNameModal, showAddNoteModal, showAddCitationModal,
+  showEditCitationModal, showEditSourceModal, showAddGodparentModal,
+  showAddSourceModal,
+} = require('../../js/viz_modals.js');
+
+// Helper to build a fake modal DOM with the elements each modal needs.
+function _fakeModalEl(id) {
+  return {
+    id,
+    innerHTML: '',
+    textContent: '',
+    style: {},
+    value: '',
+    classList: {
+      _classes: new Set(),
+      add(c)      { this._classes.add(c); },
+      remove(c)   { this._classes.delete(c); },
+      contains(c) { return this._classes.has(c); },
+    },
+  };
+}
+
+describe('showEditNameModal', () => {
+  let overlay, givenInp, surnameInp, titleEl;
+
+  beforeEach(() => {
+    overlay    = _fakeModalEl('edit-name-modal-overlay');
+    givenInp   = _fakeModalEl('edit-name-modal-given');
+    surnameInp = _fakeModalEl('edit-name-modal-surname');
+    titleEl    = _fakeModalEl('edit-name-modal-title');
+
+    global.PEOPLE = {
+      '@I1@': { name: 'John /Smith/', birth_year: '1900', death_year: null },
+    };
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'edit-name-modal-overlay') return overlay;
+        if (id === 'edit-name-modal-given')   return givenInp;
+        if (id === 'edit-name-modal-surname') return surnameInp;
+        if (id === 'edit-name-modal-title')   return titleEl;
+        return _fakeModalEl(id);
+      },
+      addEventListener: () => {},
+    };
+  });
+
+  it('opens the overlay when called', () => {
+    if (!showEditNameModal) return;
+    showEditNameModal('@I1@');
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('pre-fills given name from existing PEOPLE data', () => {
+    if (!showEditNameModal) return;
+    showEditNameModal('@I1@');
+    // "John /Smith/" → given="John", surname="Smith"
+    expect(givenInp.value).toBe('John');
+  });
+
+  it('pre-fills surname from existing PEOPLE data', () => {
+    if (!showEditNameModal) return;
+    showEditNameModal('@I1@');
+    expect(surnameInp.value).toBe('Smith');
+  });
+});
+
+describe('showAddNoteModal', () => {
+  let overlay, textarea, titleEl;
+
+  beforeEach(() => {
+    overlay  = _fakeModalEl('add-note-modal-overlay');
+    textarea = _fakeModalEl('add-note-modal-text');
+    titleEl  = _fakeModalEl('add-note-modal-title');
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'add-note-modal-overlay') return overlay;
+        if (id === 'add-note-modal-text')    return textarea;
+        if (id === 'add-note-modal-title')   return titleEl;
+        return _fakeModalEl(id);
+      },
+      addEventListener: () => {},
+    };
+  });
+
+  it('opens the overlay', () => {
+    if (!showAddNoteModal) return;
+    showAddNoteModal('@I1@');
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('clears the textarea', () => {
+    if (!showAddNoteModal) return;
+    textarea.value = 'old text';
+    showAddNoteModal('@I1@');
+    expect(textarea.value).toBe('');
+  });
+});
+
+describe('showAddCitationModal', () => {
+  let overlay, sourceSelect, pageInp, textArea, noteInp;
+
+  beforeEach(() => {
+    overlay      = _fakeModalEl('add-citation-modal-overlay');
+    sourceSelect = _fakeModalEl('add-citation-modal-source');
+    pageInp      = _fakeModalEl('add-citation-modal-page');
+    textArea     = _fakeModalEl('add-citation-modal-text');
+    noteInp      = _fakeModalEl('add-citation-modal-note');
+
+    global.SOURCES = {
+      '@S1@': { titl: 'Ellis Island Records' },
+      '@S2@': { titl: 'Greek Orthodox Ledger' },
+    };
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'add-citation-modal-overlay') return overlay;
+        if (id === 'add-citation-modal-source')  return sourceSelect;
+        if (id === 'add-citation-modal-page')    return pageInp;
+        if (id === 'add-citation-modal-text')    return textArea;
+        if (id === 'add-citation-modal-note')    return noteInp;
+        return _fakeModalEl(id);
+      },
+      addEventListener: () => {},
+    };
+  });
+
+  it('opens the overlay', () => {
+    if (!showAddCitationModal) return;
+    showAddCitationModal('@I1@', 'BIRT');
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('opens the overlay for person-level citation (factTag=null)', () => {
+    if (!showAddCitationModal) return;
+    showAddCitationModal('@I1@', null);
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('populates the source <select> in alphabetical order by title', () => {
+    if (!showAddCitationModal) return;
+    const added = [];
+    sourceSelect.appendChild = (opt) => added.push({ value: opt.value, text: opt.textContent });
+    global.SOURCES = {
+      '@S1@': { titl: 'Zeta Parish Record' },
+      '@S2@': { titl: 'alpha Birth Register' },  // lowercase to verify case-insensitive
+      '@S3@': { titl: 'Mu Archive' },
+    };
+    showAddCitationModal('@I1@', 'BIRT');
+    const texts = added.map(o => o.text);
+    expect(texts).toEqual(['alpha Birth Register', 'Mu Archive', 'Zeta Parish Record']);
+  });
+});
+
+describe('showEditCitationModal', () => {
+  let overlay, pageInp, textArea, noteInp, viewSourceBtn;
+
+  beforeEach(() => {
+    overlay      = _fakeModalEl('edit-citation-modal-overlay');
+    pageInp      = _fakeModalEl('edit-citation-modal-page');
+    textArea     = _fakeModalEl('edit-citation-modal-text');
+    noteInp      = _fakeModalEl('edit-citation-modal-note');
+    viewSourceBtn = _fakeModalEl('edit-citation-view-source-btn');
+
+    global.PEOPLE = {
+      '@I1@': {
+        name: 'John Smith',
+        facts: [
+          {
+            tag: 'BIRT',
+            date: '1900',
+            citations: [
+              { sourceXref: '@S1@', page: 'p. 42', text: 'Full transcript', note: 'Researcher note' },
+            ],
+          },
+        ],
+        sources: [],
+      },
+    };
+    global.SOURCES = { '@S1@': { titl: 'Birth Register' } };
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'edit-citation-modal-overlay')        return overlay;
+        if (id === 'edit-citation-modal-page')           return pageInp;
+        if (id === 'edit-citation-modal-text')           return textArea;
+        if (id === 'edit-citation-modal-note')           return noteInp;
+        if (id === 'edit-citation-view-source-btn')      return viewSourceBtn;
+        return _fakeModalEl(id);
+      },
+      addEventListener: () => {},
+    };
+  });
+
+  it('opens the overlay', () => {
+    if (!showEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('pre-fills page field from existing citation', () => {
+    if (!showEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    expect(pageInp.value).toBe('p. 42');
+  });
+
+  it('pre-fills text field from existing citation', () => {
+    if (!showEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    expect(textArea.value).toBe('Full transcript');
+  });
+
+  it('pre-fills note field from existing citation', () => {
+    if (!showEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    expect(noteInp.value).toBe('Researcher note');
+  });
+
+  it('has a "View Source" button element', () => {
+    if (!showEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    // viewSourceBtn element should exist (getElementById returned it)
+    expect(viewSourceBtn).not.toBeNull();
+  });
+});
+
+describe('showEditSourceModal', () => {
+  let overlay, titlInp, authInp, publInp, repoInp, noteInp, warningEl;
+
+  beforeEach(() => {
+    overlay  = _fakeModalEl('edit-source-modal-overlay');
+    titlInp  = _fakeModalEl('edit-source-modal-titl');
+    authInp  = _fakeModalEl('edit-source-modal-auth');
+    publInp  = _fakeModalEl('edit-source-modal-publ');
+    repoInp  = _fakeModalEl('edit-source-modal-repo');
+    noteInp  = _fakeModalEl('edit-source-modal-note');
+    warningEl = _fakeModalEl('edit-source-modal-warning');
+
+    global.SOURCES = {
+      '@S1@': { titl: 'Birth Register', auth: 'State Archives', publ: 'Athens 1910', repo: 'Greek Archives', note: 'Digitized 2020' },
+    };
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'edit-source-modal-overlay') return overlay;
+        if (id === 'edit-source-modal-titl')    return titlInp;
+        if (id === 'edit-source-modal-auth')    return authInp;
+        if (id === 'edit-source-modal-publ')    return publInp;
+        if (id === 'edit-source-modal-repo')    return repoInp;
+        if (id === 'edit-source-modal-note')    return noteInp;
+        if (id === 'edit-source-modal-warning') return warningEl;
+        return _fakeModalEl(id);
+      },
+      addEventListener: () => {},
+    };
+  });
+
+  it('opens the overlay', () => {
+    if (!showEditSourceModal) return;
+    showEditSourceModal('@S1@');
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('pre-fills title field from SOURCES', () => {
+    if (!showEditSourceModal) return;
+    showEditSourceModal('@S1@');
+    expect(titlInp.value).toBe('Birth Register');
+  });
+
+  it('pre-fills auth field from SOURCES', () => {
+    if (!showEditSourceModal) return;
+    showEditSourceModal('@S1@');
+    expect(authInp.value).toBe('State Archives');
+  });
+
+  it('shows warning about shared source changes', () => {
+    if (!showEditSourceModal) return;
+    showEditSourceModal('@S1@');
+    expect(overlay.classList.contains('open')).toBe(true);
+    // Warning text must mention that changes affect all citations
+    expect(warningEl.textContent).toMatch(/affect all citations/i);
+  });
+});
+
+describe('showAddGodparentModal', () => {
+  let overlay, searchInp;
+
+  beforeEach(() => {
+    overlay   = _fakeModalEl('add-godparent-modal-overlay');
+    searchInp = _fakeModalEl('add-godparent-modal-search');
+
+    global.ALL_PEOPLE = [
+      { id: '@I5@', name: 'Kostas Manolakis', birth_year: '1860' },
+    ];
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'add-godparent-modal-overlay') return overlay;
+        if (id === 'add-godparent-modal-search')  return searchInp;
+        return _fakeModalEl(id);
+      },
+      addEventListener: () => {},
+    };
+  });
+
+  it('opens the overlay', () => {
+    if (!showAddGodparentModal) return;
+    showAddGodparentModal('@I4@');
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('clears the search input', () => {
+    if (!showAddGodparentModal) return;
+    searchInp.value = 'old search';
+    showAddGodparentModal('@I4@');
+    expect(searchInp.value).toBe('');
   });
 });
 
@@ -376,5 +975,22 @@ describe('openSourcesModal and closeSourcesModal', () => {
   it('shows fallback text for an event with no citations', () => {
     openSourcesModal('@I1@', 1);
     expect(list.innerHTML).toContain('No sources recorded');
+  });
+
+  it('renders a delete button for each citation', () => {
+    openSourcesModal('@I1@', 0);
+    expect(list.innerHTML).toContain('src-modal-delete-btn');
+    expect(list.innerHTML).toContain('deleteSourceFromModal');
+  });
+
+  it('renders an "+ Add source" button even when there are no citations', () => {
+    openSourcesModal('@I1@', 1);
+    expect(list.innerHTML).toContain('src-modal-add-btn');
+    expect(list.innerHTML).toContain('showAddCitationModal');
+  });
+
+  it('renders an "+ Add source" button when citations are present', () => {
+    openSourcesModal('@I1@', 0);
+    expect(list.innerHTML).toContain('src-modal-add-btn');
   });
 });

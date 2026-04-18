@@ -1,0 +1,57 @@
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Georgios /Papadopoulos/
+1 SEX M
+0 @I2@ INDI
+1 NAME Eleni /Stavridou/
+1 SEX F
+0 @I3@ INDI
+1 NAME Nikos /Alexiou/
+1 SEX M
+0 @I4@ INDI
+1 NAME Maria /Konstantinou/
+1 SEX F
+0 @I5@ INDI
+1 NAME Kostas /Dimitriou/
+1 SEX U
+0 @I6@ INDI
+1 NAME TestPerson One /Zero Godparents/
+1 SEX M
+0 @I7@ INDI
+1 NAME TestPerson Two /One M One F Valid/
+1 SEX F
+1 ASSO @I1@
+2 RELA Godparent
+1 ASSO @I2@
+2 RELA Godparent
+0 @I8@ INDI
+1 NAME TestPerson Three /Two M Violation/
+1 SEX M
+1 ASSO @I1@
+2 RELA Godparent
+1 ASSO @I3@
+2 RELA Godparent
+0 @I9@ INDI
+1 NAME TestPerson Four /Three Total Violation/
+1 SEX F
+1 ASSO @I1@
+2 RELA Godparent
+1 ASSO @I2@
+2 RELA Godparent
+1 ASSO @I5@
+2 RELA Godparent
+0 @I10@ INDI
+1 NAME TestPerson Five /Two F Violation/
+1 SEX M
+1 ASSO @I2@
+2 RELA Godparent
+1 ASSO @I4@
+2 RELA Godparent
+0 @I11@ INDI
+1 NAME TestPerson Six /Unknown Godparent/
+1 SEX M
+1 ASSO @I99@
+2 RELA Godparent
+0 TRLR
