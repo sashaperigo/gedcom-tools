@@ -1788,6 +1788,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return
                 asso_block = [f'1 ASSO {godparent_xref}', f'2 RELA {rela}']
                 new_lines  = lines[:indi_end] + asso_block + lines[indi_end:]
+                # Also add reciprocal Godchild ASSO on the godparent's record
+                gp_start, gp_end, gp_err = _find_indi_block(new_lines, godparent_xref)
+                if gp_err is None:
+                    new_lines = new_lines[:gp_end] + [f'1 ASSO {xref}', f'2 RELA Godchild'] + new_lines[gp_end:]
                 _write_gedcom_atomic(new_lines)
                 print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})")
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
@@ -1843,6 +1847,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(400, f'Godparent ASSO {godparent_xref} not found in {xref}')
                 return
             new_lines = lines[:asso_start] + lines[asso_end:]
+            # Also remove reciprocal Godchild ASSO from the godparent's record
+            gp_start, gp_end, gp_err = _find_indi_block(new_lines, godparent_xref)
+            if gp_err is None:
+                recip_start = recip_end = None
+                for ri in range(gp_start + 1, gp_end):
+                    rm = _TAG_RE.match(new_lines[ri])
+                    if not rm or int(rm.group(1)) != 1 or rm.group(2) != 'ASSO':
+                        continue
+                    if (rm.group(3) or '').strip() != xref:
+                        continue
+                    rj = ri + 1
+                    while rj < gp_end:
+                        rsm = _TAG_RE.match(new_lines[rj])
+                        if rsm and int(rsm.group(1)) <= 1:
+                            break
+                        if rsm and int(rsm.group(1)) == 2 and rsm.group(2) == 'RELA':
+                            if (rsm.group(3) or '').strip() == 'Godchild':
+                                recip_start = ri
+                                rk = ri + 1
+                                while rk < gp_end:
+                                    rkm = _TAG_RE.match(new_lines[rk])
+                                    if rkm and int(rkm.group(1)) <= 1:
+                                        break
+                                    rk += 1
+                                recip_end = rk
+                        rj += 1
+                    if recip_start is not None:
+                        break
+                if recip_start is not None:
+                    new_lines = new_lines[:recip_start] + new_lines[recip_end:]
             _write_gedcom_atomic(new_lines)
             print(f"[godparent-delete] {xref} ← {godparent_xref}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json

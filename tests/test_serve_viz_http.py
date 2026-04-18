@@ -1596,6 +1596,80 @@ class TestDeleteGodparentEndpoint:
         assert 'name' in people['@I1@']
         assert 'events' in people['@I1@']
 
+    def test_delete_also_removes_reciprocal_godchild_asso(self, live_server):
+        """Deleting a godparent must also remove the reciprocal Godchild ASSO from the godparent's record."""
+        ged, post, _, _ = live_server
+        self._add_godparent(post, '@I1@', '@I4@')
+        post('/api/delete_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        text = _ged_text(ged)
+        # Forward ASSO gone
+        assert '1 ASSO @I4@' not in text
+        # Reciprocal Godchild ASSO gone from @I4@'s block
+        lines = text.splitlines()
+        i4_start = next(i for i, l in enumerate(lines) if '0 @I4@ INDI' in l)
+        i4_end = next(i for i in range(i4_start + 1, len(lines)) if lines[i].startswith('0 '))
+        i4_block = '\n'.join(lines[i4_start:i4_end])
+        assert 'ASSO @I1@' not in i4_block
+
+    def test_delete_godfather_removes_reciprocal_godchild(self, live_server):
+        """Godfather-typed ASSOs also get their reciprocal Godchild removed on delete."""
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@', 'rela': 'Godfather',
+        })
+        post('/api/delete_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        lines = _ged_text(ged).splitlines()
+        i4_start = next(i for i, l in enumerate(lines) if '0 @I4@ INDI' in l)
+        i4_end = next(i for i in range(i4_start + 1, len(lines)) if lines[i].startswith('0 '))
+        i4_block = '\n'.join(lines[i4_start:i4_end])
+        assert 'ASSO @I1@' not in i4_block
+
+
+class TestAddGodparentReciprocal:
+    """add_godparent must write a reciprocal Godchild ASSO on the godparent's record."""
+
+    def test_reciprocal_godchild_asso_written(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        text = _ged_text(ged)
+        assert '1 ASSO @I1@' in text
+        assert '2 RELA Godchild' in text
+
+    def test_reciprocal_in_godparent_block(self, live_server):
+        """The Godchild ASSO must appear inside @I4@'s INDI block, not @I1@'s."""
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        lines = _ged_text(ged).splitlines()
+        i4_start = next(i for i, l in enumerate(lines) if '0 @I4@ INDI' in l)
+        i4_end = next(i for i in range(i4_start + 1, len(lines)) if lines[i].startswith('0 '))
+        i4_block = '\n'.join(lines[i4_start:i4_end])
+        assert '1 ASSO @I1@' in i4_block
+        assert '2 RELA Godchild' in i4_block
+
+    def test_forward_asso_in_child_block(self, live_server):
+        """Forward Godparent ASSO must still be in @I1@'s block."""
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        lines = _ged_text(ged).splitlines()
+        i1_start = next(i for i, l in enumerate(lines) if '0 @I1@ INDI' in l)
+        i1_end = next(i for i in range(i1_start + 1, len(lines)) if lines[i].startswith('0 '))
+        i1_block = '\n'.join(lines[i1_start:i1_end])
+        assert '1 ASSO @I4@' in i1_block
+        assert '2 RELA Godparent' in i1_block
+
+    def test_godfather_rela_still_gets_godchild_reciprocal(self, live_server):
+        """Godfather-typed ASSO should produce a Godchild reciprocal."""
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@', 'rela': 'Godfather',
+        })
+        lines = _ged_text(ged).splitlines()
+        i4_start = next(i for i, l in enumerate(lines) if '0 @I4@ INDI' in l)
+        i4_end = next(i for i in range(i4_start + 1, len(lines)) if lines[i].startswith('0 '))
+        i4_block = '\n'.join(lines[i4_start:i4_end])
+        assert '1 ASSO @I1@' in i4_block
+        assert '2 RELA Godchild' in i4_block
+
 
 # ===========================================================================
 # Additional regression tests for review-found bugs
