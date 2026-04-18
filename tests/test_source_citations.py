@@ -269,3 +269,173 @@ class TestSourcesJsInjection:
 
         # The xref must appear as a JSON key inside the SOURCES const
         assert '@S42@' in html
+
+
+# ---------------------------------------------------------------------------
+# TestFamEventCitations — MARR/DIV citations on FAM records
+# ---------------------------------------------------------------------------
+
+class TestFamEventCitations:
+
+    def test_marr_event_has_citations_field(self, tmp_path):
+        """Every MARR event dict must carry a citations list."""
+        _, fams, _ = _parse(tmp_path, _ged("""\
+0 @I1@ INDI
+1 NAME Anna /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 1900
+2 PLAC London
+"""))
+        marr = fams['@F1@']['marrs'][0]
+        assert 'citations' in marr
+        assert marr['citations'] == []
+
+    def test_marr_with_single_citation_and_page(self, tmp_path):
+        """2 SOUR @S1@ + 3 PAGE under a MARR is captured on the event."""
+        _, fams, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Marriage Register
+0 @I1@ INDI
+1 NAME Anna /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE p.47
+"""))
+        marr = fams['@F1@']['marrs'][0]
+        assert marr['citations'] == [{'sour_xref': '@S1@', 'page': 'p.47'}]
+
+    def test_marr_with_multiple_citations(self, tmp_path):
+        """Multiple 2 SOUR sub-records under one MARR each become a separate citation."""
+        _, fams, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Civil Registry
+0 @S2@ SOUR
+1 TITL Church Record
+0 @I1@ INDI
+1 NAME Anna /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE 12
+2 SOUR @S2@
+3 PAGE 99
+"""))
+        marr = fams['@F1@']['marrs'][0]
+        assert len(marr['citations']) == 2
+        assert marr['citations'][0] == {'sour_xref': '@S1@', 'page': '12'}
+        assert marr['citations'][1] == {'sour_xref': '@S2@', 'page': '99'}
+
+    def test_div_event_has_citations(self, tmp_path):
+        """1 DIV events under FAM get parsed with citations list."""
+        _, fams, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Divorce Decree
+0 @I1@ INDI
+1 NAME Anna /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 1900
+1 DIV
+2 DATE 1910
+2 SOUR @S1@
+3 PAGE 7
+"""))
+        fam = fams['@F1@']
+        assert 'divs' in fam
+        div = fam['divs'][0]
+        assert div['tag'] == 'DIV'
+        assert div['date'] == '1910'
+        assert div['citations'] == [{'sour_xref': '@S1@', 'page': '7'}]
+
+    def test_marr_citation_isolated_from_div(self, tmp_path):
+        """Citations under MARR do not bleed into a following DIV event, and vice versa."""
+        _, fams, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Marriage Src
+0 @S2@ SOUR
+1 TITL Divorce Src
+0 @I1@ INDI
+1 NAME A /X/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME B /Y/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE 1
+1 DIV
+2 DATE 1910
+2 SOUR @S2@
+3 PAGE 2
+"""))
+        fam = fams['@F1@']
+        assert fam['marrs'][0]['citations'] == [{'sour_xref': '@S1@', 'page': '1'}]
+        assert fam['divs'][0]['citations'] == [{'sour_xref': '@S2@', 'page': '2'}]
+
+    def test_build_people_json_carries_marr_citations(self, tmp_path):
+        """build_people_json must include citations on the MARR events it merges into each spouse's event list."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Marriage Register
+0 @I1@ INDI
+1 NAME Anna /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE p.47
+"""))
+        people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
+        for xref in ('@I1@', '@I2@'):
+            marr = next(e for e in people[xref]['events'] if e['tag'] == 'MARR')
+            assert marr['citations'] == [{'sourceXref': '@S1@', 'page': 'p.47'}]

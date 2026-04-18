@@ -229,8 +229,12 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 # multiple ceremonies (e.g. civil + religious) are all captured.
                 # Empty entries (bare duplicate "1 MARR" lines from a merge with no
                 # sub-tags) are filtered out in build_people_json.
-                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None}
+                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None, 'citations': []}
                 fams[xref].setdefault('marrs', []).append(evt)
+                current_evt = evt
+            elif lvl == 1 and tag == 'DIV':
+                evt = {'tag': 'DIV', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None, 'citations': []}
+                fams[xref].setdefault('divs', []).append(evt)
                 current_evt = evt
             elif lvl == 2 and current_evt is not None:
                 if tag == 'DATE':
@@ -241,6 +245,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['addr'] = val
                 elif tag == 'NOTE':
                     current_evt['note'] = val
+                elif tag == 'SOUR' and val.startswith('@'):
+                    current_evt['citations'].append({'sour_xref': val, 'page': None})
+            elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
+                current_evt['citations'][-1]['page'] = val
             elif lvl == 1:
                 current_evt = None
 
@@ -463,8 +471,13 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     # Skip bare duplicate MARR entries (no sub-tags) that can appear after a merge
                     if not any(marr.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
                         continue
+                    marr_cites = [
+                        {'sourceXref': c['sour_xref'], **{k: v for k, v in c.items() if k != 'sour_xref'}}
+                        for c in marr.get('citations', [])
+                    ]
                     # MARR events live in FAM blocks; event_idx=None marks them as non-editable via INDI
-                    events.append({**marr, 'event_idx': None, 'marr_idx': marr_idx,
+                    events.append({**marr, 'citations': marr_cites,
+                                   'event_idx': None, 'marr_idx': marr_idx,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
                     appended = True
@@ -473,7 +486,19 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     # synthetic event so the spouse still appears in the panel.
                     events.append({'tag': 'MARR', 'type': None, 'date': None,
                                    'place': None, 'note': None, 'age': None, 'addr': None,
+                                   'citations': [],
                                    'event_idx': None, 'marr_idx': 0,
+                                   'spouse': spouse_name, 'spouse_xref': spouse_xref,
+                                   'fam_xref': fam_xref})
+                for div_idx, div in enumerate(fam.get('divs', [])):
+                    if not any(div.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
+                        continue
+                    div_cites = [
+                        {'sourceXref': c['sour_xref'], **{k: v for k, v in c.items() if k != 'sour_xref'}}
+                        for c in div.get('citations', [])
+                    ]
+                    events.append({**div, 'citations': div_cites,
+                                   'event_idx': None, 'div_idx': div_idx,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
         _deat_age_keywords = frozenset({'STILLBORN', 'INFANT', 'CHILD'})
@@ -982,7 +1007,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 #detail-timeline { position: relative; padding-left: 28px; }
 .timeline-spine { position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
   background: linear-gradient(to bottom, #334155 0%, transparent 100%); }
-.evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; padding-right: 48px; }
+.evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; padding-right: 92px; }
 .fact-del { position: absolute; right: 0; top: 2px; background: none; border: none;
   cursor: pointer; opacity: 0; font-size: 13px; color: #94a3b8; padding: 2px 4px;
   border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; }
