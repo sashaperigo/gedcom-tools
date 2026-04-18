@@ -200,35 +200,6 @@ function _personName(xref) {
     ((ALL_PEOPLE.find(p => p.id === xref) || {}).name) || xref;
 }
 
-function _populateEventModalSourceDropdown(selectedXref) {
-  const sel = document.getElementById('event-modal-source');
-  if (!sel || typeof document.createElement !== 'function') return;
-  const current = selectedXref || '';
-  sel.innerHTML = '';
-  const none = document.createElement('option');
-  none.value = ''; none.textContent = '(none)';
-  sel.appendChild(none);
-  // SOURCES is { '@S1@': { titl, auth, publ, ... }, ... }
-  const sources = (typeof SOURCES !== 'undefined' && SOURCES) || {};
-  const entries = Object.entries(sources)
-    .map(([x, s]) => [x, (s && s.titl) || x])
-    .sort((a, b) => a[1].localeCompare(b[1]));
-  for (const [x, titl] of entries) {
-    const o = document.createElement('option');
-    o.value = x; o.textContent = titl;
-    sel.appendChild(o);
-  }
-  sel.value = current;
-  _onEventModalSourceChange();
-}
-
-function _onEventModalSourceChange() {
-  const sel  = document.getElementById('event-modal-source');
-  const row  = document.getElementById('event-modal-source-page-row');
-  if (!sel || !row) return;
-  row.style.display = sel.value ? '' : 'none';
-}
-
 function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   _eventModalXref    = xref;
   _eventModalIdx     = eventIdx;
@@ -267,12 +238,6 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
     _eventModalSpouseXref = null;
   }
   _updateEventModalFields(tag);
-  // Prefill source dropdown from the event's first existing citation, if any
-  const firstCite = (evt.citations && evt.citations[0]) || null;
-  _populateEventModalSourceDropdown(firstCite ? firstCite.sourceXref : '');
-  document.getElementById('event-modal-source-page').value =
-    (firstCite && firstCite.page) ? firstCite.page : '';
-  _onEventModalSourceChange();
   document.getElementById('event-modal-overlay').classList.add('open');
   const focusId = _INLINE_TYPE_TAGS.has(tag) ? 'event-modal-inline' : 'event-modal-date';
   setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 50);
@@ -309,9 +274,6 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   if (spouseRes) spouseRes.innerHTML = '';
   _updateAddrSuggestions('');
   _updateEventModalFields(defaultTag);
-  _populateEventModalSourceDropdown('');
-  document.getElementById('event-modal-source-page').value = '';
-  _onEventModalSourceChange();
   document.getElementById('event-modal-overlay').classList.add('open');
   const _dfPreset = _FACT_PRESETS[defaultTag];
   const focusId = _dfPreset
@@ -393,8 +355,6 @@ async function submitEventModal() {
   }
 
   const endpoint = isAdd ? '/api/add_event' : '/api/edit_event';
-  const srcXref = (document.getElementById('event-modal-source').value || '').trim();
-  const srcPage = (document.getElementById('event-modal-source-page').value || '').trim();
   let body;
   if (isAdd) {
     body = { xref, tag, fields, current_person: window._currentPerson || null };
@@ -404,7 +364,6 @@ async function submitEventModal() {
   } else {
     body = { xref, tag, event_idx: _eventModalIdx, updates: fields, current_person: window._currentPerson || null };
   }
-  if (srcXref) { body.source_xref = srcXref; body.source_page = srcPage; }
   closeEventModal();
   try {
     const resp = await fetch(endpoint, {
@@ -712,8 +671,27 @@ async function deleteFact(xref, evt) {
 // Sources viewer modal
 // ---------------------------------------------------------------------------
 
+let _sourcesModalXref = null;
+let _sourcesModalEventIdx = null;
+
 function openSourcesModal(xref, eventIdx) {
-  const evt = PEOPLE[xref] && PEOPLE[xref].events[eventIdx];
+  _sourcesModalXref     = xref;
+  _sourcesModalEventIdx = eventIdx;
+  _refreshSourcesModalContent();
+  document.getElementById('sources-modal-overlay').classList.add('open');
+}
+
+function closeSourcesModal() {
+  document.getElementById('sources-modal-overlay').classList.remove('open');
+  _sourcesModalXref = null;
+  _sourcesModalEventIdx = null;
+}
+
+function _refreshSourcesModalContent() {
+  const xref     = _sourcesModalXref;
+  const eventIdx = _sourcesModalEventIdx;
+  if (xref == null || eventIdx == null) return;
+  const evt       = PEOPLE[xref] && PEOPLE[xref].events && PEOPLE[xref].events[eventIdx];
   const citations = (evt && evt.citations) || [];
   const sources   = (typeof SOURCES !== 'undefined') ? SOURCES : {};
 
@@ -726,30 +704,63 @@ function openSourcesModal(xref, eventIdx) {
     const year = evt.date ? (' \u00b7 ' + (evt.date.match(/\b\d{4}\b/) || [''])[0]) : '';
     label = tag + type + year;
   }
-  document.getElementById('sources-modal-title').textContent = label || 'Sources';
-  document.getElementById('sources-modal-list').innerHTML =
-    _buildSourcesModalContent(citations, sources);
-  document.getElementById('sources-modal-overlay').classList.add('open');
+  const titleEl = document.getElementById('sources-modal-title');
+  const listEl  = document.getElementById('sources-modal-list');
+  if (titleEl) titleEl.textContent = label || 'Sources';
+  if (listEl)  listEl.innerHTML    = _buildSourcesModalContent(citations, sources, xref, evt);
 }
 
-function closeSourcesModal() {
-  document.getElementById('sources-modal-overlay').classList.remove('open');
-}
+function _buildSourcesModalContent(citations, sources, xref, evt) {
+  const xrefQ     = JSON.stringify(String(xref || '')).replace(/"/g, '&quot;');
+  const tag       = (evt && evt.tag) || '';
+  const eventOcc  = (evt && evt.event_idx != null) ? evt.event_idx : 0;
+  const factKey   = tag ? `${tag}:${eventOcc}` : '';
+  const factKeyQ  = JSON.stringify(factKey).replace(/"/g, '&quot;');
 
-function _buildSourcesModalContent(citations, sources) {
+  let html = '';
   if (!citations || citations.length === 0) {
-    return '<div class="src-modal-empty">No sources recorded for this fact.</div>';
+    html += '<div class="src-modal-empty">No sources recorded for this fact.</div>';
+  } else {
+    html += citations.map((c, idx) => {
+      const xrefKey = c.sourceXref || c.sour_xref;
+      const src = sources[xrefKey] || {};
+      const title = src.titl || src.title || xrefKey || 'Unknown source';
+      const titleHtml = src.url
+        ? `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
+        : escHtml(title);
+      const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
+      const citeKey  = `${tag}:${eventOcc}:${idx}`;
+      const citeKeyQ = JSON.stringify(citeKey).replace(/"/g, '&quot;');
+      return (
+        `<div class="src-modal-item">` +
+          `<div class="src-modal-item-body"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>` +
+          `<button class="src-modal-delete-btn" title="Remove this citation" ` +
+            `onclick="deleteSourceFromModal(${xrefQ},${citeKeyQ})">\u00d7</button>` +
+        `</div>`
+      );
+    }).join('');
   }
-  return citations.map(c => {
-    const xrefKey = c.sourceXref || c.sour_xref;
-    const src = sources[xrefKey] || {};
-    const title = src.titl || src.title || xrefKey || 'Unknown source';
-    const titleHtml = src.url
-      ? `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
-      : escHtml(title);
-    const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
-    return `<div class="src-modal-item"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>`;
-  }).join('');
+  html += `<div class="src-modal-add">` +
+          `<button class="src-modal-add-btn" ` +
+            `onclick="showAddCitationModal(${xrefQ},${factKeyQ})">+ Add source</button>` +
+          `</div>`;
+  return html;
+}
+
+async function deleteSourceFromModal(xref, citationKey) {
+  if (typeof confirm === 'function' && !confirm('Remove this citation?')) return;
+  try {
+    const resp = await apiDeleteCitation(xref, citationKey);
+    if (resp && resp.ok) {
+      if (resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+      _refreshSourcesModalContent();
+      if (typeof renderPanel === 'function') renderPanel();
+    } else {
+      alert('Delete failed: ' + ((resp && resp.error) || 'unknown'));
+    }
+  } catch (e) {
+    alert('Delete failed: ' + e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -852,11 +863,15 @@ async function submitAddNoteModal() {
 
 // ── showAddCitationModal ──────────────────────────────────────────────────
 
-let _addCitationModalXref = null, _addCitationModalFactTag = null;
+// `factKey` is the server-side fact key: either null/undefined for a person-level
+// citation, or "TAG:N" (e.g. "BIRT:0") for a fact-level citation. Tests in the
+// suite still pass a bare tag like "BIRT" — the backend accepts that too when
+// there is only one occurrence, but the canonical format is "TAG:N".
+let _addCitationModalXref = null, _addCitationModalFactKey = null;
 
-function showAddCitationModal(xref, factTag) {
+function showAddCitationModal(xref, factKey) {
   _addCitationModalXref    = xref;
-  _addCitationModalFactTag = factTag;
+  _addCitationModalFactKey = factKey;
 
   const overlayEl  = document.getElementById('add-citation-modal-overlay');
   const sourceEl   = document.getElementById('add-citation-modal-source');
@@ -865,7 +880,8 @@ function showAddCitationModal(xref, factTag) {
   const noteEl     = document.getElementById('add-citation-modal-note');
   const titleEl    = document.getElementById('add-citation-modal-title');
 
-  if (titleEl)   titleEl.textContent = factTag ? `Add Citation — ${factTag}` : 'Add Person Source';
+  const displayTag = factKey ? String(factKey).split(':')[0] : '';
+  if (titleEl)   titleEl.textContent = displayTag ? `Add Citation — ${displayTag}` : 'Add Person Source';
   if (pageEl)    pageEl.value  = '';
   if (textEl)    textEl.value  = '';
   if (noteEl)    noteEl.value  = '';
@@ -890,12 +906,12 @@ function showAddCitationModal(xref, factTag) {
 function closeAddCitationModal() {
   const overlayEl = document.getElementById('add-citation-modal-overlay');
   if (overlayEl) overlayEl.classList.remove('open');
-  _addCitationModalXref = _addCitationModalFactTag = null;
+  _addCitationModalXref = _addCitationModalFactKey = null;
 }
 
 async function submitAddCitationModal() {
   const xref       = _addCitationModalXref;
-  const factTag    = _addCitationModalFactTag;
+  const factKey    = _addCitationModalFactKey;
   const sourceEl   = document.getElementById('add-citation-modal-source');
   const pageEl     = document.getElementById('add-citation-modal-page');
   const textEl     = document.getElementById('add-citation-modal-text');
@@ -907,7 +923,11 @@ async function submitAddCitationModal() {
   closeAddCitationModal();
   if (!sourceXref) { alert('Please select a source.'); return; }
   try {
-    await apiAddCitation(xref, sourceXref, factTag, page, text, note);
+    const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note);
+    if (resp && resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+    // If the Sources modal is still open (we arrived here from its "+ Add source"
+    // button), refresh its content in place instead of closing it.
+    if (_sourcesModalXref != null) _refreshSourcesModalContent();
     if (typeof renderPanel !== 'undefined') renderPanel();
   } catch (e) {
     alert('Save failed: ' + e);
@@ -1388,6 +1408,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
     openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
+    deleteSourceFromModal,
     showEditNameModal, showAddNoteModal, showAddCitationModal,
     showEditCitationModal, showEditSourceModal, showAddGodparentModal,
     showAddSourceModal,

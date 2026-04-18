@@ -962,4 +962,21 @@ describe('openSourcesModal and closeSourcesModal', () => {
     openSourcesModal('@I1@', 1);
     expect(list.innerHTML).toContain('No sources recorded');
   });
+
+  it('renders a delete button for each citation', () => {
+    openSourcesModal('@I1@', 0);
+    expect(list.innerHTML).toContain('src-modal-delete-btn');
+    expect(list.innerHTML).toContain('deleteSourceFromModal');
+  });
+
+  it('renders an "+ Add source" button even when there are no citations', () => {
+    openSourcesModal('@I1@', 1);
+    expect(list.innerHTML).toContain('src-modal-add-btn');
+    expect(list.innerHTML).toContain('showAddCitationModal');
+  });
+
+  it('renders an "+ Add source" button when citations are present', () => {
+    openSourcesModal('@I1@', 0);
+    expect(list.innerHTML).toContain('src-modal-add-btn');
+  });
 });

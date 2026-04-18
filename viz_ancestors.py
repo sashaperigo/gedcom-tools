@@ -931,14 +931,25 @@ header h1 { font-size: 16px; font-weight: 600; }
   font-size: 18px; line-height: 1; padding: 0 0 0 8px; flex-shrink: 0; }
 #sources-modal-close:hover { color: #94a3b8; }
 #sources-modal-list { margin: 0; }
-.src-modal-item { padding: 10px 0; border-bottom: 1px solid #1e3a52; }
+.src-modal-item { padding: 10px 0; border-bottom: 1px solid #1e3a52;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .src-modal-item:last-child { border-bottom: none; padding-bottom: 0; }
+.src-modal-item-body { flex: 1; min-width: 0; }
 .src-modal-title { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
 .src-modal-title a { color: #93c5fd; text-underline-offset: 2px;
   text-decoration-color: rgba(147,197,253,0.4); }
 .src-modal-title a:hover { text-decoration-color: rgba(147,197,253,0.8); }
 .src-modal-page { font-size: 11px; color: #64748b; margin-top: 3px; }
-.src-modal-empty { font-size: 13px; color: #475569; }
+.src-modal-empty { font-size: 13px; color: #475569; padding: 10px 0; }
+.src-modal-delete-btn { background: none; border: none; color: #64748b; cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+.src-modal-delete-btn:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+.src-modal-add { margin-top: 14px; padding-top: 12px; border-top: 1px solid #1e3a52; }
+.src-modal-add-btn { background: rgba(147,197,253,0.1); color: #93c5fd;
+  border: 1px solid rgba(147,197,253,0.3); border-radius: 4px; padding: 6px 12px;
+  font-size: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
+.src-modal-add-btn:hover { background: rgba(147,197,253,0.18);
+  border-color: rgba(147,197,253,0.55); }
 /* ── Citation badge on fact rows ─────────────────────────── */
 .evt-src-badge { font-size: 10px; color: #475569; background: rgba(71,85,105,0.15);
   border: 1px solid rgba(71,85,105,0.3); border-radius: 3px; padding: 1px 5px;
@@ -946,6 +957,10 @@ header h1 { font-size: 16px; font-weight: 600; }
   background .15s; position: absolute; right: 46px; top: 3px; line-height: 1.4; }
 .evt-src-badge:hover { color: #93c5fd; border-color: rgba(147,197,253,0.5);
   background: rgba(147,197,253,0.08); }
+.evt-src-badge-empty { color: #334155; border-color: rgba(71,85,105,0.2);
+  background: transparent; }
+.evt-src-badge-empty:hover { color: #93c5fd; border-color: rgba(147,197,253,0.4);
+  background: rgba(147,197,253,0.06); }
 #alias-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 /* ── Timeline ───────────────────────────────────────────── */
 #detail-timeline { position: relative; padding-left: 28px; }
@@ -1124,20 +1139,6 @@ header h1 { font-size: 16px; font-weight: 600; }
       <label>Note</label>
       <textarea id="event-modal-note" rows="3"
                 onkeydown="if(event.key==='Escape')closeEventModal()"></textarea>
-    </div>
-    <div class="event-modal-field" id="event-modal-source-row">
-      <label>Source</label>
-      <select id="event-modal-source"
-              onchange="_onEventModalSourceChange()"
-              onkeydown="if(event.key==='Escape')closeEventModal()">
-        <option value="">(none)</option>
-      </select>
-    </div>
-    <div class="event-modal-field" id="event-modal-source-page-row" style="display:none">
-      <label>Page / Citation Detail</label>
-      <input type="text" id="event-modal-source-page"
-             placeholder="e.g. p. 42, entry 15"
-             onkeydown="if(event.key==='Escape')closeEventModal()">
     </div>
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>

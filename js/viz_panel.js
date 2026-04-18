@@ -230,11 +230,12 @@ function collapseResidences(events) {
 // ── Citation badge helper ─────────────────────────────────────────────────
 
 function buildSourceBadgeHtml(citations, xref, origIdx) {
-  if (!citations || citations.length === 0) return '';
-  const n     = citations.length;
-  const label = n === 1 ? '1 source' : `${n} sources`;
+  const n     = (citations && citations.length) || 0;
+  const label = n === 0 ? 'Add a source' : (n === 1 ? '1 source' : `${n} sources`);
+  const text  = n === 0 ? '+ src' : `${n} src`;
+  const cls   = n === 0 ? 'evt-src-badge evt-src-badge-empty' : 'evt-src-badge';
   const xrefQ = JSON.stringify(String(xref)).replace(/"/g, '&quot;');
-  return `<span class="evt-src-badge" title="${label}" onclick="event.stopPropagation();openSourcesModal(${xrefQ},${origIdx})">${n} src</span>`;
+  return `<span class="${cls}" title="${label}" onclick="event.stopPropagation();openSourcesModal(${xrefQ},${origIdx})">${text}</span>`;
 }
 
 // ── Godparent click handler (exported for tests) ───────────────────────────

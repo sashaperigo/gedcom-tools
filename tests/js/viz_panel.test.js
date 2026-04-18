@@ -910,3 +910,37 @@ describe('renderPanel — person-level sources collapsed by default', () => {
     expect(html).toMatch(/notes-body|sources-body|display.*none|collapsed/i);
   });
 });
+
+describe('buildSourceBadgeHtml', () => {
+  const { buildSourceBadgeHtml } = require('../../js/viz_panel.js');
+
+  it('renders a pill even when there are zero citations', () => {
+    const html = buildSourceBadgeHtml([], '@I1@', 0);
+    expect(html).toBeTruthy();
+    expect(html).toContain('evt-src-badge');
+    expect(html).toContain('openSourcesModal');
+  });
+
+  it('shows "+ src" label when there are zero citations', () => {
+    const html = buildSourceBadgeHtml([], '@I1@', 0);
+    expect(html).toMatch(/\+\s*src/);
+  });
+
+  it('shows "1 src" label when there is one citation', () => {
+    const html = buildSourceBadgeHtml([{ sourceXref: '@S1@' }], '@I1@', 0);
+    expect(html).toContain('1 src');
+  });
+
+  it('shows "N src" label when there are multiple citations', () => {
+    const html = buildSourceBadgeHtml(
+      [{ sourceXref: '@S1@' }, { sourceXref: '@S2@' }, { sourceXref: '@S3@' }],
+      '@I1@', 2);
+    expect(html).toContain('3 src');
+  });
+
+  it('renders a pill when citations is null/undefined', () => {
+    const html = buildSourceBadgeHtml(null, '@I1@', 0);
+    expect(html).toBeTruthy();
+    expect(html).toContain('evt-src-badge');
+  });
+});

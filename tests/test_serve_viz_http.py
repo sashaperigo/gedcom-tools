@@ -347,48 +347,6 @@ class TestEditEventEndpoint:
         assert 'error' in resp
         assert _ged_text(ged) == original  # file must be unchanged
 
-    # ----- source citations attached on edit -----
-
-    def test_edit_event_with_source_appends_fact_citation(self, live_server):
-        """Editing an event with source_xref + source_page must append a fact-level
-        2 SOUR / 3 PAGE block inside the event (if not already present for that SOUR)."""
-        ged, post, _, _ = live_server
-        sour_xref = post('/api/add_source', {
-            'titl': 'Parish Register', 'auth': '', 'publ': '', 'repo': '', 'note': '',
-        })['xref']
-        resp = post('/api/edit_event', {
-            'xref': '@I1@', 'tag': 'BIRT', 'event_idx': 0,
-            'updates': {'DATE': '14 MAR 1990'},
-            'source_xref': sour_xref, 'source_page': 'Fol. 12',
-        })
-        assert resp['ok'] is True
-        text = _ged_text(ged)
-        # Confirm the citation lives inside the @I1@ BIRT block.
-        lines = text.splitlines()
-        i_indi = lines.index('0 @I1@ INDI')
-        i_birt = next(j for j in range(i_indi + 1, len(lines))
-                      if lines[j] == '1 BIRT')
-        block = []
-        for l in lines[i_birt + 1:]:
-            if l.startswith('0 ') or l.startswith('1 '):
-                break
-            block.append(l)
-        assert f'2 SOUR {sour_xref}' in block, block
-        assert '3 PAGE Fol. 12' in block, block
-
-    def test_edit_event_with_source_adds_person_pointer_if_missing(self, live_server):
-        ged, post, _, _ = live_server
-        sour_xref = post('/api/add_source', {
-            'titl': 'Parish Register', 'auth': '', 'publ': '', 'repo': '', 'note': '',
-        })['xref']
-        assert f'1 SOUR {sour_xref}' not in _ged_text(ged)
-        post('/api/edit_event', {
-            'xref': '@I1@', 'tag': 'BIRT', 'event_idx': 0,
-            'updates': {'DATE': '14 MAR 1990'},
-            'source_xref': sour_xref, 'source_page': 'Fol. 12',
-        })
-        assert f'1 SOUR {sour_xref}' in _ged_text(ged)
-
 
 # ===========================================================================
 # /api/add_event
@@ -520,90 +478,6 @@ class TestAddEventEndpoint:
         assert '1 FACT' in text
         assert '2 TYPE Languages' in text
         assert '2 NOTE French, Italian' in text
-
-    # ----- source citations attached on add -----
-
-    def _add_sour(self, post):
-        return post('/api/add_source', {
-            'titl': 'Census Roll', 'auth': '', 'publ': '', 'repo': '', 'note': '',
-        })['xref']
-
-    def test_add_event_with_source_writes_fact_level_citation(self, live_server):
-        """Passing source_xref + source_page on add_event writes 2 SOUR / 3 PAGE
-        inside the new event block."""
-        ged, post, _, _ = live_server
-        sour_xref = self._add_sour(post)
-        resp = post('/api/add_event', {
-            'xref': '@I2@', 'tag': 'RESI',
-            'fields': {'DATE': '1920', 'PLAC': 'Boston'},
-            'source_xref': sour_xref, 'source_page': 'p. 42',
-        })
-        assert resp['ok'] is True
-        text = _ged_text(ged)
-        # The citation must be inside the new event block: after '2 PLAC Boston'
-        # and before any subsequent level-1 line.
-        lines = text.splitlines()
-        i_indi = lines.index('0 @I2@ INDI')
-        i_resi = next(j for j in range(i_indi + 1, len(lines))
-                      if lines[j] == '1 RESI')
-        block = []
-        for l in lines[i_resi + 1:]:
-            if l.startswith('0 ') or l.startswith('1 '):
-                break
-            block.append(l)
-        assert f'2 SOUR {sour_xref}' in block, block
-        assert '3 PAGE p. 42' in block, block
-
-    def test_add_event_with_source_adds_person_level_sour_if_missing(self, live_server):
-        """When the INDI has no person-level 1 SOUR @Sn@ pointer yet, adding an
-        event with that source should append one at level 1."""
-        ged, post, _, _ = live_server
-        sour_xref = self._add_sour(post)
-        # Precondition: no 1 SOUR sour_xref on @I2@ yet.
-        assert f'1 SOUR {sour_xref}' not in _ged_text(ged)
-        post('/api/add_event', {
-            'xref': '@I2@', 'tag': 'RESI',
-            'fields': {'PLAC': 'Boston'},
-            'source_xref': sour_xref, 'source_page': 'p. 42',
-        })
-        text = _ged_text(ged)
-        assert f'1 SOUR {sour_xref}' in text
-
-    def test_add_event_with_source_does_not_duplicate_person_pointer(self, live_server):
-        """If the INDI already has 1 SOUR @Sn@, adding another event citing the
-        same source must not add a second person-level pointer."""
-        ged, post, _, _ = live_server
-        sour_xref = self._add_sour(post)
-        # Seed: one person-level citation exists already.
-        post('/api/add_citation', {
-            'xref': '@I2@', 'sour_xref': sour_xref,
-            'fact_key': None, 'page': 'orig', 'text': '', 'note': '',
-        })
-        before = _ged_text(ged).count(f'1 SOUR {sour_xref}')
-        assert before == 1
-        post('/api/add_event', {
-            'xref': '@I2@', 'tag': 'RESI',
-            'fields': {'PLAC': 'Boston'},
-            'source_xref': sour_xref, 'source_page': 'p. 99',
-        })
-        after = _ged_text(ged).count(f'1 SOUR {sour_xref}')
-        assert after == 1, 'person-level 1 SOUR pointer must not be duplicated'
-
-    def test_add_event_without_source_does_not_add_pointer(self, live_server):
-        """Adding an event without source_xref must not write any citation lines."""
-        ged, post, _, _ = live_server
-        sour_xref = self._add_sour(post)
-        post('/api/add_event', {
-            'xref': '@I2@', 'tag': 'RESI',
-            'fields': {'PLAC': 'Boston'},
-        })
-        text = _ged_text(ged)
-        assert f'1 SOUR {sour_xref}' not in text
-        # No 2 SOUR under the new RESI either.
-        assert '2 SOUR' not in '\n'.join(
-            l for l in text.splitlines() if l.startswith('2 SOUR')
-        ) or f'2 SOUR {sour_xref}' not in text
-
 
 # ===========================================================================
 # /api/edit_name
@@ -916,6 +790,26 @@ class TestAddCitationEndpoint:
         })
         assert bak.exists()
 
+    def test_returns_people_with_new_citation(self, live_server):
+        """Response must include a `people` dict so the client can refresh
+        PEOPLE[xref] and re-render the sources modal / panel without reloading."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 42', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        assert 'people' in resp, 'response must include refreshed people payload'
+        people = resp['people']
+        assert '@I1@' in people, f'refreshed people must include the edited xref; got keys={list(people.keys())}'
+        birt_events = [e for e in people['@I1@']['events'] if e['tag'] == 'BIRT']
+        assert birt_events, 'refreshed payload must include BIRT'
+        assert any(
+            (c.get('sourceXref') == sour_xref) or (c.get('sour_xref') == sour_xref)
+            for c in birt_events[0].get('citations', [])
+        ), 'new citation must appear in refreshed BIRT.citations'
+
 
 # ===========================================================================
 # /api/edit_citation
@@ -1046,6 +940,24 @@ class TestDeleteCitationEndpoint:
             'xref': '@I1@', 'citation_key': 'BIRT:0:0',
         })
         assert bak.exists()
+
+    def test_returns_people_without_deleted_citation(self, live_server):
+        """Response must include a refreshed `people` dict so the client can
+        update PEOPLE[xref] after a citation is deleted."""
+        ged, post, _, _ = live_server
+        sour_xref = self._setup_citation(post)
+        resp = post('/api/delete_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+        })
+        assert resp.get('ok') is True
+        assert 'people' in resp, 'response must include refreshed people payload'
+        people = resp['people']
+        assert '@I1@' in people
+        birt = next(e for e in people['@I1@']['events'] if e['tag'] == 'BIRT')
+        assert not any(
+            (c.get('sourceXref') == sour_xref) or (c.get('sour_xref') == sour_xref)
+            for c in birt.get('citations', [])
+        ), 'deleted citation must not be in refreshed BIRT.citations'
 
 
 # ===========================================================================

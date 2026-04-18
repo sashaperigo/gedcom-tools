@@ -661,14 +661,8 @@ def _edit_event_fields(
 
 def _insert_new_event(
     lines: list[str], xref: str, event_tag: str, fields: dict,
-    source_xref: str = '', source_page: str = '',
 ) -> tuple[list[str], str | None]:
-    """Insert a new event block just before the end of xref's INDI record.
-
-    If ``source_xref`` is supplied, a fact-level citation block (2 SOUR / 3 PAGE)
-    is appended inside the event, and — if the INDI doesn't already cite that
-    source at the person level — a 1 SOUR pointer is also appended to the INDI.
-    """
+    """Insert a new event block just before the end of xref's INDI record."""
     event_tag = (event_tag or '').strip().upper()
     if not event_tag or not re.match(r'^[A-Z_][A-Z0-9_]*$', event_tag):
         return lines, f'Invalid event tag: {event_tag!r}'
@@ -688,74 +682,8 @@ def _insert_new_event(
                 new_block.extend(_encode_event_note_lines(val))
             else:
                 new_block.append(f'2 {subtag} {val}')
-    source_xref = (source_xref or '').strip()
-    if source_xref:
-        new_block.extend(_build_citation_lines(
-            source_xref, (source_page or '').strip(), '', '', base_level=2
-        ))
     new_lines = lines[:indi_end] + new_block + lines[indi_end:]
-    if source_xref:
-        new_lines = _ensure_indi_sour_pointer(new_lines, xref, source_xref)
     return new_lines, None
-
-
-def _event_block_has_sour(lines: list[str], start: int, end: int, sour_xref: str) -> bool:
-    """Return True iff the event block already has a '2 SOUR @Sn@' for sour_xref."""
-    for i in range(start + 1, end):
-        m = _TAG_RE.match(lines[i])
-        if m and int(m.group(1)) == 2 and m.group(2) == 'SOUR':
-            if (m.group(3) or '').strip() == sour_xref:
-                return True
-    return False
-
-
-def _append_citation_to_event(
-    lines: list[str], xref: str, event_tag: str, occurrence_n: int,
-    sour_xref: str, page: str,
-) -> tuple[list[str], str | None]:
-    """Append a fact-level 2 SOUR / 3 PAGE block inside an existing event.
-
-    No-op (returns lines unchanged, err=None) if the event already cites that
-    source. Also ensures a person-level 1 SOUR pointer on the INDI.
-    """
-    sour_xref = (sour_xref or '').strip()
-    if not sour_xref:
-        return lines, None
-    start, end, err = _find_event_block(lines, xref, event_tag, occurrence_n)
-    if err:
-        return lines, err
-    if _event_block_has_sour(lines, start, end, sour_xref):
-        # still make sure person-level pointer exists
-        return _ensure_indi_sour_pointer(lines, xref, sour_xref), None
-    cite_lines = _build_citation_lines(sour_xref, (page or '').strip(), '', '', base_level=2)
-    new_lines = lines[:end] + cite_lines + lines[end:]
-    new_lines = _ensure_indi_sour_pointer(new_lines, xref, sour_xref)
-    return new_lines, None
-
-
-def _indi_has_sour_pointer(lines: list[str], xref: str, sour_xref: str) -> bool:
-    """Return True iff xref has a person-level '1 SOUR @Sn@' pointing to sour_xref."""
-    indi_start, indi_end, err = _find_indi_block(lines, xref)
-    if err:
-        return False
-    for i in range(indi_start + 1, indi_end):
-        m = _TAG_RE.match(lines[i])
-        if m and int(m.group(1)) == 1 and m.group(2) == 'SOUR':
-            if (m.group(3) or '').strip() == sour_xref:
-                return True
-    return False
-
-
-def _ensure_indi_sour_pointer(
-    lines: list[str], xref: str, sour_xref: str
-) -> list[str]:
-    """Append '1 SOUR @Sn@' to the INDI record if not already present."""
-    if _indi_has_sour_pointer(lines, xref, sour_xref):
-        return lines
-    _, indi_end, err = _find_indi_block(lines, xref)
-    if err:
-        return lines
-    return lines[:indi_end] + [f'1 SOUR {sour_xref}'] + lines[indi_end:]
 
 
 # ---------------------------------------------------------------------------
@@ -1183,8 +1111,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             tag       = body['tag']
             fam_xref  = body.get('fam_xref') or None
             updates   = body.get('updates', {})
-            _src_xref = (body.get('source_xref') or '').strip()
-            _src_page = (body.get('source_page') or '').strip()
             if 'DATE' in updates:
                 updates['DATE'], _date_err = _normalize_event_date(updates['DATE'])
             else:
@@ -1209,11 +1135,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     resp = json.dumps({'ok': False, 'error': err}).encode()
                 else:
                     new_lines = _edit_event_fields(lines, start, end, updates) if start is not None else new_lines
-                    if _src_xref and not fam_xref:
-                        event_idx = int(body.get('event_idx') or 0)
-                        new_lines, _cite_err = _append_citation_to_event(
-                            new_lines, xref, tag, event_idx, _src_xref, _src_page
-                        )
                     _write_gedcom_atomic(new_lines)
                     print(f"[event-edit] {fam_xref or xref} {tag} updated")
                     regenerate(body.get('current_person'))
@@ -1301,8 +1222,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             xref   = body['xref']
             tag    = body['tag']
             fields = body.get('fields', {})
-            source_xref = (body.get('source_xref') or '').strip()
-            source_page = (body.get('source_page') or '').strip()
             if 'DATE' in fields:
                 fields['DATE'], _date_err = _normalize_event_date(fields['DATE'])
             else:
@@ -1311,10 +1230,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 resp = json.dumps({'ok': False, 'error': _date_err}).encode()
             else:
                 lines  = GED.read_text(encoding='utf-8').splitlines()
-                new_lines, err = _insert_new_event(
-                    lines, xref, tag, fields,
-                    source_xref=source_xref, source_page=source_page,
-                )
+                new_lines, err = _insert_new_event(lines, xref, tag, fields)
                 if err:
                     resp = json.dumps({'ok': False, 'error': err}).encode()
                 else:
@@ -1493,7 +1409,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             _write_gedcom_atomic(new_lines)
             print(f"[citation-add] {xref} {fact_key} → {sour_xref}")
-            resp = json.dumps({'ok': True}).encode()
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/edit_citation':
             xref         = (body.get('xref') or '').strip()
@@ -1534,7 +1453,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             new_lines = lines[:block_start] + lines[block_end:]
             _write_gedcom_atomic(new_lines)
             print(f"[citation-delete] {xref} {citation_key}")
-            resp = json.dumps({'ok': True}).encode()
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         # ------------------------------------------------------------------ #
         # Person / relationship endpoints                                     #
