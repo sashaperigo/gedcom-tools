@@ -922,6 +922,12 @@ header h1 { font-size: 16px; font-weight: 600; }
 #sources-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   z-index: 1000; align-items: center; justify-content: center; }
 #sources-modal-overlay.open { display: flex; }
+#add-citation-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1100; align-items: center; justify-content: center; }
+#add-citation-modal-overlay.open { display: flex; }
+#add-citation-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#add-citation-modal h3 { margin: 0 0 12px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 #sources-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
 #sources-modal-header { display: flex; align-items: flex-start; justify-content: space-between;
@@ -1256,6 +1262,31 @@ header h1 { font-size: 16px; font-weight: 600; }
       <button id="sources-modal-close" onclick="closeSourcesModal()" title="Close">&times;</button>
     </div>
     <div id="sources-modal-list"></div>
+  </div>
+</div>
+<div id="add-citation-modal-overlay" onclick="if(event.target===this)closeAddCitationModal()">
+  <div id="add-citation-modal" onkeydown="if(event.key==='Escape')closeAddCitationModal()">
+    <h3 id="add-citation-modal-title">Add Citation</h3>
+    <div class="event-modal-field">
+      <label>Source</label>
+      <select id="add-citation-modal-source"></select>
+    </div>
+    <div class="event-modal-field">
+      <label>Page / reference</label>
+      <input type="text" id="add-citation-modal-page" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Quoted text (optional)</label>
+      <textarea id="add-citation-modal-text" rows="3"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>Note (optional)</label>
+      <textarea id="add-citation-modal-note" rows="2"></textarea>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddCitationModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddCitationModal()">Add</button>
+    </div>
   </div>
 </div>
 <div id="name-modal-overlay" onclick="if(event.target===this)closeNameModal()">

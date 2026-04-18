@@ -1736,7 +1736,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 new_lines  = lines[:indi_end] + asso_block + lines[indi_end:]
                 _write_gedcom_atomic(new_lines)
                 print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})")
-                resp = json.dumps({'ok': True}).encode()
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/delete_godparent':
             xref           = (body.get('xref') or '').strip()
@@ -1769,7 +1772,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         break
                     if sm and int(sm.group(1)) == 2 and sm.group(2) == 'RELA':
                         rela_val = (sm.group(3) or '').strip()
-                        if rela_val == 'Godparent':
+                        if rela_val in ('Godparent', 'Godfather', 'Godmother'):
                             asso_start = i
                             # end of this ASSO block
                             k = i + 1
@@ -1788,7 +1791,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             new_lines = lines[:asso_start] + lines[asso_end:]
             _write_gedcom_atomic(new_lines)
             print(f"[godparent-delete] {xref} ← {godparent_xref}")
-            resp = json.dumps({'ok': True}).encode()
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         else:
             self.send_error(404)

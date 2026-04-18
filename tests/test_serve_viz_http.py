@@ -1386,6 +1386,19 @@ class TestAddGodparentEndpoint:
         post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
         assert '2 RELA Godparent' in _ged_text(ged)
 
+    def test_response_includes_refreshed_people_payload(self, live_server):
+        """Client needs fresh PEOPLE data to re-render without a reload."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@', 'rela': 'Godfather',
+        })
+        assert resp.get('ok') is True
+        people = resp.get('people') or {}
+        assert '@I1@' in people, 'subject xref must be present in people payload'
+        # At minimum the refreshed payload should carry the basic person fields
+        assert 'name' in people['@I1@']
+        assert 'events' in people['@I1@']
+
 
 # ===========================================================================
 # /api/delete_godparent
@@ -1440,6 +1453,44 @@ class TestDeleteGodparentEndpoint:
         bak.unlink(missing_ok=True)
         post('/api/delete_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
         assert bak.exists()
+
+    def test_removes_godfather_asso(self, live_server):
+        """Godfather and Godmother ASSOs must be deletable too, not just Godparent."""
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@', 'rela': 'Godfather',
+        })
+        assert '2 RELA Godfather' in _ged_text(ged)
+        resp = post('/api/delete_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '1 ASSO @I4@' not in text
+        assert '2 RELA Godfather' not in text
+
+    def test_removes_godmother_asso(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I5@', 'rela': 'Godmother',
+        })
+        resp = post('/api/delete_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I5@',
+        })
+        assert resp.get('ok') is True
+        assert '1 ASSO @I5@' not in _ged_text(ged)
+
+    def test_response_includes_refreshed_people_payload(self, live_server):
+        ged, post, _, _ = live_server
+        self._add_godparent(post, '@I1@', '@I4@')
+        resp = post('/api/delete_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@',
+        })
+        assert resp.get('ok') is True
+        people = resp.get('people') or {}
+        assert '@I1@' in people
+        assert 'name' in people['@I1@']
+        assert 'events' in people['@I1@']
 
 
 # ===========================================================================

@@ -720,6 +720,20 @@ describe('showAddCitationModal', () => {
     showAddCitationModal('@I1@', null);
     expect(overlay.classList.contains('open')).toBe(true);
   });
+
+  it('populates the source <select> in alphabetical order by title', () => {
+    if (!showAddCitationModal) return;
+    const added = [];
+    sourceSelect.appendChild = (opt) => added.push({ value: opt.value, text: opt.textContent });
+    global.SOURCES = {
+      '@S1@': { titl: 'Zeta Parish Record' },
+      '@S2@': { titl: 'alpha Birth Register' },  // lowercase to verify case-insensitive
+      '@S3@': { titl: 'Mu Archive' },
+    };
+    showAddCitationModal('@I1@', 'BIRT');
+    const texts = added.map(o => o.text);
+    expect(texts).toEqual(['alpha Birth Register', 'Mu Archive', 'Zeta Parish Record']);
+  });
 });
 
 describe('showEditCitationModal', () => {

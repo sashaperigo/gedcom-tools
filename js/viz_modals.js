@@ -886,15 +886,20 @@ function showAddCitationModal(xref, factKey) {
   if (textEl)    textEl.value  = '';
   if (noteEl)    noteEl.value  = '';
 
-  // Populate sourceXref select from global SOURCES
+  // Populate sourceXref select from global SOURCES, sorted alphabetically by title
+  // (case-insensitive) so users can find a specific source.
   if (sourceEl && typeof SOURCES !== 'undefined') {
     sourceEl.innerHTML = '<option value="">— select source —</option>';
-    for (const [sxref, src] of Object.entries(SOURCES)) {
+    const entries = Object.entries(SOURCES).map(([sxref, src]) => ({
+      sxref, label: (src && src.titl) || sxref,
+    }));
+    entries.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+    for (const { sxref, label } of entries) {
       const opt = (typeof document !== 'undefined' && document.createElement)
         ? document.createElement('option')
         : { value: '', textContent: '' };
       opt.value       = sxref;
-      opt.textContent = src.titl || sxref;
+      opt.textContent = label;
       if (sourceEl.appendChild) sourceEl.appendChild(opt);
     }
   }
@@ -1135,7 +1140,8 @@ async function submitAddGodparentModal() {
   closeAddGodparentModal();
   if (!godparentXref) { alert('Please select a godparent from the search results.'); return; }
   try {
-    await apiAddGodparent(xref, godparentXref, rela);
+    const resp = await apiAddGodparent(xref, godparentXref, rela);
+    if (resp && resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
     if (typeof renderPanel !== 'undefined') renderPanel();
   } catch (e) {
     alert('Save failed: ' + e);
