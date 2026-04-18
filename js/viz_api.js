@@ -91,8 +91,10 @@ async function apiAddPerson(given, surn, sex, birthYear, relType, relXref) {
   return _post('/api/add_person', { given, surn, sex, birth_year: birthYear, rel_type: relType, rel_xref: relXref });
 }
 
-async function apiAddGodparent(xref, godparentXref) {
-  return _post('/api/add_godparent', { xref, godparent_xref: godparentXref });
+async function apiAddGodparent(xref, godparentXref, rela) {
+  const body = { xref, godparent_xref: godparentXref };
+  if (rela) body.rela = rela;
+  return _post('/api/add_godparent', body);
 }
 
 async function apiDeleteGodparent(xref, godparentXref) {

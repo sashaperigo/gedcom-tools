@@ -1060,10 +1060,12 @@ function showAddGodparentModal(xref) {
   const searchEl   = document.getElementById('add-godparent-modal-search');
   const resultsEl  = document.getElementById('add-godparent-modal-results');
   const titleEl    = document.getElementById('add-godparent-modal-title');
+  const relaEl     = document.getElementById('add-godparent-modal-rela');
 
   if (titleEl)  titleEl.textContent = 'Add Godparent';
   if (searchEl) searchEl.value = '';
   if (resultsEl) resultsEl.innerHTML = '';
+  if (relaEl)   relaEl.value = 'Godparent';
 
   if (overlayEl) overlayEl.classList.add('open');
   if (searchEl)  setTimeout(() => searchEl.focus && searchEl.focus(), 50);
@@ -1106,12 +1108,14 @@ document.addEventListener('input', e => {
 });
 
 async function submitAddGodparentModal() {
-  const xref            = _addGodparentXref;
-  const godparentXref   = _addGodparentSelectedXref;
+  const xref          = _addGodparentXref;
+  const godparentXref = _addGodparentSelectedXref;
+  const relaEl        = document.getElementById('add-godparent-modal-rela');
+  const rela          = (relaEl && relaEl.value) || 'Godparent';
   closeAddGodparentModal();
   if (!godparentXref) { alert('Please select a godparent from the search results.'); return; }
   try {
-    await apiAddGodparent(xref, godparentXref);
+    await apiAddGodparent(xref, godparentXref, rela);
     if (typeof renderPanel !== 'undefined') renderPanel();
   } catch (e) {
     alert('Save failed: ' + e);

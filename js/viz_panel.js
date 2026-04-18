@@ -239,8 +239,32 @@ function buildSourceBadgeHtml(citations, xref, origIdx) {
 
 // ── Godparent click handler (exported for tests) ───────────────────────────
 
+const _GODPARENT_RELAS = new Set(['Godparent', 'Godfather', 'Godmother']);
+
 function _handleGodparentClick(godparentXref) {
   setState({ focusXref: godparentXref });
+}
+
+function _buildGodparentPillsHtml(evt, xref, xrefQ) {
+  const assoArr = (evt.asso || []).filter(a => _GODPARENT_RELAS.has(a.rela));
+  const isChrOrBapm = evt.tag === 'CHR' || evt.tag === 'BAPM';
+  if (!isChrOrBapm && assoArr.length === 0) return '';
+  let html = `<div class="panel-godparents">`;
+  if (assoArr.length > 0) {
+    html += `<span class="panel-godparents-label">Godparents:</span>`;
+    for (const asso of assoArr) {
+      const gp     = (typeof PEOPLE !== 'undefined') && PEOPLE[asso.xref];
+      const gpName = gp ? escHtml(gp.name) : escHtml(asso.xref);
+      const xrefJs = JSON.stringify(asso.xref);
+      const roleSuffix = (asso.rela === 'Godfather' || asso.rela === 'Godmother')
+        ? ` <span class="panel-godparent-role">(${asso.rela === 'Godfather' ? '\u2642' : '\u2640'})</span>`
+        : '';
+      html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}${roleSuffix}</span>`;
+    }
+  }
+  html += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
+  html += `</div>`;
+  return html;
 }
 
 // ── Module state ──────────────────────────────────────────────────────────
@@ -508,23 +532,7 @@ function renderPanel() {
         const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
 
         // Godparents (CHR/BAPM)
-        let godparentHtml = '';
-        const assoArr = (evt.asso || []).filter(a => a.rela === 'Godparent');
-        const isChrOrBapm = evt.tag === 'CHR' || evt.tag === 'BAPM';
-        if (isChrOrBapm || assoArr.length > 0) {
-          godparentHtml += `<div class="panel-godparents">`;
-          if (assoArr.length > 0) {
-            godparentHtml += `<span class="panel-godparents-label">Godparents:</span>`;
-            for (const asso of assoArr) {
-              const gp     = (typeof PEOPLE !== 'undefined') && PEOPLE[asso.xref];
-              const gpName = gp ? escHtml(gp.name) : escHtml(asso.xref);
-              const xrefJs = JSON.stringify(asso.xref);
-              godparentHtml += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}</span>`;
-            }
-          }
-          godparentHtml += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
-          godparentHtml += `</div>`;
-        }
+        const godparentHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
 
         html +=
           `<div class="evt-entry">` +
@@ -555,24 +563,7 @@ function renderPanel() {
           ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>`
           : '';
         const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
-        // Godparent pills on undated BAPM/CHR events
-        let undGpHtml = '';
-        const undAssoArr = (evt.asso || []).filter(a => a.rela === 'Godparent');
-        const undIsChrOrBapm = evt.tag === 'CHR' || evt.tag === 'BAPM';
-        if (undIsChrOrBapm || undAssoArr.length > 0) {
-          undGpHtml += `<div class="panel-godparents">`;
-          if (undAssoArr.length > 0) {
-            undGpHtml += `<span class="panel-godparents-label">Godparents:</span>`;
-            for (const asso of undAssoArr) {
-              const gp     = (typeof PEOPLE !== 'undefined') && PEOPLE[asso.xref];
-              const gpName = gp ? escHtml(gp.name) : escHtml(asso.xref);
-              const xrefJs = JSON.stringify(asso.xref);
-              undGpHtml += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}</span>`;
-            }
-          }
-          undGpHtml += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
-          undGpHtml += `</div>`;
-        }
+        const undGpHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
         return `<div class="evt-entry">` +
           `<div class="evt-dot" style="background:${color}"></div>` +
           `<div class="evt-prose">${escHtml(prose)}</div>` +

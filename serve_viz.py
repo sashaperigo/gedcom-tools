@@ -1794,22 +1794,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == '/api/add_godparent':
             xref           = (body.get('xref') or '').strip()
             godparent_xref = (body.get('godparent_xref') or '').strip()
+            rela           = (body.get('rela') or 'Godparent').strip()
             if not xref:
                 self.send_error(400, 'xref is required')
                 return
             if not godparent_xref:
                 self.send_error(400, 'godparent_xref is required')
                 return
-            lines = GED.read_text(encoding='utf-8').splitlines()
-            _, indi_end, err = _find_indi_block(lines, xref)
-            if err:
-                self.send_error(400, err)
-                return
-            asso_block = [f'1 ASSO {godparent_xref}', '2 RELA Godparent']
-            new_lines  = lines[:indi_end] + asso_block + lines[indi_end:]
-            _write_gedcom_atomic(new_lines)
-            print(f"[godparent-add] {xref} ← {godparent_xref}")
-            resp = json.dumps({'ok': True}).encode()
+            if rela not in ('Godparent', 'Godfather', 'Godmother'):
+                resp = json.dumps({'ok': False,
+                                    'error': f'rela must be Godparent/Godfather/Godmother; got {rela!r}'}).encode()
+            else:
+                lines = GED.read_text(encoding='utf-8').splitlines()
+                _, indi_end, err = _find_indi_block(lines, xref)
+                if err:
+                    self.send_error(400, err)
+                    return
+                asso_block = [f'1 ASSO {godparent_xref}', f'2 RELA {rela}']
+                new_lines  = lines[:indi_end] + asso_block + lines[indi_end:]
+                _write_gedcom_atomic(new_lines)
+                print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})")
+                resp = json.dumps({'ok': True}).encode()
 
         elif parsed.path == '/api/delete_godparent':
             xref           = (body.get('xref') or '').strip()

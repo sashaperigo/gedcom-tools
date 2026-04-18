@@ -702,6 +702,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 .panel-godparent-pill { background: #1e3a2f; border: 1px solid #4ade80; color: #86efac;
                         font-size: 11px; border-radius: 12px; padding: 2px 10px; cursor: pointer; }
 .panel-godparent-pill:hover { background: #1a3d2b; }
+.panel-godparent-role { color: #4ade80; font-size: 10px; }
 .panel-add-godparent-btn { background: none; border: 1px solid #334155; color: #64748b;
                            border-radius: 4px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
 .panel-add-godparent-btn:hover { border-color: #4ade80; color: #4ade80; }
@@ -1178,6 +1179,15 @@ header h1 { font-size: 16px; font-weight: 600; }
 <div id="add-godparent-modal-overlay" onclick="if(event.target===this)closeAddGodparentModal()">
   <div id="add-godparent-modal">
     <h3 id="add-godparent-modal-title">Add Godparent</h3>
+    <div class="event-modal-field">
+      <label>Role</label>
+      <select id="add-godparent-modal-rela"
+              onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
+        <option value="Godparent">Godparent</option>
+        <option value="Godfather">Godfather</option>
+        <option value="Godmother">Godmother</option>
+      </select>
+    </div>
     <div class="event-modal-field">
       <label>Search by name</label>
       <input type="text" id="add-godparent-modal-search" placeholder="Type a name\u2026"

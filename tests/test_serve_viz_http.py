@@ -1439,6 +1439,41 @@ class TestAddGodparentEndpoint:
         post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
         assert ged.with_suffix('.ged.bak').exists()
 
+    def test_rela_godfather(self, live_server):
+        """rela=Godfather should write '2 RELA Godfather'."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@', 'rela': 'Godfather',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '2 RELA Godfather' in text
+        assert '2 RELA Godparent' not in text
+
+    def test_rela_godmother(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@', 'rela': 'Godmother',
+        })
+        assert resp.get('ok') is True
+        assert '2 RELA Godmother' in _ged_text(ged)
+
+    def test_rela_invalid_rejected(self, live_server):
+        """Unsupported rela values must be rejected, not silently accepted."""
+        ged, post, _, _ = live_server
+        original = _ged_text(ged)
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@', 'godparent_xref': '@I4@', 'rela': 'Witness',
+        })
+        assert resp.get('ok') is False
+        assert _ged_text(ged) == original
+
+    def test_rela_default_godparent(self, live_server):
+        """Omitting rela defaults to Godparent (back-compat)."""
+        ged, post, _, _ = live_server
+        post('/api/add_godparent', {'xref': '@I1@', 'godparent_xref': '@I4@'})
+        assert '2 RELA Godparent' in _ged_text(ged)
+
 
 # ===========================================================================
 # /api/delete_godparent
