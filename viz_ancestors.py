@@ -700,11 +700,11 @@ header h1 { font-size: 16px; font-weight: 600; }
                     gap: 6px; margin-top: 4px; width: 100%; }
 .panel-godparents-label { font-size: 11px; color: #64748b; }
 .panel-godparent-pill { background: #1e3a2f; border: 1px solid #4ade80; color: #86efac;
-                        font-size: 11px; border-radius: 12px; padding: 2px 10px; cursor: pointer; }
+                        font-size: 11px; border-radius: 12px; padding: 5px 12px; cursor: pointer; }
 .panel-godparent-pill:hover { background: #1a3d2b; }
 .panel-godparent-role { color: #4ade80; font-size: 10px; }
 .panel-add-godparent-btn { background: none; border: 1px solid #334155; color: #64748b;
-                           border-radius: 4px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+                           border-radius: 4px; font-size: 11px; padding: 5px 10px; cursor: pointer; }
 .panel-add-godparent-btn:hover { border-color: #4ade80; color: #4ade80; }
 /* ── Citation rows ──────────────────────────────────────────── */
 .panel-cite-row { display: flex; align-items: center; gap: 6px; padding: 5px 0;

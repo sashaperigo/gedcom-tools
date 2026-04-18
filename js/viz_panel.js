@@ -243,7 +243,7 @@ function buildSourceBadgeHtml(citations, xref, origIdx) {
 const _GODPARENT_RELAS = new Set(['Godparent', 'Godfather', 'Godmother']);
 
 function _handleGodparentClick(godparentXref) {
-  setState({ focusXref: godparentXref });
+  setState({ focusXref: godparentXref, panelXref: godparentXref, panelOpen: true });
 }
 
 function _buildGodparentPillsHtml(evt, xref, xrefQ) {
@@ -251,19 +251,18 @@ function _buildGodparentPillsHtml(evt, xref, xrefQ) {
   const isChrOrBapm = evt.tag === 'CHR' || evt.tag === 'BAPM';
   if (!isChrOrBapm && assoArr.length === 0) return '';
   let html = `<div class="panel-godparents">`;
-  if (assoArr.length > 0) {
-    html += `<span class="panel-godparents-label">Godparents:</span>`;
-    for (const asso of assoArr) {
-      const gp     = (typeof PEOPLE !== 'undefined') && PEOPLE[asso.xref];
-      const gpName = gp ? escHtml(gp.name) : escHtml(asso.xref);
-      const xrefJs = JSON.stringify(asso.xref);
-      const roleSuffix = (asso.rela === 'Godfather' || asso.rela === 'Godmother')
-        ? ` <span class="panel-godparent-role">(${asso.rela === 'Godfather' ? '\u2642' : '\u2640'})</span>`
-        : '';
-      html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}${roleSuffix}</span>`;
-    }
+  for (const asso of assoArr) {
+    const gp     = (typeof PEOPLE !== 'undefined') && PEOPLE[asso.xref];
+    const gpName = gp ? escHtml(gp.name) : escHtml(asso.xref);
+    const xrefJs = JSON.stringify(asso.xref);
+    const roleSuffix = (asso.rela === 'Godfather' || asso.rela === 'Godmother')
+      ? ` <span class="panel-godparent-role">(${asso.rela === 'Godfather' ? '\u2642' : '\u2640'})</span>`
+      : '';
+    html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}${roleSuffix}</span>`;
   }
-  html += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
+  if (assoArr.length < 2) {
+    html += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
+  }
   html += `</div>`;
   return html;
 }
