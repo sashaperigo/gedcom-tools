@@ -55,6 +55,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     current_evt       = None   # current event dict being built
     current_note      = None   # index into notes[] for CONT assembly
     current_sour_xref = None   # xref of the 1 SOUR citation currently being parsed
+    current_asso      = None   # dict being built for an in-progress 1 ASSO block
     secondary_name_n  = 0      # counter for secondary NAME records within current INDI
 
     for line in lines:
@@ -64,6 +65,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             indis[xref] = {
                 'name': None, 'birth_year': None, 'death_year': None,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [], 'source_urls': {},
+                'asso': [],
             }
             ctx                = ('indi', xref)
             current_evt        = None
@@ -109,6 +111,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = ctx[1]
             if lvl == 1 and tag != 'SOUR':
                 current_sour_xref = None
+            if lvl == 1 and tag != 'ASSO':
+                current_asso = None
             if lvl == 1 and tag == 'NAME' and indis[xref]['name'] is None:
                 name = re.sub(r'/', '', html_mod.unescape(val))
                 name = re.sub(r'\s+', ' ', name).strip()
@@ -187,6 +191,12 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     indis[xref]['source_xrefs'].append(val)
                 current_sour_xref = val
                 current_evt = current_note = None
+            elif lvl == 1 and tag == 'ASSO' and val.startswith('@'):
+                current_asso = {'xref': val, 'rela': None}
+                indis[xref]['asso'].append(current_asso)
+                current_evt = current_note = None
+            elif lvl == 2 and tag == 'RELA' and current_asso is not None:
+                current_asso['rela'] = html_mod.unescape(val)
             elif lvl == 3 and tag == 'WWW' and current_sour_xref is not None:
                 if current_sour_xref not in indis[xref]['source_urls']:
                     indis[xref]['source_urls'][current_sour_xref] = val
@@ -415,6 +425,13 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                 for c in e.get('citations', [])
             ]
             e_out = {**e, 'citations': normalised_cites}
+            # Attach godparent ASSOs (stored at the INDI level) to BAPM/CHR
+            # events so the panel can render them as pills.
+            if t in ('BAPM', 'CHR'):
+                e_out['asso'] = [
+                    {'xref': a['xref'], 'rela': a.get('rela')}
+                    for a in info.get('asso', []) or []
+                ]
             if e.get('_name_record'):
                 tagged_events.append({**e_out, 'event_idx': None})
             else:

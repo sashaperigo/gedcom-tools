@@ -656,3 +656,91 @@ class TestSortEvents:
     def test_preserves_all_events(self):
         events = [self._evt('EVEN', f'{i} JAN 1942') for i in range(1, 6)]
         assert len(sort_events(events)) == 5
+
+
+# ---------------------------------------------------------------------------
+# Godparent ASSO parsing + attachment to BAPM/CHR events
+# ---------------------------------------------------------------------------
+
+class TestGodparentAsso:
+    """Parser should capture 1 ASSO @X@ / 2 RELA Godparent on the INDI, and
+    build_people_json should attach them to any BAPM/CHR event so the panel
+    can render the pill list."""
+
+    def _write_ged(self, tmp_path, body):
+        p = tmp_path / 'g.ged'
+        p.write_text(body, encoding='utf-8')
+        return str(p)
+
+    def test_parse_asso_on_indi(self, tmp_path):
+        ged = self._write_ged(tmp_path,
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+            '0 @I1@ INDI\n1 NAME Alice //\n'
+            '0 @I2@ INDI\n1 NAME Bob //\n'
+            '1 BAPM\n2 DATE 1900\n'
+            '1 ASSO @I1@\n2 RELA Godparent\n'
+            '0 TRLR\n')
+        indis, _, _ = parse_gedcom(ged)
+        assert indis['@I2@'].get('asso') == [{'xref': '@I1@', 'rela': 'Godparent'}]
+
+    def test_build_people_attaches_asso_to_bapm(self, tmp_path):
+        ged = self._write_ged(tmp_path,
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+            '0 @I1@ INDI\n1 NAME Alice //\n'
+            '0 @I2@ INDI\n1 NAME Bob //\n'
+            '1 BAPM\n2 DATE 1900\n'
+            '1 ASSO @I1@\n2 RELA Godparent\n'
+            '0 TRLR\n')
+        indis, fams, sources = parse_gedcom(ged)
+        out = build_people_json({'@I2@'}, indis, fams=fams, sources=sources)
+        evts = out['@I2@']['events']
+        bapm = next(e for e in evts if e['tag'] == 'BAPM')
+        assert bapm.get('asso') == [{'xref': '@I1@', 'rela': 'Godparent'}]
+
+    def test_build_people_attaches_asso_to_chr(self, tmp_path):
+        ged = self._write_ged(tmp_path,
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+            '0 @I1@ INDI\n1 NAME Alice //\n'
+            '0 @I2@ INDI\n1 NAME Bob //\n'
+            '1 CHR\n2 DATE 1900\n'
+            '1 ASSO @I1@\n2 RELA Godparent\n'
+            '0 TRLR\n')
+        indis, fams, sources = parse_gedcom(ged)
+        out = build_people_json({'@I2@'}, indis, fams=fams, sources=sources)
+        evts = out['@I2@']['events']
+        chr_evt = next(e for e in evts if e['tag'] == 'CHR')
+        assert chr_evt.get('asso') == [{'xref': '@I1@', 'rela': 'Godparent'}]
+
+    def test_non_godparent_rela_ignored_for_bapm_attachment(self, tmp_path):
+        """RELA values other than 'Godparent' (e.g. 'Witness') should not show
+        up in the BAPM pill list."""
+        ged = self._write_ged(tmp_path,
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+            '0 @I1@ INDI\n1 NAME Alice //\n'
+            '0 @I2@ INDI\n1 NAME Bob //\n'
+            '1 BAPM\n2 DATE 1900\n'
+            '1 ASSO @I1@\n2 RELA Witness\n'
+            '0 TRLR\n')
+        indis, fams, sources = parse_gedcom(ged)
+        out = build_people_json({'@I2@'}, indis, fams=fams, sources=sources)
+        bapm = next(e for e in out['@I2@']['events'] if e['tag'] == 'BAPM')
+        # panel filters by rela, so an empty list here is also acceptable —
+        # but explicitly: no Godparent-labeled entry
+        gods = [a for a in (bapm.get('asso') or []) if a.get('rela') == 'Godparent']
+        assert gods == []
+
+    def test_multiple_godparents(self, tmp_path):
+        ged = self._write_ged(tmp_path,
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n'
+            '0 @I1@ INDI\n1 NAME Alice //\n'
+            '0 @I2@ INDI\n1 NAME Bob //\n'
+            '0 @I3@ INDI\n1 NAME Carol //\n'
+            '1 BAPM\n2 DATE 1900\n'
+            '1 ASSO @I1@\n2 RELA Godparent\n'
+            '1 ASSO @I2@\n2 RELA Godparent\n'
+            '0 TRLR\n')
+        indis, fams, sources = parse_gedcom(ged)
+        out = build_people_json({'@I3@'}, indis, fams=fams, sources=sources)
+        bapm = next(e for e in out['@I3@']['events'] if e['tag'] == 'BAPM')
+        xrefs = [a['xref'] for a in bapm.get('asso') or []]
+        assert xrefs == ['@I1@', '@I2@']
