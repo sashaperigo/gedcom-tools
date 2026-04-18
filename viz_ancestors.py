@@ -29,6 +29,7 @@ _EVENT_TAGS = frozenset({
     'BIRT', 'DEAT', 'BURI', 'RESI', 'OCCU', 'CHR', 'BAPM',
     'NATU', 'IMMI', 'EVEN', 'FACT', 'NATI', 'RELI', 'TITL',
     'ADOP', 'EDUC', 'RETI', 'DIV', 'CONF', 'PROB',
+    'NCHI', 'DSCR',
 })
 
 
@@ -131,7 +132,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 # For tags where the inline value IS the semantic type (e.g. "1 OCCU Consul",
                 # "1 TITL Knight", "1 NATI French"), seed type from it.  A later 2 TYPE sub-tag
                 # will override.  EVEN/FACT carry no inline value and use 2 TYPE exclusively.
-                _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC'})
+                _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC', 'NCHI', 'DSCR'})
                 inline_type = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
                 initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
                 evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None, 'age': None, 'citations': []}
@@ -549,6 +550,27 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
     return result
 
 
+def build_family_maps(indis: dict, fams: dict, tree: dict | None = None) -> dict:
+    """Return {'parents', 'children', 'relatives'} — the three maps the client
+    uses to render the Family panel section. Call after a structural edit so the
+    client can replace its stale globals in-place."""
+    parents: dict[str, list] = {}
+    children: dict[str, list] = {}
+    for xref, info in indis.items():
+        famc = info.get('famc')
+        if famc and famc in fams:
+            fam = fams[famc]
+            fa, mo = fam.get('husb'), fam.get('wife')
+            parents[xref] = [fa, mo]
+            for p in (fa, mo):
+                if p:
+                    children.setdefault(p, []).append(xref)
+        else:
+            parents[xref] = [None, None]
+    relatives = build_relatives_json(tree or {}, indis, fams)
+    return {'parents': parents, 'children': children, 'relatives': relatives}
+
+
 # ---------------------------------------------------------------------------
 # HTML rendering
 # ---------------------------------------------------------------------------
@@ -859,6 +881,25 @@ header h1 { font-size: 16px; font-weight: 600; }
   border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
 .godparent-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
 .godparent-result-item:hover { background: #1e3a5f; }
+/* ── Add-person modal ────────────────────────────────────── */
+#add-person-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#add-person-modal-overlay.open { display: flex; }
+#add-person-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#change-parent-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1000; align-items: center; justify-content: center; }
+#change-parent-modal-overlay.open { display: flex; }
+#change-parent-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#change-parent-modal-results { max-height: 160px; overflow-y: auto; background: #0f172a;
+  border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
+.change-parent-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.change-parent-result-item:hover { background: #1e3a5f; }
+.family-add-btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0 0 0; }
+.family-add-btn { background: #1e3a5f; border: 1px solid #334155; border-radius: 10px;
+  color: #cbd5e1; font-size: 11px; padding: 3px 9px; cursor: pointer; }
+.family-add-btn:hover { background: #2a4a70; color: #e2e8f0; }
 /* ── Sources viewer modal ────────────────────────────────── */
 #sources-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   z-index: 1000; align-items: center; justify-content: center; }
@@ -941,6 +982,11 @@ header h1 { font-size: 16px; font-weight: 600; }
   border-top: 1px solid #1e3a52; padding-top: 12px; margin: 18px 0 10px 0; }
 .family-sub:first-child .family-sub-heading { margin-top: 0; }
 .family-row { display: flex; align-items: baseline; gap: 6px; padding: 4px 0; font-size: 13px; }
+.family-parent-actions { display: inline-flex; gap: 2px; margin-left: 6px; opacity: 0; transition: opacity 0.15s; }
+.family-row:hover .family-parent-actions { opacity: 1; }
+.family-parent-btn { background: none; border: none; cursor: pointer; color: #64748b; font-size: 11px; padding: 0 4px; }
+.family-parent-btn:hover { color: #3b82f6; }
+.family-parent-btn.del:hover { color: #ef4444; }
 .family-link { color: #93c5fd; text-decoration: none; cursor: pointer; }
 .family-link:hover { color: #bfdbfe; text-decoration: underline; }
 .family-years { color: #475569; font-size: 12px; }
@@ -994,7 +1040,9 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
     <div class="event-modal-field" id="event-modal-tag-row">
       <label>Event Type</label>
-      <select id="event-modal-tag" onkeydown="if(event.key==='Escape')closeEventModal()">
+      <select id="event-modal-tag"
+              onchange="_eventModalAddTag=this.value;_updateEventModalFields(this.value);"
+              onkeydown="if(event.key==='Escape')closeEventModal()">
         <option value="BIRT">Birth</option>
         <option value="DEAT">Death</option>
         <option value="BURI">Burial</option>
@@ -1059,6 +1107,20 @@ header h1 { font-size: 16px; font-weight: 600; }
       <textarea id="event-modal-note" rows="3"
                 onkeydown="if(event.key==='Escape')closeEventModal()"></textarea>
     </div>
+    <div class="event-modal-field" id="event-modal-source-row">
+      <label>Source</label>
+      <select id="event-modal-source"
+              onchange="_onEventModalSourceChange()"
+              onkeydown="if(event.key==='Escape')closeEventModal()">
+        <option value="">(none)</option>
+      </select>
+    </div>
+    <div class="event-modal-field" id="event-modal-source-page-row" style="display:none">
+      <label>Page / Citation Detail</label>
+      <input type="text" id="event-modal-source-page"
+             placeholder="e.g. p. 42, entry 15"
+             onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>
       <button class="event-modal-save" id="event-modal-save-btn" onclick="submitEventModal()">Save</button>
@@ -1108,6 +1170,54 @@ header h1 { font-size: 16px; font-weight: 600; }
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeAddGodparentModal()">Cancel</button>
       <button class="event-modal-save" onclick="submitAddGodparentModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="add-person-modal-overlay" onclick="if(event.target===this)closeAddPersonModal()">
+  <div id="add-person-modal" onkeydown="if(event.key==='Escape')closeAddPersonModal()">
+    <h3 id="add-person-modal-title">Add Person</h3>
+    <div class="event-modal-field">
+      <label>Given name</label>
+      <input type="text" id="add-person-modal-given" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="add-person-modal-surname" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Sex</label>
+      <select id="add-person-modal-sex">
+        <option value="U">Unknown</option>
+        <option value="M">Male</option>
+        <option value="F">Female</option>
+      </select>
+    </div>
+    <div class="event-modal-field">
+      <label>Birth year</label>
+      <input type="text" id="add-person-modal-birth-year" inputmode="numeric" autocomplete="off">
+    </div>
+    <div class="event-modal-field" id="add-person-modal-other-parent-row" style="display:none">
+      <label>Other parent</label>
+      <select id="add-person-modal-other-parent"></select>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddPersonModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddPersonModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="change-parent-modal-overlay" onclick="if(event.target===this)closeChangeParentModal()">
+  <div id="change-parent-modal">
+    <h3 id="change-parent-modal-title">Change Parent</h3>
+    <div class="event-modal-field">
+      <label>Search by name (blank = no parent)</label>
+      <input type="text" id="change-parent-modal-search" placeholder="Type a name\u2026"
+             onkeydown="if(event.key==='Escape')closeChangeParentModal()">
+      <div id="change-parent-modal-results"></div>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeChangeParentModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitChangeParentModal()">Save</button>
     </div>
   </div>
 </div>
@@ -1175,11 +1285,17 @@ window.addEventListener('unhandledrejection', e => {
 const PEOPLE = __PEOPLE_JSON__;
 const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const SOURCES = __SOURCES_JSON__;
-const RELATIVES = __RELATIVES_JSON__;
-const PARENTS = __PARENTS_JSON__;
-const CHILDREN = {};
+let RELATIVES = __RELATIVES_JSON__;
+let PARENTS = __PARENTS_JSON__;
+let CHILDREN = {};
 for (const [cx, [fa, mo]] of Object.entries(PARENTS)) {
   for (const p of [fa, mo]) { if (p) { (CHILDREN[p] = CHILDREN[p] || []).push(cx); } }
+}
+function _applyFamilyMaps(fm) {
+  if (!fm) return;
+  if (fm.parents)   PARENTS   = fm.parents;
+  if (fm.children)  CHILDREN  = fm.children;
+  if (fm.relatives) RELATIVES = fm.relatives;
 }
 const ROOT_XREF = __ROOT_XREF_JSON__;
 const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;

@@ -347,6 +347,48 @@ class TestEditEventEndpoint:
         assert 'error' in resp
         assert _ged_text(ged) == original  # file must be unchanged
 
+    # ----- source citations attached on edit -----
+
+    def test_edit_event_with_source_appends_fact_citation(self, live_server):
+        """Editing an event with source_xref + source_page must append a fact-level
+        2 SOUR / 3 PAGE block inside the event (if not already present for that SOUR)."""
+        ged, post, _, _ = live_server
+        sour_xref = post('/api/add_source', {
+            'titl': 'Parish Register', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+        resp = post('/api/edit_event', {
+            'xref': '@I1@', 'tag': 'BIRT', 'event_idx': 0,
+            'updates': {'DATE': '14 MAR 1990'},
+            'source_xref': sour_xref, 'source_page': 'Fol. 12',
+        })
+        assert resp['ok'] is True
+        text = _ged_text(ged)
+        # Confirm the citation lives inside the @I1@ BIRT block.
+        lines = text.splitlines()
+        i_indi = lines.index('0 @I1@ INDI')
+        i_birt = next(j for j in range(i_indi + 1, len(lines))
+                      if lines[j] == '1 BIRT')
+        block = []
+        for l in lines[i_birt + 1:]:
+            if l.startswith('0 ') or l.startswith('1 '):
+                break
+            block.append(l)
+        assert f'2 SOUR {sour_xref}' in block, block
+        assert '3 PAGE Fol. 12' in block, block
+
+    def test_edit_event_with_source_adds_person_pointer_if_missing(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = post('/api/add_source', {
+            'titl': 'Parish Register', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+        assert f'1 SOUR {sour_xref}' not in _ged_text(ged)
+        post('/api/edit_event', {
+            'xref': '@I1@', 'tag': 'BIRT', 'event_idx': 0,
+            'updates': {'DATE': '14 MAR 1990'},
+            'source_xref': sour_xref, 'source_page': 'Fol. 12',
+        })
+        assert f'1 SOUR {sour_xref}' in _ged_text(ged)
+
 
 # ===========================================================================
 # /api/add_event
@@ -397,6 +439,170 @@ class TestAddEventEndpoint:
             'xref': '@NOBODY@', 'tag': 'RESI', 'fields': {},
         })
         assert resp['ok'] is False
+
+    def test_empty_tag_rejected(self, live_server):
+        """Empty tag must not write orphan '1 ' lines to the GED file.
+
+        Regression: a client bug left the event-type <select> value empty when
+        opening the modal with a preset pseudo-tag (e.g. 'FACT:Languages'), so
+        the server received tag='' and appended malformed '1 ' lines.
+        """
+        ged, post, _, _ = live_server
+        original = _ged_text(ged)
+        resp = post('/api/add_event', {
+            'xref': '@I2@', 'tag': '',
+            'fields': {'TYPE': 'Languages', 'NOTE': 'French, Italian'},
+        })
+        assert resp['ok'] is False
+        assert _ged_text(ged) == original
+
+    def test_whitespace_tag_rejected(self, live_server):
+        ged, post, _, _ = live_server
+        original = _ged_text(ged)
+        resp = post('/api/add_event', {
+            'xref': '@I2@', 'tag': '   ',
+            'fields': {'TYPE': 'Languages'},
+        })
+        assert resp['ok'] is False
+        assert _ged_text(ged) == original
+
+    def test_malformed_tag_rejected(self, live_server):
+        """Tags must match the GEDCOM grammar (uppercase letters/digits/_)."""
+        ged, post, _, _ = live_server
+        original = _ged_text(ged)
+        resp = post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'FACT:Languages',  # colon is not a valid tag char
+            'fields': {},
+        })
+        assert resp['ok'] is False
+        assert _ged_text(ged) == original
+
+    def test_nchi_inline_value_round_trips(self, live_server):
+        """Adding NCHI with an inline value must show up in the refreshed
+        people payload (the 'Add Fact → Children (count)' flow)."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'NCHI',
+            'fields': {'inline_val': '5'},
+        })
+        assert resp['ok'] is True
+        assert '1 NCHI 5' in _ged_text(ged)
+        events = resp['people']['@I2@']['events']
+        nchi = next((e for e in events if e['tag'] == 'NCHI'), None)
+        assert nchi is not None, 'NCHI event missing from refreshed panel data'
+        assert nchi['inline_val'] == '5'
+
+    def test_dscr_inline_value_round_trips(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'DSCR',
+            'fields': {'inline_val': 'Tall with red hair'},
+        })
+        assert resp['ok'] is True
+        events = resp['people']['@I2@']['events']
+        dscr = next((e for e in events if e['tag'] == 'DSCR'), None)
+        assert dscr is not None, 'DSCR event missing from refreshed panel data'
+        assert dscr['inline_val'] == 'Tall with red hair'
+
+    def test_fact_with_type_writes_clean_block(self, live_server):
+        """A valid FACT add with TYPE + NOTE produces a well-formed block
+        (no orphan '1 ' lines). Models the 'Add Fact: Languages' flow."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'FACT',
+            'fields': {'TYPE': 'Languages', 'NOTE': 'French, Italian'},
+        })
+        assert resp['ok'] is True
+        text = _ged_text(ged)
+        # The new block must have a tag on every level-1 line — no bare '1 ' lines.
+        for line in text.splitlines():
+            assert line.rstrip() != '1', f'found orphan level-1 line: {line!r}'
+        assert '1 FACT' in text
+        assert '2 TYPE Languages' in text
+        assert '2 NOTE French, Italian' in text
+
+    # ----- source citations attached on add -----
+
+    def _add_sour(self, post):
+        return post('/api/add_source', {
+            'titl': 'Census Roll', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+
+    def test_add_event_with_source_writes_fact_level_citation(self, live_server):
+        """Passing source_xref + source_page on add_event writes 2 SOUR / 3 PAGE
+        inside the new event block."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_sour(post)
+        resp = post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'RESI',
+            'fields': {'DATE': '1920', 'PLAC': 'Boston'},
+            'source_xref': sour_xref, 'source_page': 'p. 42',
+        })
+        assert resp['ok'] is True
+        text = _ged_text(ged)
+        # The citation must be inside the new event block: after '2 PLAC Boston'
+        # and before any subsequent level-1 line.
+        lines = text.splitlines()
+        i_indi = lines.index('0 @I2@ INDI')
+        i_resi = next(j for j in range(i_indi + 1, len(lines))
+                      if lines[j] == '1 RESI')
+        block = []
+        for l in lines[i_resi + 1:]:
+            if l.startswith('0 ') or l.startswith('1 '):
+                break
+            block.append(l)
+        assert f'2 SOUR {sour_xref}' in block, block
+        assert '3 PAGE p. 42' in block, block
+
+    def test_add_event_with_source_adds_person_level_sour_if_missing(self, live_server):
+        """When the INDI has no person-level 1 SOUR @Sn@ pointer yet, adding an
+        event with that source should append one at level 1."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_sour(post)
+        # Precondition: no 1 SOUR sour_xref on @I2@ yet.
+        assert f'1 SOUR {sour_xref}' not in _ged_text(ged)
+        post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'RESI',
+            'fields': {'PLAC': 'Boston'},
+            'source_xref': sour_xref, 'source_page': 'p. 42',
+        })
+        text = _ged_text(ged)
+        assert f'1 SOUR {sour_xref}' in text
+
+    def test_add_event_with_source_does_not_duplicate_person_pointer(self, live_server):
+        """If the INDI already has 1 SOUR @Sn@, adding another event citing the
+        same source must not add a second person-level pointer."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_sour(post)
+        # Seed: one person-level citation exists already.
+        post('/api/add_citation', {
+            'xref': '@I2@', 'sour_xref': sour_xref,
+            'fact_key': None, 'page': 'orig', 'text': '', 'note': '',
+        })
+        before = _ged_text(ged).count(f'1 SOUR {sour_xref}')
+        assert before == 1
+        post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'RESI',
+            'fields': {'PLAC': 'Boston'},
+            'source_xref': sour_xref, 'source_page': 'p. 99',
+        })
+        after = _ged_text(ged).count(f'1 SOUR {sour_xref}')
+        assert after == 1, 'person-level 1 SOUR pointer must not be duplicated'
+
+    def test_add_event_without_source_does_not_add_pointer(self, live_server):
+        """Adding an event without source_xref must not write any citation lines."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_sour(post)
+        post('/api/add_event', {
+            'xref': '@I2@', 'tag': 'RESI',
+            'fields': {'PLAC': 'Boston'},
+        })
+        text = _ged_text(ged)
+        assert f'1 SOUR {sour_xref}' not in text
+        # No 2 SOUR under the new RESI either.
+        assert '2 SOUR' not in '\n'.join(
+            l for l in text.splitlines() if l.startswith('2 SOUR')
+        ) or f'2 SOUR {sour_xref}' not in text
 
 
 # ===========================================================================
@@ -941,6 +1147,247 @@ class TestAddPersonEndpoint:
             'birth_year': '', 'rel_type': 'child_of', 'rel_xref': '@I2@',
         })
         assert ged.with_suffix('.ged.bak').exists()
+
+    def test_child_of_uses_existing_fam_when_other_parent_matches(self, live_server):
+        """Adding a child of @I1@ with other_parent_xref=@I12@ should reuse @F5@
+        (the existing FAM with both as parents), not create a new FAM."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Kid', 'surn': 'Davis', 'sex': 'M',
+            'birth_year': '2018',
+            'rel_type': 'child_of', 'rel_xref': '@I1@',
+            'other_parent_xref': '@I12@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        # The existing @F5@ should now have the new child
+        f5_start = text.index('0 @F5@ FAM')
+        f5_end_candidates = [i for i in range(f5_start, len(text)) if text.startswith('\n0 ', i)]
+        f5_end = f5_end_candidates[0] if f5_end_candidates else len(text)
+        f5_block = text[f5_start:f5_end]
+        assert f'1 CHIL {new_xref}' in f5_block
+        # No new FAM should have been created for this case
+        assert text.count('0 @F') == 7  # F1..F7 only
+
+    def test_child_of_creates_new_fam_when_other_parent_has_no_matching_fam(self, live_server):
+        """Adding a child of @I1@ with other_parent_xref=@I2@ (James, who has no
+        FAM with Rose) should create a new FAM containing both as parents."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Love', 'surn': 'Child', 'sex': 'F',
+            'birth_year': '1991',
+            'rel_type': 'child_of', 'rel_xref': '@I1@',
+            'other_parent_xref': '@I2@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        # A new FAM should exist containing both @I1@ (WIFE) and @I2@ (HUSB)
+        # and the new child as CHIL
+        assert text.count('0 @F') == 8  # one new FAM
+        # Locate the new FAM and confirm both parents + child
+        fam_lines = [l for l in text.splitlines() if l.startswith('0 @F')]
+        new_fam = fam_lines[-1].split()[1]
+        fam_start = text.index(f'0 {new_fam} FAM')
+        fam_end_candidates = [i for i in range(fam_start, len(text)) if text.startswith('\n0 ', i)]
+        fam_end = fam_end_candidates[0] if fam_end_candidates else len(text)
+        fam_block = text[fam_start:fam_end]
+        assert '1 HUSB @I2@' in fam_block
+        assert '1 WIFE @I1@' in fam_block
+        assert f'1 CHIL {new_xref}' in fam_block
+
+    def test_child_of_empty_other_parent_creates_single_parent_fam(self, live_server):
+        """Adding a child of @I1@ with other_parent_xref='' should create a new
+        FAM with only Rose as parent (not reuse @F5@)."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Solo', 'surn': 'Kid', 'sex': 'M',
+            'birth_year': '1995',
+            'rel_type': 'child_of', 'rel_xref': '@I1@',
+            'other_parent_xref': '',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        # A new FAM should exist
+        assert text.count('0 @F') == 8
+        # The new FAM should contain only @I1@ as parent + new child
+        fam_lines = [l for l in text.splitlines() if l.startswith('0 @F')]
+        new_fam = fam_lines[-1].split()[1]
+        fam_start = text.index(f'0 {new_fam} FAM')
+        fam_end_candidates = [i for i in range(fam_start, len(text)) if text.startswith('\n0 ', i)]
+        fam_end = fam_end_candidates[0] if fam_end_candidates else len(text)
+        fam_block = text[fam_start:fam_end]
+        assert '1 WIFE @I1@' in fam_block
+        assert '1 HUSB' not in fam_block
+        assert f'1 CHIL {new_xref}' in fam_block
+        # @F5@ should NOT have the new child
+        f5_start = text.index('0 @F5@ FAM')
+        f5_end_candidates = [i for i in range(f5_start, len(text)) if text.startswith('\n0 ', i)]
+        f5_end = f5_end_candidates[0] if f5_end_candidates else len(text)
+        f5_block = text[f5_start:f5_end]
+        assert f'1 CHIL {new_xref}' not in f5_block
+
+    def test_response_includes_ok_and_people_dict(self, live_server):
+        """Response should include ok=True and a people dict so the UI can refresh
+        without a full page reload."""
+        _, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
+            'birth_year': '2000',
+            'rel_type': 'child_of', 'rel_xref': '@I2@',
+        })
+        assert resp.get('ok') is True
+        new_xref = resp['xref']
+        people = resp.get('people')
+        assert isinstance(people, dict)
+        assert '@I2@' in people
+        assert new_xref in people
+
+
+# ===========================================================================
+# /api/change_parent
+# ===========================================================================
+
+class TestChangeParentEndpoint:
+    """Change or remove one of a child's parents.
+
+    Fixture: Rose (@I1@) has FAMC @F1@ (HUSB @I2@ James, WIFE @I3@ Clara).
+    Alice (@I11@) is also CHIL of @F1@ — must remain after Rose moves.
+    """
+
+    def test_replace_father_creates_new_fam_when_no_matching_pair(self, live_server):
+        """Change Rose's father from @I2@ to @I4@ Patrick; no FAM pairs Patrick+Clara,
+        so a new FAM with @I4@+@I3@ is created and Rose's FAMC updated."""
+        ged, post, _, _ = live_server
+        resp = post('/api/change_parent', {
+            'xref': '@I1@',
+            'current_parent_xref': '@I2@',
+            'new_parent_xref': '@I4@',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        # A new FAM must exist with Patrick + Clara + Rose
+        fam_blocks = _fam_blocks(text)
+        new_fam = next((fx for fx, body in fam_blocks.items()
+                        if '1 HUSB @I4@' in body and '1 WIFE @I3@' in body
+                        and '1 CHIL @I1@' in body), None)
+        assert new_fam is not None, 'expected a new FAM with Patrick+Clara+Rose'
+        # Rose's FAMC should point to the new FAM, not @F1@
+        rose_block = _indi_block(text, '@I1@')
+        assert f'1 FAMC {new_fam}' in rose_block
+        assert '1 FAMC @F1@' not in rose_block
+        # @F1@ still exists, Alice still CHIL, Rose no longer CHIL
+        f1_body = fam_blocks['@F1@']
+        assert '1 CHIL @I11@' in f1_body
+        assert '1 CHIL @I1@' not in f1_body
+
+    def test_delete_father_moves_child_to_single_parent_fam(self, live_server):
+        """Delete Rose's father: move Rose to a new FAM with only Clara."""
+        ged, post, _, _ = live_server
+        resp = post('/api/change_parent', {
+            'xref': '@I1@',
+            'current_parent_xref': '@I2@',
+            'new_parent_xref': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        fam_blocks = _fam_blocks(text)
+        new_fam = next((fx for fx, body in fam_blocks.items()
+                        if fx != '@F1@' and '1 WIFE @I3@' in body
+                        and '1 HUSB' not in body
+                        and '1 CHIL @I1@' in body), None)
+        assert new_fam is not None, 'expected a new single-parent FAM with Clara'
+        rose_block = _indi_block(text, '@I1@')
+        assert f'1 FAMC {new_fam}' in rose_block
+        # @F1@ still intact with Alice
+        assert '1 CHIL @I11@' in fam_blocks['@F1@']
+
+    def test_delete_mother_moves_child_to_single_parent_fam(self, live_server):
+        """Delete Rose's mother: move Rose to a new FAM with only James."""
+        ged, post, _, _ = live_server
+        resp = post('/api/change_parent', {
+            'xref': '@I1@',
+            'current_parent_xref': '@I3@',
+            'new_parent_xref': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        fam_blocks = _fam_blocks(text)
+        new_fam = next((fx for fx, body in fam_blocks.items()
+                        if fx != '@F1@' and '1 HUSB @I2@' in body
+                        and '1 WIFE' not in body
+                        and '1 CHIL @I1@' in body), None)
+        assert new_fam is not None
+
+    def test_missing_xref_returns_400(self, live_server):
+        _, post, _, _ = live_server
+        try:
+            post('/api/change_parent', {
+                'current_parent_xref': '@I2@', 'new_parent_xref': '@I4@',
+            })
+            assert False, 'should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_current_parent_not_in_famc_returns_400(self, live_server):
+        _, post, _, _ = live_server
+        try:
+            post('/api/change_parent', {
+                'xref': '@I1@',
+                'current_parent_xref': '@I14@',  # George Cooper — not Rose's parent
+                'new_parent_xref': '@I4@',
+            })
+            assert False, 'should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/change_parent', {
+            'xref': '@I1@',
+            'current_parent_xref': '@I2@',
+            'new_parent_xref': '@I4@',
+        })
+        assert ged.with_suffix('.ged.bak').exists()
+
+    def test_response_includes_people_dict(self, live_server):
+        _, post, _, _ = live_server
+        resp = post('/api/change_parent', {
+            'xref': '@I1@',
+            'current_parent_xref': '@I2@',
+            'new_parent_xref': '@I4@',
+        })
+        assert isinstance(resp.get('people'), dict)
+        assert '@I1@' in resp['people']
+
+
+def _fam_blocks(text: str) -> dict:
+    """Parse GEDCOM text into {fam_xref: body_str} for FAM records."""
+    out = {}
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        parts = lines[i].split()
+        if len(parts) >= 3 and parts[0] == '0' and parts[2] == 'FAM':
+            fx = parts[1]
+            j = i + 1
+            body = []
+            while j < len(lines) and not lines[j].startswith('0 '):
+                body.append(lines[j])
+                j += 1
+            out[fx] = '\n'.join(body)
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def _indi_block(text: str, xref: str) -> str:
+    lines = text.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.strip() == f'0 {xref} INDI'), None)
+    if start is None:
+        return ''
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('0 ')), len(lines))
+    return '\n'.join(lines[start:end])
 
 
 # ===========================================================================

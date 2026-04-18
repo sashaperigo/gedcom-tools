@@ -660,9 +660,18 @@ def _edit_event_fields(
 
 
 def _insert_new_event(
-    lines: list[str], xref: str, event_tag: str, fields: dict
+    lines: list[str], xref: str, event_tag: str, fields: dict,
+    source_xref: str = '', source_page: str = '',
 ) -> tuple[list[str], str | None]:
-    """Insert a new event block just before the end of xref's INDI record."""
+    """Insert a new event block just before the end of xref's INDI record.
+
+    If ``source_xref`` is supplied, a fact-level citation block (2 SOUR / 3 PAGE)
+    is appended inside the event, and — if the INDI doesn't already cite that
+    source at the person level — a 1 SOUR pointer is also appended to the INDI.
+    """
+    event_tag = (event_tag or '').strip().upper()
+    if not event_tag or not re.match(r'^[A-Z_][A-Z0-9_]*$', event_tag):
+        return lines, f'Invalid event tag: {event_tag!r}'
     _, indi_end, err = _find_indi_block(lines, xref)
     if err:
         return lines, err
@@ -679,7 +688,74 @@ def _insert_new_event(
                 new_block.extend(_encode_event_note_lines(val))
             else:
                 new_block.append(f'2 {subtag} {val}')
-    return lines[:indi_end] + new_block + lines[indi_end:], None
+    source_xref = (source_xref or '').strip()
+    if source_xref:
+        new_block.extend(_build_citation_lines(
+            source_xref, (source_page or '').strip(), '', '', base_level=2
+        ))
+    new_lines = lines[:indi_end] + new_block + lines[indi_end:]
+    if source_xref:
+        new_lines = _ensure_indi_sour_pointer(new_lines, xref, source_xref)
+    return new_lines, None
+
+
+def _event_block_has_sour(lines: list[str], start: int, end: int, sour_xref: str) -> bool:
+    """Return True iff the event block already has a '2 SOUR @Sn@' for sour_xref."""
+    for i in range(start + 1, end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 2 and m.group(2) == 'SOUR':
+            if (m.group(3) or '').strip() == sour_xref:
+                return True
+    return False
+
+
+def _append_citation_to_event(
+    lines: list[str], xref: str, event_tag: str, occurrence_n: int,
+    sour_xref: str, page: str,
+) -> tuple[list[str], str | None]:
+    """Append a fact-level 2 SOUR / 3 PAGE block inside an existing event.
+
+    No-op (returns lines unchanged, err=None) if the event already cites that
+    source. Also ensures a person-level 1 SOUR pointer on the INDI.
+    """
+    sour_xref = (sour_xref or '').strip()
+    if not sour_xref:
+        return lines, None
+    start, end, err = _find_event_block(lines, xref, event_tag, occurrence_n)
+    if err:
+        return lines, err
+    if _event_block_has_sour(lines, start, end, sour_xref):
+        # still make sure person-level pointer exists
+        return _ensure_indi_sour_pointer(lines, xref, sour_xref), None
+    cite_lines = _build_citation_lines(sour_xref, (page or '').strip(), '', '', base_level=2)
+    new_lines = lines[:end] + cite_lines + lines[end:]
+    new_lines = _ensure_indi_sour_pointer(new_lines, xref, sour_xref)
+    return new_lines, None
+
+
+def _indi_has_sour_pointer(lines: list[str], xref: str, sour_xref: str) -> bool:
+    """Return True iff xref has a person-level '1 SOUR @Sn@' pointing to sour_xref."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return False
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'SOUR':
+            if (m.group(3) or '').strip() == sour_xref:
+                return True
+    return False
+
+
+def _ensure_indi_sour_pointer(
+    lines: list[str], xref: str, sour_xref: str
+) -> list[str]:
+    """Append '1 SOUR @Sn@' to the INDI record if not already present."""
+    if _indi_has_sour_pointer(lines, xref, sour_xref):
+        return lines
+    _, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return lines
+    return lines[:indi_end] + [f'1 SOUR {sour_xref}'] + lines[indi_end:]
 
 
 # ---------------------------------------------------------------------------
@@ -894,6 +970,21 @@ def _get_famc_for_indi(lines: list[str], xref: str) -> str | None:
     return None
 
 
+def _get_famc_for_indi_all(lines: list[str], xref: str) -> list[str]:
+    """Return all FAMC xrefs for the given individual (empty list if none)."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return []
+    out = []
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'FAMC':
+            v = (m.group(3) or '').strip()
+            if v:
+                out.append(v)
+    return out
+
+
 def _get_fams_for_indi(lines: list[str], xref: str) -> list[str]:
     """Return all FAMS xrefs for the given individual."""
     indi_start, indi_end, err = _find_indi_block(lines, xref)
@@ -940,6 +1031,26 @@ def _add_famc_to_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[s
         if lines[i].strip() == target:
             return lines
     return lines[:indi_end] + [target] + lines[indi_end:]
+
+
+def _remove_chil_from_fam(lines: list[str], fam_xref: str, chil_xref: str) -> list[str]:
+    """Remove '1 CHIL chil_xref' from the FAM block (idempotent)."""
+    fam_start, fam_end, err = _find_fam_block(lines, fam_xref)
+    if err:
+        return lines
+    target = f'1 CHIL {chil_xref}'
+    return [l for idx, l in enumerate(lines)
+            if not (fam_start <= idx < fam_end and l.strip() == target)]
+
+
+def _remove_famc_from_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[str]:
+    """Remove '1 FAMC fam_xref' from the INDI block (idempotent)."""
+    indi_start, indi_end, err = _find_indi_block(lines, indi_xref)
+    if err:
+        return lines
+    target = f'1 FAMC {fam_xref}'
+    return [l for idx, l in enumerate(lines)
+            if not (indi_start <= idx < indi_end and l.strip() == target)]
 
 
 # ---------------------------------------------------------------------------
@@ -1072,6 +1183,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             tag       = body['tag']
             fam_xref  = body.get('fam_xref') or None
             updates   = body.get('updates', {})
+            _src_xref = (body.get('source_xref') or '').strip()
+            _src_page = (body.get('source_page') or '').strip()
             if 'DATE' in updates:
                 updates['DATE'], _date_err = _normalize_event_date(updates['DATE'])
             else:
@@ -1096,6 +1209,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     resp = json.dumps({'ok': False, 'error': err}).encode()
                 else:
                     new_lines = _edit_event_fields(lines, start, end, updates) if start is not None else new_lines
+                    if _src_xref and not fam_xref:
+                        event_idx = int(body.get('event_idx') or 0)
+                        new_lines, _cite_err = _append_citation_to_event(
+                            new_lines, xref, tag, event_idx, _src_xref, _src_page
+                        )
                     _write_gedcom_atomic(new_lines)
                     print(f"[event-edit] {fam_xref or xref} {tag} updated")
                     regenerate(body.get('current_person'))
@@ -1183,6 +1301,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             xref   = body['xref']
             tag    = body['tag']
             fields = body.get('fields', {})
+            source_xref = (body.get('source_xref') or '').strip()
+            source_page = (body.get('source_page') or '').strip()
             if 'DATE' in fields:
                 fields['DATE'], _date_err = _normalize_event_date(fields['DATE'])
             else:
@@ -1191,7 +1311,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 resp = json.dumps({'ok': False, 'error': _date_err}).encode()
             else:
                 lines  = GED.read_text(encoding='utf-8').splitlines()
-                new_lines, err = _insert_new_event(lines, xref, tag, fields)
+                new_lines, err = _insert_new_event(
+                    lines, xref, tag, fields,
+                    source_xref=source_xref, source_page=source_page,
+                )
                 if err:
                     resp = json.dumps({'ok': False, 'error': err}).encode()
                 else:
@@ -1456,20 +1579,51 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             # Handle relationship
             if rel_type == 'child_of':
-                # Find an existing FAMS for rel_xref and add CHIL to it,
-                # or create a new FAM with rel_xref as parent.
-                existing_fams = _get_fams_for_indi(lines, rel_xref)
-                if existing_fams:
-                    fam_xref = existing_fams[0]
-                else:
-                    fam_xref = _next_fam_xref(lines)
-                    rel_sex = _get_sex(lines, rel_xref)
-                    if rel_sex == 'F':
-                        lines = _create_bare_fam(lines, fam_xref, None, rel_xref)
-                        lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                # Caller may specify a co-parent:
+                #   other_parent_xref = '@Ix@' → find/create FAM with both parents
+                #   other_parent_xref = ''     → create new FAM with rel_xref only
+                #   key absent (None)          → legacy: reuse first FAMS of rel_xref
+                other_parent_xref = body.get('other_parent_xref')
+
+                def _mk_bare_fam_with(a_xref, b_xref):
+                    """Create a bare FAM with a_xref and optional b_xref, assigning
+                    HUSB/WIFE based on sex. Returns (lines, fam_xref)."""
+                    fam_xref_local = _next_fam_xref(lines)
+                    a_sex = _get_sex(lines, a_xref) if a_xref else None
+                    b_sex = _get_sex(lines, b_xref) if b_xref else None
+                    if a_sex == 'F' and b_sex != 'F':
+                        husb, wife = b_xref, a_xref
+                    elif b_sex == 'F' and a_sex != 'F':
+                        husb, wife = a_xref, b_xref
                     else:
-                        lines = _create_bare_fam(lines, fam_xref, rel_xref, None)
+                        husb, wife = a_xref, b_xref
+                    return fam_xref_local, husb, wife
+
+                if other_parent_xref is None:
+                    existing_fams = _get_fams_for_indi(lines, rel_xref)
+                    if existing_fams:
+                        fam_xref = existing_fams[0]
+                    else:
+                        fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
+                        lines = _create_bare_fam(lines, fam_xref, husb, wife)
                         lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                elif other_parent_xref == '':
+                    fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
+                    lines = _create_bare_fam(lines, fam_xref, husb, wife)
+                    lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                else:
+                    # Look for an existing FAM that already pairs rel_xref with other_parent_xref
+                    shared_fams = [
+                        f for f in _get_fams_for_indi(lines, rel_xref)
+                        if f in _get_fams_for_indi(lines, other_parent_xref)
+                    ]
+                    if shared_fams:
+                        fam_xref = shared_fams[0]
+                    else:
+                        fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, other_parent_xref)
+                        lines = _create_bare_fam(lines, fam_xref, husb, wife)
+                        lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                        lines = _add_fams_to_indi(lines, other_parent_xref, fam_xref)
                 lines = _add_chil_to_fam(lines, fam_xref, new_xref)
                 lines = _add_famc_to_indi(lines, new_xref, fam_xref)
 
@@ -1528,7 +1682,110 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             _write_gedcom_atomic(lines)
             print(f"[person-add] {new_xref} {name_val} ({rel_type} {rel_xref})")
-            resp = json.dumps({'xref': new_xref}).encode()
+            regenerate(body.get('current_person'))
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({rel_xref, new_xref}, indis, fams=fams, sources=sources)
+            family_maps = viz.build_family_maps(indis, fams)
+            resp = json.dumps({'ok': True, 'xref': new_xref, 'people': updated,
+                               'family_maps': family_maps}).encode()
+
+        # ------------------------------------------------------------------ #
+        # Change / delete one of a child's parents                            #
+        # ------------------------------------------------------------------ #
+
+        elif parsed.path == '/api/change_parent':
+            xref                = (body.get('xref') or '').strip()
+            current_parent_xref = (body.get('current_parent_xref') or '').strip()
+            new_parent_xref     = (body.get('new_parent_xref') or '').strip()
+            if not xref:
+                self.send_error(400, 'xref is required')
+                return
+            if not current_parent_xref:
+                self.send_error(400, 'current_parent_xref is required')
+                return
+
+            lines = GED.read_text(encoding='utf-8').splitlines()
+
+            # Locate the child's FAMC that includes current_parent_xref as HUSB/WIFE
+            old_fam = None
+            for famc in _get_famc_for_indi_all(lines, xref):
+                fam_start, fam_end, err = _find_fam_block(lines, famc)
+                if err:
+                    continue
+                husb = wife = None
+                for i in range(fam_start + 1, fam_end):
+                    m = _TAG_RE.match(lines[i])
+                    if not m:
+                        continue
+                    lvl, tag, val = int(m.group(1)), m.group(2), (m.group(3) or '').strip()
+                    if lvl == 1 and tag == 'HUSB':
+                        husb = val
+                    elif lvl == 1 and tag == 'WIFE':
+                        wife = val
+                if current_parent_xref in (husb, wife):
+                    old_fam = (famc, husb, wife)
+                    break
+            if old_fam is None:
+                self.send_error(400, f'{current_parent_xref} is not a parent of {xref}')
+                return
+            old_fam_xref, old_husb, old_wife = old_fam
+            other_parent = old_wife if current_parent_xref == old_husb else old_husb
+
+            # Decide target FAM
+            target_fam = None
+            if new_parent_xref and other_parent:
+                shared = [f for f in _get_fams_for_indi(lines, new_parent_xref)
+                          if f in _get_fams_for_indi(lines, other_parent)]
+                target_fam = shared[0] if shared else None
+            if target_fam is None and (new_parent_xref or other_parent):
+                target_fam = _next_fam_xref(lines)
+                def _slot_for(px):
+                    return 'WIFE' if _get_sex(lines, px) == 'F' else 'HUSB'
+                husb_x = wife_x = None
+                parents_present = [p for p in (new_parent_xref, other_parent) if p]
+                if len(parents_present) == 1:
+                    p = parents_present[0]
+                    if _slot_for(p) == 'WIFE':
+                        wife_x = p
+                    else:
+                        husb_x = p
+                else:
+                    a, b = parents_present
+                    a_slot = _slot_for(a); b_slot = _slot_for(b)
+                    if a_slot == 'WIFE' and b_slot != 'WIFE':
+                        husb_x, wife_x = b, a
+                    elif b_slot == 'WIFE' and a_slot != 'WIFE':
+                        husb_x, wife_x = a, b
+                    else:
+                        husb_x, wife_x = a, b
+                lines = _create_bare_fam(lines, target_fam, husb_x, wife_x)
+                if new_parent_xref:
+                    lines = _add_fams_to_indi(lines, new_parent_xref, target_fam)
+                if other_parent:
+                    lines = _add_fams_to_indi(lines, other_parent, target_fam)
+
+            if target_fam != old_fam_xref:
+                lines = _remove_chil_from_fam(lines, old_fam_xref, xref)
+                lines = _remove_famc_from_indi(lines, xref, old_fam_xref)
+                if target_fam is not None:
+                    lines = _add_chil_to_fam(lines, target_fam, xref)
+                    lines = _add_famc_to_indi(lines, xref, target_fam)
+
+            _write_gedcom_atomic(lines)
+            print(f"[parent-change] {xref} {current_parent_xref} -> {new_parent_xref or '(none)'} (fam {old_fam_xref} -> {target_fam or '(none)'})")
+            regenerate(body.get('current_person'))
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            refresh = {xref, current_parent_xref}
+            if new_parent_xref:
+                refresh.add(new_parent_xref)
+            if other_parent:
+                refresh.add(other_parent)
+            updated = build_people_json(refresh, indis, fams=fams, sources=sources)
+            family_maps = viz.build_family_maps(indis, fams)
+            resp = json.dumps({'ok': True, 'people': updated,
+                               'family_maps': family_maps}).encode()
 
         # ------------------------------------------------------------------ #
         # Godparent endpoints                                                 #

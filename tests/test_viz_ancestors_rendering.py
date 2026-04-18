@@ -102,8 +102,8 @@ def html(tree, people, relatives, indis, fams):
 # ---------------------------------------------------------------------------
 
 def extract_js_const(html_text: str, name: str):
-    """Return the parsed JSON value assigned to a JS const in the HTML."""
-    pattern = rf'const {re.escape(name)} = (.*?);[ \t]*$'
+    """Return the parsed JSON value assigned to a JS const/let in the HTML."""
+    pattern = rf'(?:const|let) {re.escape(name)} = (.*?);[ \t]*$'
     m = re.search(pattern, html_text, re.MULTILINE)
     if not m:
         return None
@@ -250,7 +250,7 @@ class TestParentsJson:
     """
 
     def test_parents_const_present(self, html):
-        assert 'const PARENTS' in html
+        assert 'let PARENTS' in html
 
     def test_root_xref_const_present(self, html):
         assert 'const ROOT_XREF' in html
@@ -314,7 +314,7 @@ class TestRelativesJsonStructure:
     """
 
     def test_relatives_const_present(self, html):
-        assert 'const RELATIVES' in html
+        assert 'let RELATIVES' in html
 
     def test_relatives_keys_are_xref_strings(self, html):
         """All keys in RELATIVES must start with '@' (xref format)."""

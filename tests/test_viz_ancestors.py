@@ -127,6 +127,41 @@ class TestParsing:
         assert occu is not None
         assert occu['type'] == 'Engineer'
 
+    def test_parse_nchi_event(self, tmp_path):
+        """Parser must recognise NCHI (number of children) as an event with
+        its inline value preserved — otherwise the 'Add Fact → Children
+        (count)' flow writes `1 NCHI 5` to the GED but the panel never shows it.
+        """
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'nchi.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+            '0 @U1@ SUBM\n1 NAME Test\n'
+            '0 @I1@ INDI\n1 NAME Jane /Doe/\n1 SEX F\n1 NCHI 5\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        indis, _fams, _sources = parse_gedcom(str(ged))
+        nchi = next((e for e in indis['@I1@']['events'] if e['tag'] == 'NCHI'), None)
+        assert nchi is not None, 'NCHI event was dropped by the parser'
+        assert nchi['inline_val'] == '5'
+
+    def test_parse_dscr_event(self, tmp_path):
+        """Parser must recognise DSCR (physical description) as an event."""
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'dscr.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+            '0 @U1@ SUBM\n1 NAME Test\n'
+            '0 @I1@ INDI\n1 NAME Jane /Doe/\n1 SEX F\n1 DSCR Tall, red hair\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        indis, _fams, _sources = parse_gedcom(str(ged))
+        dscr = next((e for e in indis['@I1@']['events'] if e['tag'] == 'DSCR'), None)
+        assert dscr is not None, 'DSCR event was dropped by the parser'
+        assert dscr['inline_val'] == 'Tall, red hair'
+
     def test_parse_notes_list(self, indis):
         assert isinstance(indis['@I1@']['notes'], list)
         assert len(indis['@I1@']['notes']) == 1
@@ -470,9 +505,11 @@ class TestOutput:
         viz_ancestors(str(FIXTURE), '@I1@', out)
         content = Path(out).read_text(encoding='utf-8')
         assert 'const PEOPLE' in content
-        assert 'const RELATIVES' in content
+        # PARENTS, CHILDREN, and RELATIVES are declared `let` so the client can
+        # replace them after structural edits (add_person / change_parent).
+        assert 'let RELATIVES' in content
         assert 'const SOURCES' in content
-        assert 'const PARENTS' in content
+        assert 'let PARENTS' in content
         assert 'const ROOT_XREF' in content
 
     def test_html_contains_aka_note(self, tmp_path):
@@ -496,7 +533,7 @@ class TestOutput:
         out = str(tmp_path / 'out.html')
         viz_ancestors(str(FIXTURE), '@I1@', out)
         content = Path(out).read_text(encoding='utf-8')
-        assert 'const RELATIVES' in content
+        assert 'let RELATIVES' in content
         assert 'Alice Smith' in content   # Rose's sibling
         assert 'Mark Davis' in content    # Rose's spouse
         assert 'Robert Smith' in content  # James's sibling

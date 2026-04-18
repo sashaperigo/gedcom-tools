@@ -100,6 +100,7 @@ const EVENT_LABELS = {
   CONF:'Confirmation', NATI:'Nationality', RELI:'Religion',
   DIV:'Divorce', FACT:'Fact', MARR:'Marriage',
   PROB:'Probate', ARRV:'Arrival', DEPA:'Departure',
+  NCHI:'Children (count)', DSCR:'Physical Description',
 };
 
 function buildProse(evt) {
@@ -151,6 +152,14 @@ function buildProse(evt) {
       const who = evt.spouse || '';
       const prose = who ? `Married ${who}` : 'Marriage';
       return { prose, meta: meta() };
+    }
+    case 'NCHI': {
+      const count = evt.inline_val || '';
+      return { prose: count ? `${count} children` : 'Children (count)', meta: date };
+    }
+    case 'DSCR': {
+      const desc = evt.inline_val || '';
+      return { prose: desc ? `Description: ${desc}` : 'Physical Description', meta: date };
     }
     case 'PROB': return { prose: short ? `Probate in ${short}` : (date ? `Probate ${date}` : 'Probate'), meta: meta() };
     case 'ARRV': return { prose: short ? `Arrived in ${short}` : (date ? `Arrived ${date}` : 'Arrival'),     meta: meta() };
@@ -619,11 +628,26 @@ function renderPanel() {
 
     let _parHtml = '', _sibHtml = '', _spChHtml = '';
 
+    const _parentRow = px => {
+      const p = (typeof PEOPLE !== 'undefined') && PEOPLE[px];
+      const name = p ? escHtml(p.name || '?') : '?';
+      const ly = _ly(p);
+      const sx = _sx(p);
+      const pxQ = JSON.stringify(px).replace(/"/g, '&quot;');
+      const link = `<span class="family-link" onclick="setState({focusXref:${pxQ}})">${name}</span>`;
+      const years = ly ? `<span class="family-years">${escHtml(ly)}</span>` : '';
+      const actions = `<span class="family-parent-actions">`
+        + `<button class="family-parent-btn" title="Change parent" onclick="openChangeParentModal(${xrefQ},${pxQ})">\u270f</button>`
+        + `<button class="family-parent-btn del" title="Remove parent" onclick="removeParent(${xrefQ},${pxQ})">\u2715</button>`
+        + `</span>`;
+      return `<div class="family-row">${sx}${link}${years}${actions}</div>`;
+    };
+
     const [fa, mo] = (typeof PARENTS !== 'undefined' && PARENTS[xref]) || [null, null];
     if (fa || mo) {
       _parHtml += '<div class="family-sub"><span class="family-sub-heading">Parents</span>';
-      if (fa) _parHtml += _pr(fa);
-      if (mo) _parHtml += _pr(mo);
+      if (fa) _parHtml += _parentRow(fa);
+      if (mo) _parHtml += _parentRow(mo);
       _parHtml += '</div>';
     }
 
@@ -685,18 +709,21 @@ function renderPanel() {
       _spChHtml += '</div>';
     }
 
+    const _addBtns = `<div class="family-add-btns">
+      <button class="family-add-btn" onclick="openAddPersonModal(${xrefQ},'parent_of')">+ Parent</button>
+      <button class="family-add-btn" onclick="openAddPersonModal(${xrefQ},'sibling_of')">+ Sibling</button>
+      <button class="family-add-btn" onclick="openAddPersonModal(${xrefQ},'spouse_of')">+ Spouse</button>
+      <button class="family-add-btn" onclick="openAddPersonModal(${xrefQ},'child_of')">+ Child</button>
+    </div>`;
+
     const _hasFamily = _parHtml || _sibHtml || _spChHtml;
-    if (_hasFamily) {
-      const _arr = _familyOpen ? '\u25bc' : '\u25b6';
-      const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:0 0 10px 0">Family ${_arr}</button>`;
-      const _subStyle = _familyOpen ? '' : ' style="display:none"';
-      const _wrapSub = (html) => html ? html.replace(/^<div class="family-sub"/, `<div class="family-sub"${_subStyle}`) : '';
-      familyDiv.innerHTML = _toggleHtml + _wrapSub(_parHtml) + _wrapSub(_sibHtml) + _wrapSub(_spChHtml);
-      familyDiv.className = 'has-content';
-    } else {
-      familyDiv.innerHTML = '';
-      familyDiv.className = '';
-    }
+    const _arr = _familyOpen ? '\u25bc' : '\u25b6';
+    const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:0 0 10px 0">Family ${_arr}</button>`;
+    const _subStyle = _familyOpen ? '' : ' style="display:none"';
+    const _wrapSub = (html) => html ? html.replace(/^<div class="family-sub"/, `<div class="family-sub"${_subStyle}`) : '';
+    const _addBtnsWrapped = _familyOpen || !_hasFamily ? _addBtns : `<div${_subStyle}>${_addBtns}</div>`;
+    familyDiv.innerHTML = _toggleHtml + _wrapSub(_parHtml) + _wrapSub(_sibHtml) + _wrapSub(_spChHtml) + _addBtnsWrapped;
+    familyDiv.className = 'has-content';
   }
 
   // ── Sources (person-level, collapsed by default) ─────────────────────

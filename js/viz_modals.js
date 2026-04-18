@@ -103,7 +103,7 @@ const _INLINE_TYPE_TAGS = new Set(['OCCU','TITL','NATI','RELI','EDUC']);
 const _TYPE_TAGS = new Set(['EVEN','FACT','OCCU','TITL','EDUC','NATI','RELI']);
 
 let _eventModalXref = null, _eventModalIdx = null, _eventModalTag = null,
-    _eventModalFamXref = null, _eventModalMARRIdx = null;
+    _eventModalFamXref = null, _eventModalMARRIdx = null, _eventModalAddTag = null;
 
 // Fact presets — each key is the pseudo-tag used in the UI (option value).
 // baseTag:     the real GEDCOM tag submitted to the server
@@ -139,12 +139,13 @@ function _updateEventModalFields(tag) {
       inlineLbl.textContent   = preset.inlineLabel;
       typeRow.style.display   = 'none';
     } else {
-      // FACT: show type row pre-filled and read-only, hide inline field
+      // FACT: the preset label is already in the modal title, so hide both the
+      // inline row and the TYPE row. The server still receives TYPE because
+      // submitEventModal falls back to preset.type when the type row is hidden.
       inlineRow.style.display = 'none';
-      typeRow.style.display   = '';
+      typeRow.style.display   = 'none';
       const typeInp = document.getElementById('event-modal-type');
-      if (typeInp && !typeInp.value) typeInp.value = preset.type;
-      if (typeInp) typeInp.readOnly = true;
+      if (typeInp) { typeInp.value = preset.type; typeInp.readOnly = true; }
     }
     _updateSpouseRow(tag);
     return;
@@ -199,6 +200,35 @@ function _personName(xref) {
     ((ALL_PEOPLE.find(p => p.id === xref) || {}).name) || xref;
 }
 
+function _populateEventModalSourceDropdown(selectedXref) {
+  const sel = document.getElementById('event-modal-source');
+  if (!sel || typeof document.createElement !== 'function') return;
+  const current = selectedXref || '';
+  sel.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = ''; none.textContent = '(none)';
+  sel.appendChild(none);
+  // SOURCES is { '@S1@': { titl, auth, publ, ... }, ... }
+  const sources = (typeof SOURCES !== 'undefined' && SOURCES) || {};
+  const entries = Object.entries(sources)
+    .map(([x, s]) => [x, (s && s.titl) || x])
+    .sort((a, b) => a[1].localeCompare(b[1]));
+  for (const [x, titl] of entries) {
+    const o = document.createElement('option');
+    o.value = x; o.textContent = titl;
+    sel.appendChild(o);
+  }
+  sel.value = current;
+  _onEventModalSourceChange();
+}
+
+function _onEventModalSourceChange() {
+  const sel  = document.getElementById('event-modal-source');
+  const row  = document.getElementById('event-modal-source-page-row');
+  if (!sel || !row) return;
+  row.style.display = sel.value ? '' : 'none';
+}
+
 function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   _eventModalXref    = xref;
   _eventModalIdx     = eventIdx;
@@ -226,10 +256,9 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   const spouseInp = document.getElementById('event-modal-spouse-input');
   const spouseRes = document.getElementById('event-modal-spouse-results');
   if (tag === 'MARR') {
-    const spouses = (typeof RELATIVES !== 'undefined' && RELATIVES[xref] && RELATIVES[xref].spouses) || [];
-    const spouseXref = spouses[0] || null;
-    const spouseName = spouseXref && PEOPLE[spouseXref] && PEOPLE[spouseXref].name;
-    if (spouseInp) spouseInp.value = spouseName || '';
+    const spouseXref = evt.spouse_xref || null;
+    const spouseName = evt.spouse || (spouseXref && PEOPLE[spouseXref] && PEOPLE[spouseXref].name) || '';
+    if (spouseInp) spouseInp.value = spouseName;
     if (spouseRes) spouseRes.innerHTML = '';
     _eventModalSpouseXref = spouseXref;
   } else {
@@ -238,6 +267,12 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
     _eventModalSpouseXref = null;
   }
   _updateEventModalFields(tag);
+  // Prefill source dropdown from the event's first existing citation, if any
+  const firstCite = (evt.citations && evt.citations[0]) || null;
+  _populateEventModalSourceDropdown(firstCite ? firstCite.sourceXref : '');
+  document.getElementById('event-modal-source-page').value =
+    (firstCite && firstCite.page) ? firstCite.page : '';
+  _onEventModalSourceChange();
   document.getElementById('event-modal-overlay').classList.add('open');
   const focusId = _INLINE_TYPE_TAGS.has(tag) ? 'event-modal-inline' : 'event-modal-date';
   setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 50);
@@ -247,11 +282,19 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   _eventModalXref    = xref;
   _eventModalIdx     = null;
   _eventModalTag     = null;
+  _eventModalAddTag  = defaultTag;
   _eventModalFamXref = null;
   _eventModalSpouseXref = null;
-  document.getElementById('event-modal-title').textContent = 'Add Event \u2014 ' + _personName(xref);
+  const _preset = _FACT_PRESETS[defaultTag];
+  const _title  = _preset
+    ? 'Add ' + _preset.label + ' \u2014 ' + _personName(xref)
+    : 'Add Event \u2014 ' + _personName(xref);
+  document.getElementById('event-modal-title').textContent = _title;
   document.getElementById('event-modal-save-btn').textContent = 'Add';
-  document.getElementById('event-modal-tag-row').style.display = '';
+  // Preset fact adds (Languages, Literacy, DSCR, NCHI, …) lock the event type —
+  // the title already says what you're adding, and the dropdown doesn't carry
+  // the preset pseudo-tag as an option anyway.
+  document.getElementById('event-modal-tag-row').style.display = _preset ? 'none' : '';
   document.getElementById('event-modal-tag').value    = defaultTag;
   document.getElementById('event-modal-inline').value = '';
   document.getElementById('event-modal-type').value   = prefillType || '';
@@ -266,6 +309,9 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   if (spouseRes) spouseRes.innerHTML = '';
   _updateAddrSuggestions('');
   _updateEventModalFields(defaultTag);
+  _populateEventModalSourceDropdown('');
+  document.getElementById('event-modal-source-page').value = '';
+  _onEventModalSourceChange();
   document.getElementById('event-modal-overlay').classList.add('open');
   const _dfPreset = _FACT_PRESETS[defaultTag];
   const focusId = _dfPreset
@@ -285,7 +331,12 @@ async function submitEventModal() {
   const xref     = _eventModalXref;
   const famXref  = _eventModalFamXref;
   const isAdd    = _eventModalIdx === null && !famXref;
-  const rawTag   = isAdd ? document.getElementById('event-modal-tag').value : _eventModalTag;
+  // For adds, use the stored _eventModalAddTag (which may hold a preset pseudo-tag
+  // like 'FACT:Languages' that isn't in the select's <option> list). Fall back to
+  // the select value if the user changed the event type via the dropdown.
+  const rawTag   = isAdd
+    ? (_eventModalAddTag || document.getElementById('event-modal-tag').value)
+    : _eventModalTag;
   // Resolve preset pseudo-tags to their real GEDCOM tag (e.g. 'FACT:Languages' → 'FACT').
   const preset   = _FACT_PRESETS[rawTag];
   const tag      = preset ? preset.baseTag : rawTag;
@@ -298,10 +349,13 @@ async function submitEventModal() {
     NOTE:        document.getElementById('event-modal-note').value.trim(),
     ADDR:        document.getElementById('event-modal-addr').value.trim(),
   };
-  // Only include TYPE when the row is visible; omitting it preserves existing 2 TYPE sub-tags
-  // for events (like MARR) where the type row is hidden.
+  // Include TYPE when the row is visible. For preset FACT adds (Languages,
+  // Literacy, …) the row is hidden but the server still needs the TYPE value,
+  // so we pull it from the preset itself.
   if (typeRow && typeRow.style.display !== 'none') {
     fields.TYPE = document.getElementById('event-modal-type').value.trim();
+  } else if (isAdd && preset && !preset.showInline && preset.type) {
+    fields.TYPE = preset.type;
   }
   // Only include CAUS when the cause row is visible (DEAT events)
   if (causeRow && causeRow.style.display !== 'none') {
@@ -339,6 +393,8 @@ async function submitEventModal() {
   }
 
   const endpoint = isAdd ? '/api/add_event' : '/api/edit_event';
+  const srcXref = (document.getElementById('event-modal-source').value || '').trim();
+  const srcPage = (document.getElementById('event-modal-source-page').value || '').trim();
   let body;
   if (isAdd) {
     body = { xref, tag, fields, current_person: window._currentPerson || null };
@@ -348,6 +404,7 @@ async function submitEventModal() {
   } else {
     body = { xref, tag, event_idx: _eventModalIdx, updates: fields, current_person: window._currentPerson || null };
   }
+  if (srcXref) { body.source_xref = srcXref; body.source_page = srcPage; }
   closeEventModal();
   try {
     const resp = await fetch(endpoint, {
@@ -1058,6 +1115,218 @@ async function submitAddGodparentModal() {
     if (typeof renderPanel !== 'undefined') renderPanel();
   } catch (e) {
     alert('Save failed: ' + e);
+  }
+}
+
+// ── openAddPersonModal ────────────────────────────────────────────────────
+
+let _addPersonRelXref = null, _addPersonRelType = null;
+const _ADD_PERSON_REL_LABELS = {
+  parent_of:  'Parent',
+  sibling_of: 'Sibling',
+  spouse_of:  'Spouse',
+  child_of:   'Child',
+};
+
+function openAddPersonModal(xref, relType) {
+  _addPersonRelXref = xref;
+  _addPersonRelType = relType;
+
+  const overlayEl  = document.getElementById('add-person-modal-overlay');
+  const titleEl    = document.getElementById('add-person-modal-title');
+  const givenEl    = document.getElementById('add-person-modal-given');
+  const surnEl     = document.getElementById('add-person-modal-surname');
+  const sexEl      = document.getElementById('add-person-modal-sex');
+  const byEl       = document.getElementById('add-person-modal-birth-year');
+  const otherRowEl = document.getElementById('add-person-modal-other-parent-row');
+  const otherSelEl = document.getElementById('add-person-modal-other-parent');
+
+  const label = _ADD_PERSON_REL_LABELS[relType] || 'Person';
+  if (titleEl) titleEl.textContent = 'Add ' + label;
+  if (givenEl) givenEl.value = '';
+  if (surnEl)  surnEl.value = '';
+  if (sexEl)   sexEl.value = 'U';
+  if (byEl)    byEl.value = '';
+
+  if (relType === 'child_of' && otherSelEl && otherRowEl) {
+    const person = PEOPLE[xref] || {};
+    const seen = new Set();
+    const spouses = [];
+    for (const e of (person.events || [])) {
+      if (e.tag === 'MARR' && e.spouse_xref && !seen.has(e.spouse_xref)) {
+        seen.add(e.spouse_xref);
+        spouses.push({ xref: e.spouse_xref, name: e.spouse || (PEOPLE[e.spouse_xref] && PEOPLE[e.spouse_xref].name) || e.spouse_xref });
+      }
+    }
+    const opts = spouses.map(s => `<option value="${escHtml(s.xref)}">${escHtml(s.name)}</option>`).join('')
+               + '<option value="__none__">No other parent (new family)</option>';
+    otherSelEl.innerHTML = opts;
+    otherSelEl.value = spouses.length ? spouses[0].xref : '__none__';
+    otherRowEl.style.display = '';
+  } else if (otherRowEl) {
+    otherRowEl.style.display = 'none';
+  }
+
+  if (overlayEl) overlayEl.classList.add('open');
+  if (givenEl)   setTimeout(() => givenEl.focus && givenEl.focus(), 50);
+}
+
+function closeAddPersonModal() {
+  const overlayEl = document.getElementById('add-person-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _addPersonRelXref = _addPersonRelType = null;
+}
+
+// ── changeParent (pencil + X next to a parent row) ────────────────────────
+
+let _changeParentChildXref = null, _changeParentCurrentXref = null, _changeParentNewXref = null;
+
+function openChangeParentModal(childXref, currentParentXref) {
+  _changeParentChildXref   = childXref;
+  _changeParentCurrentXref = currentParentXref;
+  _changeParentNewXref     = null;
+
+  const overlayEl = document.getElementById('change-parent-modal-overlay');
+  const titleEl   = document.getElementById('change-parent-modal-title');
+  const searchEl  = document.getElementById('change-parent-modal-search');
+  const resultsEl = document.getElementById('change-parent-modal-results');
+
+  const curName = (PEOPLE[currentParentXref] && PEOPLE[currentParentXref].name) || currentParentXref;
+  if (titleEl)   titleEl.textContent = 'Change parent: ' + curName;
+  if (searchEl)  searchEl.value = '';
+  if (resultsEl) resultsEl.innerHTML = '';
+  if (overlayEl) overlayEl.classList.add('open');
+  if (searchEl)  setTimeout(() => searchEl.focus && searchEl.focus(), 50);
+}
+
+function closeChangeParentModal() {
+  const overlayEl = document.getElementById('change-parent-modal-overlay');
+  if (overlayEl) overlayEl.classList.remove('open');
+  _changeParentChildXref = _changeParentCurrentXref = _changeParentNewXref = null;
+}
+
+function _renderChangeParentResults(query) {
+  const container = document.getElementById('change-parent-modal-results');
+  if (!container) return;
+  const q = query.trim().toLowerCase();
+  if (!q) { container.innerHTML = ''; return; }
+  const hits = (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
+    .filter(p => p.name && p.name.toLowerCase().includes(q))
+    .slice(0, 12);
+  container.innerHTML = hits.map(p =>
+    `<div class="change-parent-result-item" data-xref="${escHtml(p.id)}" data-name="${escHtml(p.name)}">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
+  ).join('');
+}
+
+function _selectChangeParent(xref, name) {
+  const inp = document.getElementById('change-parent-modal-search');
+  const res = document.getElementById('change-parent-modal-results');
+  if (inp) inp.value = name;
+  if (res) res.innerHTML = '';
+  _changeParentNewXref = xref;
+}
+
+document.addEventListener('click', e => {
+  const item = e.target.closest('.change-parent-result-item');
+  if (item) _selectChangeParent(item.dataset.xref, item.dataset.name);
+});
+
+document.addEventListener('input', e => {
+  if (e.target.id === 'change-parent-modal-search') {
+    _changeParentNewXref = null;
+    _renderChangeParentResults(e.target.value);
+  }
+});
+
+async function submitChangeParentModal() {
+  const childXref = _changeParentChildXref;
+  const currentXref = _changeParentCurrentXref;
+  const newXref = _changeParentNewXref;  // may be null when user cleared / never selected
+  const searchEl = document.getElementById('change-parent-modal-search');
+  const searchVal = searchEl ? searchEl.value.trim() : '';
+
+  // If the user typed text but didn't pick a result, refuse to proceed.
+  if (searchVal && !newXref) {
+    alert('Please select a person from the search results, or clear the field to remove the parent.');
+    return;
+  }
+
+  await _postChangeParent(childXref, currentXref, newXref || '');
+  closeChangeParentModal();
+}
+
+async function removeParent(childXref, parentXref) {
+  const name = (PEOPLE[parentXref] && PEOPLE[parentXref].name) || parentXref;
+  if (!confirm(`Remove ${name} as a parent? The other parent and siblings are preserved.`)) return;
+  await _postChangeParent(childXref, parentXref, '');
+}
+
+async function _postChangeParent(childXref, currentXref, newXref) {
+  try {
+    const resp = await fetch('/api/change_parent', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        xref: childXref,
+        current_parent_xref: currentXref,
+        new_parent_xref: newXref,
+        current_person: window._currentPerson || null,
+      }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      if (typeof _applyFamilyMaps === 'function') _applyFamilyMaps(data.family_maps);
+      window._openDetailKey = null;
+      setState({ panelXref: childXref, panelOpen: true });
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Request failed: ' + e);
+  }
+}
+
+async function submitAddPersonModal() {
+  const given = (document.getElementById('add-person-modal-given').value || '').trim();
+  const surn  = (document.getElementById('add-person-modal-surname').value || '').trim();
+  const sex   = document.getElementById('add-person-modal-sex').value || 'U';
+  const birthYear = (document.getElementById('add-person-modal-birth-year').value || '').trim();
+  const relXref = _addPersonRelXref;
+  const relType = _addPersonRelType;
+
+  if (!given) { alert('Given name is required.'); return; }
+  if (!relXref || !relType) { alert('Missing relationship context.'); return; }
+
+  const body = {
+    given, surn, sex, birth_year: birthYear,
+    rel_type: relType, rel_xref: relXref,
+    current_person: window._currentPerson || null,
+  };
+  if (relType === 'child_of') {
+    const otherSelEl = document.getElementById('add-person-modal-other-parent');
+    const v = otherSelEl ? otherSelEl.value : '';
+    body.other_parent_xref = (v === '__none__') ? '' : v;
+  }
+
+  try {
+    const resp = await fetch('/api/add_person', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (data.people) for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+      if (typeof _applyFamilyMaps === 'function') _applyFamilyMaps(data.family_maps);
+      closeAddPersonModal();
+      window._openDetailKey = null;
+      setState({ panelXref: relXref, panelOpen: true });
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Request failed: ' + e);
   }
 }
 

@@ -236,6 +236,16 @@ describe('_FACT_PRESETS', () => {
     expect(typeof _FACT_PRESETS['NCHI'].inlineLabel).toBe('string');
     expect(_FACT_PRESETS['NCHI'].inlineLabel.length).toBeGreaterThan(0);
   });
+
+  it('every preset.baseTag is a legal GEDCOM tag', () => {
+    // Regression: if a preset's baseTag accidentally holds the pseudo-tag key
+    // itself (e.g. 'FACT:Languages'), the server will receive an invalid tag
+    // and either reject it or — historically — write an orphan '1 ' line.
+    const GEDCOM_TAG = /^[A-Z_][A-Z0-9_]*$/;
+    for (const [key, preset] of Object.entries(_FACT_PRESETS)) {
+      expect(preset.baseTag, `preset ${key}.baseTag`).toMatch(GEDCOM_TAG);
+    }
+  });
 });
 
 // ── _buildSourcesModalContent ─────────────────────────────────────────────
@@ -528,7 +538,11 @@ describe('editEvent pre-fills spouse for MARR (B4)', () => {
       '@I1@': {
         name: 'Helena Vitali',
         events: [
-          { tag: 'MARR', fam_xref: '@F1@', marr_idx: 0, date: '1920', place: 'Smyrna' },
+          // editEvent reads spouse identity from the event itself (not from
+          // RELATIVES), so the test data must include spouse / spouse_xref —
+          // otherwise the search field will (correctly) start blank.
+          { tag: 'MARR', fam_xref: '@F1@', marr_idx: 0, date: '1920',
+            place: 'Smyrna', spouse: 'George Papadopoulos', spouse_xref: '@I2@' },
         ],
       },
       '@I2@': { name: 'George Papadopoulos' },
