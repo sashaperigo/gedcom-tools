@@ -560,16 +560,24 @@ def _wrap_line(line: str, max_len: int = GEDCOM_MAX_LINE) -> list[str]:
     if len(line) <= max_len:
         return [line]
 
-    m = re.match(r'^(\d+) ([A-Z]+) (.+)$', line)
-    if not m:
-        return [line]  # can't parse — leave alone
-
-    level = int(m.group(1))
-    tag = m.group(2)
-    value = m.group(3)
+    # Match both plain lines (LEVEL TAG VALUE) and xref lines (LEVEL XREF TAG VALUE)
+    m = re.match(r'^(\d+) (@[^@]+@) ([A-Z_][A-Z0-9_]*) (.+)$', line)
+    if m:
+        level = int(m.group(1))
+        xref = m.group(2)
+        tag = m.group(3)
+        value = m.group(4)
+        first_prefix = f'{level} {xref} {tag} '
+    else:
+        m = re.match(r'^(\d+) ([A-Z_][A-Z0-9_]*) (.+)$', line)
+        if not m:
+            return [line]  # can't parse — leave alone
+        level = int(m.group(1))
+        tag = m.group(2)
+        value = m.group(3)
+        first_prefix = f'{level} {tag} '
 
     conc_prefix = f'{level + 1} CONC '
-    first_prefix = f'{level} {tag} '
 
     result = []
     # how many value chars fit on the first line
@@ -4859,6 +4867,11 @@ def main():
             print(f'  {changed} record(s) would have events reordered.')
         else:
             print(f'  {changed} record(s) had events reordered.')
+        if changed and not args.dry_run:
+            # fix_sort_events round-trips through write_gedcom which can reflow
+            # NOTE records into lines that exceed 255 chars. Re-wrap immediately.
+            fix_long_lines(args.gedfile)
+            fix_trailing_whitespace(args.gedfile)
 
     if args.fix_date_caps:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
