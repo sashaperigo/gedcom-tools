@@ -5,7 +5,7 @@ A collection of Python scripts for cleaning, normalizing, validating, and visual
 ## Installation
 
 ```bash
-pip install -e .           # linter CLI only
+pip install -e .           # linter + merge CLIs
 pip install -e ".[test]"   # include pytest dependencies
 ```
 
@@ -100,7 +100,55 @@ python viz_ancestors.py yourfile.ged --person "John Smith"
 python viz_ancestors.py yourfile.ged --person "@I123@" --output chart.html
 ```
 
-Use `serve_viz.py` during development — it watches `viz_ancestors.py` for changes, regenerates the chart, and serves it at `http://localhost:8080/viz.html`.
+**Features:** pan/zoom/drag navigation, clickable nodes to change root person, detail sidebar with birth/death info and sources, fact and note editing.
+
+**Development server:** use `serve_viz.py` during development — it watches `viz_ancestors.py` for changes, regenerates the chart automatically, and serves it at `http://localhost:8080/viz.html`.
+
+```bash
+GED_FILE=yourfile.ged python serve_viz.py
+```
+
+---
+
+### `gedcom-merge` — Intelligent GEDCOM merge
+
+Merges two GEDCOM files by fuzzy-matching individuals, families, and sources, then writing a deduplicated output. Supports interactive terminal review, browser-based review, or fully automatic batch mode.
+
+```bash
+gedcom-merge file_a.ged file_b.ged
+gedcom-merge --output merged.ged --primary A file_a.ged file_b.ged
+gedcom-merge --auto-threshold 0.85 --batch file_a.ged file_b.ged
+gedcom-merge --web file_a.ged file_b.ged
+gedcom-merge --dry-run file_a.ged file_b.ged
+gedcom-merge --resume merge-session.json file_a.ged file_b.ged
+```
+
+**Key options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--primary A\|B` | `A` | Whose xref IDs to preserve in the output |
+| `--output FILE` | `merged.ged` | Output path |
+| `--auto-threshold N` | `0.75` | Auto-approve matches above this confidence score (0–1) |
+| `--review-threshold N` | `0.50` | Skip candidates below this score |
+| `--source-auto-threshold N` | `0.90` | Auto-approve source matches above this score |
+| `--source-review-threshold N` | `0.85` | Skip source candidates below this score |
+| `--batch` | — | No interactive review; auto-approve above threshold, skip below |
+| `--web` | — | Open browser-based review UI instead of terminal |
+| `--dry-run` | — | Report matches without writing output |
+| `--resume FILE` | — | Resume an interrupted merge from a saved session |
+| `--session FILE` | `merge-session.json` | Where to save the session for resuming |
+| `--report FILE` | `merge-report.txt` | Where to write the merge summary report |
+
+**Merge phases:**
+
+1. Parse both files
+2. Match sources (fuzzy title matching)
+3. Match individuals (name + date + place fuzzy scoring)
+4. Match families
+5. Interactive or batch review
+6. Merge records, deduplicate sources, remap xrefs
+7. Write output, validate, generate report
 
 ---
 
@@ -134,20 +182,6 @@ GED_FILE=yourfile.ged pytest
 pytest --gedfile yourfile.ged tests/test_dates.py  # run a single file
 pytest --gedfile yourfile.ged -v
 ```
-
-| Test file | Checks |
-|-----------|--------|
-| `test_structure.py` | HEAD/TRLR bookends, line grammar, no level jumps |
-| `test_xrefs.py` | No duplicate xrefs, all pointers resolve, FAMC/FAMS→FAM, HUSB/WIFE/CHIL→INDI |
-| `test_whitespace.py` | No trailing whitespace |
-| `test_names.py` | No double spaces in names, no lines >255 chars |
-| `test_plac.py` | PLAC comma spacing |
-| `test_dates.py` | All DATE values contain a year; level-2 dates conform to GEDCOM 5.5.1 |
-| `test_demographics.py` | No death before birth, plausible parent ages, no ancestor cycles |
-| `test_data_quality.py` | Balanced NAME slashes, valid SEX values, no self-referential FAMs, no blank PLAC, marriage date sanity |
-| `test_relationships.py` | No future dates, no posthumous births, HUSB/WIFE sex consistency, no orphaned SOURs, no empty FAMs |
-| `test_completeness.py` | No duplicate SOURs, every INDI has NAME, bidirectional FAMS/FAMC links |
-| `test_ancestry_tags.py` | No Ancestry proprietary tags remain (regression guard for Ancestry exports) |
 
 ---
 
