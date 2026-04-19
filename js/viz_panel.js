@@ -44,10 +44,10 @@ function fmtDate(raw) {
   if (!raw) return '';
   const s = raw.trim().toUpperCase();
   let prefix = '', rest = s;
-  if      (s.startsWith('ABT ')) { prefix = 'around ';  rest = s.slice(4); }
+  if      (s.startsWith('ABT ')) { prefix = 'about ';   rest = s.slice(4); }
   else if (s.startsWith('BEF ')) { prefix = 'before ';  rest = s.slice(4); }
   else if (s.startsWith('AFT ')) { prefix = 'after ';   rest = s.slice(4); }
-  else if (s.startsWith('CAL ') || s.startsWith('EST ')) { prefix = 'around '; rest = s.slice(4); }
+  else if (s.startsWith('CAL ') || s.startsWith('EST ')) { prefix = 'about ';  rest = s.slice(4); }
   const bet = rest.match(/^BET\s+(.+?)\s+AND\s+(.+)$/);
   if (bet) return fmtDate(bet[1]) + ' \u2013 ' + fmtDate(bet[2]);
   const dmy = rest.match(/^(\d{1,2})\s+([A-Z]{3})\s+(\d{4})$/);

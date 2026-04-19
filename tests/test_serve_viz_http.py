@@ -810,6 +810,28 @@ class TestAddCitationEndpoint:
             for c in birt_events[0].get('citations', [])
         ), 'new citation must appear in refreshed BIRT.citations'
 
+    def test_add_citation_with_url_writes_www_under_data(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': '', 'text': '', 'note': '',
+            'url': 'https://example.com/record/42',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        in_i1 = False; in_birt = False; in_data = False; found = False
+        for ln in lines:
+            if ln.startswith('0 @I1@ INDI'):  in_i1 = True; continue
+            if in_i1 and ln.startswith('0 '): break
+            if in_i1 and ln == '1 BIRT':      in_birt = True; continue
+            if in_birt and ln.startswith('1 '): in_birt = False
+            if in_birt and ln.startswith(f'2 SOUR {sour_xref}'): in_data = True; continue
+            if in_data and ln == '3 DATA':    continue
+            if in_data and ln == '4 WWW https://example.com/record/42': found = True; break
+        assert found, f'4 WWW not found under BIRT SOUR block in @I1@\n{text}'
+
 
 # ===========================================================================
 # /api/edit_citation
@@ -877,6 +899,24 @@ class TestEditCitationEndpoint:
             'page': 'p. 99', 'text': '', 'note': '',
         })
         assert bak.exists()
+
+    def test_returns_people_with_updated_citation(self, live_server):
+        """Response must include a `people` dict so the client can refresh
+        PEOPLE[xref] and re-render the panel without reloading."""
+        ged, post, _, _ = live_server
+        self._setup_citation(post)
+        resp = post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 99', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        assert 'people' in resp, 'response must include refreshed people payload'
+        people = resp['people']
+        assert '@I1@' in people, f'refreshed people must include edited xref; got {list(people.keys())}'
+        birt_events = [e for e in people['@I1@']['events'] if e['tag'] == 'BIRT']
+        assert birt_events, 'refreshed payload must include BIRT event'
+        assert any(c.get('page') == 'p. 99' for c in birt_events[0].get('citations', [])), \
+            'updated page must appear in refreshed BIRT.citations'
 
 
 # ===========================================================================
@@ -1062,6 +1102,76 @@ class TestFamCitationEndpoints:
             assert False, 'Should have raised'
         except urllib.error.HTTPError as e:
             assert e.code == 400
+
+    def test_add_citation_to_fam_without_marr_tag_creates_marr_then_writes_sour(self, live_server):
+        """Adding a citation to a FAM with no 1 MARR tag (synthetic placeholder) must
+        auto-create the bare MARR tag and write the SOUR under it — not return 400."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        # @F1@ has HUSB @I2@ and WIFE @I3@ but no 1 MARR tag in the fixture.
+        resp = post('/api/add_citation', {
+            'xref': '@F1@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.7', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        in_f1 = False
+        in_marr = False
+        found_sour = False
+        for ln in lines:
+            if ln.startswith('0 @F1@ FAM'):
+                in_f1 = True; continue
+            if in_f1 and ln.startswith('0 '):
+                break
+            if in_f1 and ln == '1 MARR':
+                in_marr = True; continue
+            if in_marr and ln.startswith('1 '):
+                in_marr = False
+            if in_marr and ln == f'2 SOUR {sour_xref}':
+                found_sour = True
+        assert found_sour, f'2 SOUR {sour_xref} not found inside @F1@\'s MARR block'
+        assert '3 PAGE p.7' in text
+
+    def test_edit_citation_updates_url(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.1', 'text': '', 'note': '',
+            'url': 'https://old.example.com',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@F5@', 'citation_key': 'MARR:0:0',
+            'page': 'p.1', 'text': '', 'note': '',
+            'url': 'https://new.example.com',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '4 WWW https://new.example.com' in text
+        assert 'https://old.example.com' not in text
+
+    def test_edit_fam_response_refreshes_both_spouses(self, live_server):
+        """Editing a MARR citation on @F5@ must refresh both @I1@ and @I12@ in the
+        response so each spouse's panel shows the updated citation."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.1', 'text': '', 'note': '',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@F5@', 'citation_key': 'MARR:0:0',
+            'page': 'p.99', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        assert 'people' in resp
+        assert '@I1@' in resp['people']
+        assert '@I12@' in resp['people']
+        for spouse in ('@I1@', '@I12@'):
+            marr = next(e for e in resp['people'][spouse]['events'] if e['tag'] == 'MARR')
+            assert any(c.get('page') == 'p.99' for c in marr.get('citations', [])), \
+                f'updated page not reflected in refreshed {spouse}.MARR.citations'
 
 
 # ===========================================================================

@@ -917,19 +917,22 @@ def _find_citation_block(
     return None, None, None, f'Citation {cite_n} not found in {fact_tag}[{fact_n}] of {xref}'
 
 
-def _build_citation_lines(sour_xref: str, page: str, text: str, note: str, base_level: int) -> list[str]:
+def _build_citation_lines(sour_xref: str, page: str, text: str, note: str, base_level: int, url: str = '') -> list[str]:
     """
     Build the citation block lines at base_level.
-    base_level=1 → person-level (1 SOUR, 2 PAGE, 2 DATA, 3 TEXT, 2 NOTE)
-    base_level=2 → fact-level   (2 SOUR, 3 PAGE, 3 DATA, 4 TEXT, 3 NOTE)
+    base_level=1 → person-level (1 SOUR, 2 PAGE, 2 DATA, 3 TEXT/WWW, 2 NOTE)
+    base_level=2 → fact-level   (2 SOUR, 3 PAGE, 3 DATA, 4 TEXT/WWW, 3 NOTE)
     """
     b = base_level
     lines_out = [f'{b} SOUR {sour_xref}']
     if page and page.strip():
         lines_out.append(f'{b+1} PAGE {page.strip()}')
-    if text and text.strip():
+    if (text and text.strip()) or (url and url.strip()):
         lines_out.append(f'{b+1} DATA')
-        lines_out.append(f'{b+2} TEXT {text.strip()}')
+        if text and text.strip():
+            lines_out.append(f'{b+2} TEXT {text.strip()}')
+        if url and url.strip():
+            lines_out.append(f'{b+2} WWW {url.strip()}')
     if note and note.strip():
         lines_out.append(f'{b+1} NOTE {note.strip()}')
     return lines_out
@@ -937,16 +940,16 @@ def _build_citation_lines(sour_xref: str, page: str, text: str, note: str, base_
 
 def _update_citation_block(
     lines: list[str], block_start: int, block_end: int,
-    citation_level: int, page: str, text: str, note: str
+    citation_level: int, page: str, text: str, note: str, url: str = ''
 ) -> list[str]:
     """
-    Replace citation block (block_start..block_end) with updated PAGE/TEXT/NOTE values.
+    Replace citation block (block_start..block_end) with updated PAGE/TEXT/NOTE/WWW values.
     Preserves the SOUR xref header line.
     """
     header = lines[block_start]  # '2 SOUR @S1@' or '1 SOUR @S1@'
     b = citation_level
     sour_xref_val = (header.split(' ', 2) + [''])[2].strip()
-    new_block = _build_citation_lines(sour_xref_val, page, text, note, b)
+    new_block = _build_citation_lines(sour_xref_val, page, text, note, b, url)
     return lines[:block_start] + new_block + lines[block_end:]
 
 
@@ -1464,6 +1467,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             page      = (body.get('page') or '').strip()
             text      = (body.get('text') or '').strip()
             note      = (body.get('note') or '').strip()
+            url       = (body.get('url')  or '').strip()
             lines     = GED.read_text(encoding='utf-8').splitlines()
             is_fam    = xref.startswith('@F')
 
@@ -1477,14 +1481,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if err:
                     self.send_error(400, err)
                     return
-                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1)
+                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
                 new_lines  = lines[:indi_end] + cite_lines + lines[indi_end:]
             else:
                 insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
+                if err and is_fam and fact_key:
+                    # FAM has no event tag yet (synthetic placeholder from viz) — insert a
+                    # bare tag first, then find the newly created block's end for citation.
+                    tag_only = fact_key.split(':')[0]
+                    lines = _insert_fam_event(lines, xref, tag_only, {})
+                    insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
                 if err:
                     self.send_error(400, err)
                     return
-                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=2)
+                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=2, url=url)
                 new_lines  = lines[:insert_pos] + cite_lines + lines[insert_pos:]
 
             _write_gedcom_atomic(new_lines)
@@ -1511,15 +1521,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             page = (body.get('page') or '').strip()
             text = (body.get('text') or '').strip()
             note = (body.get('note') or '').strip()
+            url  = (body.get('url')  or '').strip()
             lines = GED.read_text(encoding='utf-8').splitlines()
             block_start, block_end, cite_level, err = _find_citation_block(lines, xref, citation_key)
             if err:
                 self.send_error(400, err)
                 return
-            new_lines = _update_citation_block(lines, block_start, block_end, cite_level, page, text, note)
+            new_lines = _update_citation_block(lines, block_start, block_end, cite_level, page, text, note, url)
             _write_gedcom_atomic(new_lines)
             print(f"[citation-edit] {xref} {citation_key}")
-            resp = json.dumps({'ok': True}).encode()
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            if xref.startswith('@F') and xref in fams:
+                fam = fams[xref]
+                xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife')) if x}
+            else:
+                xrefs_to_refresh = {xref}
+            updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/delete_citation':
             xref         = (body.get('xref') or '').strip()

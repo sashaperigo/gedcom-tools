@@ -266,11 +266,17 @@ describe('_buildSourcesModalContent', () => {
     expect(html).toContain('No sources recorded');
   });
 
-  it('renders source title as link when URL is present', () => {
-    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
+  it('renders source title as link when citation has its own url', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null, url: 'https://example.com/s1' }], SOURCES);
     expect(html).toContain('<a ');
     expect(html).toContain('Ellis Island Records');
     expect(html).toContain('https://example.com/s1');
+  });
+
+  it('renders source title as plain text when citation has no url, even if source has one', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
+    expect(html).not.toContain('<a ');
+    expect(html).toContain('Ellis Island Records');
   });
 
   it('renders source title as plain text when URL is absent', () => {
@@ -682,7 +688,7 @@ describe('showAddNoteModal', () => {
 });
 
 describe('showAddCitationModal', () => {
-  let overlay, sourceSelect, pageInp, textArea, noteInp;
+  let overlay, sourceSelect, pageInp, textArea, noteInp, urlInp;
 
   beforeEach(() => {
     overlay      = _fakeModalEl('add-citation-modal-overlay');
@@ -690,6 +696,7 @@ describe('showAddCitationModal', () => {
     pageInp      = _fakeModalEl('add-citation-modal-page');
     textArea     = _fakeModalEl('add-citation-modal-text');
     noteInp      = _fakeModalEl('add-citation-modal-note');
+    urlInp       = _fakeModalEl('add-citation-modal-url');
 
     global.SOURCES = {
       '@S1@': { titl: 'Ellis Island Records' },
@@ -703,6 +710,7 @@ describe('showAddCitationModal', () => {
         if (id === 'add-citation-modal-page')    return pageInp;
         if (id === 'add-citation-modal-text')    return textArea;
         if (id === 'add-citation-modal-note')    return noteInp;
+        if (id === 'add-citation-modal-url')     return urlInp;
         return _fakeModalEl(id);
       },
       addEventListener: () => {},
@@ -734,10 +742,17 @@ describe('showAddCitationModal', () => {
     const texts = added.map(o => o.text);
     expect(texts).toEqual(['alpha Birth Register', 'Mu Archive', 'Zeta Parish Record']);
   });
+
+  it('clears the url field on open', () => {
+    if (!showAddCitationModal) return;
+    urlInp.value = 'https://previous.com';
+    showAddCitationModal('@I1@', 'BIRT');
+    expect(urlInp.value).toBe('');
+  });
 });
 
 describe('showEditCitationModal', () => {
-  let overlay, pageInp, textArea, noteInp, viewSourceBtn;
+  let overlay, pageInp, textArea, noteInp, viewSourceBtn, urlInp;
 
   beforeEach(() => {
     overlay      = _fakeModalEl('edit-citation-modal-overlay');
@@ -745,16 +760,17 @@ describe('showEditCitationModal', () => {
     textArea     = _fakeModalEl('edit-citation-modal-text');
     noteInp      = _fakeModalEl('edit-citation-modal-note');
     viewSourceBtn = _fakeModalEl('edit-citation-view-source-btn');
+    urlInp       = _fakeModalEl('edit-citation-modal-url');
 
     global.PEOPLE = {
       '@I1@': {
         name: 'John Smith',
-        facts: [
+        events: [
           {
             tag: 'BIRT',
             date: '1900',
             citations: [
-              { sourceXref: '@S1@', page: 'p. 42', text: 'Full transcript', note: 'Researcher note' },
+              { sourceXref: '@S1@', page: 'p. 42', text: 'Full transcript', note: 'Researcher note', url: 'https://example.com/src' },
             ],
           },
         ],
@@ -770,6 +786,7 @@ describe('showEditCitationModal', () => {
         if (id === 'edit-citation-modal-text')           return textArea;
         if (id === 'edit-citation-modal-note')           return noteInp;
         if (id === 'edit-citation-view-source-btn')      return viewSourceBtn;
+        if (id === 'edit-citation-modal-url')            return urlInp;
         return _fakeModalEl(id);
       },
       addEventListener: () => {},
@@ -805,6 +822,37 @@ describe('showEditCitationModal', () => {
     showEditCitationModal('@I1@', 'BIRT', 0);
     // viewSourceBtn element should exist (getElementById returned it)
     expect(viewSourceBtn).not.toBeNull();
+  });
+
+  it('pre-fills url field from existing citation', () => {
+    if (!showEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    expect(urlInp.value).toBe('https://example.com/src');
+  });
+
+  it('includes event occurrence in citation key sent to API', async () => {
+    if (!showEditCitationModal) return;
+    const calls = [];
+    global.apiEditCitation = async (...args) => { calls.push(args); return {}; };
+    global.renderPanel = () => {};
+    const { submitEditCitationModal } = require('../../js/viz_modals.js');
+    if (!submitEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0, undefined, 2);
+    await submitEditCitationModal();
+    expect(calls.length).toBe(1);
+    expect(calls[0][1]).toBe('BIRT:2:0');  // TAG:eventOcc:citationIndex
+  });
+
+  it('merges response people into PEOPLE global after successful save', async () => {
+    if (!showEditCitationModal) return;
+    const updatedPerson = { name: 'John Smith', events: [{ tag: 'BIRT', citations: [{ page: 'p. 99' }] }] };
+    global.apiEditCitation = async () => ({ ok: true, people: { '@I1@': updatedPerson } });
+    global.renderPanel = () => {};
+    const { submitEditCitationModal } = require('../../js/viz_modals.js');
+    if (!submitEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    await submitEditCitationModal();
+    expect(global.PEOPLE['@I1@']).toEqual(updatedPerson);
   });
 });
 
