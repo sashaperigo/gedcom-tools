@@ -1368,7 +1368,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
     <div id="detail-header-btns">
       <button id="panel-close-btn" title="Close">&#x2715;</button>
-      <button id="detail-set-root-btn" title="Browse tree with this person as root">&#x2302;</button>
+      <button id="detail-set-root-btn" title="Center tree on this person">&#x2302;</button>
     </div>
   </div>
   <div id="detail-body">

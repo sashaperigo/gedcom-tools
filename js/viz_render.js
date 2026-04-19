@@ -334,11 +334,7 @@ function render() {
 
   // ── Node click handler ───────────────────────────────────────────────────
   function onNodeClick(node) {
-    if (node.role === 'focus') {
-      setState({ panelOpen: true, panelXref: node.xref });
-    } else {
-      setState({ focusXref: node.xref, panelOpen: true, panelXref: node.xref });
-    }
+    setState({ panelOpen: true, panelXref: node.xref });
   }
 
   // ── Expand button click handler ──────────────────────────────────────────

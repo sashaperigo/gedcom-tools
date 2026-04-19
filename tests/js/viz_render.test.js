@@ -591,7 +591,7 @@ describe('render — click handlers', () => {
     renderMod.initRenderer(svg);
   });
 
-  it('clicking a non-focus node calls setState with focusXref and panelOpen: true', () => {
+  it('clicking a non-focus node opens panel without changing focusXref', () => {
     const treeRoot = svg.querySelector('#tree-root');
     const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
     const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
@@ -599,9 +599,12 @@ describe('render — click handlers', () => {
 
     fatherG.dispatchEvent('click', { stopPropagation: () => {} });
 
-    expect(setStateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ focusXref: '@FATHER@', panelOpen: true, panelXref: '@FATHER@' })
-    );
+    const calls = setStateSpy.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const lastCall = calls[calls.length - 1][0];
+    expect(lastCall.panelOpen).toBe(true);
+    expect(lastCall.panelXref).toBe('@FATHER@');
+    expect('focusXref' in lastCall).toBe(false);
   });
 
   it('clicking the focus node calls setState with panelOpen but does NOT change focusXref', () => {
