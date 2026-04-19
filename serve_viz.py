@@ -1445,6 +1445,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 new_lines  = lines[:indi_end] + cite_lines + lines[indi_end:]
             else:
                 insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
+                if err and is_fam and fact_key:
+                    # FAM has no event tag yet (synthetic placeholder from viz) — insert a
+                    # bare tag first, then find the newly created block's end for citation.
+                    tag_only = fact_key.split(':')[0]
+                    lines = _insert_fam_event(lines, xref, tag_only, {})
+                    insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
                 if err:
                     self.send_error(400, err)
                     return

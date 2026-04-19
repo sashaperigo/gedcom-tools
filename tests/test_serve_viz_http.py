@@ -1063,6 +1063,36 @@ class TestFamCitationEndpoints:
         except urllib.error.HTTPError as e:
             assert e.code == 400
 
+    def test_add_citation_to_fam_without_marr_tag_creates_marr_then_writes_sour(self, live_server):
+        """Adding a citation to a FAM with no 1 MARR tag (synthetic placeholder) must
+        auto-create the bare MARR tag and write the SOUR under it — not return 400."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        # @F1@ has HUSB @I2@ and WIFE @I3@ but no 1 MARR tag in the fixture.
+        resp = post('/api/add_citation', {
+            'xref': '@F1@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.7', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        in_f1 = False
+        in_marr = False
+        found_sour = False
+        for ln in lines:
+            if ln.startswith('0 @F1@ FAM'):
+                in_f1 = True; continue
+            if in_f1 and ln.startswith('0 '):
+                break
+            if in_f1 and ln == '1 MARR':
+                in_marr = True; continue
+            if in_marr and ln.startswith('1 '):
+                in_marr = False
+            if in_marr and ln == f'2 SOUR {sour_xref}':
+                found_sour = True
+        assert found_sour, f'2 SOUR {sour_xref} not found inside @F1@\'s MARR block'
+        assert '3 PAGE p.7' in text
+
 
 # ===========================================================================
 # /api/add_person
