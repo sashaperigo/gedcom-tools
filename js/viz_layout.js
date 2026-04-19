@@ -192,25 +192,91 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     }
   }
 
-  // ── Phase 2: Generation +1 (children) ────────────────────────────────────
+  // ── Phase 2: Generation +1 (children + umbrella) ─────────────────────────
 
   const childXrefs = CHILDREN[focusXref] ?? [];
   if (childXrefs.length > 0) {
-    const n      = childXrefs.length;
-    const totalW = n * NODE_W + (n - 1) * H_GAP;
-    // Focus is at x=0; its center is at NODE_W/2.
-    // Start children so their row center aligns with the focus center.
-    const startX = NODE_W / 2 - totalW / 2;
+    // Anchor: midpoint between focus center and first spouse center if present,
+    // else focus center. This is where the umbrella hangs from.
+    const focusCenterX = NODE_W_FOCUS / 2;
+    const anchorX = spouseXrefs.length > 0
+      ? (focusCenterX + (firstSpouseX + NODE_W / 2)) / 2
+      : focusCenterX;
 
-    childXrefs.forEach((xref, i) => {
-      const cx = startX + i * SLOT;
-      nodes.push({ xref, x: cx, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
+    // Build child groups [child, ...childSpouses] and pack them left→right.
+    // Each group: child at groupStart, spouses at groupStart + i*(NODE_W + MARRIAGE_GAP).
+    // Between groups: H_GAP separation.
+    const groups = childXrefs.map(childXref => {
+      const childSpouses = RELATIVES[childXref]?.spouses ?? [];
+      const width = NODE_W + childSpouses.length * (MARRIAGE_GAP + NODE_W);
+      return { childXref, childSpouses, width };
+    });
 
-      // Edge from focus bottom to child top
+    const placements = [];
+    let cursor = 0;
+    groups.forEach(g => {
+      placements.push({ ...g, start: cursor });
+      cursor += g.width + H_GAP;
+    });
+
+    // Shift so the midpoint of first and last *child* centers aligns with anchorX.
+    const firstChildCenter = placements[0].start + NODE_W / 2;
+    const lastChildCenter  = placements[placements.length - 1].start + NODE_W / 2;
+    const shift = anchorX - (firstChildCenter + lastChildCenter) / 2;
+
+    const childCenters = [];
+    placements.forEach(p => {
+      const childX = p.start + shift;
+      nodes.push({ xref: p.childXref, x: childX, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
+      childCenters.push(childX + NODE_W / 2);
+
+      p.childSpouses.forEach((sxref, si) => {
+        const spouseX = childX + (si + 1) * (NODE_W + MARRIAGE_GAP);
+        nodes.push({ xref: sxref, x: spouseX, y: ROW_HEIGHT, generation: 1, role: 'descendant_spouse' });
+
+        // Marriage edge between consecutive members of the group (right edge → left edge)
+        const prevX = si === 0 ? childX : childX + si * (NODE_W + MARRIAGE_GAP);
+        edges.push({
+          x1:   prevX + NODE_W,
+          y1:   ROW_HEIGHT + NODE_H / 2,
+          x2:   spouseX,
+          y2:   ROW_HEIGHT + NODE_H / 2,
+          type: 'marriage',
+        });
+      });
+    });
+
+    // Umbrella geometry
+    const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+
+    // Drop from anchor down to umbrella bar
+    edges.push({
+      x1:   anchorX,
+      y1:   NODE_H,
+      x2:   anchorX,
+      y2:   umbrellaY,
+      type: 'descendant',
+    });
+
+    // Horizontal crossbar from leftmost to rightmost child center (only if >1 child)
+    if (childCenters.length > 1) {
+      const leftX  = Math.min(...childCenters);
+      const rightX = Math.max(...childCenters);
       edges.push({
-        x1:   NODE_W / 2,
-        y1:   NODE_H,
-        x2:   cx + NODE_W / 2,
+        x1:   leftX,
+        y1:   umbrellaY,
+        x2:   rightX,
+        y2:   umbrellaY,
+        type: 'descendant',
+      });
+    }
+
+    // Vertical drop from umbrella to each child
+    childCenters.forEach(cx => {
+      edges.push({
+        x1:   cx,
+        y1:   umbrellaY,
+        x2:   cx,
         y2:   ROW_HEIGHT,
         type: 'descendant',
       });

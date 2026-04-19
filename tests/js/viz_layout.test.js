@@ -220,7 +220,8 @@ describe('computeLayout — focus with children', () => {
   it('children are centered under the focus node center', () => {
     const { nodes } = computeLayout('@FOCUS@', new Set(), false);
     const focus = nodes.find(n => n.xref === '@FOCUS@');
-    const focusCenterX = focus.x + NODE_W / 2;
+    // Focus uses NODE_W_FOCUS; its true visual center is focus.x + NODE_W_FOCUS/2.
+    const focusCenterX = focus.x + NODE_W_FOCUS / 2;
     const childXs = ['@C1@', '@C2@', '@C3@'].map(xref => {
       const n = nodes.find(c => c.xref === xref);
       return n.x + NODE_W / 2;
@@ -634,5 +635,229 @@ describe('computeLayout — width-aware ancestor placement', () => {
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     expect(mgf.x).toBeCloseTo(mother.x - SLOT / 2, 1);
     expect(mgm.x).toBeCloseTo(mother.x + SLOT / 2, 1);
+  });
+});
+
+// ── Test 10: Descendant umbrella layout ────────────────────────────────────
+
+describe('computeLayout — descendant umbrella', () => {
+  const UMBRELLA_Y = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+
+  it('single child, no spouse, focus has spouse: anchor is focus↔spouse midpoint', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@SPOUSE@': { birth_year: 1902 },
+        '@C1@':     { birth_year: 1925 },
+      },
+      children:  { '@FOCUS@': ['@C1@'] },
+      relatives: { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] } },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+
+    const focusCenter  = NODE_W_FOCUS / 2;                       // 80
+    const spouseX      = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2; // 210 (left edge)
+    const spouseCenter = spouseX + NODE_W / 2;                   // 280
+    const anchorX      = (focusCenter + spouseCenter) / 2;       // 180
+
+    const c1 = nodes.find(n => n.xref === '@C1@');
+    expect(c1).toBeDefined();
+    expect(c1.x + NODE_W / 2).toBeCloseTo(anchorX, 1);
+
+    const descEdges = edges.filter(e => e.type === 'descendant');
+    // Anchor drop: (anchorX, NODE_H) → (anchorX, umbrellaY)
+    const anchorDrop = descEdges.find(e =>
+      e.x1 === anchorX && e.y1 === NODE_H && e.x2 === anchorX && e.y2 === UMBRELLA_Y
+    );
+    expect(anchorDrop).toBeDefined();
+    // Per-child drop: (anchorX, umbrellaY) → (anchorX, ROW_HEIGHT)
+    const childDrop = descEdges.find(e =>
+      e.x1 === anchorX && e.y1 === UMBRELLA_Y && e.x2 === anchorX && e.y2 === ROW_HEIGHT
+    );
+    expect(childDrop).toBeDefined();
+    // No crossbar at umbrellaY with distinct x1/x2
+    const crossbar = descEdges.find(e =>
+      e.y1 === UMBRELLA_Y && e.y2 === UMBRELLA_Y && e.x1 !== e.x2
+    );
+    expect(crossbar).toBeUndefined();
+  });
+
+  it('multiple children, none with spouses: umbrella spans leftmost→rightmost child centers', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@': { birth_year: 1900 },
+        '@C1@':    { birth_year: 1925 },
+        '@C2@':    { birth_year: 1927 },
+        '@C3@':    { birth_year: 1929 },
+      },
+      children: { '@FOCUS@': ['@C1@', '@C2@', '@C3@'] },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const anchorX = NODE_W_FOCUS / 2; // no focus-spouse → focus center
+
+    const centers = ['@C1@', '@C2@', '@C3@']
+      .map(x => nodes.find(n => n.xref === x).x + NODE_W / 2)
+      .sort((a, b) => a - b);
+    const leftmost  = centers[0];
+    const rightmost = centers[centers.length - 1];
+
+    const descEdges = edges.filter(e => e.type === 'descendant');
+
+    const crossbar = descEdges.find(e =>
+      e.y1 === UMBRELLA_Y && e.y2 === UMBRELLA_Y &&
+      Math.min(e.x1, e.x2) === leftmost && Math.max(e.x1, e.x2) === rightmost
+    );
+    expect(crossbar).toBeDefined();
+
+    const anchorDrop = descEdges.find(e =>
+      e.x1 === anchorX && e.y1 === NODE_H && e.x2 === anchorX && e.y2 === UMBRELLA_Y
+    );
+    expect(anchorDrop).toBeDefined();
+
+    centers.forEach(cx => {
+      const drop = descEdges.find(e =>
+        e.x1 === cx && e.y1 === UMBRELLA_Y && e.x2 === cx && e.y2 === ROW_HEIGHT
+      );
+      expect(drop).toBeDefined();
+    });
+  });
+
+  it('child with spouse: spouse node has role descendant_spouse; marriage edge between them', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@C1@':     { birth_year: 1925 },
+        '@C1SP@':   { birth_year: 1927 },
+      },
+      children:  { '@FOCUS@': ['@C1@'] },
+      relatives: { '@C1@': { siblings: [], spouses: ['@C1SP@'] } },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const sp = nodes.find(n => n.xref === '@C1SP@');
+    expect(sp).toBeDefined();
+    expect(sp.role).toBe('descendant_spouse');
+    expect(sp.y).toBe(ROW_HEIGHT);
+
+    const c1 = nodes.find(n => n.xref === '@C1@');
+    // Spouse sits NODE_W + MARRIAGE_GAP to the right of the child (left edges)
+    expect(sp.x).toBeCloseTo(c1.x + NODE_W + MARRIAGE_GAP, 1);
+
+    const marriageAtChildRow = edges.find(e =>
+      e.type === 'marriage' && e.y1 === ROW_HEIGHT + NODE_H / 2 && e.y2 === ROW_HEIGHT + NODE_H / 2
+    );
+    expect(marriageAtChildRow).toBeDefined();
+    expect(marriageAtChildRow.x1).toBeCloseTo(c1.x + NODE_W, 1); // child right edge
+    expect(marriageAtChildRow.x2).toBeCloseTo(sp.x, 1);          // spouse left edge
+  });
+
+  it('focus with no spouse: anchor originates at focus center (NODE_W_FOCUS/2)', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@': { birth_year: 1900 },
+        '@C1@':    { birth_year: 1925 },
+      },
+      children: { '@FOCUS@': ['@C1@'] },
+    });
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const anchorX = NODE_W_FOCUS / 2;
+    const anchorDrop = edges.find(e =>
+      e.type === 'descendant' &&
+      e.x1 === anchorX && e.y1 === NODE_H && e.x2 === anchorX && e.y2 === (NODE_H + (ROW_HEIGHT - NODE_H) / 2)
+    );
+    expect(anchorDrop).toBeDefined();
+  });
+
+  it('two children both with spouses: crossbar x-span covers only child centers', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@C1@':     { birth_year: 1925 },
+        '@C1SP@':   { birth_year: 1926 },
+        '@C2@':     { birth_year: 1928 },
+        '@C2SP@':   { birth_year: 1930 },
+      },
+      children:  { '@FOCUS@': ['@C1@', '@C2@'] },
+      relatives: {
+        '@C1@': { siblings: [], spouses: ['@C1SP@'] },
+        '@C2@': { siblings: [], spouses: ['@C2SP@'] },
+      },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const c1 = nodes.find(n => n.xref === '@C1@');
+    const c2 = nodes.find(n => n.xref === '@C2@');
+    const sp1 = nodes.find(n => n.xref === '@C1SP@');
+    const sp2 = nodes.find(n => n.xref === '@C2SP@');
+
+    const c1Center = c1.x + NODE_W / 2;
+    const c2Center = c2.x + NODE_W / 2;
+    const sp2Center = sp2.x + NODE_W / 2;
+
+    const crossbar = edges.find(e =>
+      e.type === 'descendant' && e.y1 === e.y2 &&
+      e.y1 === NODE_H + (ROW_HEIGHT - NODE_H) / 2 && e.x1 !== e.x2
+    );
+    expect(crossbar).toBeDefined();
+    const leftmost  = Math.min(crossbar.x1, crossbar.x2);
+    const rightmost = Math.max(crossbar.x1, crossbar.x2);
+    expect(leftmost).toBeCloseTo(c1Center, 1);
+    expect(rightmost).toBeCloseTo(c2Center, 1);
+    // Crossbar must NOT extend as far as the second spouse
+    expect(rightmost).toBeLessThan(sp2Center);
+
+    // Group ordering: c1, sp1, c2, sp2 packed left→right
+    expect(c1.x).toBeLessThan(sp1.x);
+    expect(sp1.x).toBeLessThan(c2.x);
+    expect(c2.x).toBeLessThan(sp2.x);
+    // Child-spouse marriage edges (two, one per group)
+    const marriageEdges = edges.filter(e =>
+      e.type === 'marriage' && e.y1 === ROW_HEIGHT + NODE_H / 2
+    );
+    expect(marriageEdges).toHaveLength(2);
+  });
+
+  it('child-centers midpoint equals anchorX when focus has one spouse and two unmarried children', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@SPOUSE@': { birth_year: 1902 },
+        '@C1@':     { birth_year: 1925 },
+        '@C2@':     { birth_year: 1928 },
+      },
+      children:  { '@FOCUS@': ['@C1@', '@C2@'] },
+      relatives: { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] } },
+    });
+    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const c1Center = nodes.find(n => n.xref === '@C1@').x + NODE_W / 2;
+    const c2Center = nodes.find(n => n.xref === '@C2@').x + NODE_W / 2;
+    const mid = (c1Center + c2Center) / 2;
+
+    const focusCenter = NODE_W_FOCUS / 2;
+    const spouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+    const spouseCenter = spouseX + NODE_W / 2;
+    const anchorX = (focusCenter + spouseCenter) / 2;
+
+    expect(mid).toBeCloseTo(anchorX, 1);
+  });
+
+  it('does not emit the old per-child slanted edge from (NODE_W/2, NODE_H) to a child top', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@': { birth_year: 1900 },
+        '@C1@':    { birth_year: 1925 },
+        '@C2@':    { birth_year: 1927 },
+      },
+      children: { '@FOCUS@': ['@C1@', '@C2@'] },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const childCenters = ['@C1@', '@C2@']
+      .map(x => nodes.find(n => n.xref === x).x + NODE_W / 2);
+    childCenters.forEach(cx => {
+      const slant = edges.find(e =>
+        e.type === 'descendant' &&
+        e.x1 === NODE_W / 2 && e.y1 === NODE_H &&
+        e.x2 === cx && e.y2 === ROW_HEIGHT
+      );
+      expect(slant).toBeUndefined();
+    });
   });
 });

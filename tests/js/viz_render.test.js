@@ -680,3 +680,45 @@ describe('render — died-young badge', () => {
     expect(badgeCircle).toBeUndefined();
   });
 });
+
+describe('render — descendant umbrella edges', () => {
+  beforeEach(() => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@C1@':   { name: 'Child One', birth_year: 1925, death_year: null },
+      '@C1SP@': { name: 'Child One Spouse', birth_year: 1927, death_year: null },
+    };
+    global.PARENTS   = {};
+    global.CHILDREN  = { '@FOCUS@': ['@C1@'] };
+    global.RELATIVES = {
+      '@FOCUS@': { siblings: [], spouses: [] },
+      '@C1@':   { siblings: [], spouses: ['@C1SP@'] },
+    };
+    resetState();
+    loadRenderMod();
+  });
+
+  it('renders umbrella drop/crossbar/child-drop as <line> elements with descendant stroke', () => {
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const lines = treeRoot.querySelectorAll('line');
+    const descLines = lines.filter(l => l._attrs['stroke'] === '#2c2c54');
+    // At minimum: anchor drop + per-child drop (single child, no crossbar)
+    expect(descLines.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders the child-spouse marriage line with the marriage stroke color', () => {
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const lines = treeRoot.querySelectorAll('line');
+    const marriageLines = lines.filter(l => l._attrs['stroke'] === '#3a6a3a');
+    // Expect at least one marriage edge (between @C1@ and @C1SP@) in descendant row
+    const expectedY = String(DESIGN.ROW_HEIGHT + DESIGN.NODE_H / 2);
+    const childRowMarriage = marriageLines.find(l =>
+      l._attrs['y1'] === expectedY && l._attrs['y2'] === expectedY
+    );
+    expect(childRowMarriage).toBeDefined();
+  });
+});
