@@ -552,3 +552,87 @@ describe('computeLayout — single parent', () => {
     expect(father.y).toBe(-ROW_HEIGHT);
   });
 });
+
+// ── Test 9: Width-aware ancestor placement (no overlap when both parents expanded) ─
+
+describe('computeLayout — width-aware ancestor placement', () => {
+  const SLOT = NODE_W + H_GAP;
+
+  // Tree mirrors the screenshot scenario:
+  //   @FOCUS@ → [@FATHER@(unexpanded), @MOTHER@(expanded)]
+  //   @MOTHER@ → [@MGF@(expanded), @MGM@(expanded)]
+  //   @MGF@  → [@MGGF@, @MGGM@]   (leaf grandparents)
+  //   @MGM@  → [@MMGF@, @MMGM@]   (leaf grandparents)
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@': { birth_year: 1995 },
+        '@FATHER@': { birth_year: 1963 },
+        '@MOTHER@': { birth_year: 1963 },
+        '@MGF@':   { birth_year: 1926 },
+        '@MGM@':   { birth_year: 1941 },
+        '@MGGF@':  { birth_year: 1882 },
+        '@MGGM@':  { birth_year: 1895 },
+        '@MMGF@':  { birth_year: 1901 },
+        '@MMGM@':  { birth_year: 1909 },
+      },
+      parents: {
+        '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+        '@MOTHER@': ['@MGF@', '@MGM@'],
+        '@MGF@':    ['@MGGF@', '@MGGM@'],
+        '@MGM@':    ['@MMGF@', '@MMGM@'],
+      },
+    });
+  });
+
+  it('no two ancestor nodes at the same generation overlap', () => {
+    const expanded = new Set(['@MOTHER@', '@MGF@', '@MGM@']);
+    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const ancestorsByGen = {};
+    for (const node of nodes) {
+      if (node.role !== 'ancestor') continue;
+      if (!ancestorsByGen[node.generation]) ancestorsByGen[node.generation] = [];
+      ancestorsByGen[node.generation].push(node);
+    }
+    for (const genNodes of Object.values(ancestorsByGen)) {
+      const sorted = genNodes.slice().sort((a, b) => a.x - b.x);
+      for (let i = 1; i < sorted.length; i++) {
+        const gap = sorted[i].x - sorted[i - 1].x;
+        expect(gap).toBeGreaterThanOrEqual(SLOT);
+      }
+    }
+  });
+
+  it('parent pair midpoint aligns with child center when both parents expanded', () => {
+    const expanded = new Set(['@MOTHER@', '@MGF@', '@MGM@']);
+    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const nodeMap = new Map(nodes.map(n => [n.xref, n]));
+    const mgf = nodeMap.get('@MGF@');
+    const mgm = nodeMap.get('@MGM@');
+    const mother = nodeMap.get('@MOTHER@');
+    // Midpoint of MGF and MGM centers should equal MOTHER's center
+    const midpoint = (mgf.x + NODE_W / 2 + mgm.x + NODE_W / 2) / 2;
+    expect(midpoint).toBeCloseTo(mother.x + NODE_W / 2, 1);
+  });
+
+  it('gen-3 nodes are exactly SLOT apart (4 leaf grandparents, all non-overlapping)', () => {
+    const expanded = new Set(['@MOTHER@', '@MGF@', '@MGM@']);
+    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const gen3 = nodes.filter(n => n.generation === -3).sort((a, b) => a.x - b.x);
+    expect(gen3).toHaveLength(4);
+    for (let i = 1; i < gen3.length; i++) {
+      expect(gen3[i].x - gen3[i - 1].x).toBeCloseTo(SLOT, 1);
+    }
+  });
+
+  it('unexpanded ancestor keeps symmetric ±SLOT/2 placement (backward compat)', () => {
+    // Only @MOTHER@ expanded (neither of her parents is expanded)
+    const expanded = new Set(['@MOTHER@']);
+    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const mgf = nodes.find(n => n.xref === '@MGF@');
+    const mgm = nodes.find(n => n.xref === '@MGM@');
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    expect(mgf.x).toBeCloseTo(mother.x - SLOT / 2, 1);
+    expect(mgm.x).toBeCloseTo(mother.x + SLOT / 2, 1);
+  });
+});

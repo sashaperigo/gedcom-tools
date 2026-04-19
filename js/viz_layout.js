@@ -240,9 +240,10 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
   const nextY   = nextGen * ROW_HEIGHT;
 
   if (fatherXref && motherXref) {
-    const parentOffset = SLOT / 2;
-    const fatherX = x - parentOffset;
-    const motherX = x + parentOffset;
+    const fw = _subtreeWidth(fatherXref, expandedAncestors);
+    const mw = _subtreeWidth(motherXref, expandedAncestors);
+    const fatherX = x - mw * SLOT / 2;
+    const motherX = x + fw * SLOT / 2;
 
     nodes.push({ xref: fatherXref, x: fatherX, y: nextY, generation: nextGen, role: 'ancestor' });
     nodes.push({ xref: motherXref, x: motherX, y: nextY, generation: nextGen, role: 'ancestor' });
@@ -268,9 +269,25 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
 }
 
 // ---------------------------------------------------------------------------
+// Subtree width (for overlap-free ancestor placement)
+// ---------------------------------------------------------------------------
+
+// Returns the number of leaf slots a person's visible ancestor subtree occupies.
+// A node not being expanded counts as 1 slot (just itself).
+// A node with both parents counts as the sum of their subtree widths.
+function _subtreeWidth(xref, expandedAncestors) {
+  if (!expandedAncestors.has(xref)) return 1;
+  const parents = PARENTS[xref] ?? [];
+  const fw = parents[0] ? _subtreeWidth(parents[0], expandedAncestors) : 0;
+  const mw = parents[1] ? _subtreeWidth(parents[1], expandedAncestors) : 0;
+  if (fw === 0 && mw === 0) return 1;
+  return fw + mw;
+}
+
+// ---------------------------------------------------------------------------
 // Exports (for tests and other modules)
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeLayout, _sortByBirthYear, _packRow };
+  module.exports = { computeLayout, _sortByBirthYear, _packRow, _subtreeWidth };
 }
