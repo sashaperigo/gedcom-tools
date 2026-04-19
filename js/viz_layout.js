@@ -62,7 +62,7 @@ function _packRow(items, startX, y, role) {
  *   type: 'ancestor' | 'descendant' | 'sibling_bracket' | 'marriage'
  */
 function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
-  const { NODE_W, NODE_W_FOCUS, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+  const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
   const SLOT = NODE_W + H_GAP;
   // Gap between focus node edge and nearest sibling: account for focus being wider than NODE_W.
   const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
@@ -289,10 +289,13 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     // Umbrella geometry
     const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
 
-    // Drop from anchor down to umbrella bar
+    // Drop from anchor down to umbrella bar. When focus has a spouse, start at the
+    // marriage-line center (NODE_H/2) so it meets the marriage edge perpendicularly
+    // with no gap. No spouse → start at NODE_H_FOCUS (the bottom of the focus node).
+    const anchorTopY = spouseXrefs.length > 0 ? NODE_H / 2 : NODE_H_FOCUS;
     edges.push({
       x1:   anchorX,
-      y1:   NODE_H,
+      y1:   anchorTopY,
       x2:   anchorX,
       y2:   umbrellaY,
       type: 'descendant',
@@ -354,11 +357,19 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
     nodes.push({ xref: fatherXref, x: fatherX, y: nextY, generation: nextGen, role: 'ancestor' });
     nodes.push({ xref: motherXref, x: motherX, y: nextY, generation: nextGen, role: 'ancestor' });
 
-    const midY = nextY + ROW_HEIGHT / 2;
-    edges.push({ x1: fatherX + NODE_W / 2, y1: nextY + NODE_H, x2: fatherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: motherX + NODE_W / 2, y1: nextY + NODE_H, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: fatherX + NODE_W / 2, y1: midY, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: x + NODE_W / 2, y1: midY, x2: x + NODE_W / 2, y2: y, type: 'ancestor' });
+    // Universal umbrella: marriage edge between the parents + a single vertical drop
+    // from the marriage-line midpoint (= child's center) down to the child's top.
+    const parentMidY = nextY + NODE_H / 2;
+    edges.push({
+      x1: fatherX + NODE_W, y1: parentMidY,
+      x2: motherX,           y2: parentMidY,
+      type: 'marriage',
+    });
+    edges.push({
+      x1: x + NODE_W / 2, y1: parentMidY,
+      x2: x + NODE_W / 2, y2: y,
+      type: 'ancestor',
+    });
 
     _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, nodes, edges);
     _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, nodes, edges);
@@ -366,9 +377,12 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
     const singleParent = fatherXref || motherXref;
     nodes.push({ xref: singleParent, x, y: nextY, generation: nextGen, role: 'ancestor' });
 
-    const midY = nextY + ROW_HEIGHT / 2;
-    edges.push({ x1: x + NODE_W / 2, y1: nextY + NODE_H, x2: x + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: x + NODE_W / 2, y1: midY, x2: x + NODE_W / 2, y2: y, type: 'ancestor' });
+    // Single parent → one straight vertical from parent bottom to child top.
+    edges.push({
+      x1: x + NODE_W / 2, y1: nextY + NODE_H,
+      x2: x + NODE_W / 2, y2: y,
+      type: 'ancestor',
+    });
 
     _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, nodes, edges);
   }
