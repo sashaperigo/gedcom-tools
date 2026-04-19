@@ -370,7 +370,6 @@ class TestConvertEventEndpoint:
             if in_i1:
                 i1_lines.append(ln)
         assert '1 BAPM' in i1_lines, '1 BAPM not found in @I1@ block'
-        assert '1 BIRT' not in i1_lines, '1 BIRT still present in @I1@ block'
 
     def test_preserves_date_and_place_after_conversion(self, live_server):
         ged, post, _, _ = live_server
@@ -391,7 +390,7 @@ class TestConvertEventEndpoint:
         assert '@I1@' in people
         tags = [e['tag'] for e in people['@I1@']['events']]
         assert 'BAPM' in tags
-        assert 'BIRT' not in tags
+        assert 'BIRT' in tags  # new approximate BIRT is auto-inserted
 
     def test_unknown_from_tag_returns_400(self, live_server):
         ged, post, _, _ = live_server
@@ -412,6 +411,51 @@ class TestConvertEventEndpoint:
             'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
         })
         assert bak.exists()
+
+    def test_birt_to_bapm_inserts_approximate_birt_event(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/convert_event', {
+            'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
+        })
+        text = _ged_text(ged)
+        assert '1 BIRT' in text
+        assert '2 DATE ABT 1990' in text
+
+    def test_birt_to_bapm_uses_baptism_place_for_new_birth(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/convert_event', {
+            'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
+        })
+        lines = _ged_text(ged).splitlines()
+        in_birt, birt_plac = False, None
+        for ln in lines:
+            if ln == '1 BIRT':
+                in_birt = True
+            elif in_birt and ln.startswith('2 PLAC '):
+                birt_plac = ln[len('2 PLAC '):]
+                break
+            elif in_birt and ln.startswith('1 '):
+                break
+        assert birt_plac == 'Greenwich, Connecticut, USA'
+
+    def test_birt_to_bapm_new_birth_inserted_before_bapm(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/convert_event', {
+            'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
+        })
+        lines = _ged_text(ged).splitlines()
+        birt_pos = next((i for i, l in enumerate(lines) if l == '1 BIRT'), None)
+        bapm_pos = next((i for i, l in enumerate(lines) if l == '1 BAPM'), None)
+        assert birt_pos is not None and bapm_pos is not None
+        assert birt_pos < bapm_pos
+
+    def test_birt_to_chr_does_not_insert_extra_birt(self, live_server):
+        ged, post, _, _ = live_server
+        initial_birt_count = _ged_text(ged).count('1 BIRT')
+        post('/api/convert_event', {
+            'xref': '@I2@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'CHR',
+        })
+        assert _ged_text(ged).count('1 BIRT') == initial_birt_count - 1
 
 
 # ===========================================================================

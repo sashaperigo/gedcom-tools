@@ -1244,6 +1244,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             m = _TAG_RE.match(lines[start])
             rest = lines[start][m.end():].strip()
             lines[start] = f"{m.group(1)} {to_tag}" + (f" {rest}" if rest else "")
+            if from_tag == 'BIRT' and to_tag == 'BAPM':
+                bapm_year, bapm_plac = None, None
+                for ln in lines[start + 1 : end]:
+                    m2 = _TAG_RE.match(ln)
+                    if not m2 or int(m2.group(1)) != 2:
+                        continue
+                    if m2.group(2) == 'DATE' and m2.group(3):
+                        yr = re.search(r'\b(\d{4})\b', m2.group(3))
+                        if yr:
+                            bapm_year = yr.group(1)
+                    elif m2.group(2) == 'PLAC' and m2.group(3):
+                        bapm_plac = m2.group(3).strip()
+                new_birt = ['1 BIRT']
+                if bapm_year:
+                    new_birt.append(f'2 DATE ABT {bapm_year}')
+                if bapm_plac:
+                    new_birt.append(f'2 PLAC {bapm_plac}')
+                lines = lines[:start] + new_birt + lines[start:]
             _write_gedcom_atomic(lines)
             print(f"[event-convert] {xref} {from_tag}[{event_idx}] → {to_tag}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
