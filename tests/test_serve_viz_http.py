@@ -153,6 +153,19 @@ class TestDeleteFactEndpoint:
         assert resp['ok'] is False
         assert 'error' in resp
 
+    def test_delete_inline_type_fact_with_type_field(self, live_server):
+        # Regression: deleting NATI/OCCU/etc. where type=inline_val was failing because
+        # _apply_deletion checked for a 2 TYPE sub-record that doesn't exist for inline tags.
+        # @I2@ has "1 NATI American" — type and inline_val both equal "American".
+        ged, post, _, _ = live_server
+        resp = post('/api/delete_fact', {
+            'xref': '@I2@', 'tag': 'NATI',
+            'inline_val': 'American', 'type': 'American',
+            'date': None, 'place': None,
+        })
+        assert resp.get('ok') is True, resp.get('error')
+        assert '1 NATI American' not in _ged_text(ged)
+
 
 # ===========================================================================
 # /api/delete_note

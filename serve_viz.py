@@ -151,7 +151,11 @@ def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
         def _eq(actual, expected):
             return expected is None or actual == expected
 
-        if _eq(sub.get('DATE'), date) and _eq(sub.get('PLAC'), place) and _eq(sub.get('TYPE'), fact_type):
+        # For inline-type tags (e.g. OCCU), the value lives on the level-1 line
+        # itself rather than in a 2 TYPE sub-record.  inline_val already matched
+        # above, so skip the TYPE sub-tag check to avoid a false mismatch.
+        effective_type = None if (tag in _INLINE_TYPE_TAGS and inline_val is not None) else fact_type
+        if _eq(sub.get('DATE'), date) and _eq(sub.get('PLAC'), place) and _eq(sub.get('TYPE'), effective_type):
             event_start, event_end = i, j
             break
 
