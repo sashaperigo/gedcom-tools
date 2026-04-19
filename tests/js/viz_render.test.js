@@ -377,17 +377,18 @@ describe('render — ancestor expand buttons', () => {
     expect(expandBtn).toBeDefined();
   });
 
-  it('expand button is positioned at node top edge (cy = node.y - 8 + treeRootTranslateY)', () => {
+  it('expand button floats above node top edge with a gap (cy < 0, bottom of circle < 0)', () => {
     const treeRoot = svg.querySelector('#tree-root');
     const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
     const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
     const expandBtn = fatherG.children.find(
       c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
     );
-    // The <g data-xref> is translated to node.x, node.y.
-    // The button is placed relative to the group at (w/2, -8) so top of node.
+    // The <g data-xref> is translated to node.x, node.y. The button floats
+    // above y=0 (pill top) with a visible gap: center + radius must be < 0.
     const cy = parseFloat(expandBtn._attrs['cy']);
-    expect(cy).toBeCloseTo(-8, 0);
+    const r = parseFloat(expandBtn._attrs['r']);
+    expect(cy + r).toBeLessThan(0);
   });
 
   it('focus node does NOT have an expand button', () => {

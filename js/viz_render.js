@@ -209,10 +209,10 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     onNodeClick(node);
   });
 
-  // Expand button on ancestor nodes — circle sits on the top edge
+  // Expand button on ancestor nodes — floats above the top edge with a small gap
   if (isAncestor) {
     const btnCx = w / 2;
-    const btnCy = -8;
+    const btnCy = -20;
     const parents = PARENTS[node.xref] || [null, null];
     const hasParents = parents.some(p => p !== null);
     const isExpanded = expandedNodes.has(node.xref);
