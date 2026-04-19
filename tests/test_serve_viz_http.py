@@ -858,6 +858,21 @@ class TestAddCitationEndpoint:
         assert '3 DATA' in text
         assert '4 TEXT Entry reads: born 1990' in text
 
+    def test_fact_citation_multiline_text_uses_cont(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': '',
+            'text': 'Line one\nLine two\nLine three', 'note': '',
+        })
+        text = _ged_text(ged)
+        assert '4 TEXT Line one' in text
+        assert '5 CONT Line two' in text
+        assert '5 CONT Line three' in text
+        # Must not embed literal newlines in a single line value
+        assert '4 TEXT Line one\nLine two' not in text
+
     def test_person_level_citation(self, live_server):
         """No fact_key → person-level SOUR at level 1."""
         ged, post, _, _ = live_server

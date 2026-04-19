@@ -246,6 +246,34 @@ def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | 
     return None, None, f'Note index {note_idx} not found in {xref}'
 
 
+def _find_note_block_full(
+    lines: list[str], xref: str, note_idx: int
+) -> tuple[int | None, int | None, str | None]:
+    """Like _find_note_block but extends past CONT/CONC to include 2 SOUR children.
+
+    Returns (start, end, err) where end is the insertion point for a new 2 SOUR.
+    """
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None, None, err
+    count = 0
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if not m:
+            continue
+        if int(m.group(1)) == 1 and m.group(2) == 'NOTE':
+            if count == note_idx:
+                j = i + 1
+                while j < indi_end:
+                    sm = _TAG_RE.match(lines[j])
+                    if sm and int(sm.group(1)) <= 1:
+                        break
+                    j += 1
+                return i, j, None
+            count += 1
+    return None, None, f'Note index {note_idx} not found in {xref}'
+
+
 def _find_shared_note_block(lines: list[str], note_xref: str) -> tuple[int | None, int | None, str | None]:
     """Return (start, end, err) — line range [start, end) for top-level '0 @xref@ NOTE' record."""
     target = f'0 {note_xref} NOTE'
@@ -813,6 +841,23 @@ def _find_fact_for_citation(
             return indi_end, None
 
     parts = fact_key.split(':')
+
+    if parts[0] == 'NOTE' and len(parts) == 2:
+        try:
+            note_n = int(parts[1])
+        except ValueError:
+            return None, f'Invalid fact_key: {fact_key!r}'
+        _, note_end, err = _find_note_block_full(lines, xref, note_n)
+        if err:
+            return None, err
+        return note_end, None
+
+    if parts[0] == 'SNOTE' and len(parts) == 2:
+        _, snote_end, err = _find_shared_note_block(lines, parts[1])
+        if err:
+            return None, err
+        return snote_end, None
+
     if len(parts) != 2:
         return None, f'Invalid fact_key format: {fact_key!r}'
     tag = parts[0]
@@ -930,11 +975,15 @@ def _build_citation_lines(sour_xref: str, page: str, text: str, note: str, base_
     if (text and text.strip()) or (url and url.strip()):
         lines_out.append(f'{b+1} DATA')
         if text and text.strip():
-            lines_out.append(f'{b+2} TEXT {text.strip()}')
+            for i, logical_line in enumerate(text.strip().split('\n')):
+                first_tag = f'{b+2} TEXT' if i == 0 else f'{b+3} CONT'
+                lines_out.extend(_chunk_note_line(logical_line, first_tag, f'{b+3} CONC'))
         if url and url.strip():
             lines_out.append(f'{b+2} WWW {url.strip()}')
     if note and note.strip():
-        lines_out.append(f'{b+1} NOTE {note.strip()}')
+        for i, logical_line in enumerate(note.strip().split('\n')):
+            first_tag = f'{b+1} NOTE' if i == 0 else f'{b+2} CONT'
+            lines_out.extend(_chunk_note_line(logical_line, first_tag, f'{b+2} CONC'))
     return lines_out
 
 
