@@ -783,6 +783,7 @@ function renderPanel() {
 // ── Init ──────────────────────────────────────────────────────────────────
 
 async function convertEventTag(xref, eventIdx, fromTag, toTag) {
+  if (!confirm(`Convert this Birth to a Baptism? This will change the event type in the GEDCOM file.`)) return;
   try {
     const resp = await apiConvertEvent(xref, eventIdx, fromTag, toTag);
     if (resp && resp.people) {

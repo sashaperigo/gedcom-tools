@@ -1018,3 +1018,49 @@ describe('buildNoteSourceBadgeHtml', () => {
     expect(html).toContain('note-src-badge');
   });
 });
+
+describe('convertEventTag', () => {
+  const { convertEventTag } = require('../../js/viz_panel.js');
+
+  beforeEach(() => {
+    global.apiConvertEvent = vi.fn();
+    global.confirm = vi.fn();
+    global.alert = vi.fn();
+    global.PEOPLE = {};
+    // Provide a panel so renderPanel() doesn't throw when the API succeeds
+    const panelEl = makeFakeEl('detail-panel');
+    global.document = {
+      getElementById: (id) => id === 'detail-panel' ? panelEl : makeFakeEl(id),
+      addEventListener: () => {},
+    };
+    initPanel(panelEl);
+  });
+
+  it('does nothing when user cancels the confirmation dialog', async () => {
+    global.confirm.mockReturnValue(false);
+    await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
+    expect(global.apiConvertEvent).not.toHaveBeenCalled();
+  });
+
+  it('calls apiConvertEvent with correct args when user confirms', async () => {
+    global.confirm.mockReturnValue(true);
+    global.apiConvertEvent.mockResolvedValue({ people: {} });
+    await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
+    expect(global.apiConvertEvent).toHaveBeenCalledWith('@I1@', 0, 'BIRT', 'BAPM');
+  });
+
+  it('updates PEOPLE with returned data when confirmed', async () => {
+    global.confirm.mockReturnValue(true);
+    const updatedPerson = { name: 'Updated Person', events: [], birth_year: null, death_year: null, sex: 'M', notes: [], sources: [] };
+    global.apiConvertEvent.mockResolvedValue({ people: { '@I1@': updatedPerson } });
+    await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
+    expect(global.PEOPLE['@I1@']).toEqual(updatedPerson);
+  });
+
+  it('shows error alert when API call fails', async () => {
+    global.confirm.mockReturnValue(true);
+    global.apiConvertEvent.mockRejectedValue(new Error('server error'));
+    await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
+    expect(global.alert).toHaveBeenCalledWith(expect.stringContaining('Conversion failed'));
+  });
+});
