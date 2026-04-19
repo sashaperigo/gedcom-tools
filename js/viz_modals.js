@@ -762,8 +762,9 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
       const xrefKey = c.sourceXref || c.sour_xref;
       const src = sources[xrefKey] || {};
       const title = src.titl || src.title || xrefKey || 'Unknown source';
-      const titleHtml = src.url
-        ? `<a href="${escHtml(src.url)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
+      const citUrl = c.url || src.url;
+      const titleHtml = citUrl
+        ? `<a href="${escHtml(citUrl)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
         : escHtml(title);
       const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
       const citeKey  = `${tag}:${eventOcc}:${idx}`;
