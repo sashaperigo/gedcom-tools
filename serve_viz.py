@@ -1192,6 +1192,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
                     resp = json.dumps({'ok': True, 'people': updated}).encode()
 
+        elif parsed.path == '/api/convert_event':
+            xref      = (body.get('xref') or '').strip()
+            from_tag  = (body.get('from_tag') or '').strip().upper()
+            to_tag    = (body.get('to_tag') or '').strip().upper()
+            event_idx = int(body.get('event_idx') or 0)
+            if not xref or not from_tag or not to_tag:
+                self.send_error(400, 'xref, from_tag, and to_tag are required')
+                return
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            start, end, err = _find_event_block(lines, xref, from_tag, event_idx)
+            if err:
+                self.send_error(400, err)
+                return
+            m = _TAG_RE.match(lines[start])
+            rest = lines[start][m.end():].strip()
+            lines[start] = f"{m.group(1)} {to_tag}" + (f" {rest}" if rest else "")
+            _write_gedcom_atomic(lines)
+            print(f"[event-convert] {xref} {from_tag}[{event_idx}] → {to_tag}")
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
+
         elif parsed.path == '/api/add_secondary_name':
             xref      = body['xref']
             name      = (body.get('name') or '').strip()

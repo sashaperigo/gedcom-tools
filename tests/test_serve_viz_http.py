@@ -349,6 +349,72 @@ class TestEditEventEndpoint:
 
 
 # ===========================================================================
+# /api/convert_event
+# ===========================================================================
+
+class TestConvertEventEndpoint:
+    def test_converts_birt_tag_to_bapm_in_ged(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/convert_event', {
+            'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
+        })
+        assert resp.get('ok') is True
+        lines = _ged_text(ged).splitlines()
+        # Extract @I1@'s block and verify the tag was renamed there
+        in_i1, i1_lines = False, []
+        for ln in lines:
+            if ln.startswith('0 @I1@ INDI'):
+                in_i1 = True
+            elif in_i1 and ln.startswith('0 '):
+                break
+            if in_i1:
+                i1_lines.append(ln)
+        assert '1 BAPM' in i1_lines, '1 BAPM not found in @I1@ block'
+        assert '1 BIRT' not in i1_lines, '1 BIRT still present in @I1@ block'
+
+    def test_preserves_date_and_place_after_conversion(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/convert_event', {
+            'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
+        })
+        text = _ged_text(ged)
+        assert '2 DATE 14 MAR 1990' in text
+        assert '2 PLAC Greenwich, Connecticut, USA' in text
+
+    def test_returns_people_with_converted_event(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/convert_event', {
+            'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
+        })
+        assert 'people' in resp
+        people = resp['people']
+        assert '@I1@' in people
+        tags = [e['tag'] for e in people['@I1@']['events']]
+        assert 'BAPM' in tags
+        assert 'BIRT' not in tags
+
+    def test_unknown_from_tag_returns_400(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/convert_event', {
+                'xref': '@I1@', 'event_idx': 0, 'from_tag': 'XXXX', 'to_tag': 'BAPM',
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_creates_backup(self, live_server):
+        ged, post, _, _ = live_server
+        bak = ged.with_suffix('.ged.bak')
+        bak.unlink(missing_ok=True)
+        post('/api/convert_event', {
+            'xref': '@I1@', 'event_idx': 0, 'from_tag': 'BIRT', 'to_tag': 'BAPM',
+        })
+        assert bak.exists()
+
+
+# ===========================================================================
 # /api/add_event
 # ===========================================================================
 
