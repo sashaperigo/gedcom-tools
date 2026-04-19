@@ -535,6 +535,9 @@ function renderPanel() {
         const editBtn = evt.event_idx !== null && evt.event_idx !== undefined
           ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>`
           : '';
+        const convertBtn = evt.tag === 'BIRT' && evt.event_idx !== null && evt.event_idx !== undefined
+          ? `<button class="evt-convert-btn" title="Convert to Baptism" onclick="convertEventTag(${xrefQ},${evt.event_idx},'BIRT','BAPM')">\u2192 Baptism</button>`
+          : '';
         const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
 
         // Godparents (CHR/BAPM)
@@ -549,6 +552,7 @@ function renderPanel() {
           godparentHtml +
           srcBadge +
           editBtn +
+          convertBtn +
           delBtn +
           `</div>`;
       }
@@ -770,6 +774,18 @@ function renderPanel() {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 
+async function convertEventTag(xref, eventIdx, fromTag, toTag) {
+  try {
+    const resp = await apiConvertEvent(xref, eventIdx, fromTag, toTag);
+    if (resp && resp.people) {
+      for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+    }
+    renderPanel();
+  } catch (e) {
+    alert('Conversion failed: ' + e);
+  }
+}
+
 function initPanel(panelEl) {
   _panelEl = panelEl;
   onStateChange(function (state) {
@@ -787,5 +803,6 @@ if (typeof module !== 'undefined') {
     collapseResidences,
     buildSourceBadgeHtml,
     _handleGodparentClick,
+    convertEventTag,
   };
 }

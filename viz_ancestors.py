@@ -894,6 +894,11 @@ header h1 { font-size: 16px; font-weight: 600; }
   border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; }
 .evt-entry:hover .evt-edit-btn { opacity: 1; }
 .evt-edit-btn:hover { color: #3b82f6 !important; }
+.evt-convert-btn { position: absolute; right: 44px; top: 2px; background: none; border: none;
+  cursor: pointer; opacity: 0; font-size: 11px; color: #94a3b8; padding: 2px 4px;
+  border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; white-space: nowrap; }
+.evt-entry:hover .evt-convert-btn { opacity: 1; }
+.evt-convert-btn:hover { color: #a78bfa !important; }
 .add-event-btn { display: flex; align-items: center; gap: 5px; background: none;
   border: 1px dashed #334155; border-radius: 6px; color: #475569; font-size: 12px;
   padding: 5px 12px; cursor: pointer; margin-top: 12px; }

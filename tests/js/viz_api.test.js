@@ -103,3 +103,40 @@ describe('apiAddNote', () => {
     expect(opts.headers['Content-Type']).toBe('application/json');
   });
 });
+
+// ── apiConvertEvent ───────────────────────────────────────────────────────
+
+describe('apiConvertEvent', () => {
+  it('calls /api/convert_event with correct body', async () => {
+    const fetchMock = makeFetchMock({ ok: true, people: {} });
+    const mod = loadMod(fetchMock);
+
+    await mod.apiConvertEvent('@I1@', 0, 'BIRT', 'BAPM');
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/convert_event');
+    expect(opts.method).toBe('POST');
+    const body = JSON.parse(opts.body);
+    expect(body.xref).toBe('@I1@');
+    expect(body.event_idx).toBe(0);
+    expect(body.from_tag).toBe('BIRT');
+    expect(body.to_tag).toBe('BAPM');
+  });
+
+  it('returns parsed JSON on success', async () => {
+    const data = { ok: true, people: { '@I1@': { events: [] } } };
+    const fetchMock = makeFetchMock(data);
+    const mod = loadMod(fetchMock);
+
+    const result = await mod.apiConvertEvent('@I1@', 0, 'BIRT', 'BAPM');
+    expect(result).toEqual(data);
+  });
+
+  it('throws on server error', async () => {
+    const fetchMock = makeFetchMock({ error: 'Event not found' }, false);
+    const mod = loadMod(fetchMock);
+
+    await expect(mod.apiConvertEvent('@I1@', 0, 'BIRT', 'BAPM')).rejects.toThrow('Event not found');
+  });
+});
