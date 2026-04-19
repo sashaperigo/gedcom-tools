@@ -1443,6 +1443,26 @@ def scan_broken_xrefs(path: str) -> list[str]:
     return _check_broken_xrefs(parse_gedcom(path))
 
 
+def scan_dangling_note_xrefs(path: str) -> list[tuple[int, str]]:
+    """
+    Return (lineno, xref) for NOTE pointer lines that reference a shared-note
+    xref which has no matching top-level '0 @xref@ NOTE' record.
+    """
+    defined: set[str] = set()
+    references: list[tuple[int, str]] = []
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m0 = re.match(r'^0 (@[^@]+@) NOTE', line)
+            if m0:
+                defined.add(m0.group(1))
+                continue
+            mn = re.match(r'^\d+ NOTE (@[^@]+@)\s*$', line)
+            if mn:
+                references.append((lineno, mn.group(1)))
+    return [(ln, xref) for ln, xref in references if xref not in defined]
+
+
 def scan_duplicate_families(path: str) -> list[tuple[str, str]]:
     """
     Return (xref_a, xref_b) pairs of FAM records sharing the same husband+wife.
@@ -5637,6 +5657,19 @@ def main():
                 print(f'\n{_WARN} {len(sour_no_titl)} SOUR record(s) have no TITL: {xref_list}')
             else:
                 print('OK: all SOUR records have a TITL.')
+
+            dangling_notes = scan_dangling_note_xrefs(args.gedfile)
+            if dangling_notes:
+                errors = True
+                bad_xrefs = sorted({xref for _, xref in dangling_notes})
+                print(f'\n{_ERR} {len(dangling_notes)} NOTE pointer(s) reference '
+                      f'{len(bad_xrefs)} undefined shared-note xref(s):')
+                for xref in bad_xrefs:
+                    lns = [str(ln) for ln, x in dangling_notes if x == xref]
+                    print(f'  {xref} — line(s): {", ".join(lns[:5])}'
+                          + (f' (+{len(lns)-5} more)' if len(lns) > 5 else ''))
+            else:
+                print('OK: all NOTE pointers resolve to defined shared notes.')
 
             # ── Summary statistics ───────────────────────────────────────────
             try:
