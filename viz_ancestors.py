@@ -918,6 +918,11 @@ header h1 { font-size: 16px; font-weight: 600; }
 #event-modal-spouse-results { max-height: 160px; overflow-y: auto; background: #0f172a;
   border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
 .spouse-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+/* ── Place autocomplete ──────────────────────────────────── */
+#event-modal-place-results { max-height: 160px; overflow-y: auto; background: #0f172a;
+  border: 1px solid #334155; border-radius: 6px; margin-top: 4px; }
+.place-result-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #cbd5e1; }
+.place-result-item:hover { background: #1e3a5f; }
 .spouse-result-item:hover { background: #1e3a5f; }
 /* ── Alias modal ─────────────────────────────────────────── */
 #alias-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
@@ -1162,9 +1167,11 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
     <div class="event-modal-field" id="event-modal-place-row">
       <label>Place</label>
-      <input type="text" id="event-modal-place" list="plac-suggestions"
+      <input type="text" id="event-modal-place" autocomplete="off"
+             oninput="_onPlaceInput(this.value)"
+             onblur="_schedulePlaceResultsClear()"
              onkeydown="if(event.key==='Escape')closeEventModal()">
-      <datalist id="plac-suggestions"></datalist>
+      <div id="event-modal-place-results"></div>
     </div>
     <div class="event-modal-field" id="event-modal-addr-row">
       <label>Address</label>

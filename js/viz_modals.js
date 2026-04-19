@@ -184,16 +184,40 @@ function _updateAddrSuggestions(place) {
   }
 }
 
-// Populate the PLAC suggestions datalist once on load
-(function() {
-  const dl = document.getElementById('plac-suggestions');
-  if (!dl) return;
-  for (const p of ALL_PLACES) {
-    const opt = document.createElement('option');
-    opt.value = p;
-    dl.appendChild(opt);
-  }
-})();
+// ── Place autocomplete ─────────────────────────────────────────────────────
+
+function _onPlaceInput(val) {
+  const q = val.trim();
+  const el = document.getElementById('event-modal-place-results');
+  if (!el) return;
+  if (!q) { el.innerHTML = ''; return; }
+  const ql = q.toLowerCase();
+  const matches = (typeof ALL_PLACES !== 'undefined' ? ALL_PLACES : [])
+    .filter(p => p.toLowerCase().startsWith(ql))
+    .slice(0, 8);
+  if (!matches.length) { el.innerHTML = ''; return; }
+  el.innerHTML = matches.map(p =>
+    `<div class="place-result-item" onmousedown="event.preventDefault();_selectPlace(${JSON.stringify(p).replace(/"/g, '&quot;')})">${escHtml(p)}</div>`
+  ).join('');
+}
+
+function _selectPlace(place) {
+  const inp = document.getElementById('event-modal-place');
+  if (inp) inp.value = place;
+  _clearPlaceResults();
+  _updateAddrSuggestions(place);
+}
+
+function _clearPlaceResults() {
+  const el = document.getElementById('event-modal-place-results');
+  if (el) el.innerHTML = '';
+}
+
+let _placeBlurTimer = null;
+function _schedulePlaceResultsClear() {
+  clearTimeout(_placeBlurTimer);
+  _placeBlurTimer = setTimeout(_clearPlaceResults, 150);
+}
 
 function _personName(xref) {
   return (PEOPLE[xref] && PEOPLE[xref].name) ||
@@ -287,6 +311,7 @@ function closeEventModal() {
   document.getElementById('event-modal-overlay').classList.remove('open');
   _eventModalXref = _eventModalIdx = _eventModalTag = _eventModalFamXref = _eventModalMARRIdx = null;
   _eventModalSpouseXref = null;
+  _clearPlaceResults();
 }
 
 async function submitEventModal() {
@@ -1439,5 +1464,6 @@ if (typeof module !== 'undefined' && module.exports) {
     showAddSourceModal,
     _evtLabel, editEvent,
     deleteNote, submitNoteEdit, editNote, deleteFact,
+    _onPlaceInput, _selectPlace, _clearPlaceResults,
   };
 }
