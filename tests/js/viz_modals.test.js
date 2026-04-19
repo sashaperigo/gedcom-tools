@@ -759,7 +759,7 @@ describe('showEditCitationModal', () => {
     global.PEOPLE = {
       '@I1@': {
         name: 'John Smith',
-        facts: [
+        events: [
           {
             tag: 'BIRT',
             date: '1900',

@@ -671,7 +671,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   background: #334155; color: #f1f5f9; }
 #search-results li b { font-weight: 700; color: #f1f5f9; }
 #search-results li .srch-dates { color: #64748b; font-size: 12px; margin-left: 4px; }
-#viewport { position: relative; overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; height: calc(100vh - var(--header-h, 45px)); }
+#viewport { position: relative; overflow: hidden; cursor: grab; user-select: none; transition: margin-right 0.22s ease; height: calc(100vh - var(--header-h, 60px)); }
 #viewport.dragging { cursor: grabbing; }
 #tree { display: block; width: 100%; height: 100%; }
 #gen-labels { position: absolute; left: 0; top: 0; bottom: 0; width: 90px;
@@ -680,8 +680,8 @@ header h1 { font-size: 16px; font-weight: 600; }
   font-family: system-ui, sans-serif; transform: translateY(-50%); white-space: nowrap; }
 /* ── Detail panel shell ─────────────────────────────────── */
 #detail-panel {
-  position: fixed; top: var(--header-h, 45px); right: 0;
-  width: 480px; height: calc(100vh - var(--header-h, 45px));
+  position: fixed; top: var(--header-h, 60px); right: 0;
+  width: 480px; height: calc(100vh - var(--header-h, 60px));
   background: #1e293b; border-left: 1px solid #334155;
   overflow-y: auto;
   transform: translateX(480px); transition: transform 0.22s ease;
@@ -712,7 +712,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 .panel-lifespan-sep { color: #475569; }
 .panel-age { font-size: 11px; color: #64748b; }
 #detail-nationalities { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-                        margin-bottom: 6px; }
+                        margin-top: 10px; margin-bottom: 6px; }
 .panel-nati-pill { background: #1e3a5f; border: 1px solid #3b82f6; color: #93c5fd;
                    font-size: 11px; border-radius: 12px; padding: 2px 10px; }
 .add-event-btn { background: none; border: 1px solid #334155; color: #64748b;
@@ -1458,7 +1458,14 @@ const ALL_PLACES = __ALL_PLACES_JSON__;
 <script src="/js/viz_search.js"></script>
 <script src="/js/viz_modals.js"></script>
 <script>
+function _updateHeaderH() {
+  const hdr = document.querySelector('header');
+  if (hdr) document.documentElement.style.setProperty('--header-h', hdr.offsetHeight + 'px');
+}
+window.addEventListener('resize', _updateHeaderH);
+
 document.addEventListener('DOMContentLoaded', function () {
+  _updateHeaderH();
   console.log('[boot] DOMContentLoaded fired');
   console.log('[boot] ROOT_XREF =', ROOT_XREF);
   console.log('[boot] typeof initState =', typeof initState);

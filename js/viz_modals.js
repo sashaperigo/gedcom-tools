@@ -1017,7 +1017,7 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref) {
       // person-level source
       cite = (person.sources || [])[citationIndex] || null;
     } else {
-      const fact = (person.facts || []).find(f => f.tag === factTag);
+      const fact = (person.events || []).find(f => f.tag === factTag);
       if (fact) cite = (fact.citations || [])[citationIndex] || null;
     }
   }
