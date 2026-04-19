@@ -56,14 +56,20 @@ function addNote(xref) {
 function editNote(xref, noteIdx) {
   _noteEditXref = xref;
   _noteEditIdx  = noteIdx;
+  const note = PEOPLE[xref] && PEOPLE[xref].notes[noteIdx];
+  const noteObj = (note && typeof note === 'object') ? note : {text: note || '', shared: false, note_xref: null};
   document.getElementById('note-modal-title').textContent = 'Edit Note';
-  document.getElementById('note-modal-textarea').value = (PEOPLE[xref] && PEOPLE[xref].notes[noteIdx]) || '';
+  document.getElementById('note-modal-textarea').value = noteObj.text;
+  const warning = document.getElementById('note-modal-shared-warning');
+  if (warning) warning.style.display = noteObj.shared ? 'block' : 'none';
   document.getElementById('note-modal-overlay').classList.add('open');
   setTimeout(() => { const el = document.getElementById('note-modal-textarea'); if (el) el.focus && el.focus(); }, 50);
 }
 
 function closeNoteModal() {
   document.getElementById('note-modal-overlay').classList.remove('open');
+  const warning = document.getElementById('note-modal-shared-warning');
+  if (warning) warning.style.display = 'none';
   _noteEditXref = _noteEditIdx = null;
 }
 
@@ -74,9 +80,11 @@ async function submitNoteEdit() {
   closeNoteModal();
   const isAdd = noteIdx === null;
   const url   = isAdd ? '/api/add_note' : '/api/edit_note';
+  const existingNote = !isAdd && PEOPLE[xref] && PEOPLE[xref].notes[noteIdx];
+  const noteXref = (existingNote && typeof existingNote === 'object' && existingNote.shared) ? existingNote.note_xref : null;
   const payload = isAdd
     ? {xref, new_text: newText, current_person: window._currentPerson || null}
-    : {xref, note_idx: noteIdx, new_text: newText, current_person: window._currentPerson || null};
+    : {xref, note_idx: noteIdx, note_xref: noteXref, new_text: newText, current_person: window._currentPerson || null};
   try {
     const resp = await fetch(url, {
       method: 'POST',

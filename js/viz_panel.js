@@ -397,14 +397,18 @@ function renderPanel() {
     if (notes.length) {
       const count = notes.length;
       const label = count === 1 ? '1 Note' : `${count} Notes`;
-      const cards = notes.map((n, i) =>
-        `<div class="note-card-wrap">` +
-        `<div class="note-card" style="border-left-color:${accent}">${linkify(n)}</div>` +
-        `<div class="note-actions">` +
-        `<button class="note-action-btn" title="Edit note" onclick="editNote(${xrefQN},${i})">\u270f</button>` +
-        `<button class="note-action-btn" title="Delete note" onclick="deleteNote(${xrefQN},${i})">\u2715</button>` +
-        `</div></div>`
-      ).join('');
+      const cards = notes.map((n, i) => {
+        const noteText = (n && typeof n === 'object') ? n.text : n;
+        const isShared = n && n.shared;
+        const sharedClass = isShared ? ' shared' : '';
+        const borderStyle = isShared ? '' : ` style="border-left-color:${accent}"`;
+        return `<div class="note-card-wrap">` +
+          `<div class="note-card${sharedClass}"${borderStyle}>${linkify(noteText)}</div>` +
+          `<div class="note-actions">` +
+          `<button class="note-action-btn" title="Edit note" onclick="editNote(${xrefQN},${i})">\u270f</button>` +
+          `<button class="note-action-btn" title="Delete note" onclick="deleteNote(${xrefQN},${i})">\u2715</button>` +
+          `</div></div>`;
+      }).join('');
       notesDiv.innerHTML =
         `<div class="notes-header">` +
         `<button class="notes-toggle open" onclick="this.closest('.notes-header').nextElementSibling.style.display=` +
