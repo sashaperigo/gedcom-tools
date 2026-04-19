@@ -22,6 +22,7 @@ import sys
 _INDI_RE = re.compile(r'^0 (@[^@]+@) INDI\b')
 _FAM_RE  = re.compile(r'^0 (@[^@]+@) FAM\b')
 _SOUR_RE = re.compile(r'^0 (@[^@]+@) SOUR\b')
+_NOTE_RE = re.compile(r'^0 (@[^@]+@) NOTE\b(?: (.*))?$')
 _TAG_RE  = re.compile(r'^(\d+) (\w+)(?: (.*))?$')
 _YEAR_RE = re.compile(r'\b(\d{4})\b')
 
@@ -47,6 +48,27 @@ def _ged_val(raw: str) -> str:
     return html_mod.unescape(raw.replace('@@', '@'))
 
 
+def _collect_shared_notes(lines: list[str]) -> dict[str, str]:
+    """Pass 1: collect all top-level '0 @xref@ NOTE' records into {xref: text}."""
+    shared: dict[str, str] = {}
+    current_xref: str | None = None
+    for line in lines:
+        m = _NOTE_RE.match(line)
+        if m:
+            current_xref = m.group(1)
+            shared[current_xref] = _ged_val(m.group(2) or '')
+            continue
+        if line.startswith('0 '):
+            current_xref = None
+            continue
+        if current_xref is not None:
+            m2 = _TAG_RE.match(line)
+            if m2 and m2.group(2) in ('CONT', 'CONC'):
+                sep = '\n' if m2.group(2) == 'CONT' else ''
+                shared[current_xref] += sep + _ged_val(m2.group(3) or '')
+    return shared
+
+
 def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     """
     Returns (indis, fams).
@@ -57,6 +79,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     """
     with open(path, encoding='utf-8') as f:
         lines = [ln.rstrip('\n') for ln in f]
+
+    shared_notes = _collect_shared_notes(lines)
 
     indis: dict  = {}
     fams: dict   = {}
@@ -187,12 +211,19 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 sep = '\n' if tag == 'CONT' else ''
                 current_evt['note'] += sep + _ged_val(val)
             elif lvl == 1 and tag == 'NOTE':
-                indis[xref]['notes'].append(_ged_val(val))
-                current_note = len(indis[xref]['notes']) - 1
+                raw = _ged_val(val) if val else ''
+                if val and val.startswith('@'):
+                    note_xref = val.rstrip()
+                    note_obj = {'text': shared_notes.get(note_xref, raw), 'shared': True, 'note_xref': note_xref}
+                    current_note = None  # shared note: CONT/CONC belong to top-level record, not here
+                else:
+                    note_obj = {'text': raw, 'shared': False, 'note_xref': None}
+                    current_note = len(indis[xref]['notes'])
+                indis[xref]['notes'].append(note_obj)
                 current_evt  = None
             elif lvl == 2 and tag in ('CONT', 'CONC') and isinstance(current_note, int):
                 sep = '\n' if tag == 'CONT' else ''
-                indis[xref]['notes'][current_note] += sep + _ged_val(val)
+                indis[xref]['notes'][current_note]['text'] += sep + _ged_val(val)
             elif lvl == 1 and tag == 'FAMC' and indis[xref]['famc'] is None:
                 indis[xref]['famc'] = val
                 current_evt = current_note = None
@@ -814,6 +845,8 @@ header h1 { font-size: 16px; font-weight: 600; }
              margin-bottom: 10px;
              max-height: 260px; overflow-y: auto; }
 .note-card a { color: #fde68a; text-underline-offset: 2px; }
+.note-card.shared { background: rgba(252, 165, 138, 0.12); border-left-color: rgba(251, 113, 83, 0.5); }
+.note-card.shared a { color: #fca5a5; }
 #note-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   z-index: 1000; align-items: center; justify-content: center; }
 #note-modal-overlay.open { display: flex; }
@@ -1125,6 +1158,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 <div id="note-modal-overlay" onclick="if(event.target===this)closeNoteModal()">
   <div id="note-modal">
     <h3 id="note-modal-title">Edit Note</h3>
+    <div id="note-modal-shared-warning" style="display:none;background:rgba(251,113,83,0.15);border:1px solid rgba(251,113,83,0.4);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#fca5a5;">&#9888; This is a shared note &mdash; edits will apply to all profiles that contain it.</div>
     <textarea id="note-modal-textarea" rows="6" onkeydown="if(event.key==='Escape')closeNoteModal()"></textarea>
     <div class="note-modal-actions">
       <button class="note-modal-cancel" onclick="closeNoteModal()">Cancel</button>
@@ -1403,7 +1437,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
     <div id="detail-header-btns">
       <button id="panel-close-btn" title="Close">&#x2715;</button>
-      <button id="detail-set-root-btn" title="Browse tree with this person as root">&#x2302;</button>
+      <button id="detail-set-root-btn" title="Center tree on this person">&#x2302;</button>
     </div>
   </div>
   <div id="detail-body">

@@ -246,6 +246,34 @@ def _find_note_block(lines: list[str], xref: str, note_idx: int) -> tuple[int | 
     return None, None, f'Note index {note_idx} not found in {xref}'
 
 
+def _find_shared_note_block(lines: list[str], note_xref: str) -> tuple[int | None, int | None, str | None]:
+    """Return (start, end, err) — line range [start, end) for top-level '0 @xref@ NOTE' record."""
+    target = f'0 {note_xref} NOTE'
+    start = None
+    for i, line in enumerate(lines):
+        if line == target or line.startswith(target + ' '):
+            start = i
+            break
+    if start is None:
+        return None, None, f'Shared note {note_xref} not found in GEDCOM'
+    end = start + 1
+    while end < len(lines):
+        m = _TAG_RE.match(lines[end])
+        if m and int(m.group(1)) == 0:
+            break
+        end += 1
+    return start, end, None
+
+
+def _encode_shared_note_lines(note_xref: str, text: str) -> list[str]:
+    """Encode text into GEDCOM '0 @xref@ NOTE / 1 CONT / 1 CONC' lines."""
+    out = []
+    for i, logical_line in enumerate(text.split('\n')):
+        first_tag = f'0 {note_xref} NOTE' if i == 0 else '1 CONT'
+        out.extend(_chunk_note_line(logical_line, first_tag, '1 CONC'))
+    return out
+
+
 _NOTE_LINE_MAX = 248  # physical line value limit per GEDCOM 5.5.5 spec (p.42)
 
 
@@ -1132,17 +1160,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/edit_note':
-            xref     = body['xref']
-            note_idx = int(body['note_idx'])
-            new_text = body.get('new_text', '')
-            lines    = GED.read_text(encoding='utf-8').splitlines()
-            start, end, err = _find_note_block(lines, xref, note_idx)
+            xref      = body['xref']
+            note_idx  = int(body['note_idx'])
+            note_xref = body.get('note_xref')  # present only for shared notes
+            new_text  = body.get('new_text', '')
+            lines     = GED.read_text(encoding='utf-8').splitlines()
+            if note_xref:
+                start, end, err = _find_shared_note_block(lines, note_xref)
+                new_note_lines = _encode_shared_note_lines(note_xref, new_text)
+                log_msg = f"[note-edit] shared {note_xref} updated"
+            else:
+                start, end, err = _find_note_block(lines, xref, note_idx)
+                new_note_lines = _encode_note_lines(new_text)
+                log_msg = f"[note-edit] {xref} note[{note_idx}] updated"
             if err:
                 resp = json.dumps({'ok': False, 'error': err}).encode()
             else:
-                new_lines = lines[:start] + _encode_note_lines(new_text) + lines[end:]
+                new_lines = lines[:start] + new_note_lines + lines[end:]
                 _write_gedcom_atomic(new_lines)
-                print(f"[note-edit] {xref} note[{note_idx}] updated")
+                print(log_msg)
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))

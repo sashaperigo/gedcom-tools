@@ -377,17 +377,18 @@ describe('render — ancestor expand buttons', () => {
     expect(expandBtn).toBeDefined();
   });
 
-  it('expand button is positioned at node top edge (cy = node.y - 8 + treeRootTranslateY)', () => {
+  it('expand button floats above node top edge with a gap (cy < 0, bottom of circle < 0)', () => {
     const treeRoot = svg.querySelector('#tree-root');
     const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
     const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
     const expandBtn = fatherG.children.find(
       c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
     );
-    // The <g data-xref> is translated to node.x, node.y.
-    // The button is placed relative to the group at (w/2, -8) so top of node.
+    // The <g data-xref> is translated to node.x, node.y. The button floats
+    // above y=0 (pill top) with a visible gap: center + radius must be < 0.
     const cy = parseFloat(expandBtn._attrs['cy']);
-    expect(cy).toBeCloseTo(-8, 0);
+    const r = parseFloat(expandBtn._attrs['r']);
+    expect(cy + r).toBeLessThan(0);
   });
 
   it('focus node does NOT have an expand button', () => {
@@ -414,6 +415,162 @@ describe('render — ancestor expand buttons', () => {
     );
     expect(expandBtn).toBeUndefined();
   });
+
+  it('expand button uses a <path> chevron, not a <text> "+"', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const textPlus = fatherG.children.find(
+      c => c.tagName === 'text' && c.textContent === '+'
+    );
+    expect(textPlus).toBeUndefined();
+    const chevronPath = fatherG.children.find(c => c.tagName === 'path');
+    expect(chevronPath).toBeDefined();
+  });
+
+  it('expand button circle is green when ancestor has parents and is not expanded', () => {
+    // @FATHER@ needs his own parents so his button shows green
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const treeRoot = svg2.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn._attrs['fill']).toBe('#2a7a4a');
+  });
+
+  it('expand button circle is blue when ancestor is already expanded (can collapse)', () => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    stateMod.setState({ expandedNodes: new Set(['@FATHER@']) });
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const treeRoot = svg2.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn._attrs['fill']).toBe('#2a5a7a');
+  });
+
+  it('expanded ancestor shows a down-chevron path', () => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    stateMod.setState({ expandedNodes: new Set(['@FATHER@']) });
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const fatherG = svg2.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const d = fatherG.children.find(c => c.tagName === 'path')._attrs['d'];
+    // Down-chevron: middle point has a LARGER y than the two end points
+    // (SVG y increases downward, so a down-chevron points down to a larger-y apex).
+    const matches = d.match(/M\s+([-\d.]+)\s+([-\d.]+)\s+L\s+([-\d.]+)\s+([-\d.]+)\s+L\s+([-\d.]+)\s+([-\d.]+)/);
+    expect(matches).not.toBeNull();
+    const y1 = parseFloat(matches[2]);
+    const ym = parseFloat(matches[4]);
+    const y2 = parseFloat(matches[6]);
+    expect(ym).toBeGreaterThan(y1);
+    expect(ym).toBeGreaterThan(y2);
+  });
+
+  it('unexpanded ancestor with parents shows an up-chevron path', () => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const fatherG = svg2.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const d = fatherG.children.find(c => c.tagName === 'path')._attrs['d'];
+    const matches = d.match(/M\s+([-\d.]+)\s+([-\d.]+)\s+L\s+([-\d.]+)\s+([-\d.]+)\s+L\s+([-\d.]+)\s+([-\d.]+)/);
+    expect(matches).not.toBeNull();
+    const y1 = parseFloat(matches[2]);
+    const ym = parseFloat(matches[4]);
+    const y2 = parseFloat(matches[6]);
+    // Up-chevron apex is at a smaller y (higher on screen).
+    expect(ym).toBeLessThan(y1);
+    expect(ym).toBeLessThan(y2);
+  });
+
+  it('expand button circle is gray when ancestor has no parents', () => {
+    // Default beforeEach: PARENTS has no entry for @FATHER@, so he has no parents
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn._attrs['fill']).toBe('#4a4a6a');
+  });
+
+  it('up-chevron path when can expand, down-chevron path when expanded', () => {
+    // Set up @FATHER@ with parents so he can expand
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    loadRenderMod();
+    const svgUp = makeSvgEl();
+    renderMod.initRenderer(svgUp);
+    const fatherGUp = svgUp.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const upD = fatherGUp.children.find(c => c.tagName === 'path')._attrs['d'];
+
+    stateMod.setState({ expandedNodes: new Set(['@FATHER@']) });
+    loadRenderMod();
+    const svgDown = makeSvgEl();
+    renderMod.initRenderer(svgDown);
+    const fatherGDown = svgDown.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const downD = fatherGDown.children.find(c => c.tagName === 'path')._attrs['d'];
+
+    expect(upD).not.toBe(downD);
+  });
 });
 
 describe('render — click handlers', () => {
@@ -434,7 +591,7 @@ describe('render — click handlers', () => {
     renderMod.initRenderer(svg);
   });
 
-  it('clicking a non-focus node calls setState with focusXref and panelOpen: true', () => {
+  it('clicking a non-focus node opens panel without changing focusXref', () => {
     const treeRoot = svg.querySelector('#tree-root');
     const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
     const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
@@ -442,9 +599,12 @@ describe('render — click handlers', () => {
 
     fatherG.dispatchEvent('click', { stopPropagation: () => {} });
 
-    expect(setStateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ focusXref: '@FATHER@', panelOpen: true, panelXref: '@FATHER@' })
-    );
+    const calls = setStateSpy.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const lastCall = calls[calls.length - 1][0];
+    expect(lastCall.panelOpen).toBe(true);
+    expect(lastCall.panelXref).toBe('@FATHER@');
+    expect('focusXref' in lastCall).toBe(false);
   });
 
   it('clicking the focus node calls setState with panelOpen but does NOT change focusXref', () => {
@@ -471,8 +631,16 @@ describe('render — expand button click handler', () => {
   let setStateSpy;
 
   beforeEach(() => {
-    global.PEOPLE = makeMinimalPeople();
-    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    // @FATHER@ has his own parents so the expand button is active (green).
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
     global.CHILDREN  = {};
     global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
     resetState();
@@ -482,6 +650,30 @@ describe('render — expand button click handler', () => {
     setStateSpy = vi.fn();
     global.setState = setStateSpy;
     renderMod.initRenderer(svg);
+  });
+
+  it('inert button on ancestor without parents has no click handler', () => {
+    // Separate render where @FATHER@ has no parents.
+    global.PEOPLE  = makeMinimalPeople();
+    global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    const spy = vi.fn();
+    global.setState = spy;
+    renderMod.initRenderer(svg2);
+
+    const fatherG = svg2.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    // Button is still rendered (grey), but clicking must not call setState.
+    expect(expandBtn._attrs['fill']).toBe('#4a4a6a');
+    spy.mockClear();
+    expandBtn.dispatchEvent('click', { stopPropagation: () => {} });
+    const expandCall = spy.mock.calls.find(([u]) => u && u.expandedNodes !== undefined);
+    expect(expandCall).toBeUndefined();
   });
 
   it('clicking an expand button adds the xref to expandedAncestors in state', () => {
@@ -502,6 +694,40 @@ describe('render — expand button click handler', () => {
     const newSet = expandCall[0].expandedNodes;
     expect(newSet instanceof Set).toBe(true);
     expect(newSet.has('@FATHER@')).toBe(true);
+  });
+
+  it('clicking an already-expanded ancestor removes it from expandedNodes (toggle)', () => {
+    // Re-seed with @FATHER@ already expanded so his button is the blue down-chevron.
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    stateMod.setState({ expandedNodes: new Set(['@FATHER@']) });
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    setStateSpy = vi.fn();
+    global.setState = setStateSpy;
+    renderMod.initRenderer(svg2);
+
+    const fatherG = svg2.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expandBtn.dispatchEvent('click', { stopPropagation: () => {} });
+
+    const calls = setStateSpy.mock.calls;
+    const toggleCall = calls.find(([update]) => update.expandedNodes !== undefined);
+    expect(toggleCall).toBeDefined();
+    const newSet = toggleCall[0].expandedNodes;
+    expect(newSet instanceof Set).toBe(true);
+    expect(newSet.has('@FATHER@')).toBe(false);
   });
 });
 
@@ -577,5 +803,47 @@ describe('render — died-young badge', () => {
     const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
     const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
     expect(badgeCircle).toBeUndefined();
+  });
+});
+
+describe('render — descendant umbrella edges', () => {
+  beforeEach(() => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@C1@':   { name: 'Child One', birth_year: 1925, death_year: null },
+      '@C1SP@': { name: 'Child One Spouse', birth_year: 1927, death_year: null },
+    };
+    global.PARENTS   = {};
+    global.CHILDREN  = { '@FOCUS@': ['@C1@'] };
+    global.RELATIVES = {
+      '@FOCUS@': { siblings: [], spouses: [] },
+      '@C1@':   { siblings: [], spouses: ['@C1SP@'] },
+    };
+    resetState();
+    loadRenderMod();
+  });
+
+  it('renders umbrella drop/crossbar/child-drop as <line> elements with descendant stroke', () => {
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const lines = treeRoot.querySelectorAll('line');
+    const descLines = lines.filter(l => l._attrs['stroke'] === '#2c2c54');
+    // At minimum: anchor drop + per-child drop (single child, no crossbar)
+    expect(descLines.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders the child-spouse marriage line with the marriage stroke color', () => {
+    const svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+    const treeRoot = svg.querySelector('#tree-root');
+    const lines = treeRoot.querySelectorAll('line');
+    const marriageLines = lines.filter(l => l._attrs['stroke'] === '#3a6a3a');
+    // Expect at least one marriage edge (between @C1@ and @C1SP@) in descendant row
+    const expectedY = String(DESIGN.ROW_HEIGHT + DESIGN.NODE_H / 2);
+    const childRowMarriage = marriageLines.find(l =>
+      l._attrs['y1'] === expectedY && l._attrs['y2'] === expectedY
+    );
+    expect(childRowMarriage).toBeDefined();
   });
 });

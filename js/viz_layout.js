@@ -62,7 +62,7 @@ function _packRow(items, startX, y, role) {
  *   type: 'ancestor' | 'descendant' | 'sibling_bracket' | 'marriage'
  */
 function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
-  const { NODE_W, NODE_W_FOCUS, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+  const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
   const SLOT = NODE_W + H_GAP;
   // Gap between focus node edge and nearest sibling: account for focus being wider than NODE_W.
   const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
@@ -153,64 +153,177 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     ));
   }
 
-  // ── Phase 2: Generation -1 (parents) ─────────────────────────────────────
+  // ── Phase 2: Generation -1 (parents) with umbrella over focus + siblings ─
 
   const focusParents = PARENTS[focusXref] ?? [];
   const fatherXref   = focusParents[0] ?? null;
   const motherXref   = focusParents[1] ?? null;
 
   if (fatherXref || motherXref) {
+    const focusCenterX = NODE_W_FOCUS / 2;
+    const ancUmbrellaY = -(ROW_HEIGHT - NODE_H) / 2;   // halfway between parent row bottom and focus row top
+    const parentBottomY = -ROW_HEIGHT + NODE_H;
+    const parentMidY    = -ROW_HEIGHT + NODE_H / 2;
+
+    // Anchor drop and per-child drops span the focus and all gen-0 siblings:
+    // they're the biological children of the parents sitting at y=0.
+    // Focus uses NODE_W_FOCUS; siblings use NODE_W.
+    const childCenters = [focusCenterX];
+    nodes.forEach(n => {
+      if (n.generation === 0 && n.role === 'sibling') {
+        childCenters.push(n.x + NODE_W / 2);
+      }
+    });
+    childCenters.sort((a, b) => a - b);
+
     if (fatherXref && motherXref) {
-      // Both parents: father left of focus, mother right
-      const parentOffset = SLOT / 2;
-      const fatherX = 0 - parentOffset;
-      const motherX = 0 + parentOffset;
+      // Both parents: symmetric around focus center. Father left, mother right.
+      // Separation is driven by each parent's subtree contour so that deep
+      // ancestors on either side don't collide while keeping the marriage-line
+      // midpoint above the child.
+      const sep = _requiredSeparation(fatherXref, motherXref, expandedAncestors);
+      const fatherX = focusCenterX - sep / 2 - NODE_W / 2;
+      const motherX = focusCenterX + sep / 2 - NODE_W / 2;
 
       nodes.push({ xref: fatherXref, x: fatherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
       nodes.push({ xref: motherXref, x: motherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
 
-      // H-shaped connector: two verticals down from each parent, horizontal crossbar,
-      // then a vertical drop from the midpoint to the focus node.
-      const midY = -ROW_HEIGHT / 2;
-      edges.push({ x1: fatherX + NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: fatherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: motherX + NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: fatherX + NODE_W / 2, y1: midY, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: NODE_W / 2, y1: midY, x2: NODE_W / 2, y2: 0, type: 'ancestor' });
+      // Marriage edge between parents (father right edge → mother left edge).
+      edges.push({
+        x1: fatherX + NODE_W, y1: parentMidY,
+        x2: motherX,           y2: parentMidY,
+        type: 'marriage',
+      });
 
-      // Recurse into grandparents for each expanded ancestor
       _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
       _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
     } else {
-      // Single parent: centered above focus
+      // Single parent: centered on focus center.
       const singleParent = fatherXref || motherXref;
-      nodes.push({ xref: singleParent, x: 0, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-      const midY = -ROW_HEIGHT / 2;
-      edges.push({ x1: NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: NODE_W / 2, y1: midY, x2: NODE_W / 2, y2: 0, type: 'ancestor' });
-
-      _placeAncestors(singleParent, 0, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
+      const singleParentX = focusCenterX - NODE_W / 2;
+      nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+      _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
     }
+
+    // Umbrella geometry (mirrors the descendant umbrella).
+    // Anchor drop: starts at the marriage line (y = parent row center) when both
+    // parents are present so it meets the marriage edge perpendicularly with no gap.
+    // With a single parent, start at the bottom of the parent node.
+    const anchorTopY = (fatherXref && motherXref) ? parentMidY : parentBottomY;
+    edges.push({
+      x1: focusCenterX, y1: anchorTopY,
+      x2: focusCenterX, y2: ancUmbrellaY,
+      type: 'ancestor',
+    });
+
+    // Crossbar spans leftmost→rightmost child center (only if >1 child of parents).
+    if (childCenters.length > 1) {
+      edges.push({
+        x1: childCenters[0],                      y1: ancUmbrellaY,
+        x2: childCenters[childCenters.length - 1], y2: ancUmbrellaY,
+        type: 'ancestor',
+      });
+    }
+
+    // Per-child drop from umbrella down to each child's top.
+    childCenters.forEach(cx => {
+      edges.push({
+        x1: cx, y1: ancUmbrellaY,
+        x2: cx, y2: 0,
+        type: 'ancestor',
+      });
+    });
   }
 
-  // ── Phase 2: Generation +1 (children) ────────────────────────────────────
+  // ── Phase 2: Generation +1 (children + umbrella) ─────────────────────────
 
   const childXrefs = CHILDREN[focusXref] ?? [];
   if (childXrefs.length > 0) {
-    const n      = childXrefs.length;
-    const totalW = n * NODE_W + (n - 1) * H_GAP;
-    // Focus is at x=0; its center is at NODE_W/2.
-    // Start children so their row center aligns with the focus center.
-    const startX = NODE_W / 2 - totalW / 2;
+    // Anchor: midpoint between focus center and first spouse center if present,
+    // else focus center. This is where the umbrella hangs from.
+    const focusCenterX = NODE_W_FOCUS / 2;
+    const anchorX = spouseXrefs.length > 0
+      ? (focusCenterX + (firstSpouseX + NODE_W / 2)) / 2
+      : focusCenterX;
 
-    childXrefs.forEach((xref, i) => {
-      const cx = startX + i * SLOT;
-      nodes.push({ xref, x: cx, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
+    // Build child groups [child, ...childSpouses] and pack them left→right.
+    // Descendant-row couples use H_GAP between partners — a short marriage line;
+    // MARRIAGE_GAP is reserved for the focus couple (where children hang below).
+    const CHILD_MARRIAGE_GAP = H_GAP;
+    const groups = childXrefs.map(childXref => {
+      const childSpouses = RELATIVES[childXref]?.spouses ?? [];
+      const width = NODE_W + childSpouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
+      return { childXref, childSpouses, width };
+    });
 
-      // Edge from focus bottom to child top
+    const placements = [];
+    let cursor = 0;
+    groups.forEach(g => {
+      placements.push({ ...g, start: cursor });
+      cursor += g.width + H_GAP;
+    });
+
+    // Shift so the midpoint of first and last *child* centers aligns with anchorX.
+    const firstChildCenter = placements[0].start + NODE_W / 2;
+    const lastChildCenter  = placements[placements.length - 1].start + NODE_W / 2;
+    const shift = anchorX - (firstChildCenter + lastChildCenter) / 2;
+
+    const childCenters = [];
+    placements.forEach(p => {
+      const childX = p.start + shift;
+      nodes.push({ xref: p.childXref, x: childX, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
+      childCenters.push(childX + NODE_W / 2);
+
+      p.childSpouses.forEach((sxref, si) => {
+        const spouseX = childX + (si + 1) * (NODE_W + CHILD_MARRIAGE_GAP);
+        nodes.push({ xref: sxref, x: spouseX, y: ROW_HEIGHT, generation: 1, role: 'descendant_spouse' });
+
+        // Marriage edge between consecutive members of the group (right edge → left edge)
+        const prevX = si === 0 ? childX : childX + si * (NODE_W + CHILD_MARRIAGE_GAP);
+        edges.push({
+          x1:   prevX + NODE_W,
+          y1:   ROW_HEIGHT + NODE_H / 2,
+          x2:   spouseX,
+          y2:   ROW_HEIGHT + NODE_H / 2,
+          type: 'marriage',
+        });
+      });
+    });
+
+    // Umbrella geometry
+    const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+
+    // Drop from anchor down to umbrella bar. When focus has a spouse, start at the
+    // marriage-line center (NODE_H/2) so it meets the marriage edge perpendicularly
+    // with no gap. No spouse → start at NODE_H_FOCUS (the bottom of the focus node).
+    const anchorTopY = spouseXrefs.length > 0 ? NODE_H / 2 : NODE_H_FOCUS;
+    edges.push({
+      x1:   anchorX,
+      y1:   anchorTopY,
+      x2:   anchorX,
+      y2:   umbrellaY,
+      type: 'descendant',
+    });
+
+    // Horizontal crossbar from leftmost to rightmost child center (only if >1 child)
+    if (childCenters.length > 1) {
+      const leftX  = Math.min(...childCenters);
+      const rightX = Math.max(...childCenters);
       edges.push({
-        x1:   NODE_W / 2,
-        y1:   NODE_H,
-        x2:   cx + NODE_W / 2,
+        x1:   leftX,
+        y1:   umbrellaY,
+        x2:   rightX,
+        y2:   umbrellaY,
+        type: 'descendant',
+      });
+    }
+
+    // Vertical drop from umbrella to each child
+    childCenters.forEach(cx => {
+      edges.push({
+        x1:   cx,
+        y1:   umbrellaY,
+        x2:   cx,
         y2:   ROW_HEIGHT,
         type: 'descendant',
       });
@@ -240,18 +353,29 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
   const nextY   = nextGen * ROW_HEIGHT;
 
   if (fatherXref && motherXref) {
-    const parentOffset = SLOT / 2;
-    const fatherX = x - parentOffset;
-    const motherX = x + parentOffset;
+    // Contour-based separation keeps the marriage midpoint above the child
+    // regardless of which side's subtree extends deeper.
+    const childCenter = x + NODE_W / 2;
+    const sep = _requiredSeparation(fatherXref, motherXref, expandedAncestors);
+    const fatherX = childCenter - sep / 2 - NODE_W / 2;
+    const motherX = childCenter + sep / 2 - NODE_W / 2;
 
     nodes.push({ xref: fatherXref, x: fatherX, y: nextY, generation: nextGen, role: 'ancestor' });
     nodes.push({ xref: motherXref, x: motherX, y: nextY, generation: nextGen, role: 'ancestor' });
 
-    const midY = nextY + ROW_HEIGHT / 2;
-    edges.push({ x1: fatherX + NODE_W / 2, y1: nextY + NODE_H, x2: fatherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: motherX + NODE_W / 2, y1: nextY + NODE_H, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: fatherX + NODE_W / 2, y1: midY, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: x + NODE_W / 2, y1: midY, x2: x + NODE_W / 2, y2: y, type: 'ancestor' });
+    // Universal umbrella: marriage edge between the parents + a single vertical drop
+    // from the marriage-line midpoint (= child's center) down to the child's top.
+    const parentMidY = nextY + NODE_H / 2;
+    edges.push({
+      x1: fatherX + NODE_W, y1: parentMidY,
+      x2: motherX,           y2: parentMidY,
+      type: 'marriage',
+    });
+    edges.push({
+      x1: x + NODE_W / 2, y1: parentMidY,
+      x2: x + NODE_W / 2, y2: y,
+      type: 'ancestor',
+    });
 
     _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, nodes, edges);
     _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, nodes, edges);
@@ -259,12 +383,79 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
     const singleParent = fatherXref || motherXref;
     nodes.push({ xref: singleParent, x, y: nextY, generation: nextGen, role: 'ancestor' });
 
-    const midY = nextY + ROW_HEIGHT / 2;
-    edges.push({ x1: x + NODE_W / 2, y1: nextY + NODE_H, x2: x + NODE_W / 2, y2: midY, type: 'ancestor' });
-    edges.push({ x1: x + NODE_W / 2, y1: midY, x2: x + NODE_W / 2, y2: y, type: 'ancestor' });
+    // Single parent → one straight vertical from parent bottom to child top.
+    edges.push({
+      x1: x + NODE_W / 2, y1: nextY + NODE_H,
+      x2: x + NODE_W / 2, y2: y,
+      type: 'ancestor',
+    });
 
     _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, nodes, edges);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Contour-based separation (Reingold-Tilford style)
+// ---------------------------------------------------------------------------
+
+// Each contour is an array indexed by depth (0 = the root row itself).
+// Element d = distance from the subtree-root center to the rightmost
+// (_rightContour) or leftmost (_leftContour) point of the subtree at depth d.
+
+function _rightContour(xref, expandedAncestors) {
+  const { NODE_W } = DESIGN;
+  const contour = [NODE_W / 2];
+  if (!expandedAncestors.has(xref)) return contour;
+  const parents = PARENTS[xref] ?? [];
+  const f = parents[0] ?? null;
+  const m = parents[1] ?? null;
+  if (!f && !m) return contour;
+  if (f && m) {
+    // Mother is the right-side parent; root-to-mother-center = sep/2.
+    const sep = _requiredSeparation(f, m, expandedAncestors);
+    const mc  = _rightContour(m, expandedAncestors);
+    for (let d = 0; d < mc.length; d++) contour[d + 1] = sep / 2 + mc[d];
+  } else {
+    const only = f || m;
+    const oc = _rightContour(only, expandedAncestors);
+    for (let d = 0; d < oc.length; d++) contour[d + 1] = oc[d];
+  }
+  return contour;
+}
+
+function _leftContour(xref, expandedAncestors) {
+  const { NODE_W } = DESIGN;
+  const contour = [NODE_W / 2];
+  if (!expandedAncestors.has(xref)) return contour;
+  const parents = PARENTS[xref] ?? [];
+  const f = parents[0] ?? null;
+  const m = parents[1] ?? null;
+  if (!f && !m) return contour;
+  if (f && m) {
+    // Father is the left-side parent; root-to-father-center = sep/2.
+    const sep = _requiredSeparation(f, m, expandedAncestors);
+    const fc  = _leftContour(f, expandedAncestors);
+    for (let d = 0; d < fc.length; d++) contour[d + 1] = sep / 2 + fc[d];
+  } else {
+    const only = f || m;
+    const oc = _leftContour(only, expandedAncestors);
+    for (let d = 0; d < oc.length; d++) contour[d + 1] = oc[d];
+  }
+  return contour;
+}
+
+// Center-to-center separation required so the two parent subtrees do not
+// overlap at any shared depth. Floor = SLOT (parents sit adjacent at row 0).
+function _requiredSeparation(fatherXref, motherXref, expandedAncestors) {
+  const { NODE_W, H_GAP } = DESIGN;
+  const rf = _rightContour(fatherXref, expandedAncestors);
+  const lm = _leftContour(motherXref, expandedAncestors);
+  const shared = Math.min(rf.length, lm.length);
+  let sep = NODE_W + H_GAP;
+  for (let d = 0; d < shared; d++) {
+    sep = Math.max(sep, rf[d] + lm[d] + H_GAP);
+  }
+  return sep;
 }
 
 // ---------------------------------------------------------------------------
@@ -272,5 +463,12 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeLayout, _sortByBirthYear, _packRow };
+  module.exports = {
+    computeLayout,
+    _sortByBirthYear,
+    _packRow,
+    _rightContour,
+    _leftContour,
+    _requiredSeparation,
+  };
 }
