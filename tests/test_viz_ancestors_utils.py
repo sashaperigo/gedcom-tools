@@ -262,3 +262,136 @@ class TestBuildAllPlaces:
         fams  = {'@F1@': {'marrs': [{'place': 'Athens, Greece'}]}}
         result = build_all_places(indis, fams=fams)
         assert result.count('Athens, Greece') == 1
+
+
+# ---------------------------------------------------------------------------
+# Note citation parsing
+# ---------------------------------------------------------------------------
+
+class TestNoteCitationParsing:
+
+    def test_inline_note_with_sour_and_page(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE Some note text
+2 SOUR @S1@
+3 PAGE 42
+0 @S1@ SOUR
+1 TITL Birth Register
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        notes = indis['@I1@']['notes']
+        assert len(notes) == 1
+        assert notes[0]['citations'] == [{'sour_xref': '@S1@', 'page': '42'}]
+        assert notes[0]['note_idx'] == 0
+
+    def test_inline_note_sour_no_page(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE Some note text
+2 SOUR @S1@
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        assert indis['@I1@']['notes'][0]['citations'] == [{'sour_xref': '@S1@', 'page': None}]
+
+    def test_inline_note_multiple_citations(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE Some note text
+2 SOUR @S1@
+3 PAGE 10
+2 SOUR @S2@
+3 PAGE 20
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        cites = indis['@I1@']['notes'][0]['citations']
+        assert len(cites) == 2
+        assert cites[0] == {'sour_xref': '@S1@', 'page': '10'}
+        assert cites[1] == {'sour_xref': '@S2@', 'page': '20'}
+
+    def test_multiple_notes_get_correct_note_idx(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE First note
+1 NOTE Second note
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        notes = indis['@I1@']['notes']
+        assert notes[0]['note_idx'] == 0
+        assert notes[1]['note_idx'] == 1
+
+    def test_inline_note_no_citations_has_empty_list(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE Just text, no sources
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        assert indis['@I1@']['notes'][0]['citations'] == []
+
+    def test_shared_note_with_sour_and_page(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @N1@ NOTE Shared note text
+1 SOUR @S1@
+2 PAGE 10
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE @N1@
+0 @S1@ SOUR
+1 TITL Some Source
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        notes = indis['@I1@']['notes']
+        assert len(notes) == 1
+        assert notes[0]['shared'] is True
+        assert notes[0]['note_xref'] == '@N1@'
+        assert notes[0]['citations'] == [{'sour_xref': '@S1@', 'page': '10'}]
+
+    def test_shared_note_no_citations(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @N1@ NOTE Shared note text
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE @N1@
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        assert indis['@I1@']['notes'][0]['citations'] == []
+
+    def test_inline_and_shared_notes_mixed(self, tmp_path):
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @N1@ NOTE Shared
+1 SOUR @S1@
+0 @I1@ INDI
+1 NAME John /Doe/
+1 NOTE @N1@
+1 NOTE Inline note
+2 SOUR @S2@
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        notes = indis['@I1@']['notes']
+        assert notes[0]['note_idx'] == 0
+        assert notes[0]['shared'] is True
+        assert len(notes[0]['citations']) == 1
+        assert notes[1]['note_idx'] == 1
+        assert notes[1]['shared'] is False
+        assert len(notes[1]['citations']) == 1

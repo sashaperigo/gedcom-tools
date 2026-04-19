@@ -944,3 +944,34 @@ describe('buildSourceBadgeHtml', () => {
     expect(html).toContain('evt-src-badge');
   });
 });
+
+describe('buildNoteSourceBadgeHtml', () => {
+  const { buildNoteSourceBadgeHtml } = require('../../js/viz_panel.js');
+
+  it('shows "+ src" and empty class when no citations', () => {
+    const html = buildNoteSourceBadgeHtml([], '@I1@', 0);
+    expect(html).toMatch(/\+\s*src/);
+    expect(html).toContain('note-src-badge-empty');
+    expect(html).toContain('note-src-badge');
+  });
+
+  it('shows "1 src" and no empty class when one citation', () => {
+    const html = buildNoteSourceBadgeHtml([{ sourceXref: '@S1@' }], '@I1@', 2);
+    expect(html).toContain('1 src');
+    expect(html).toContain('note-src-badge');
+    expect(html).not.toContain('note-src-badge-empty');
+  });
+
+  it('calls openNoteSourcesModal with correct xref and index', () => {
+    const html = buildNoteSourceBadgeHtml([], '@I1@', 3);
+    expect(html).toContain('openNoteSourcesModal');
+    expect(html).toContain('&quot;@I1@&quot;');
+    expect(html).toContain(',3)');
+  });
+
+  it('renders a pill when citations is null', () => {
+    const html = buildNoteSourceBadgeHtml(null, '@I1@', 0);
+    expect(html).toBeTruthy();
+    expect(html).toContain('note-src-badge');
+  });
+});

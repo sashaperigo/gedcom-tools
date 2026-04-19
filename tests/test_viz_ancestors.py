@@ -167,11 +167,11 @@ class TestParsing:
         assert len(indis['@I1@']['notes']) == 1
 
     def test_parse_note_text(self, indis):
-        assert 'Rose was an avid gardener' in indis['@I1@']['notes'][0]
+        assert 'Rose was an avid gardener' in indis['@I1@']['notes'][0]['text']
 
     def test_parse_note_cont_assembled(self, indis):
         """CONT line must be joined onto the note with a newline."""
-        note = indis['@I1@']['notes'][0]
+        note = indis['@I1@']['notes'][0]['text']
         assert '\n' in note
         assert 'prize-winning roses' in note
 
@@ -332,7 +332,7 @@ class TestPeople:
 
     def test_notes(self, people):
         assert len(people['@I1@']['notes']) > 0
-        assert 'Rose was an avid gardener' in people['@I1@']['notes'][0]
+        assert 'Rose was an avid gardener' in people['@I1@']['notes'][0]['text']
 
     def test_relative_xref_included(self, tree, indis, parsed):
         """build_people_json also works for relative xrefs (siblings/spouses)."""

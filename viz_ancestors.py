@@ -48,24 +48,31 @@ def _ged_val(raw: str) -> str:
     return html_mod.unescape(raw.replace('@@', '@'))
 
 
-def _collect_shared_notes(lines: list[str]) -> dict[str, str]:
-    """Pass 1: collect all top-level '0 @xref@ NOTE' records into {xref: text}."""
-    shared: dict[str, str] = {}
+def _collect_shared_notes(lines: list[str]) -> dict[str, dict]:
+    """Pass 1: collect all top-level '0 @xref@ NOTE' records into {xref: {text, citations}}."""
+    shared: dict[str, dict] = {}
     current_xref: str | None = None
     for line in lines:
         m = _NOTE_RE.match(line)
         if m:
             current_xref = m.group(1)
-            shared[current_xref] = _ged_val(m.group(2) or '')
+            shared[current_xref] = {'text': _ged_val(m.group(2) or ''), 'citations': []}
             continue
         if line.startswith('0 '):
             current_xref = None
             continue
         if current_xref is not None:
             m2 = _TAG_RE.match(line)
-            if m2 and m2.group(2) in ('CONT', 'CONC'):
-                sep = '\n' if m2.group(2) == 'CONT' else ''
-                shared[current_xref] += sep + _ged_val(m2.group(3) or '')
+            if not m2:
+                continue
+            lvl2, tag2, val2 = int(m2.group(1)), m2.group(2), (m2.group(3) or '').strip()
+            if tag2 in ('CONT', 'CONC'):
+                sep = '\n' if tag2 == 'CONT' else ''
+                shared[current_xref]['text'] += sep + _ged_val(val2)
+            elif lvl2 == 1 and tag2 == 'SOUR' and val2.startswith('@'):
+                shared[current_xref]['citations'].append({'sour_xref': val2, 'page': None})
+            elif lvl2 == 2 and tag2 == 'PAGE' and shared[current_xref]['citations']:
+                shared[current_xref]['citations'][-1]['page'] = val2
     return shared
 
 
@@ -212,18 +219,28 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 current_evt['note'] += sep + _ged_val(val)
             elif lvl == 1 and tag == 'NOTE':
                 raw = _ged_val(val) if val else ''
+                note_idx = len(indis[xref]['notes'])
                 if val and val.startswith('@'):
                     note_xref = val.rstrip()
-                    note_obj = {'text': shared_notes.get(note_xref, raw), 'shared': True, 'note_xref': note_xref}
+                    entry = shared_notes.get(note_xref, {'text': raw, 'citations': []})
+                    note_obj = {'text': entry['text'], 'shared': True, 'note_xref': note_xref,
+                                'citations': list(entry['citations']), 'note_idx': note_idx}
                     current_note = None  # shared note: CONT/CONC belong to top-level record, not here
                 else:
-                    note_obj = {'text': raw, 'shared': False, 'note_xref': None}
-                    current_note = len(indis[xref]['notes'])
+                    note_obj = {'text': raw, 'shared': False, 'note_xref': None,
+                                'citations': [], 'note_idx': note_idx}
+                    current_note = note_idx
                 indis[xref]['notes'].append(note_obj)
                 current_evt  = None
             elif lvl == 2 and tag in ('CONT', 'CONC') and isinstance(current_note, int):
                 sep = '\n' if tag == 'CONT' else ''
                 indis[xref]['notes'][current_note]['text'] += sep + _ged_val(val)
+            elif lvl == 2 and tag == 'SOUR' and isinstance(current_note, int) and val.startswith('@'):
+                indis[xref]['notes'][current_note]['citations'].append({'sour_xref': val, 'page': None})
+            elif lvl == 3 and tag == 'PAGE' and isinstance(current_note, int):
+                cites = indis[xref]['notes'][current_note].get('citations')
+                if cites:
+                    cites[-1]['page'] = val
             elif lvl == 1 and tag == 'FAMC' and indis[xref]['famc'] is None:
                 indis[xref]['famc'] = val
                 current_evt = current_note = None
@@ -544,13 +561,20 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
              if e['tag'] == 'DEAT' and e.get('age') and e['age'].upper() in _deat_age_keywords),
             None
         )
+        normalised_notes = []
+        for n in info.get('notes', []):
+            norm_cites = [
+                {'sourceXref': c['sour_xref'], **{k: v for k, v in c.items() if k != 'sour_xref'}}
+                for c in n.get('citations', [])
+            ]
+            normalised_notes.append({**n, 'citations': norm_cites})
         result[xref] = {
             'name':         info['name'] or '?',
             'birth_year':   info['birth_year'],
             'death_year':   info['death_year'],
             'sex':          info['sex'],
             'events':       sort_events(events),
-            'notes':        info['notes'],
+            'notes':        normalised_notes,
             'sources':      src_list,
             'age_at_death': age_at_death,
         }
@@ -839,7 +863,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 .note-action-btn:hover { background: rgba(255,255,255,0.15); color: #f1f5f9; }
 .note-card { font-size: 13px; color: #f1f5f9; line-height: 1.75;
              white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word;
-             padding: 10px 14px;
+             padding: 10px 14px 26px 14px;
              background: rgba(254, 249, 195, 0.1); border-radius: 6px;
              border-left: 3px solid rgba(254, 243, 160, 0.35);
              margin-bottom: 10px;
@@ -1062,6 +1086,18 @@ header h1 { font-size: 16px; font-weight: 600; }
 .evt-src-badge-empty { color: #334155; border-color: rgba(71,85,105,0.2);
   background: transparent; }
 .evt-src-badge-empty:hover { color: #93c5fd; border-color: rgba(147,197,253,0.4);
+  background: rgba(147,197,253,0.06); }
+.note-src-badge { position: absolute; bottom: 8px; right: 8px;
+  font-size: 10px; padding: 1px 5px; border-radius: 3px; cursor: pointer;
+  white-space: nowrap; line-height: 1.4; user-select: none;
+  background: rgba(71,85,105,0.15); color: #475569;
+  border: 1px solid rgba(71,85,105,0.3);
+  transition: color .15s, border-color .15s, background .15s; }
+.note-src-badge:hover { color: #93c5fd; border-color: rgba(147,197,253,0.5);
+  background: rgba(147,197,253,0.08); }
+.note-src-badge-empty { color: #334155; border-color: rgba(71,85,105,0.2);
+  background: transparent; }
+.note-src-badge-empty:hover { color: #93c5fd; border-color: rgba(147,197,253,0.4);
   background: rgba(147,197,253,0.06); }
 #alias-modal h3 { margin: 0 0 14px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 /* ── Timeline ───────────────────────────────────────────── */

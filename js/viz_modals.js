@@ -706,24 +706,55 @@ async function deleteFact(xref, evt) {
 
 let _sourcesModalXref = null;
 let _sourcesModalEventIdx = null;
+let _sourcesModalNoteIdx  = null;
 
 function openSourcesModal(xref, eventIdx) {
   _sourcesModalXref     = xref;
   _sourcesModalEventIdx = eventIdx;
+  _sourcesModalNoteIdx  = null;
+  _refreshSourcesModalContent();
+  document.getElementById('sources-modal-overlay').classList.add('open');
+}
+
+function openNoteSourcesModal(xref, noteIdx) {
+  _sourcesModalXref     = xref;
+  _sourcesModalEventIdx = null;
+  _sourcesModalNoteIdx  = noteIdx;
   _refreshSourcesModalContent();
   document.getElementById('sources-modal-overlay').classList.add('open');
 }
 
 function closeSourcesModal() {
   document.getElementById('sources-modal-overlay').classList.remove('open');
-  _sourcesModalXref = null;
+  _sourcesModalXref     = null;
   _sourcesModalEventIdx = null;
+  _sourcesModalNoteIdx  = null;
 }
 
 function _refreshSourcesModalContent() {
   const xref     = _sourcesModalXref;
   const eventIdx = _sourcesModalEventIdx;
-  if (xref == null || eventIdx == null) return;
+  if (xref == null) return;
+  if (_sourcesModalNoteIdx == null && eventIdx == null) return;
+
+  if (_sourcesModalNoteIdx != null) {
+    const noteIdx = _sourcesModalNoteIdx;
+    const note    = (typeof PEOPLE !== 'undefined') && PEOPLE[xref] && PEOPLE[xref].notes && PEOPLE[xref].notes[noteIdx];
+    const rawText = (note && note.text) || '';
+    const label   = rawText.length > 40 ? rawText.slice(0, 40) + '\u2026' : rawText;
+    const noteEvt = {
+      tag:       (note && note.shared) ? 'SNOTE' : 'NOTE',
+      note_xref: note && note.note_xref,
+      note_idx:  note && note.note_idx,
+      citations: (note && note.citations) || [],
+    };
+    const sources = (typeof SOURCES !== 'undefined') ? SOURCES : {};
+    const titleEl = document.getElementById('sources-modal-title');
+    const listEl  = document.getElementById('sources-modal-list');
+    if (titleEl) titleEl.textContent = label || 'Note Sources';
+    if (listEl)  listEl.innerHTML    = _buildSourcesModalContent(noteEvt.citations, sources, xref, noteEvt);
+    return;
+  }
   const evt       = PEOPLE[xref] && PEOPLE[xref].events && PEOPLE[xref].events[eventIdx];
   const citations = (evt && evt.citations) || [];
   const sources   = (typeof SOURCES !== 'undefined') ? SOURCES : {};
@@ -759,7 +790,10 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
     eventOcc = (evt && evt.event_idx != null) ? evt.event_idx : 0;
   }
   const xrefQ     = JSON.stringify(String(targetXref || '')).replace(/"/g, '&quot;');
-  const factKey   = tag ? `${tag}:${eventOcc}` : '';
+  let factKey;
+  if (tag === 'NOTE')       factKey = `NOTE:${evt && evt.note_idx}`;
+  else if (tag === 'SNOTE') factKey = `SNOTE:${evt && evt.note_xref}`;
+  else                      factKey = tag ? `${tag}:${eventOcc}` : '';
   const factKeyQ  = JSON.stringify(factKey).replace(/"/g, '&quot;');
 
   let html = '';
@@ -775,14 +809,19 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
         ? `<a href="${escHtml(citUrl)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
         : escHtml(title);
       const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
-      const citeKey  = `${tag}:${eventOcc}:${idx}`;
+      const citeKey  = (tag === 'NOTE')  ? `NOTE:${evt && evt.note_idx}:${idx}`
+                     : (tag === 'SNOTE') ? `SNOTE:${evt && evt.note_xref}:${idx}`
+                     : `${tag}:${eventOcc}:${idx}`;
       const citeKeyQ = JSON.stringify(citeKey).replace(/"/g, '&quot;');
       // For FAM events the API must target the FAM xref, but PEOPLE lookup uses the INDI xref.
       const indiXrefQ   = JSON.stringify(String(xref || '')).replace(/"/g, '&quot;');
       const apiXrefQ    = xrefQ;  // targetXref (FAM or INDI)
-      const editOnclick = isFamEvt
-        ? `showEditCitationModal(${indiXrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},${apiXrefQ},${eventOcc})`
-        : `showEditCitationModal(${xrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},undefined,${eventOcc})`;
+      const noteEventOcc = (tag === 'NOTE') ? (evt && evt.note_idx) : (evt && evt.note_xref);
+      const editOnclick = (tag === 'NOTE' || tag === 'SNOTE')
+        ? `showEditCitationModal(${xrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},undefined,${JSON.stringify(noteEventOcc).replace(/"/g,'&quot;')})`
+        : isFamEvt
+          ? `showEditCitationModal(${indiXrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},${apiXrefQ},${eventOcc})`
+          : `showEditCitationModal(${xrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},undefined,${eventOcc})`;
       return (
         `<div class="src-modal-item">` +
           `<div class="src-modal-item-body"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>` +
@@ -1026,6 +1065,13 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
     if (factTag === null || factTag === undefined) {
       // person-level source
       cite = (person.sources || [])[citationIndex] || null;
+    } else if (factTag === 'NOTE') {
+      const noteOcc = typeof eventOcc === 'number' ? eventOcc : parseInt(eventOcc, 10);
+      const n = (person.notes || [])[noteOcc];
+      cite = (n && n.citations || [])[citationIndex] || null;
+    } else if (factTag === 'SNOTE') {
+      const n = (person.notes || []).find(n => n.note_xref === String(eventOcc));
+      cite = (n && n.citations || [])[citationIndex] || null;
     } else {
       const fact = (person.events || []).find(f => f.tag === factTag);
       if (fact) cite = (fact.citations || [])[citationIndex] || null;
@@ -1490,7 +1536,7 @@ async function submitAddSourceModal() {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
-    openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
+    openSourcesModal, openNoteSourcesModal, closeSourcesModal, _buildSourcesModalContent,
     deleteSourceFromModal,
     showEditNameModal, showAddNoteModal, showAddCitationModal,
     showEditCitationModal, submitEditCitationModal, showEditSourceModal, showAddGodparentModal,

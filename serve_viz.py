@@ -927,6 +927,59 @@ def _find_citation_block(
                 count += 1
         return None, None, None, f'Person-level citation {cite_n} not found in {xref}'
 
+    # Inline note citation: 'NOTE:note_n:cite_n'
+    if parts[0] == 'NOTE' and len(parts) == 3:
+        try:
+            note_n, cite_n = int(parts[1]), int(parts[2])
+        except ValueError:
+            return None, None, None, f'Invalid citation_key: {citation_key!r}'
+        note_start, note_end, err = _find_note_block_full(lines, xref, note_n)
+        if err:
+            return None, None, None, err
+        count = 0
+        for i in range(note_start + 1, note_end):
+            m = _TAG_RE.match(lines[i])
+            if not m:
+                continue
+            if int(m.group(1)) == 2 and m.group(2) == 'SOUR':
+                if count == cite_n:
+                    j = i + 1
+                    while j < note_end:
+                        sm = _TAG_RE.match(lines[j])
+                        if sm and int(sm.group(1)) <= 2:
+                            break
+                        j += 1
+                    return i, j, 2, None
+                count += 1
+        return None, None, None, f'Note citation {cite_n} not found in note[{note_n}] of {xref}'
+
+    # Shared note citation: 'SNOTE:note_xref:cite_n'
+    if parts[0] == 'SNOTE' and len(parts) == 3:
+        note_xref = parts[1]
+        try:
+            cite_n = int(parts[2])
+        except ValueError:
+            return None, None, None, f'Invalid citation_key: {citation_key!r}'
+        snote_start, snote_end, err = _find_shared_note_block(lines, note_xref)
+        if err:
+            return None, None, None, err
+        count = 0
+        for i in range(snote_start + 1, snote_end):
+            m = _TAG_RE.match(lines[i])
+            if not m:
+                continue
+            if int(m.group(1)) == 1 and m.group(2) == 'SOUR':
+                if count == cite_n:
+                    j = i + 1
+                    while j < snote_end:
+                        sm = _TAG_RE.match(lines[j])
+                        if sm and int(sm.group(1)) <= 1:
+                            break
+                        j += 1
+                    return i, j, 1, None
+                count += 1
+        return None, None, None, f'Shared note citation {cite_n} not found in {note_xref}'
+
     # Fact-level: 'TAG:fact_n:cite_n'
     if len(parts) != 3:
         return None, None, None, f'Invalid citation_key format: {citation_key!r}'
@@ -1573,6 +1626,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return
                 cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
                 new_lines  = lines[:indi_end] + cite_lines + lines[indi_end:]
+            elif str(fact_key).startswith('SNOTE:'):
+                # Shared note citation — insert 1 SOUR at end of 0 @note_xref@ NOTE record
+                note_xref = fact_key.split(':', 1)[1]
+                _, snote_end, err = _find_shared_note_block(lines, note_xref)
+                if err:
+                    self.send_error(400, err)
+                    return
+                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
+                new_lines  = lines[:snote_end] + cite_lines + lines[snote_end:]
             else:
                 insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
                 if err and is_fam and fact_key:

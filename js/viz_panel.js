@@ -238,6 +238,15 @@ function buildSourceBadgeHtml(citations, xref, origIdx) {
   return `<span class="${cls}" title="${label}" onclick="event.stopPropagation();openSourcesModal(${xrefQ},${origIdx})">${text}</span>`;
 }
 
+function buildNoteSourceBadgeHtml(citations, xref, noteDisplayIdx) {
+  const n     = (citations && citations.length) || 0;
+  const label = n === 0 ? 'Add a source' : (n === 1 ? '1 source' : `${n} sources`);
+  const text  = n === 0 ? '+ src' : `${n} src`;
+  const cls   = n === 0 ? 'note-src-badge note-src-badge-empty' : 'note-src-badge';
+  const xrefQ = JSON.stringify(String(xref)).replace(/"/g, '&quot;');
+  return `<span class="${cls}" title="${label}" onclick="event.stopPropagation();openNoteSourcesModal(${xrefQ},${noteDisplayIdx})">${text}</span>`;
+}
+
 // ── Godparent click handler (exported for tests) ───────────────────────────
 
 const _GODPARENT_RELAS = new Set(['Godparent', 'Godfather', 'Godmother']);
@@ -398,16 +407,20 @@ function renderPanel() {
       const count = notes.length;
       const label = count === 1 ? '1 Note' : `${count} Notes`;
       const cards = notes.map((n, i) => {
-        const noteText = (n && typeof n === 'object') ? n.text : n;
-        const isShared = n && n.shared;
-        const sharedClass = isShared ? ' shared' : '';
-        const borderStyle = isShared ? '' : ` style="border-left-color:${accent}"`;
+        const noteText   = (n && typeof n === 'object') ? n.text : n;
+        const isShared   = n && n.shared;
+        const citations  = (n && n.citations) || [];
+        const sharedClass  = isShared ? ' shared' : '';
+        const borderStyle  = isShared ? '' : ` style="border-left-color:${accent}"`;
+        const srcBadge     = buildNoteSourceBadgeHtml(citations, xref, i);
         return `<div class="note-card-wrap">` +
           `<div class="note-card${sharedClass}"${borderStyle}>${linkify(noteText)}</div>` +
           `<div class="note-actions">` +
           `<button class="note-action-btn" title="Edit note" onclick="editNote(${xrefQN},${i})">\u270f</button>` +
           `<button class="note-action-btn" title="Delete note" onclick="deleteNote(${xrefQN},${i})">\u2715</button>` +
-          `</div></div>`;
+          `</div>` +
+          srcBadge +
+          `</div>`;
       }).join('');
       notesDiv.innerHTML =
         `<div class="notes-header">` +
@@ -797,6 +810,7 @@ if (typeof module !== 'undefined') {
     buildProse, dotColor,
     collapseResidences,
     buildSourceBadgeHtml,
+    buildNoteSourceBadgeHtml,
     _handleGodparentClick,
     convertEventTag,
   };

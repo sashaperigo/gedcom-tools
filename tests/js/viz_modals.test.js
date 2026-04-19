@@ -1172,3 +1172,66 @@ describe('_buildSourcesModalContent — FAM events use fam_xref + marr_idx/div_i
     expect(html).toMatch(/showAddCitationModal\(\s*&quot;@I1@&quot;\s*,\s*&quot;BIRT:0&quot;/);
   });
 });
+
+// ── openNoteSourcesModal + note-mode _buildSourcesModalContent ─────────────
+
+describe('openNoteSourcesModal', () => {
+  const { openNoteSourcesModal } = require('../../js/viz_modals.js');
+
+  let overlay, title, list;
+  beforeEach(() => {
+    overlay = { classList: { _c: new Set(), add(c) { this._c.add(c); }, remove(c) { this._c.delete(c); }, contains(c) { return this._c.has(c); } } };
+    title   = { textContent: '' };
+    list    = { innerHTML: '' };
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'sources-modal-overlay') return overlay;
+        if (id === 'sources-modal-title')   return title;
+        if (id === 'sources-modal-list')    return list;
+        return null;
+      }
+    };
+    global.PEOPLE  = { '@I1@': { notes: [{ text: 'A note', shared: false, note_xref: null, note_idx: 0, citations: [] }] } };
+    global.SOURCES = {};
+  });
+
+  it('adds open class to overlay', () => {
+    openNoteSourcesModal('@I1@', 0);
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('sets title from note text', () => {
+    openNoteSourcesModal('@I1@', 0);
+    expect(title.textContent).toContain('A note');
+  });
+});
+
+describe('_buildSourcesModalContent — NOTE tag produces NOTE factKey', () => {
+  it('Add source button uses NOTE:note_idx as factKey', () => {
+    const evt = { tag: 'NOTE', note_idx: 1, note_xref: null, citations: [] };
+    const html = _buildSourcesModalContent([], {}, '@I1@', evt);
+    expect(html).toContain('NOTE:1');
+    expect(html).not.toContain('NOTE:undefined');
+  });
+
+  it('citation delete button uses NOTE:note_idx:cite_n format', () => {
+    const evt = { tag: 'NOTE', note_idx: 2, note_xref: null, citations: [{ sourceXref: '@S1@', page: null }] };
+    const html = _buildSourcesModalContent(evt.citations, { '@S1@': { titl: 'Reg' } }, '@I1@', evt);
+    expect(html).toContain('NOTE:2:0');
+  });
+});
+
+describe('_buildSourcesModalContent — SNOTE tag produces SNOTE factKey', () => {
+  it('Add source button uses SNOTE:note_xref as factKey', () => {
+    const evt = { tag: 'SNOTE', note_idx: 0, note_xref: '@N1@', citations: [] };
+    const html = _buildSourcesModalContent([], {}, '@I1@', evt);
+    expect(html).toContain('SNOTE:@N1@');
+    expect(html).not.toContain('SNOTE:undefined');
+  });
+
+  it('citation delete button uses SNOTE:note_xref:cite_n format', () => {
+    const evt = { tag: 'SNOTE', note_idx: 0, note_xref: '@N1@', citations: [{ sourceXref: '@S1@', page: null }] };
+    const html = _buildSourcesModalContent(evt.citations, { '@S1@': { titl: 'Reg' } }, '@I1@', evt);
+    expect(html).toContain('SNOTE:@N1@:0');
+  });
+});
