@@ -870,6 +870,49 @@ describe('renderPanel — collapsible family section (C3)', () => {
     // At least 3 subsections should be hidden (parents, siblings, spouses+children)
     expect(hiddenMatches.length).toBeGreaterThanOrEqual(3);
   });
+
+  it('half-siblings subsection is hidden when family section is collapsed', () => {
+    const panelEl  = makeFakeEl('detail-panel');
+    const familyEl = makeFakeEl('detail-family');
+    _state = { panelOpen: true, panelXref: '@FAM@' };
+    makePersonWithFamily();
+
+    global.PARENTS  = { '@FAM@': ['@PA@', '@MA@'], '@SP@': [null, null] };
+    global.RELATIVES = {
+      '@FAM@': {
+        siblings: ['@SIB@'],
+        spouses: ['@SP@'],
+        half_siblings: [
+          { shared_parent: '@PA@', other_parent: '@OP@', half_sibs: ['@HS1@'] },
+        ],
+      },
+    };
+    global.CHILDREN  = { '@FAM@': ['@CH1@'] };
+    global.PEOPLE['@HS1@'] = { name: 'Half Sib', birth_year: '1910', death_year: null, sex: 'F', events: [], notes: [], sources: [] };
+    global.PEOPLE['@OP@']  = { name: 'Other Parent', birth_year: '1880', death_year: null, sex: 'F', events: [], notes: [], sources: [] };
+
+    global.document = {
+      getElementById: (id) => {
+        if (id === 'detail-panel')  return panelEl;
+        if (id === 'detail-family') return familyEl;
+        return makeFakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    initPanel(panelEl);
+    renderPanel();
+
+    const html = familyEl.innerHTML;
+    // Count family-sub divs vs hidden ones — they must match
+    const totalSubs  = (html.match(/<div class="family-sub"/g) || []).length;
+    const hiddenSubs = (html.match(/<div class="family-sub" style="display:none"/g) || []).length;
+    expect(totalSubs).toBeGreaterThan(0);
+    expect(hiddenSubs).toBe(totalSubs);
+    // Explicitly confirm Half-siblings heading is not visible (inside a hidden container)
+    expect(html).toContain('Half-siblings');
+    expect(html).not.toMatch(/<div class="family-sub"[^>]*>(?!.*display:none)[^]*?Half-siblings/);
+  });
 });
 
 describe('renderPanel — person-level sources collapsed by default', () => {

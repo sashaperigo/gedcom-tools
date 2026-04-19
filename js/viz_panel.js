@@ -748,7 +748,7 @@ function renderPanel() {
     const _arr = _familyOpen ? '\u25bc' : '\u25b6';
     const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:0 0 10px 0">Family ${_arr}</button>`;
     const _subStyle = _familyOpen ? '' : ' style="display:none"';
-    const _wrapSub = (html) => html ? html.replace(/^<div class="family-sub"/, `<div class="family-sub"${_subStyle}`) : '';
+    const _wrapSub = (html) => html ? html.replace(/<div class="family-sub"/g, `<div class="family-sub"${_subStyle}`) : '';
     const _addBtnsWrapped = _familyOpen || !_hasFamily ? _addBtns : `<div${_subStyle}>${_addBtns}</div>`;
     familyDiv.innerHTML = _toggleHtml + _wrapSub(_parHtml) + _wrapSub(_sibHtml) + _wrapSub(_spChHtml) + _addBtnsWrapped;
     familyDiv.className = 'has-content';
