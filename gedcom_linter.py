@@ -1443,6 +1443,120 @@ def scan_broken_xrefs(path: str) -> list[str]:
     return _check_broken_xrefs(parse_gedcom(path))
 
 
+# ---------------------------------------------------------------------------
+# Record-order check and fix
+# ---------------------------------------------------------------------------
+
+# Canonical position of each top-level record type (lower = earlier in file).
+# Unknown tags (e.g. _LOC) get rank 8, slotted between NOTE and TRLR.
+_RECORD_RANK: dict[str, int] = {
+    'HEAD': 0,
+    'SUBM': 1,
+    'INDI': 2,
+    'FAM':  3,
+    'SOUR': 4,
+    'REPO': 5,
+    'OBJE': 6,
+    'NOTE': 7,
+    'TRLR': 9,
+}
+_RANK_UNKNOWN = 8
+
+
+def _rec_rank(tag: str) -> int:
+    return _RECORD_RANK.get(tag, _RANK_UNKNOWN)
+
+
+def scan_record_order(path: str) -> list[str]:
+    """
+    Return human-readable strings for top-level records that appear out of
+    canonical GEDCOM order: HEAD, SUBM, INDI, FAM, SOUR, REPO, OBJE, NOTE,
+    <other>, TRLR.
+    """
+    violations: list[str] = []
+    max_rank = -1
+    max_tag = ''
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m = re.match(r'^0 (?:(@[^@]+@) )?(\S+)', line)
+            if not m:
+                continue
+            xref = m.group(1) or ''
+            tag = m.group(2)
+            if tag == 'TRLR':
+                break
+            rank = _rec_rank(tag)
+            if rank < max_rank:
+                label = f'{xref} {tag}'.strip() if xref else tag
+                violations.append(
+                    f'line {lineno}: {label} appears after {max_tag} '
+                    f'({tag!r} should precede {max_tag!r})'
+                )
+            else:
+                max_rank = rank
+                max_tag = tag
+    return violations
+
+
+def fix_record_order(path: str, dry_run: bool = False) -> int:
+    """
+    Reorder top-level records into canonical GEDCOM sequence:
+    HEAD, SUBM, INDI, FAM, SOUR, REPO, OBJE, NOTE, <other>, TRLR.
+    Preserves original order within each record-type group.
+    Returns the number of top-level records that were moved.
+    """
+    with open(path, encoding='utf-8') as f:
+        raw_lines = f.readlines()
+
+    # Split into blocks: each block owns a level-0 line plus all following
+    # higher-level lines up to (but not including) the next level-0 line.
+    blocks: list[tuple[str, list[str]]] = []   # (tag, lines)
+    current_lines: list[str] = []
+    current_tag = ''
+
+    for raw in raw_lines:
+        m = re.match(r'^0 (?:@[^@]+@ )?(\S+)', raw.rstrip('\n'))
+        if m:
+            if current_lines:
+                blocks.append((current_tag, current_lines))
+            current_tag = m.group(1)
+            current_lines = [raw]
+        else:
+            current_lines.append(raw)
+    if current_lines:
+        blocks.append((current_tag, current_lines))
+
+    head   = [(t, ls) for t, ls in blocks if t == 'HEAD']
+    trlr   = [(t, ls) for t, ls in blocks if t == 'TRLR']
+    middle = [(t, ls) for t, ls in blocks if t not in ('HEAD', 'TRLR')]
+
+    sorted_middle = sorted(middle, key=lambda b: _rec_rank(b[0]))
+
+    # Count blocks that are out of canonical position (appear after a type with
+    # a higher rank).  This is the number that will actually move, not a
+    # positional-diff count (which over-counts due to downstream shifting).
+    moved = 0
+    max_r = -1
+    for tag, _ in middle:
+        r = _rec_rank(tag)
+        if r < max_r:
+            moved += 1
+        else:
+            max_r = r
+
+    if moved and not dry_run:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
+            for _, ls in head + sorted_middle + trlr:
+                for line in ls:
+                    f.write(line if line.endswith('\n') else line + '\n')
+        import os
+        os.replace(tmp, path)
+
+    return moved
+
+
 def scan_dangling_note_xrefs(path: str) -> list[tuple[int, str]]:
     """
     Return (lineno, xref) for NOTE pointer lines that reference a shared-note
@@ -4575,6 +4689,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_bapm_without_birth(path, dry_run=dry_run)
     fixes_applied += fix_bare_events(path, dry_run=dry_run)
     fixes_applied += fix_sole_event_type_alternate(path, dry_run=dry_run)
+    fixes_applied += fix_record_order(path, dry_run=dry_run)
     fixes_applied += fix_sort_events(path, dry_run=dry_run)
     # fix_sort_events round-trips through parse/write, which can reformat NOTE
     # records into long lines with trailing spaces before CONC. Re-run both
@@ -4661,6 +4776,11 @@ def main():
     parser.add_argument(
         '--fix-duplicate-names', action='store_true',
         help='Remove duplicate NAME entries within individuals in-place',
+    )
+    parser.add_argument(
+        '--fix-record-order', action='store_true',
+        help='Reorder top-level records into canonical GEDCOM sequence '
+             '(HEAD, SUBM, INDI, FAM, SOUR, REPO, OBJE, NOTE, TRLR) in-place',
     )
     parser.add_argument(
         '--fix-sort-events', action='store_true',
@@ -4757,6 +4877,7 @@ def main():
         args.fix_duplicate_resi = True
         args.fix_bare_events = True
         args.fix_birth_from_bapm = True
+        args.fix_record_order = True
         args.fix_sort_events = True
 
     if not os.path.isfile(args.gedfile):
@@ -4878,6 +4999,15 @@ def main():
             print(f'  {removed} duplicate NAME entry/entries would be removed.')
         else:
             print(f'  {removed} duplicate NAME entry/entries removed.')
+
+    if args.fix_record_order:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Reordering top-level records into canonical sequence in: {args.gedfile}')
+        moved = fix_record_order(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {moved} record(s) would be moved.')
+        else:
+            print(f'  {moved} record(s) moved.')
 
     if args.fix_sort_events:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
@@ -5046,7 +5176,7 @@ def main():
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
                 args.fix_bare_events, args.fix_birth_from_bapm,
-                args.fix_sort_events, args.merge_sources]):
+                args.fix_record_order, args.fix_sort_events, args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
         # counters for summary statistics
@@ -5670,6 +5800,19 @@ def main():
                           + (f' (+{len(lns)-5} more)' if len(lns) > 5 else ''))
             else:
                 print('OK: all NOTE pointers resolve to defined shared notes.')
+
+            rec_order = scan_record_order(args.gedfile)
+            if rec_order:
+                errors = True
+                print(f'\n{_ERR} {len(rec_order)} top-level record(s) out of canonical order '
+                      '(run --fix-record-order to reorder):')
+                for msg in rec_order[:20]:
+                    print(f'  {msg}')
+                if len(rec_order) > 20:
+                    print(f'  ... and {len(rec_order) - 20} more.')
+            else:
+                print('OK: top-level records are in canonical order '
+                      '(HEAD, SUBM, INDI, FAM, SOUR, REPO, OBJE, NOTE, TRLR).')
 
             # ── Summary statistics ───────────────────────────────────────────
             try:
