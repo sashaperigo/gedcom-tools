@@ -153,43 +153,79 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     ));
   }
 
-  // ── Phase 2: Generation -1 (parents) ─────────────────────────────────────
+  // ── Phase 2: Generation -1 (parents) with umbrella over focus + siblings ─
 
   const focusParents = PARENTS[focusXref] ?? [];
   const fatherXref   = focusParents[0] ?? null;
   const motherXref   = focusParents[1] ?? null;
 
   if (fatherXref || motherXref) {
+    const focusCenterX = NODE_W_FOCUS / 2;
+    const ancUmbrellaY = -(ROW_HEIGHT - NODE_H) / 2;   // halfway between parent row bottom and focus row top
+    const parentBottomY = -ROW_HEIGHT + NODE_H;
+    const parentMidY    = -ROW_HEIGHT + NODE_H / 2;
+
+    // Anchor drop and per-child drops span the focus and all gen-0 siblings:
+    // they're the biological children of the parents sitting at y=0.
+    // Focus uses NODE_W_FOCUS; siblings use NODE_W.
+    const childCenters = [focusCenterX];
+    nodes.forEach(n => {
+      if (n.generation === 0 && n.role === 'sibling') {
+        childCenters.push(n.x + NODE_W / 2);
+      }
+    });
+    childCenters.sort((a, b) => a - b);
+
     if (fatherXref && motherXref) {
-      // Both parents: father left of focus, mother right
-      const parentOffset = SLOT / 2;
-      const fatherX = 0 - parentOffset;
-      const motherX = 0 + parentOffset;
+      // Both parents: symmetric around focus center. Father left, mother right.
+      const fatherX = focusCenterX - SLOT / 2 - NODE_W / 2;
+      const motherX = focusCenterX + SLOT / 2 - NODE_W / 2;
 
       nodes.push({ xref: fatherXref, x: fatherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
       nodes.push({ xref: motherXref, x: motherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
 
-      // H-shaped connector: two verticals down from each parent, horizontal crossbar,
-      // then a vertical drop from the midpoint to the focus node.
-      const midY = -ROW_HEIGHT / 2;
-      edges.push({ x1: fatherX + NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: fatherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: motherX + NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: fatherX + NODE_W / 2, y1: midY, x2: motherX + NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: NODE_W / 2, y1: midY, x2: NODE_W / 2, y2: 0, type: 'ancestor' });
+      // Marriage edge between parents (father right edge → mother left edge).
+      edges.push({
+        x1: fatherX + NODE_W, y1: parentMidY,
+        x2: motherX,           y2: parentMidY,
+        type: 'marriage',
+      });
 
-      // Recurse into grandparents for each expanded ancestor
       _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
       _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
     } else {
-      // Single parent: centered above focus
+      // Single parent: centered on focus center.
       const singleParent = fatherXref || motherXref;
-      nodes.push({ xref: singleParent, x: 0, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-      const midY = -ROW_HEIGHT / 2;
-      edges.push({ x1: NODE_W / 2, y1: -ROW_HEIGHT + NODE_H, x2: NODE_W / 2, y2: midY, type: 'ancestor' });
-      edges.push({ x1: NODE_W / 2, y1: midY, x2: NODE_W / 2, y2: 0, type: 'ancestor' });
-
-      _placeAncestors(singleParent, 0, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
+      const singleParentX = focusCenterX - NODE_W / 2;
+      nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+      _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
     }
+
+    // Umbrella geometry (mirrors the descendant umbrella).
+    // Anchor drop: from bottom of parent row down to the umbrella bar, at focus center x.
+    edges.push({
+      x1: focusCenterX, y1: parentBottomY,
+      x2: focusCenterX, y2: ancUmbrellaY,
+      type: 'ancestor',
+    });
+
+    // Crossbar spans leftmost→rightmost child center (only if >1 child of parents).
+    if (childCenters.length > 1) {
+      edges.push({
+        x1: childCenters[0],                      y1: ancUmbrellaY,
+        x2: childCenters[childCenters.length - 1], y2: ancUmbrellaY,
+        type: 'ancestor',
+      });
+    }
+
+    // Per-child drop from umbrella down to each child's top.
+    childCenters.forEach(cx => {
+      edges.push({
+        x1: cx, y1: ancUmbrellaY,
+        x2: cx, y2: 0,
+        type: 'ancestor',
+      });
+    });
   }
 
   // ── Phase 2: Generation +1 (children + umbrella) ─────────────────────────

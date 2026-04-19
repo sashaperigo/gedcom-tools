@@ -523,7 +523,11 @@ describe('computeLayout — grandparent expansion', () => {
 // ── Test 8: Only one parent ────────────────────────────────────────────────
 
 describe('computeLayout — single parent', () => {
-  it('single mother is centered above focus at x=0', () => {
+  // Parent center aligns with focus visual center (NODE_W_FOCUS/2 = 80);
+  // so parent.x = 80 - NODE_W/2 = 10.
+  const SINGLE_PARENT_X = NODE_W_FOCUS / 2 - NODE_W / 2;
+
+  it('single mother is centered above focus (center at focus center)', () => {
     resetGlobals({
       people: {
         '@FOCUS@':  { birth_year: 1900 },
@@ -534,11 +538,11 @@ describe('computeLayout — single parent', () => {
     const { nodes } = computeLayout('@FOCUS@', new Set(), false);
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     expect(mother).toBeDefined();
-    expect(mother.x).toBe(0);
+    expect(mother.x).toBe(SINGLE_PARENT_X);
     expect(mother.y).toBe(-ROW_HEIGHT);
   });
 
-  it('single father is centered above focus at x=0', () => {
+  it('single father is centered above focus (center at focus center)', () => {
     resetGlobals({
       people: {
         '@FOCUS@':  { birth_year: 1900 },
@@ -549,7 +553,7 @@ describe('computeLayout — single parent', () => {
     const { nodes } = computeLayout('@FOCUS@', new Set(), false);
     const father = nodes.find(n => n.xref === '@FATHER@');
     expect(father).toBeDefined();
-    expect(father.x).toBe(0);
+    expect(father.x).toBe(SINGLE_PARENT_X);
     expect(father.y).toBe(-ROW_HEIGHT);
   });
 });
@@ -859,5 +863,187 @@ describe('computeLayout — descendant umbrella', () => {
       );
       expect(slant).toBeUndefined();
     });
+  });
+});
+
+// ── Test 11: Ancestor umbrella layout ─────────────────────────────────────
+
+describe('computeLayout — ancestor umbrella', () => {
+  const ANC_UMBRELLA_Y = -(ROW_HEIGHT - NODE_H) / 2;   // -26
+  const PARENT_BOTTOM  = -ROW_HEIGHT + NODE_H;         // -52
+  const PARENT_MID_Y   = -ROW_HEIGHT + NODE_H / 2;     // -71
+
+  it('two parents, no siblings: marriage edge between parents + anchor drop + single drop to focus', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@FATHER@': { birth_year: 1870 },
+        '@MOTHER@': { birth_year: 1872 },
+      },
+      parents: { '@FOCUS@': ['@FATHER@', '@MOTHER@'] },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+
+    const father = nodes.find(n => n.xref === '@FATHER@');
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    expect(father).toBeDefined();
+    expect(mother).toBeDefined();
+
+    // Parents are centered on the focus visual center (NODE_W_FOCUS/2 = 80).
+    const focusCenterX = NODE_W_FOCUS / 2;
+    const fatherCenter = father.x + NODE_W / 2;
+    const motherCenter = mother.x + NODE_W / 2;
+    expect((fatherCenter + motherCenter) / 2).toBeCloseTo(focusCenterX, 1);
+
+    // Marriage edge: father right edge → mother left edge at parent row middle y.
+    const marriageEdge = edges.find(e =>
+      e.type === 'marriage' && e.y1 === PARENT_MID_Y && e.y2 === PARENT_MID_Y
+    );
+    expect(marriageEdge).toBeDefined();
+    expect(marriageEdge.x1).toBeCloseTo(father.x + NODE_W, 1);
+    expect(marriageEdge.x2).toBeCloseTo(mother.x, 1);
+
+    // Anchor drop: from parent row bottom down to umbrella y, at focus center x.
+    const ancEdges = edges.filter(e => e.type === 'ancestor');
+    const anchorDrop = ancEdges.find(e =>
+      e.x1 === focusCenterX && e.y1 === PARENT_BOTTOM &&
+      e.x2 === focusCenterX && e.y2 === ANC_UMBRELLA_Y
+    );
+    expect(anchorDrop).toBeDefined();
+
+    // No crossbar (only one child of parents).
+    const crossbar = ancEdges.find(e =>
+      e.y1 === ANC_UMBRELLA_Y && e.y2 === ANC_UMBRELLA_Y && e.x1 !== e.x2
+    );
+    expect(crossbar).toBeUndefined();
+
+    // Single drop from umbrella to focus top.
+    const focusDrop = ancEdges.find(e =>
+      e.x1 === focusCenterX && e.y1 === ANC_UMBRELLA_Y &&
+      e.x2 === focusCenterX && e.y2 === 0
+    );
+    expect(focusDrop).toBeDefined();
+  });
+
+  it('two parents with siblings: crossbar spans leftmost→rightmost child center + per-child drops', () => {
+    resetGlobals({
+      people: {
+        '@OLDER@':   { birth_year: 1895 },
+        '@FOCUS@':   { birth_year: 1900 },
+        '@YOUNGER@': { birth_year: 1905 },
+        '@FATHER@':  { birth_year: 1870 },
+        '@MOTHER@':  { birth_year: 1872 },
+      },
+      parents:   { '@FOCUS@': ['@FATHER@', '@MOTHER@'] },
+      relatives: { '@FOCUS@': { siblings: ['@OLDER@', '@YOUNGER@'], spouses: [] } },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+
+    const focus   = nodes.find(n => n.xref === '@FOCUS@');
+    const older   = nodes.find(n => n.xref === '@OLDER@');
+    const younger = nodes.find(n => n.xref === '@YOUNGER@');
+
+    const focusCenterX   = focus.x + NODE_W_FOCUS / 2;
+    const olderCenterX   = older.x + NODE_W / 2;
+    const youngerCenterX = younger.x + NODE_W / 2;
+
+    const centers = [olderCenterX, focusCenterX, youngerCenterX];
+    const leftmost  = Math.min(...centers);
+    const rightmost = Math.max(...centers);
+
+    const ancEdges = edges.filter(e => e.type === 'ancestor');
+
+    // Crossbar spanning leftmost child center to rightmost child center.
+    const crossbar = ancEdges.find(e =>
+      e.y1 === ANC_UMBRELLA_Y && e.y2 === ANC_UMBRELLA_Y &&
+      Math.min(e.x1, e.x2) === leftmost && Math.max(e.x1, e.x2) === rightmost
+    );
+    expect(crossbar).toBeDefined();
+
+    // Anchor drop at focus center x.
+    const anchorDrop = ancEdges.find(e =>
+      e.x1 === focusCenterX && e.y1 === PARENT_BOTTOM &&
+      e.x2 === focusCenterX && e.y2 === ANC_UMBRELLA_Y
+    );
+    expect(anchorDrop).toBeDefined();
+
+    // Per-child drops — one per gen-0 child of the parents (focus + siblings).
+    centers.forEach(cx => {
+      const drop = ancEdges.find(e =>
+        e.x1 === cx && e.y1 === ANC_UMBRELLA_Y &&
+        e.x2 === cx && e.y2 === 0
+      );
+      expect(drop).toBeDefined();
+    });
+  });
+
+  it('single parent with siblings: no marriage edge; parent centered on focus center', () => {
+    resetGlobals({
+      people: {
+        '@OLDER@':   { birth_year: 1895 },
+        '@FOCUS@':   { birth_year: 1900 },
+        '@MOTHER@':  { birth_year: 1872 },
+      },
+      parents:   { '@FOCUS@': [null, '@MOTHER@'] },
+      relatives: { '@FOCUS@': { siblings: ['@OLDER@'], spouses: [] } },
+    });
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const focusCenterX = NODE_W_FOCUS / 2;
+    // Mother's center is the focus center.
+    expect(mother.x + NODE_W / 2).toBeCloseTo(focusCenterX, 1);
+
+    // No marriage edge at the parent row (single parent).
+    const parentMarriage = edges.find(e =>
+      e.type === 'marriage' && e.y1 === PARENT_MID_Y
+    );
+    expect(parentMarriage).toBeUndefined();
+
+    const older = nodes.find(n => n.xref === '@OLDER@');
+    const olderCenterX = older.x + NODE_W / 2;
+
+    const ancEdges = edges.filter(e => e.type === 'ancestor');
+
+    // Anchor drop from (focusCenterX, PARENT_BOTTOM) to (focusCenterX, umbrellaY).
+    const anchorDrop = ancEdges.find(e =>
+      e.x1 === focusCenterX && e.y1 === PARENT_BOTTOM &&
+      e.x2 === focusCenterX && e.y2 === ANC_UMBRELLA_Y
+    );
+    expect(anchorDrop).toBeDefined();
+
+    // Crossbar spans the two gen-0 children.
+    const crossbar = ancEdges.find(e =>
+      e.y1 === ANC_UMBRELLA_Y && e.y2 === ANC_UMBRELLA_Y && e.x1 !== e.x2
+    );
+    expect(crossbar).toBeDefined();
+    expect(Math.min(crossbar.x1, crossbar.x2)).toBeCloseTo(Math.min(focusCenterX, olderCenterX), 1);
+    expect(Math.max(crossbar.x1, crossbar.x2)).toBeCloseTo(Math.max(focusCenterX, olderCenterX), 1);
+
+    // Per-child drops.
+    [focusCenterX, olderCenterX].forEach(cx => {
+      const drop = ancEdges.find(e =>
+        e.x1 === cx && e.y1 === ANC_UMBRELLA_Y &&
+        e.x2 === cx && e.y2 === 0
+      );
+      expect(drop).toBeDefined();
+    });
+  });
+
+  it('does not emit the old H-connector crossbar at y = -ROW_HEIGHT/2', () => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@FATHER@': { birth_year: 1870 },
+        '@MOTHER@': { birth_year: 1872 },
+      },
+      parents: { '@FOCUS@': ['@FATHER@', '@MOTHER@'] },
+    });
+    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const oldCrossbar = edges.find(e =>
+      e.type === 'ancestor' &&
+      e.y1 === -ROW_HEIGHT / 2 && e.y2 === -ROW_HEIGHT / 2 && e.x1 !== e.x2
+    );
+    expect(oldCrossbar).toBeUndefined();
   });
 });
