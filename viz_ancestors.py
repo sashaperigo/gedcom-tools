@@ -856,15 +856,14 @@ header h1 { font-size: 16px; font-weight: 600; }
   color: #94a3b8; border-radius: 6px; padding: 6px 16px; cursor: pointer; }
 .event-modal-save { background: #3b82f6; border: none; color: #fff;
   border-radius: 6px; padding: 6px 16px; cursor: pointer; font-weight: 600; }
-.evt-edit-btn { position: absolute; right: 22px; top: 2px; background: none; border: none;
-  cursor: pointer; opacity: 0; font-size: 12px; color: #94a3b8; padding: 2px 4px;
-  border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; }
-.evt-entry:hover .evt-edit-btn { opacity: 1; }
+.evt-actions { position: absolute; right: 0; top: 2px; display: flex; align-items: center;
+  gap: 2px; opacity: 0; transition: opacity .15s; }
+.evt-entry:hover .evt-actions { opacity: 1; }
+.evt-edit-btn { background: none; border: none; cursor: pointer; font-size: 12px; color: #94a3b8;
+  padding: 2px 4px; border-radius: 4px; transition: color .15s; line-height: 1; }
 .evt-edit-btn:hover { color: #3b82f6 !important; }
-.evt-convert-btn { position: absolute; right: 44px; top: 2px; background: none; border: none;
-  cursor: pointer; opacity: 0; font-size: 11px; color: #94a3b8; padding: 2px 4px;
-  border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; white-space: nowrap; }
-.evt-entry:hover .evt-convert-btn { opacity: 1; }
+.evt-convert-btn { background: none; border: none; cursor: pointer; font-size: 11px; color: #94a3b8;
+  padding: 2px 4px; border-radius: 4px; transition: color .15s; line-height: 1; white-space: nowrap; }
 .evt-convert-btn:hover { color: #a78bfa !important; }
 .add-event-btn { display: flex; align-items: center; gap: 5px; background: none;
   border: 1px dashed #334155; border-radius: 6px; color: #475569; font-size: 12px;
@@ -1034,10 +1033,8 @@ header h1 { font-size: 16px; font-weight: 600; }
 .timeline-spine { position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px;
   background: linear-gradient(to bottom, #334155 0%, transparent 100%); }
 .evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; padding-right: 92px; }
-.fact-del { position: absolute; right: 0; top: 2px; background: none; border: none;
-  cursor: pointer; opacity: 0; font-size: 13px; color: #94a3b8; padding: 2px 4px;
-  border-radius: 4px; transition: opacity .15s, color .15s; line-height: 1; }
-.evt-entry:hover .fact-del { opacity: 1; }
+.fact-del { background: none; border: none; cursor: pointer; font-size: 13px; color: #94a3b8;
+  padding: 2px 4px; border-radius: 4px; transition: color .15s; line-height: 1; }
 .fact-del:hover { color: #ef4444 !important; }
 .evt-dot { position: absolute; left: -24px; top: 5px;
            width: 10px; height: 10px; border-radius: 50%; border: 2px solid #1e293b; }
@@ -1249,15 +1246,6 @@ header h1 { font-size: 16px; font-weight: 600; }
 <div id="add-godparent-modal-overlay" onclick="if(event.target===this)closeAddGodparentModal()">
   <div id="add-godparent-modal">
     <h3 id="add-godparent-modal-title">Add Godparent</h3>
-    <div class="event-modal-field">
-      <label>Role</label>
-      <select id="add-godparent-modal-rela"
-              onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
-        <option value="Godparent">Godparent</option>
-        <option value="Godfather">Godfather</option>
-        <option value="Godmother">Godmother</option>
-      </select>
-    </div>
     <div class="event-modal-field">
       <label>Search by name</label>
       <input type="text" id="add-godparent-modal-search" placeholder="Type a name\u2026"

@@ -258,7 +258,7 @@ function _buildGodparentPillsHtml(evt, xref, xrefQ) {
     const roleSuffix = (asso.rela === 'Godfather' || asso.rela === 'Godmother')
       ? ` <span class="panel-godparent-role">(${asso.rela === 'Godfather' ? '\u2642' : '\u2640'})</span>`
       : '';
-    html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="_handleGodparentClick(${xrefJs})">${gpName}${roleSuffix}</span>`;
+    html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="setState({focusXref:${xrefJs},panelXref:${xrefJs},panelOpen:true})">${gpName}${roleSuffix}</span>`;
   }
   if (assoArr.length < 2) {
     html += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
@@ -547,9 +547,7 @@ function renderPanel() {
           noteInl +
           godparentHtml +
           srcBadge +
-          editBtn +
-          convertBtn +
-          delBtn +
+          `<div class="evt-actions">${convertBtn}${editBtn}${delBtn}</div>` +
           `</div>`;
       }
       html += _addEvtBtn;
@@ -577,8 +575,7 @@ function renderPanel() {
           noteInl +
           undGpHtml +
           srcBadge +
-          editBtn +
-          delBtn +
+          `<div class="evt-actions">${editBtn}${delBtn}</div>` +
           `</div>`;
       }).join('');
     }
