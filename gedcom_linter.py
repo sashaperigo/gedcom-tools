@@ -2352,6 +2352,49 @@ def scan_conc_cont(path: str) -> list[tuple[int, str]]:
     return violations
 
 
+def fix_conc_cont_levels(path: str, dry_run: bool = False) -> int:
+    """
+    Rewrite CONC/CONT lines whose level != last_non_conc_level + 1.
+
+    In GEDCOM 5.5.1, all CONT/CONC for a record must be at record_level + 1.
+    A '3 CONC' following '2 CONT' should be '2 CONC' (both belong to the
+    level-1 record).  Returns the count of lines corrected.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    lines_out = []
+    changed = 0
+    last_parent_level: int | None = None
+
+    for raw in lines_in:
+        line = raw.rstrip('\n')
+        m = re.match(r'^(\d+) (CONC|CONT)(.*)', line)
+        if m:
+            level = int(m.group(1))
+            tag = m.group(2)
+            rest = m.group(3)
+            if last_parent_level is not None:
+                expected = last_parent_level + 1
+                if level != expected:
+                    changed += 1
+                    line = f'{expected} {tag}{rest}'
+            lines_out.append(line + '\n')
+        else:
+            m2 = re.match(r'^(\d+)', line)
+            if m2:
+                last_parent_level = int(m2.group(1))
+            lines_out.append(line + '\n')
+
+    if not dry_run and changed:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return changed
+
+
 # ---------------------------------------------------------------------------
 # Bare @ sign detection  (spec 1.4 — pointer escape rule)
 # ---------------------------------------------------------------------------
@@ -4787,6 +4830,10 @@ def main():
         help='Sort events in each record into chronological order in-place',
     )
     parser.add_argument(
+        '--fix-conc-cont-levels', action='store_true',
+        help='Rewrite CONC/CONT lines at wrong level (must be parent_level+1) in-place',
+    )
+    parser.add_argument(
         '--fix-date-caps', action='store_true',
         help='Normalize month abbreviations in DATE lines to uppercase in-place',
     )
@@ -4879,6 +4926,7 @@ def main():
         args.fix_birth_from_bapm = True
         args.fix_record_order = True
         args.fix_sort_events = True
+        args.fix_conc_cont_levels = True
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
@@ -5022,6 +5070,15 @@ def main():
             # NOTE records into lines that exceed 255 chars. Re-wrap immediately.
             fix_long_lines(args.gedfile)
             fix_trailing_whitespace(args.gedfile)
+
+    if args.fix_conc_cont_levels:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Correcting CONC/CONT line levels in: {args.gedfile}')
+        changed = fix_conc_cont_levels(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {changed} CONC/CONT line(s) would be corrected.')
+        else:
+            print(f'  {changed} CONC/CONT line(s) corrected.')
 
     if args.fix_date_caps:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
@@ -5176,7 +5233,8 @@ def main():
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
                 args.fix_bare_events, args.fix_birth_from_bapm,
-                args.fix_record_order, args.fix_sort_events, args.merge_sources]):
+                args.fix_record_order, args.fix_sort_events,
+                args.fix_conc_cont_levels, args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
         # counters for summary statistics
