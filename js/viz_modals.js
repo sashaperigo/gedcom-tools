@@ -920,6 +920,7 @@ function showAddCitationModal(xref, factKey) {
   const pageEl     = document.getElementById('add-citation-modal-page');
   const textEl     = document.getElementById('add-citation-modal-text');
   const noteEl     = document.getElementById('add-citation-modal-note');
+  const urlEl      = document.getElementById('add-citation-modal-url');
   const titleEl    = document.getElementById('add-citation-modal-title');
 
   const displayTag = factKey ? String(factKey).split(':')[0] : '';
@@ -927,6 +928,7 @@ function showAddCitationModal(xref, factKey) {
   if (pageEl)    pageEl.value  = '';
   if (textEl)    textEl.value  = '';
   if (noteEl)    noteEl.value  = '';
+  if (urlEl)     urlEl.value   = '';
 
   // Populate sourceXref select from global SOURCES, sorted alphabetically by title
   // (case-insensitive) so users can find a specific source.
@@ -963,14 +965,16 @@ async function submitAddCitationModal() {
   const pageEl     = document.getElementById('add-citation-modal-page');
   const textEl     = document.getElementById('add-citation-modal-text');
   const noteEl     = document.getElementById('add-citation-modal-note');
+  const urlEl      = document.getElementById('add-citation-modal-url');
   const sourceXref = sourceEl ? sourceEl.value : '';
   const page       = pageEl   ? pageEl.value.trim()   : '';
   const text       = textEl   ? textEl.value.trim()   : '';
   const note       = noteEl   ? noteEl.value.trim()   : '';
+  const url        = urlEl    ? urlEl.value.trim()    : '';
   closeAddCitationModal();
   if (!sourceXref) { alert('Please select a source.'); return; }
   try {
-    const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note);
+    const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note, url);
     // FAM citations refresh both spouses; merge every returned person.
     if (resp && resp.people) {
       for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
@@ -1012,6 +1016,7 @@ function showEditCitationModal(xref, factTag, citationIndex) {
   const pageEl     = document.getElementById('edit-citation-modal-page');
   const textEl     = document.getElementById('edit-citation-modal-text');
   const noteEl     = document.getElementById('edit-citation-modal-note');
+  const urlEl      = document.getElementById('edit-citation-modal-url');
   const titleEl    = document.getElementById('edit-citation-modal-title');
   const viewSrcBtn = document.getElementById('edit-citation-view-source-btn');
 
@@ -1019,6 +1024,7 @@ function showEditCitationModal(xref, factTag, citationIndex) {
   if (pageEl)  pageEl.value  = (cite && cite.page)  || '';
   if (textEl)  textEl.value  = (cite && cite.text)  || '';
   if (noteEl)  noteEl.value  = (cite && cite.note)  || '';
+  if (urlEl)   urlEl.value   = (cite && cite.url)   || '';
 
   if (viewSrcBtn && _editCitationSourceXref) {
     const sxref = _editCitationSourceXref;
@@ -1047,12 +1053,14 @@ async function submitEditCitationModal() {
   const pageEl  = document.getElementById('edit-citation-modal-page');
   const textEl  = document.getElementById('edit-citation-modal-text');
   const noteEl  = document.getElementById('edit-citation-modal-note');
+  const urlEl   = document.getElementById('edit-citation-modal-url');
   const page    = pageEl ? pageEl.value.trim() : '';
   const text    = textEl ? textEl.value.trim() : '';
   const note    = noteEl ? noteEl.value.trim() : '';
+  const url     = urlEl  ? urlEl.value.trim()  : '';
   closeEditCitationModal();
   try {
-    await apiEditCitation(xref, factTag ? `${factTag}:${index}` : `SOUR:${index}`, page, text, note);
+    await apiEditCitation(xref, factTag ? `${factTag}:${index}` : `SOUR:${index}`, page, text, note, url);
     if (typeof renderPanel !== 'undefined') renderPanel();
   } catch (e) {
     alert('Save failed: ' + e);
