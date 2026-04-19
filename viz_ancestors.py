@@ -975,6 +975,12 @@ header h1 { font-size: 16px; font-weight: 600; }
 #add-citation-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 420px; max-width: 90vw; }
 #add-citation-modal h3 { margin: 0 0 12px; font-size: 14px; color: #94a3b8; font-weight: 600; }
+#edit-citation-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1100; align-items: center; justify-content: center; }
+#edit-citation-modal-overlay.open { display: flex; }
+#edit-citation-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#edit-citation-modal h3 { margin: 0 0 12px; font-size: 14px; color: #94a3b8; font-weight: 600; }
 #sources-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
 #sources-modal-header { display: flex; align-items: flex-start; justify-content: space-between;
@@ -997,6 +1003,9 @@ header h1 { font-size: 16px; font-weight: 600; }
 .src-modal-delete-btn { background: none; border: none; color: #64748b; cursor: pointer;
   font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
 .src-modal-delete-btn:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+.src-modal-edit-btn { background: none; border: none; color: #64748b; cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+.src-modal-edit-btn:hover { color: #93c5fd; background: rgba(147,197,253,0.1); }
 .src-modal-add { margin-top: 14px; padding-top: 12px; border-top: 1px solid #1e3a52; }
 .src-modal-add-btn { background: rgba(147,197,253,0.1); color: #93c5fd;
   border: 1px solid rgba(147,197,253,0.3); border-radius: 4px; padding: 6px 12px;
@@ -1332,9 +1341,39 @@ header h1 { font-size: 16px; font-weight: 600; }
       <label>Note (optional)</label>
       <textarea id="add-citation-modal-note" rows="2"></textarea>
     </div>
+    <div class="event-modal-field">
+      <label>URL (optional)</label>
+      <input type="url" id="add-citation-modal-url" autocomplete="off" placeholder="https://">
+    </div>
     <div class="event-modal-actions">
       <button class="event-modal-cancel" onclick="closeAddCitationModal()">Cancel</button>
       <button class="event-modal-save" onclick="submitAddCitationModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="edit-citation-modal-overlay" onclick="if(event.target===this)closeEditCitationModal()">
+  <div id="edit-citation-modal" onkeydown="if(event.key==='Escape')closeEditCitationModal()">
+    <h3 id="edit-citation-modal-title">Edit Citation</h3>
+    <div class="event-modal-field">
+      <label>Page / reference</label>
+      <input type="text" id="edit-citation-modal-page" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Quoted text (optional)</label>
+      <textarea id="edit-citation-modal-text" rows="3"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>Note (optional)</label>
+      <textarea id="edit-citation-modal-note" rows="2"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>URL (optional)</label>
+      <input type="url" id="edit-citation-modal-url" autocomplete="off" placeholder="https://">
+    </div>
+    <div class="event-modal-actions">
+      <button id="edit-citation-view-source-btn" class="event-modal-cancel" style="display:none">View Source</button>
+      <button class="event-modal-cancel" onclick="closeEditCitationModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitEditCitationModal()">Save</button>
     </div>
   </div>
 </div>

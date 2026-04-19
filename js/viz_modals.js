@@ -769,9 +769,17 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
       const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
       const citeKey  = `${tag}:${eventOcc}:${idx}`;
       const citeKeyQ = JSON.stringify(citeKey).replace(/"/g, '&quot;');
+      // For FAM events the API must target the FAM xref, but PEOPLE lookup uses the INDI xref.
+      const indiXrefQ   = JSON.stringify(String(xref || '')).replace(/"/g, '&quot;');
+      const apiXrefQ    = xrefQ;  // targetXref (FAM or INDI)
+      const editOnclick = isFamEvt
+        ? `showEditCitationModal(${indiXrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},${apiXrefQ})`
+        : `showEditCitationModal(${xrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx})`;
       return (
         `<div class="src-modal-item">` +
           `<div class="src-modal-item-body"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>` +
+          `<button class="src-modal-edit-btn" title="Edit this citation" ` +
+            `onclick="${editOnclick}">\u270f</button>` +
           `<button class="src-modal-delete-btn" title="Remove this citation" ` +
             `onclick="deleteSourceFromModal(${xrefQ},${citeKeyQ})">\u00d7</button>` +
         `</div>`
@@ -992,13 +1000,16 @@ async function submitAddCitationModal() {
 
 let _editCitationXref = null, _editCitationFactTag = null, _editCitationIndex = null;
 let _editCitationSourceXref = null;
+let _editCitationApiXref = null;  // may differ from _editCitationXref for FAM events
 
-function showEditCitationModal(xref, factTag, citationIndex) {
+// apiXref: optional override for the xref sent to the API (use when FAM xref differs from INDI xref)
+function showEditCitationModal(xref, factTag, citationIndex, apiXref) {
   _editCitationXref      = xref;
+  _editCitationApiXref   = apiXref || xref;
   _editCitationFactTag   = factTag;
   _editCitationIndex     = citationIndex;
 
-  // Locate the citation data
+  // Locate the citation data from the person's events (always keyed by INDI xref)
   const person = (typeof PEOPLE !== 'undefined') && PEOPLE[xref];
   let cite = null;
   if (person) {
@@ -1047,7 +1058,7 @@ function closeEditCitationModal() {
 }
 
 async function submitEditCitationModal() {
-  const xref    = _editCitationXref;
+  const xref    = _editCitationApiXref || _editCitationXref;
   const factTag = _editCitationFactTag;
   const index   = _editCitationIndex;
   const pageEl  = document.getElementById('edit-citation-modal-page');
