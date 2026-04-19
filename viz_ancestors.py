@@ -857,13 +857,16 @@ header h1 { font-size: 16px; font-weight: 600; }
 .event-modal-save { background: #3b82f6; border: none; color: #fff;
   border-radius: 6px; padding: 6px 16px; cursor: pointer; font-weight: 600; }
 .evt-actions { position: absolute; right: 0; top: 2px; display: flex; align-items: center;
-  gap: 2px; opacity: 0; transition: opacity .15s; }
-.evt-entry:hover .evt-actions { opacity: 1; }
+  gap: 2px; }
+.evt-edit-btn, .evt-convert-btn, .fact-del { opacity: 0; transition: opacity .15s, color .15s; }
+.evt-entry:hover .evt-edit-btn,
+.evt-entry:hover .evt-convert-btn,
+.evt-entry:hover .fact-del { opacity: 1; }
 .evt-edit-btn { background: none; border: none; cursor: pointer; font-size: 12px; color: #94a3b8;
-  padding: 2px 4px; border-radius: 4px; transition: color .15s; line-height: 1; }
+  padding: 2px 4px; border-radius: 4px; line-height: 1; }
 .evt-edit-btn:hover { color: #3b82f6 !important; }
 .evt-convert-btn { background: none; border: none; cursor: pointer; font-size: 11px; color: #94a3b8;
-  padding: 2px 4px; border-radius: 4px; transition: color .15s; line-height: 1; white-space: nowrap; }
+  padding: 2px 4px; border-radius: 4px; line-height: 1; white-space: nowrap; }
 .evt-convert-btn:hover { color: #a78bfa !important; }
 .add-event-btn { display: flex; align-items: center; gap: 5px; background: none;
   border: 1px dashed #334155; border-radius: 6px; color: #475569; font-size: 12px;
@@ -906,7 +909,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 .marr-card { position: relative; padding: 10px 14px 32px; border-radius: 6px; margin-bottom: 14px;
              background: rgba(232, 121, 249, 0.08);
              border-left: 3px solid rgba(232, 121, 249, 0.5); }
-.marr-card .evt-src-badge { top: auto; bottom: 8px; right: 8px; }
+.marr-card .evt-src-badge { position: absolute; top: auto; bottom: 8px; right: 8px; }
 .marr-edit-btn { position: absolute; right: 8px; top: 8px; background: none; border: none;
   cursor: pointer; font-size: 12px; color: #64748b; padding: 2px 4px;
   border-radius: 4px; opacity: 0; transition: opacity .15s, color .15s; }
@@ -1020,7 +1023,7 @@ header h1 { font-size: 16px; font-weight: 600; }
 .evt-src-badge { font-size: 10px; color: #475569; background: rgba(71,85,105,0.15);
   border: 1px solid rgba(71,85,105,0.3); border-radius: 3px; padding: 1px 5px;
   cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s,
-  background .15s; position: absolute; right: 46px; top: 3px; line-height: 1.4; }
+  background .15s; line-height: 1.4; }
 .evt-src-badge:hover { color: #93c5fd; border-color: rgba(147,197,253,0.5);
   background: rgba(147,197,253,0.08); }
 .evt-src-badge-empty { color: #334155; border-color: rgba(71,85,105,0.2);
@@ -1034,7 +1037,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   background: linear-gradient(to bottom, #334155 0%, transparent 100%); }
 .evt-entry { position: relative; margin-bottom: 14px; padding-left: 4px; padding-right: 92px; }
 .fact-del { background: none; border: none; cursor: pointer; font-size: 13px; color: #94a3b8;
-  padding: 2px 4px; border-radius: 4px; transition: color .15s; line-height: 1; }
+  padding: 2px 4px; border-radius: 4px; line-height: 1; }
 .fact-del:hover { color: #ef4444 !important; }
 .evt-dot { position: absolute; left: -24px; top: 5px;
            width: 10px; height: 10px; border-radius: 50%; border: 2px solid #1e293b; }

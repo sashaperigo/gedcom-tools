@@ -546,8 +546,7 @@ function renderPanel() {
           (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
           noteInl +
           godparentHtml +
-          srcBadge +
-          `<div class="evt-actions">${convertBtn}${editBtn}${delBtn}</div>` +
+          `<div class="evt-actions">${srcBadge}${convertBtn}${editBtn}${delBtn}</div>` +
           `</div>`;
       }
       html += _addEvtBtn;
@@ -574,8 +573,7 @@ function renderPanel() {
           (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
           noteInl +
           undGpHtml +
-          srcBadge +
-          `<div class="evt-actions">${editBtn}${delBtn}</div>` +
+          `<div class="evt-actions">${srcBadge}${editBtn}${delBtn}</div>` +
           `</div>`;
       }).join('');
     }
