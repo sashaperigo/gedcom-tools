@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from viz_ancestors import parse_gedcom, get_parents, build_tree_json, build_people_json, build_relatives_json, viz_ancestors, _date_sort_key, sort_events
+from viz_ancestors import parse_gedcom, get_parents, build_tree_json, build_people_json, build_relatives_json, viz_ancestors, _date_sort_key, sort_events, _collect_shared_notes
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'
 
@@ -744,3 +744,92 @@ class TestGodparentAsso:
         bapm = next(e for e in out['@I3@']['events'] if e['tag'] == 'BAPM')
         xrefs = [a['xref'] for a in bapm.get('asso') or []]
         assert xrefs == ['@I1@', '@I2@']
+
+
+# ---------------------------------------------------------------------------
+# CONC leading-space preservation (regression for missing-space bug)
+# ---------------------------------------------------------------------------
+
+class TestConcLeadingSpace:
+    """
+    GEDCOM 5.5.5 recommends placing the inter-word space at the START of a
+    CONC continuation line rather than at the END of the preceding chunk.
+    The parser must NOT strip that leading space or words merge without gaps.
+    """
+
+    def test_shared_note_conc_preserves_space(self):
+        """Shared NOTE with a CONC whose value starts with a space must be
+        reconstructed without a missing space between words."""
+        lines = [
+            '0 @N1@ NOTE The quick brown fox jumps over the lazy',
+            '1 CONC  dog and runs away quickly',  # leading space = inter-word gap
+            '0 TRLR',
+        ]
+        result = _collect_shared_notes(lines)
+        text = result['@N1@']['text']
+        assert 'lazy dog' in text, f'Space swallowed between "lazy" and "dog": {text!r}'
+
+    def test_shared_note_conc_mid_word_split(self):
+        """A mid-word CONC split (no leading space) must concatenate without inserting space."""
+        lines = [
+            '0 @N1@ NOTE extra',
+            '1 CONC ordinary talent',
+        ]
+        result = _collect_shared_notes(lines)
+        text = result['@N1@']['text']
+        assert text == 'extraordinary talent', f'Unexpected: {text!r}'
+
+    def test_shared_note_cont_starts_new_line(self):
+        """CONT must add a newline before the continuation value."""
+        lines = [
+            '0 @N1@ NOTE First paragraph.',
+            '1 CONT Second paragraph.',
+        ]
+        result = _collect_shared_notes(lines)
+        text = result['@N1@']['text']
+        assert text == 'First paragraph.\nSecond paragraph.'
+
+    def test_inline_note_conc_preserves_space(self, tmp_path):
+        """Inline NOTE on an INDI with a CONC leading space must not lose the gap."""
+        ged_lines = '\n'.join([
+            '0 HEAD',
+            '1 GEDC',
+            '2 VERS 5.5.1',
+            '0 @I1@ INDI',
+            '1 NAME Alice /Smith/',
+            '1 NOTE She was born in a small town on the outskirts of',
+            '2 CONC  the city',   # leading space = inter-word gap
+            '0 TRLR',
+        ])
+        ged_path = str(tmp_path / 'test.ged')
+        with open(ged_path, 'w') as f:
+            f.write(ged_lines)
+        indis, _, _ = parse_gedcom(ged_path)
+        note_text = indis['@I1@']['notes'][0]['text']
+        assert 'outskirts of the city' in note_text, (
+            f'Space missing between "of" and "the": {note_text!r}'
+        )
+
+    def test_event_note_conc_preserves_space(self, tmp_path):
+        """Event inline note CONC also must preserve its leading space."""
+        ged_lines = '\n'.join([
+            '0 HEAD',
+            '1 GEDC',
+            '2 VERS 5.5.1',
+            '0 @I1@ INDI',
+            '1 NAME Bob /Jones/',
+            '1 BIRT',
+            '2 DATE 1900',
+            '2 NOTE Born in a cottage on the north side of',
+            '3 CONC  the valley',   # leading space
+            '0 TRLR',
+        ])
+        ged_path = str(tmp_path / 'test.ged')
+        with open(ged_path, 'w') as f:
+            f.write(ged_lines)
+        indis, _, _ = parse_gedcom(ged_path)
+        birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
+        assert birt.get('note') is not None
+        assert 'north side of the valley' in birt['note'], (
+            f'Space missing: {birt["note"]!r}'
+        )
