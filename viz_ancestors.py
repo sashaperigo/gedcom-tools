@@ -65,10 +65,16 @@ def _collect_shared_notes(lines: list[str]) -> dict[str, dict]:
             m2 = _TAG_RE.match(line)
             if not m2:
                 continue
-            lvl2, tag2, val2 = int(m2.group(1)), m2.group(2), (m2.group(3) or '').strip()
+            lvl2, tag2 = int(m2.group(1)), m2.group(2)
+            raw2 = m2.group(3) or ''
+            val2 = raw2.strip()
             if tag2 in ('CONT', 'CONC'):
                 sep = '\n' if tag2 == 'CONT' else ''
-                shared[current_xref]['text'] += sep + _ged_val(val2)
+                # CONC: preserve leading space — it's the inter-word space placed at the
+                # start of the continuation line per GEDCOM 5.5.5 spec recommendation.
+                # CONT: strip is safe since '\n' already provides the word boundary.
+                conc_raw = raw2 if tag2 == 'CONC' else val2
+                shared[current_xref]['text'] += sep + _ged_val(conc_raw)
             elif lvl2 == 1 and tag2 == 'SOUR' and val2.startswith('@'):
                 shared[current_xref]['citations'].append({'sour_xref': val2, 'page': None})
             elif lvl2 == 2 and tag2 == 'PAGE' and shared[current_xref]['citations']:
@@ -146,7 +152,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             continue
         lvl = int(tm.group(1))
         tag = tm.group(2)
-        val = (tm.group(3) or '').strip()
+        raw_val = tm.group(3) or ''
+        val = raw_val.strip()
 
         if ctx[0] == 'indi':
             xref = ctx[1]
@@ -216,7 +223,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['citations'][-1]['url'] = val
             elif lvl == 3 and tag in ('CONT', 'CONC') and current_note == 'event':
                 sep = '\n' if tag == 'CONT' else ''
-                current_evt['note'] += sep + _ged_val(val)
+                current_evt['note'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
             elif lvl == 1 and tag == 'NOTE':
                 raw = _ged_val(val) if val else ''
                 note_idx = len(indis[xref]['notes'])
@@ -234,7 +241,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 current_evt  = None
             elif lvl == 2 and tag in ('CONT', 'CONC') and isinstance(current_note, int):
                 sep = '\n' if tag == 'CONT' else ''
-                indis[xref]['notes'][current_note]['text'] += sep + _ged_val(val)
+                indis[xref]['notes'][current_note]['text'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
             elif lvl == 2 and tag == 'SOUR' and isinstance(current_note, int) and val.startswith('@'):
                 indis[xref]['notes'][current_note]['citations'].append({'sour_xref': val, 'page': None})
             elif lvl == 3 and tag == 'PAGE' and isinstance(current_note, int):
