@@ -900,6 +900,24 @@ class TestEditCitationEndpoint:
         })
         assert bak.exists()
 
+    def test_returns_people_with_updated_citation(self, live_server):
+        """Response must include a `people` dict so the client can refresh
+        PEOPLE[xref] and re-render the panel without reloading."""
+        ged, post, _, _ = live_server
+        self._setup_citation(post)
+        resp = post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 99', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        assert 'people' in resp, 'response must include refreshed people payload'
+        people = resp['people']
+        assert '@I1@' in people, f'refreshed people must include edited xref; got {list(people.keys())}'
+        birt_events = [e for e in people['@I1@']['events'] if e['tag'] == 'BIRT']
+        assert birt_events, 'refreshed payload must include BIRT event'
+        assert any(c.get('page') == 'p. 99' for c in birt_events[0].get('citations', [])), \
+            'updated page must appear in refreshed BIRT.citations'
+
 
 # ===========================================================================
 # /api/delete_citation
@@ -1132,6 +1150,28 @@ class TestFamCitationEndpoints:
         text = _ged_text(ged)
         assert '4 WWW https://new.example.com' in text
         assert 'https://old.example.com' not in text
+
+    def test_edit_fam_response_refreshes_both_spouses(self, live_server):
+        """Editing a MARR citation on @F5@ must refresh both @I1@ and @I12@ in the
+        response so each spouse's panel shows the updated citation."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.1', 'text': '', 'note': '',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@F5@', 'citation_key': 'MARR:0:0',
+            'page': 'p.99', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        assert 'people' in resp
+        assert '@I1@' in resp['people']
+        assert '@I12@' in resp['people']
+        for spouse in ('@I1@', '@I12@'):
+            marr = next(e for e in resp['people'][spouse]['events'] if e['tag'] == 'MARR')
+            assert any(c.get('page') == 'p.99' for c in marr.get('citations', [])), \
+                f'updated page not reflected in refreshed {spouse}.MARR.citations'
 
 
 # ===========================================================================

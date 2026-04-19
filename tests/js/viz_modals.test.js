@@ -842,6 +842,18 @@ describe('showEditCitationModal', () => {
     expect(calls.length).toBe(1);
     expect(calls[0][1]).toBe('BIRT:2:0');  // TAG:eventOcc:citationIndex
   });
+
+  it('merges response people into PEOPLE global after successful save', async () => {
+    if (!showEditCitationModal) return;
+    const updatedPerson = { name: 'John Smith', events: [{ tag: 'BIRT', citations: [{ page: 'p. 99' }] }] };
+    global.apiEditCitation = async () => ({ ok: true, people: { '@I1@': updatedPerson } });
+    global.renderPanel = () => {};
+    const { submitEditCitationModal } = require('../../js/viz_modals.js');
+    if (!submitEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0);
+    await submitEditCitationModal();
+    expect(global.PEOPLE['@I1@']).toEqual(updatedPerson);
+  });
 });
 
 describe('showEditSourceModal', () => {

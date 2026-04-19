@@ -1494,7 +1494,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             new_lines = _update_citation_block(lines, block_start, block_end, cite_level, page, text, note, url)
             _write_gedcom_atomic(new_lines)
             print(f"[citation-edit] {xref} {citation_key}")
-            resp = json.dumps({'ok': True}).encode()
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            if xref.startswith('@F') and xref in fams:
+                fam = fams[xref]
+                xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife')) if x}
+            else:
+                xrefs_to_refresh = {xref}
+            updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
+            resp = json.dumps({'ok': True, 'people': updated}).encode()
 
         elif parsed.path == '/api/delete_citation':
             xref         = (body.get('xref') or '').strip()

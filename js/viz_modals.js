@@ -1075,7 +1075,10 @@ async function submitEditCitationModal() {
   const url     = urlEl  ? urlEl.value.trim()  : '';
   closeEditCitationModal();
   try {
-    await apiEditCitation(xref, factTag ? `${factTag}:${eventOcc}:${index}` : `SOUR:${index}`, page, text, note, url);
+    const resp = await apiEditCitation(xref, factTag ? `${factTag}:${eventOcc}:${index}` : `SOUR:${index}`, page, text, note, url);
+    if (resp && resp.people) {
+      for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+    }
     if (typeof renderPanel !== 'undefined') renderPanel();
   } catch (e) {
     alert('Save failed: ' + e);
@@ -1484,7 +1487,7 @@ if (typeof module !== 'undefined' && module.exports) {
     openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
     deleteSourceFromModal,
     showEditNameModal, showAddNoteModal, showAddCitationModal,
-    showEditCitationModal, showEditSourceModal, showAddGodparentModal,
+    showEditCitationModal, submitEditCitationModal, showEditSourceModal, showAddGodparentModal,
     showAddSourceModal,
     _evtLabel, editEvent,
     deleteNote, submitNoteEdit, editNote, deleteFact,
