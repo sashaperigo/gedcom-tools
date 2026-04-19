@@ -743,8 +743,9 @@ describe('computeLayout — descendant umbrella', () => {
     expect(sp.y).toBe(ROW_HEIGHT);
 
     const c1 = nodes.find(n => n.xref === '@C1@');
-    // Spouse sits NODE_W + MARRIAGE_GAP to the right of the child (left edges)
-    expect(sp.x).toBeCloseTo(c1.x + NODE_W + MARRIAGE_GAP, 1);
+    // Descendant-row spouses use a short gap (H_GAP) — MARRIAGE_GAP is reserved
+    // for the focus couple (where children hang below the marriage midpoint).
+    expect(sp.x).toBeCloseTo(c1.x + NODE_W + H_GAP, 1);
 
     const marriageAtChildRow = edges.find(e =>
       e.type === 'marriage' && e.y1 === ROW_HEIGHT + NODE_H / 2 && e.y2 === ROW_HEIGHT + NODE_H / 2
@@ -903,10 +904,11 @@ describe('computeLayout — ancestor umbrella', () => {
     expect(marriageEdge.x1).toBeCloseTo(father.x + NODE_W, 1);
     expect(marriageEdge.x2).toBeCloseTo(mother.x, 1);
 
-    // Anchor drop: from parent row bottom down to umbrella y, at focus center x.
+    // Anchor drop: from the marriage line y down to umbrella y, at focus center x.
+    // Starting at the marriage line (not parent bottom) so it meets perpendicularly with no gap.
     const ancEdges = edges.filter(e => e.type === 'ancestor');
     const anchorDrop = ancEdges.find(e =>
-      e.x1 === focusCenterX && e.y1 === PARENT_BOTTOM &&
+      e.x1 === focusCenterX && e.y1 === PARENT_MID_Y &&
       e.x2 === focusCenterX && e.y2 === ANC_UMBRELLA_Y
     );
     expect(anchorDrop).toBeDefined();
@@ -960,9 +962,9 @@ describe('computeLayout — ancestor umbrella', () => {
     );
     expect(crossbar).toBeDefined();
 
-    // Anchor drop at focus center x.
+    // Anchor drop at focus center x — starts at marriage line y (both parents present).
     const anchorDrop = ancEdges.find(e =>
-      e.x1 === focusCenterX && e.y1 === PARENT_BOTTOM &&
+      e.x1 === focusCenterX && e.y1 === PARENT_MID_Y &&
       e.x2 === focusCenterX && e.y2 === ANC_UMBRELLA_Y
     );
     expect(anchorDrop).toBeDefined();

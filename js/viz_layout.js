@@ -202,9 +202,12 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     }
 
     // Umbrella geometry (mirrors the descendant umbrella).
-    // Anchor drop: from bottom of parent row down to the umbrella bar, at focus center x.
+    // Anchor drop: starts at the marriage line (y = parent row center) when both
+    // parents are present so it meets the marriage edge perpendicularly with no gap.
+    // With a single parent, start at the bottom of the parent node.
+    const anchorTopY = (fatherXref && motherXref) ? parentMidY : parentBottomY;
     edges.push({
-      x1: focusCenterX, y1: parentBottomY,
+      x1: focusCenterX, y1: anchorTopY,
       x2: focusCenterX, y2: ancUmbrellaY,
       type: 'ancestor',
     });
@@ -240,11 +243,12 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
       : focusCenterX;
 
     // Build child groups [child, ...childSpouses] and pack them left→right.
-    // Each group: child at groupStart, spouses at groupStart + i*(NODE_W + MARRIAGE_GAP).
-    // Between groups: H_GAP separation.
+    // Descendant-row couples use H_GAP between partners — a short marriage line;
+    // MARRIAGE_GAP is reserved for the focus couple (where children hang below).
+    const CHILD_MARRIAGE_GAP = H_GAP;
     const groups = childXrefs.map(childXref => {
       const childSpouses = RELATIVES[childXref]?.spouses ?? [];
-      const width = NODE_W + childSpouses.length * (MARRIAGE_GAP + NODE_W);
+      const width = NODE_W + childSpouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
       return { childXref, childSpouses, width };
     });
 
@@ -267,11 +271,11 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
       childCenters.push(childX + NODE_W / 2);
 
       p.childSpouses.forEach((sxref, si) => {
-        const spouseX = childX + (si + 1) * (NODE_W + MARRIAGE_GAP);
+        const spouseX = childX + (si + 1) * (NODE_W + CHILD_MARRIAGE_GAP);
         nodes.push({ xref: sxref, x: spouseX, y: ROW_HEIGHT, generation: 1, role: 'descendant_spouse' });
 
         // Marriage edge between consecutive members of the group (right edge → left edge)
-        const prevX = si === 0 ? childX : childX + si * (NODE_W + MARRIAGE_GAP);
+        const prevX = si === 0 ? childX : childX + si * (NODE_W + CHILD_MARRIAGE_GAP);
         edges.push({
           x1:   prevX + NODE_W,
           y1:   ROW_HEIGHT + NODE_H / 2,
