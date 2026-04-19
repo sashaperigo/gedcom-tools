@@ -266,11 +266,17 @@ describe('_buildSourcesModalContent', () => {
     expect(html).toContain('No sources recorded');
   });
 
-  it('renders source title as link when URL is present', () => {
-    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
+  it('renders source title as link when citation has its own url', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null, url: 'https://example.com/s1' }], SOURCES);
     expect(html).toContain('<a ');
     expect(html).toContain('Ellis Island Records');
     expect(html).toContain('https://example.com/s1');
+  });
+
+  it('renders source title as plain text when citation has no url, even if source has one', () => {
+    const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
+    expect(html).not.toContain('<a ');
+    expect(html).toContain('Ellis Island Records');
   });
 
   it('renders source title as plain text when URL is absent', () => {

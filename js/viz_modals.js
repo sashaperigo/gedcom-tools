@@ -762,7 +762,7 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
       const xrefKey = c.sourceXref || c.sour_xref;
       const src = sources[xrefKey] || {};
       const title = src.titl || src.title || xrefKey || 'Unknown source';
-      const citUrl = c.url || src.url;
+      const citUrl = c.url;
       const titleHtml = citUrl
         ? `<a href="${escHtml(citUrl)}" target="_blank" rel="noopener">${escHtml(title)}</a>`
         : escHtml(title);
