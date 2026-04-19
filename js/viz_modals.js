@@ -1156,12 +1156,10 @@ function showAddGodparentModal(xref) {
   const searchEl   = document.getElementById('add-godparent-modal-search');
   const resultsEl  = document.getElementById('add-godparent-modal-results');
   const titleEl    = document.getElementById('add-godparent-modal-title');
-  const relaEl     = document.getElementById('add-godparent-modal-rela');
 
   if (titleEl)  titleEl.textContent = 'Add Godparent';
   if (searchEl) searchEl.value = '';
   if (resultsEl) resultsEl.innerHTML = '';
-  if (relaEl)   relaEl.value = 'Godparent';
 
   if (overlayEl) overlayEl.classList.add('open');
   if (searchEl)  setTimeout(() => searchEl.focus && searchEl.focus(), 50);
@@ -1206,8 +1204,8 @@ document.addEventListener('input', e => {
 async function submitAddGodparentModal() {
   const xref          = _addGodparentXref;
   const godparentXref = _addGodparentSelectedXref;
-  const relaEl        = document.getElementById('add-godparent-modal-rela');
-  const rela          = (relaEl && relaEl.value) || 'Godparent';
+  const sex  = (typeof PEOPLE !== 'undefined' && PEOPLE[godparentXref]?.sex) || 'U';
+  const rela = sex === 'M' ? 'Godfather' : sex === 'F' ? 'Godmother' : 'Godparent';
   closeAddGodparentModal();
   if (!godparentXref) { alert('Please select a godparent from the search results.'); return; }
   try {
@@ -1488,6 +1486,7 @@ if (typeof module !== 'undefined' && module.exports) {
     deleteSourceFromModal,
     showEditNameModal, showAddNoteModal, showAddCitationModal,
     showEditCitationModal, submitEditCitationModal, showEditSourceModal, showAddGodparentModal,
+    submitAddGodparentModal, _selectGodparent,
     showAddSourceModal,
     _evtLabel, editEvent,
     deleteNote, submitNoteEdit, editNote, deleteFact,

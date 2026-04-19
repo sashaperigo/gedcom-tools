@@ -949,6 +949,86 @@ describe('showAddGodparentModal', () => {
   });
 });
 
+// ── submitAddGodparentModal — rela derived from sex ───────────────────────
+
+describe('submitAddGodparentModal derives rela from godparent sex', () => {
+  let overlay, searchInp;
+
+  function _fakeEl(id) {
+    return {
+      id, innerHTML: '', textContent: '', style: {}, value: '',
+      classList: {
+        _classes: new Set(),
+        add(c)      { this._classes.add(c); },
+        remove(c)   { this._classes.delete(c); },
+        contains(c) { return this._classes.has(c); },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    overlay   = _fakeEl('add-godparent-modal-overlay');
+    searchInp = _fakeEl('add-godparent-modal-search');
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'add-godparent-modal-overlay') return overlay;
+        if (id === 'add-godparent-modal-search')  return searchInp;
+        return _fakeEl(id);
+      },
+      addEventListener: () => {},
+    };
+
+    global.renderPanel = () => {};
+  });
+
+  async function _submit(childXref, godparentXref, sex) {
+    const calls = [];
+    global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
+    global.PEOPLE = {
+      [childXref]:     { name: 'Child' },
+      [godparentXref]: { name: 'Godparent', sex },
+    };
+    const { showAddGodparentModal, _selectGodparent, submitAddGodparentModal } =
+      require('../../js/viz_modals.js');
+    showAddGodparentModal(childXref);
+    _selectGodparent(godparentXref, 'Godparent');
+    await submitAddGodparentModal();
+    return calls;
+  }
+
+  it('uses Godfather when godparent sex is M', async () => {
+    const calls = await _submit('@I1@', '@I5@', 'M');
+    expect(calls.length).toBe(1);
+    expect(calls[0][2]).toBe('Godfather');
+  });
+
+  it('uses Godmother when godparent sex is F', async () => {
+    const calls = await _submit('@I1@', '@I5@', 'F');
+    expect(calls.length).toBe(1);
+    expect(calls[0][2]).toBe('Godmother');
+  });
+
+  it('uses Godparent when godparent sex is U', async () => {
+    const calls = await _submit('@I1@', '@I5@', 'U');
+    expect(calls.length).toBe(1);
+    expect(calls[0][2]).toBe('Godparent');
+  });
+
+  it('uses Godparent when godparent xref is not in PEOPLE', async () => {
+    const calls = [];
+    global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
+    global.PEOPLE = { '@I1@': { name: 'Child' } }; // godparent @I5@ absent
+    const { showAddGodparentModal, _selectGodparent, submitAddGodparentModal } =
+      require('../../js/viz_modals.js');
+    showAddGodparentModal('@I1@');
+    _selectGodparent('@I5@', 'Unknown');
+    await submitAddGodparentModal();
+    expect(calls.length).toBe(1);
+    expect(calls[0][2]).toBe('Godparent');
+  });
+});
+
 // ── openSourcesModal / closeSourcesModal ──────────────────────────────────
 
 describe('openSourcesModal and closeSourcesModal', () => {
