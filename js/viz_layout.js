@@ -178,8 +178,12 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
 
     if (fatherXref && motherXref) {
       // Both parents: symmetric around focus center. Father left, mother right.
-      const fatherX = focusCenterX - SLOT / 2 - NODE_W / 2;
-      const motherX = focusCenterX + SLOT / 2 - NODE_W / 2;
+      // Separation is driven by each parent's subtree contour so that deep
+      // ancestors on either side don't collide while keeping the marriage-line
+      // midpoint above the child.
+      const sep = _requiredSeparation(fatherXref, motherXref, expandedAncestors);
+      const fatherX = focusCenterX - sep / 2 - NODE_W / 2;
+      const motherX = focusCenterX + sep / 2 - NODE_W / 2;
 
       nodes.push({ xref: fatherXref, x: fatherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
       nodes.push({ xref: motherXref, x: motherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
@@ -349,10 +353,12 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
   const nextY   = nextGen * ROW_HEIGHT;
 
   if (fatherXref && motherXref) {
-    const fw = _subtreeWidth(fatherXref, expandedAncestors);
-    const mw = _subtreeWidth(motherXref, expandedAncestors);
-    const fatherX = x - mw * SLOT / 2;
-    const motherX = x + fw * SLOT / 2;
+    // Contour-based separation keeps the marriage midpoint above the child
+    // regardless of which side's subtree extends deeper.
+    const childCenter = x + NODE_W / 2;
+    const sep = _requiredSeparation(fatherXref, motherXref, expandedAncestors);
+    const fatherX = childCenter - sep / 2 - NODE_W / 2;
+    const motherX = childCenter + sep / 2 - NODE_W / 2;
 
     nodes.push({ xref: fatherXref, x: fatherX, y: nextY, generation: nextGen, role: 'ancestor' });
     nodes.push({ xref: motherXref, x: motherX, y: nextY, generation: nextGen, role: 'ancestor' });
@@ -389,19 +395,67 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
 }
 
 // ---------------------------------------------------------------------------
-// Subtree width (for overlap-free ancestor placement)
+// Contour-based separation (Reingold-Tilford style)
 // ---------------------------------------------------------------------------
 
-// Returns the number of leaf slots a person's visible ancestor subtree occupies.
-// A node not being expanded counts as 1 slot (just itself).
-// A node with both parents counts as the sum of their subtree widths.
-function _subtreeWidth(xref, expandedAncestors) {
-  if (!expandedAncestors.has(xref)) return 1;
+// Each contour is an array indexed by depth (0 = the root row itself).
+// Element d = distance from the subtree-root center to the rightmost
+// (_rightContour) or leftmost (_leftContour) point of the subtree at depth d.
+
+function _rightContour(xref, expandedAncestors) {
+  const { NODE_W } = DESIGN;
+  const contour = [NODE_W / 2];
+  if (!expandedAncestors.has(xref)) return contour;
   const parents = PARENTS[xref] ?? [];
-  const fw = parents[0] ? _subtreeWidth(parents[0], expandedAncestors) : 0;
-  const mw = parents[1] ? _subtreeWidth(parents[1], expandedAncestors) : 0;
-  if (fw === 0 && mw === 0) return 1;
-  return fw + mw;
+  const f = parents[0] ?? null;
+  const m = parents[1] ?? null;
+  if (!f && !m) return contour;
+  if (f && m) {
+    // Mother is the right-side parent; root-to-mother-center = sep/2.
+    const sep = _requiredSeparation(f, m, expandedAncestors);
+    const mc  = _rightContour(m, expandedAncestors);
+    for (let d = 0; d < mc.length; d++) contour[d + 1] = sep / 2 + mc[d];
+  } else {
+    const only = f || m;
+    const oc = _rightContour(only, expandedAncestors);
+    for (let d = 0; d < oc.length; d++) contour[d + 1] = oc[d];
+  }
+  return contour;
+}
+
+function _leftContour(xref, expandedAncestors) {
+  const { NODE_W } = DESIGN;
+  const contour = [NODE_W / 2];
+  if (!expandedAncestors.has(xref)) return contour;
+  const parents = PARENTS[xref] ?? [];
+  const f = parents[0] ?? null;
+  const m = parents[1] ?? null;
+  if (!f && !m) return contour;
+  if (f && m) {
+    // Father is the left-side parent; root-to-father-center = sep/2.
+    const sep = _requiredSeparation(f, m, expandedAncestors);
+    const fc  = _leftContour(f, expandedAncestors);
+    for (let d = 0; d < fc.length; d++) contour[d + 1] = sep / 2 + fc[d];
+  } else {
+    const only = f || m;
+    const oc = _leftContour(only, expandedAncestors);
+    for (let d = 0; d < oc.length; d++) contour[d + 1] = oc[d];
+  }
+  return contour;
+}
+
+// Center-to-center separation required so the two parent subtrees do not
+// overlap at any shared depth. Floor = SLOT (parents sit adjacent at row 0).
+function _requiredSeparation(fatherXref, motherXref, expandedAncestors) {
+  const { NODE_W, H_GAP } = DESIGN;
+  const rf = _rightContour(fatherXref, expandedAncestors);
+  const lm = _leftContour(motherXref, expandedAncestors);
+  const shared = Math.min(rf.length, lm.length);
+  let sep = NODE_W + H_GAP;
+  for (let d = 0; d < shared; d++) {
+    sep = Math.max(sep, rf[d] + lm[d] + H_GAP);
+  }
+  return sep;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,5 +463,12 @@ function _subtreeWidth(xref, expandedAncestors) {
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeLayout, _sortByBirthYear, _packRow, _subtreeWidth };
+  module.exports = {
+    computeLayout,
+    _sortByBirthYear,
+    _packRow,
+    _rightContour,
+    _leftContour,
+    _requiredSeparation,
+  };
 }

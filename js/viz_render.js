@@ -209,25 +209,35 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     onNodeClick(node);
   });
 
-  // Expand button on ancestor nodes — floats above the top edge with a small gap
+  // Expand button on ancestor nodes — floats above the top edge with a small gap.
+  // Three visual states:
+  //   !hasParents  → grey up-chevron, inert (no click listener)
+  //   can expand   → green up-chevron (click to reveal parents)
+  //   can collapse → blue down-chevron (click to hide parents)
   if (isAncestor) {
     const btnCx = w / 2;
     const btnCy = -20;
     const parents = PARENTS[node.xref] || [null, null];
     const hasParents = parents.some(p => p !== null);
     const isExpanded = expandedNodes.has(node.xref);
-    const canExpand = hasParents && !isExpanded;
-    const btnFill = canExpand ? '#2a7a4a' : '#4a4a6a';
-    const chevronD = canExpand
-      ? `M ${btnCx - 3.5} ${btnCy + 1.5} L ${btnCx} ${btnCy - 2} L ${btnCx + 3.5} ${btnCy + 1.5}`
-      : `M ${btnCx - 3.5} ${btnCy - 1.5} L ${btnCx} ${btnCy + 2} L ${btnCx + 3.5} ${btnCy - 1.5}`;
+    const canExpand   = hasParents && !isExpanded;
+    const canCollapse = hasParents &&  isExpanded;
+
+    const btnFill = canCollapse ? '#2a5a7a'
+                 : canExpand    ? '#2a7a4a'
+                 :                '#4a4a6a';
+
+    const chevronUp   = `M ${btnCx - 3.5} ${btnCy + 1.5} L ${btnCx} ${btnCy - 2} L ${btnCx + 3.5} ${btnCy + 1.5}`;
+    const chevronDown = `M ${btnCx - 3.5} ${btnCy - 1.5} L ${btnCx} ${btnCy + 2} L ${btnCx + 3.5} ${btnCy - 1.5}`;
+    const chevronD    = canCollapse ? chevronDown : chevronUp;
+
     const btn = _svgEl('circle', {
       cx: btnCx,
       cy: btnCy,
       r: 8,
       fill: btnFill,
       class: 'expand-btn',
-      cursor: 'pointer',
+      cursor: hasParents ? 'pointer' : 'default',
     });
     const chevron = _svgEl('path', {
       d: chevronD,
@@ -238,10 +248,12 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
       fill: 'none',
       'pointer-events': 'none',
     });
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      onExpandClick(node.xref);
-    });
+    if (hasParents) {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onExpandClick(node.xref);
+      });
+    }
     g.appendChild(btn);
     g.appendChild(chevron);
   }
@@ -330,9 +342,13 @@ function render() {
   }
 
   // ── Expand button click handler ──────────────────────────────────────────
+  // Toggles expansion state: collapses if already expanded, expands otherwise.
   function onExpandClick(xref) {
     const current = getState().expandedNodes || new Set();
-    setState({ expandedNodes: new Set([...current, xref]) });
+    const next = new Set(current);
+    if (next.has(xref)) next.delete(xref);
+    else next.add(xref);
+    setState({ expandedNodes: next });
   }
 
   // ── Render edges (below nodes) ───────────────────────────────────────────

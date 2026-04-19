@@ -10,7 +10,15 @@ const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_
 // Focus-to-sibling gap: accounts for focus node being wider than NODE_W.
 const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
 
-const { computeLayout, _sortByBirthYear, _packRow } = require('../../js/viz_layout.js');
+const {
+  computeLayout,
+  _sortByBirthYear,
+  _packRow,
+  _rightContour,
+  _leftContour,
+  _requiredSeparation,
+} = require('../../js/viz_layout.js');
+const SLOT = NODE_W + H_GAP;
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -1185,5 +1193,127 @@ describe('computeLayout — recursive ancestor umbrella', () => {
       e.x2 === mgfCenterX && e.y2 === -2 * ROW_HEIGHT
     );
     expect(drop).toBeDefined();
+  });
+});
+
+// ── Test 13: Contour helpers ───────────────────────────────────────────────
+
+describe('_requiredSeparation', () => {
+  it('two leaves: sep = SLOT (adjacent at row 0)', () => {
+    resetGlobals({
+      people: { '@F@': {}, '@M@': {} },
+      parents: {},
+    });
+    expect(_requiredSeparation('@F@', '@M@', new Set())).toBeCloseTo(SLOT, 1);
+  });
+
+  it('leaf vs 1-level subtree: still sep = SLOT (no collision on deeper row)', () => {
+    resetGlobals({
+      people: { '@F@': {}, '@M@': {}, '@MF@': {}, '@MM@': {} },
+      parents: { '@M@': ['@MF@', '@MM@'] },
+    });
+    expect(_requiredSeparation('@F@', '@M@', new Set(['@M@']))).toBeCloseTo(SLOT, 1);
+  });
+
+  it('both 1-level subtrees: sep = 2*SLOT (row-1 widths force separation)', () => {
+    resetGlobals({
+      people: {
+        '@F@': {}, '@M@': {},
+        '@FF@': {}, '@FM@': {}, '@MF@': {}, '@MM@': {},
+      },
+      parents: {
+        '@F@': ['@FF@', '@FM@'],
+        '@M@': ['@MF@', '@MM@'],
+      },
+    });
+    expect(_requiredSeparation('@F@', '@M@', new Set(['@F@', '@M@']))).toBeCloseTo(2 * SLOT, 1);
+  });
+
+  it('single-parent subtree: parent sits at root center, depth-1 width = 0', () => {
+    // F has only one expanded parent (single-parent recursion places it at root center).
+    // Collision constraint on row 1: only F's-lone-parent vs M itself → SLOT.
+    resetGlobals({
+      people: { '@F@': {}, '@M@': {}, '@FF@': {} },
+      parents: { '@F@': ['@FF@', null] },
+    });
+    expect(_requiredSeparation('@F@', '@M@', new Set(['@F@']))).toBeCloseTo(SLOT, 1);
+  });
+});
+
+// ── Test 14: Pietro-Elena regression — imbalanced ancestor subtrees ────────
+
+// Regression for the bug where expanding one spouse's subtree caused the other
+// (leaf) spouse to jump sideways, leaving the couple's marriage midpoint no
+// longer above the child. Mirrors the user scenario:
+//   Helena focus → Joseph expanded → Pietro (leaf) + Elena (expanded) → Elena's parents.
+describe('computeLayout — imbalanced ancestor subtrees keep midpoint above child', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@HELENA@':  { birth_year: 1995 },
+        '@JOSEPH@':  { birth_year: 1965 },
+        '@MARIE@':   { birth_year: 1967 },
+        '@PIETRO@':  { birth_year: 1935 },
+        '@ELENA@':   { birth_year: 1937 },
+        '@ELENA_F@': { birth_year: 1905 },
+        '@ELENA_M@': { birth_year: 1907 },
+        '@PIETRO_F@': { birth_year: 1905 },
+        '@PIETRO_M@': { birth_year: 1907 },
+      },
+      parents: {
+        '@HELENA@': ['@JOSEPH@', '@MARIE@'],
+        '@JOSEPH@': ['@PIETRO@', '@ELENA@'],
+        '@ELENA@':  ['@ELENA_F@', '@ELENA_M@'],
+        '@PIETRO@': ['@PIETRO_F@', '@PIETRO_M@'],
+      },
+    });
+  });
+
+  it('Pietro (leaf) stays put when Elena expands her own subtree', () => {
+    const { nodes: before } = computeLayout('@HELENA@', new Set(['@JOSEPH@']), false);
+    const { nodes: after  } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), false);
+    const pietroBefore = before.find(n => n.xref === '@PIETRO@');
+    const pietroAfter  = after.find(n => n.xref === '@PIETRO@');
+    expect(pietroAfter.x).toBe(pietroBefore.x);
+  });
+
+  it('symmetric case: Elena (leaf) stays put when Pietro expands', () => {
+    const { nodes: before } = computeLayout('@HELENA@', new Set(['@JOSEPH@']), false);
+    const { nodes: after  } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@PIETRO@']), false);
+    const elenaBefore = before.find(n => n.xref === '@ELENA@');
+    const elenaAfter  = after.find(n => n.xref === '@ELENA@');
+    expect(elenaAfter.x).toBe(elenaBefore.x);
+  });
+
+  it('couple marriage midpoint = child center when only Elena expands', () => {
+    const { nodes } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), false);
+    const joseph = nodes.find(n => n.xref === '@JOSEPH@');
+    const pietro = nodes.find(n => n.xref === '@PIETRO@');
+    const elena  = nodes.find(n => n.xref === '@ELENA@');
+    const marriageMidX = ((pietro.x + NODE_W) + elena.x) / 2;
+    expect(marriageMidX).toBeCloseTo(joseph.x + NODE_W / 2, 1);
+  });
+
+  it('ancestor drop to child starts at child center on the marriage line', () => {
+    const { nodes, edges } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), false);
+    const joseph = nodes.find(n => n.xref === '@JOSEPH@');
+    const jcenter = joseph.x + NODE_W / 2;
+    const parentMidY = -2 * ROW_HEIGHT + NODE_H / 2;
+    const drop = edges.find(e =>
+      e.type === 'ancestor' &&
+      e.x1 === jcenter && e.x2 === jcenter &&
+      e.y1 === parentMidY && e.y2 === -ROW_HEIGHT
+    );
+    expect(drop).toBeDefined();
+  });
+
+  it('balanced case (both expanded): placement unchanged from previous behaviour', () => {
+    const { nodes } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@PIETRO@', '@ELENA@']), false);
+    const joseph = nodes.find(n => n.xref === '@JOSEPH@');
+    const pietro = nodes.find(n => n.xref === '@PIETRO@');
+    const elena  = nodes.find(n => n.xref === '@ELENA@');
+    // Both sides have 1-level subtrees → sep = 2*SLOT.
+    expect(pietro.x).toBeCloseTo(joseph.x + NODE_W / 2 - SLOT - NODE_W / 2, 1);
+    expect(elena.x).toBeCloseTo(joseph.x + NODE_W / 2 + SLOT - NODE_W / 2, 1);
   });
 });
