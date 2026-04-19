@@ -508,6 +508,7 @@ function renderPanel() {
           const marrDelBtn = evt.fam_xref
             ? `<button class="marr-del-btn" title="Delete marriage" onclick="event.stopPropagation();deleteMarriage(${xrefQ},${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.marr_idx ?? 0})">\u2715</button>`
             : '';
+          const marrSrcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
           html +=
             `<div class="marr-card"${marrClick}>` +
             marrEditBtn +
@@ -516,6 +517,7 @@ function renderPanel() {
             proseHtml +
             (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
             noteInl +
+            marrSrcBadge +
             `</div>`;
           continue;
         }

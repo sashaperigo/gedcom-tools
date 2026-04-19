@@ -893,9 +893,10 @@ header h1 { font-size: 16px; font-weight: 600; }
   vertical-align: middle; }
 .aka-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.08); }
 .aka-btn.del:hover { color: #ef4444; }
-.marr-card { position: relative; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px;
+.marr-card { position: relative; padding: 10px 14px 32px; border-radius: 6px; margin-bottom: 14px;
              background: rgba(232, 121, 249, 0.08);
              border-left: 3px solid rgba(232, 121, 249, 0.5); }
+.marr-card .evt-src-badge { top: auto; bottom: 8px; right: 8px; }
 .marr-edit-btn { position: absolute; right: 8px; top: 8px; background: none; border: none;
   cursor: pointer; font-size: 12px; color: #64748b; padding: 2px 4px;
   border-radius: 4px; opacity: 0; transition: opacity .15s, color .15s; }
