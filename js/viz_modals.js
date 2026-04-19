@@ -773,8 +773,8 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
       const indiXrefQ   = JSON.stringify(String(xref || '')).replace(/"/g, '&quot;');
       const apiXrefQ    = xrefQ;  // targetXref (FAM or INDI)
       const editOnclick = isFamEvt
-        ? `showEditCitationModal(${indiXrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},${apiXrefQ})`
-        : `showEditCitationModal(${xrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx})`;
+        ? `showEditCitationModal(${indiXrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},${apiXrefQ},${eventOcc})`
+        : `showEditCitationModal(${xrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},undefined,${eventOcc})`;
       return (
         `<div class="src-modal-item">` +
           `<div class="src-modal-item-body"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>` +
@@ -1001,13 +1001,15 @@ async function submitAddCitationModal() {
 let _editCitationXref = null, _editCitationFactTag = null, _editCitationIndex = null;
 let _editCitationSourceXref = null;
 let _editCitationApiXref = null;  // may differ from _editCitationXref for FAM events
+let _editCitationEventOcc = 0;
 
 // apiXref: optional override for the xref sent to the API (use when FAM xref differs from INDI xref)
-function showEditCitationModal(xref, factTag, citationIndex, apiXref) {
+function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) {
   _editCitationXref      = xref;
   _editCitationApiXref   = apiXref || xref;
   _editCitationFactTag   = factTag;
   _editCitationIndex     = citationIndex;
+  _editCitationEventOcc  = (eventOcc != null) ? eventOcc : 0;
 
   // Locate the citation data from the person's events (always keyed by INDI xref)
   const person = (typeof PEOPLE !== 'undefined') && PEOPLE[xref];
@@ -1055,12 +1057,14 @@ function closeEditCitationModal() {
   const overlayEl = document.getElementById('edit-citation-modal-overlay');
   if (overlayEl) overlayEl.classList.remove('open');
   _editCitationXref = _editCitationFactTag = _editCitationIndex = null;
+  _editCitationEventOcc = 0;
 }
 
 async function submitEditCitationModal() {
-  const xref    = _editCitationApiXref || _editCitationXref;
-  const factTag = _editCitationFactTag;
-  const index   = _editCitationIndex;
+  const xref     = _editCitationApiXref || _editCitationXref;
+  const factTag  = _editCitationFactTag;
+  const index    = _editCitationIndex;
+  const eventOcc = _editCitationEventOcc != null ? _editCitationEventOcc : 0;
   const pageEl  = document.getElementById('edit-citation-modal-page');
   const textEl  = document.getElementById('edit-citation-modal-text');
   const noteEl  = document.getElementById('edit-citation-modal-note');
@@ -1071,7 +1075,7 @@ async function submitEditCitationModal() {
   const url     = urlEl  ? urlEl.value.trim()  : '';
   closeEditCitationModal();
   try {
-    await apiEditCitation(xref, factTag ? `${factTag}:${index}` : `SOUR:${index}`, page, text, note, url);
+    await apiEditCitation(xref, factTag ? `${factTag}:${eventOcc}:${index}` : `SOUR:${index}`, page, text, note, url);
     if (typeof renderPanel !== 'undefined') renderPanel();
   } catch (e) {
     alert('Save failed: ' + e);

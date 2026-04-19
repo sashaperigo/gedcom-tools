@@ -829,6 +829,19 @@ describe('showEditCitationModal', () => {
     showEditCitationModal('@I1@', 'BIRT', 0);
     expect(urlInp.value).toBe('https://example.com/src');
   });
+
+  it('includes event occurrence in citation key sent to API', async () => {
+    if (!showEditCitationModal) return;
+    const calls = [];
+    global.apiEditCitation = async (...args) => { calls.push(args); return {}; };
+    global.renderPanel = () => {};
+    const { submitEditCitationModal } = require('../../js/viz_modals.js');
+    if (!submitEditCitationModal) return;
+    showEditCitationModal('@I1@', 'BIRT', 0, undefined, 2);
+    await submitEditCitationModal();
+    expect(calls.length).toBe(1);
+    expect(calls[0][1]).toBe('BIRT:2:0');  // TAG:eventOcc:citationIndex
+  });
 });
 
 describe('showEditSourceModal', () => {
