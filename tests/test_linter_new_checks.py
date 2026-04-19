@@ -56,6 +56,8 @@ from gedcom_linter import (
     fix_unknown_surname,
     scan_asso_without_rela,
     scan_sour_without_titl,
+    scan_short_conc,
+    fix_note_reflow,
 )
 
 
@@ -3198,3 +3200,144 @@ class TestScanSourWithoutTitl:
         """)
         result = scan_sour_without_titl(str(p))
         assert '@S1@' in result
+
+
+# ===========================================================================
+# scan_short_conc / fix_note_reflow
+# ===========================================================================
+
+class TestShortConc:
+
+    def test_detects_single_char_conc(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE Pietro dis
+            1 CONC s
+            1 CONC olved the issue.
+            0 TRLR
+        """)
+        hits = scan_short_conc(str(p))
+        assert len(hits) == 1
+        lineno, xref, val = hits[0]
+        assert xref == '@N1@'
+        assert val == 's'
+
+    def test_ignores_conc_at_or_above_threshold(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE Hello world.
+            1 CONC  This line is fine because it is 5+ chars.
+            0 TRLR
+        """)
+        assert scan_short_conc(str(p)) == []
+
+    def test_ignores_cont_lines(self, tmp_path):
+        """Blank CONT lines (empty paragraphs) must not be flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE First paragraph.
+            1 CONT
+            1 CONT Second paragraph.
+            0 TRLR
+        """)
+        assert scan_short_conc(str(p)) == []
+
+    def test_detects_multiple_in_same_record(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE start text
+            1 CONC b
+            1 CONC c
+            1 CONC d long enough suffix.
+            0 TRLR
+        """)
+        hits = scan_short_conc(str(p))
+        # CONC 'b' and CONC 'c' are < 5 chars; NOTE start value is not a CONC
+        assert len(hits) == 2
+        assert all(x == '@N1@' for _, x, _ in hits)
+
+
+class TestFixNoteReflow:
+
+    def test_reflow_removes_short_conc_lines(self, tmp_path):
+        """A note with 1-char CONC lines should be re-encoded into proper chunks."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE Pietro dis
+            1 CONC s
+            1 CONC olved the partnership.
+            0 TRLR
+        """)
+        count = fix_note_reflow(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        assert '1 CONC s\n' not in content
+        assert 'Pietro dissolved the partnership.' in content
+
+    def test_reflow_preserves_decoded_text(self, tmp_path):
+        """Round-trip: decoded text after reflow must equal the original concatenated text."""
+        from pathlib import Path as _Path
+        import sys as _sys
+        _sys.path.insert(0, str(_Path(__file__).parent.parent))
+        from viz_ancestors import _collect_shared_notes
+
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE He took on AntonioGiraud as partner. When his eldest son Nelson finished his studi
+            1 CONC e
+            1 CONC s in Lyon, Pietro dis
+            1 CONC s
+            1 CONC olved the partnership.
+            0 TRLR
+        """)
+        lines_before = p.read_text(encoding='utf-8').splitlines()
+        original_text = _collect_shared_notes(lines_before)['@N1@']['text']
+
+        fix_note_reflow(str(p))
+
+        lines_after = p.read_text(encoding='utf-8').splitlines()
+        reflowed_text = _collect_shared_notes(lines_after)['@N1@']['text']
+        assert reflowed_text == original_text, (
+            f'Reflow changed text:\nbefore: {original_text!r}\nafter:  {reflowed_text!r}'
+        )
+
+    def test_reflow_respects_max_line_length(self, tmp_path):
+        """Every line produced by fix_note_reflow must be ≤ 255 characters."""
+        long_text = 'word ' * 60  # 300 chars
+        p = write_ged(tmp_path, (
+            '0 HEAD\n'
+            f'0 @N1@ NOTE {long_text[:3]}\n'
+            '1 CONC x\n'
+            f'1 CONC {long_text[3:]}\n'
+            '0 TRLR\n'
+        ))
+        fix_note_reflow(str(p))
+        for line in p.read_text(encoding='utf-8').splitlines():
+            assert len(line) <= 255, f'Line too long ({len(line)}): {line!r}'
+
+    def test_reflow_skips_multi_paragraph_notes(self, tmp_path):
+        """Notes with CONT lines (multi-paragraph) are left unchanged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE First paragraph with a short
+            1 CONC x
+            1 CONT Second paragraph.
+            0 TRLR
+        """)
+        count = fix_note_reflow(str(p))
+        assert count == 0
+        assert '1 CONC x\n' in p.read_text(encoding='utf-8')
+
+    def test_dry_run_makes_no_changes(self, tmp_path):
+        original = textwrap.dedent("""\
+            0 HEAD
+            0 @N1@ NOTE Pietro dis
+            1 CONC s
+            1 CONC olved it.
+            0 TRLR
+        """)
+        p = tmp_path / 'test.ged'
+        p.write_text(original, encoding='utf-8')
+        count = fix_note_reflow(str(p), dry_run=True)
+        assert count == 1
+        assert p.read_text(encoding='utf-8') == original

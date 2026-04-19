@@ -2395,6 +2395,114 @@ def fix_conc_cont_levels(path: str, dry_run: bool = False) -> int:
     return changed
 
 
+def scan_short_conc(path: str, min_len: int = 5) -> list[tuple[int, str, str]]:
+    """
+    Return (lineno, xref_context, value) for CONC lines whose value is shorter
+    than min_len characters.  Very short CONC values (e.g. 1–4 chars) indicate
+    that a note was split at the wrong point, usually from a prior editing bug.
+    CONT lines are excluded — blank CONT lines (empty paragraphs) are valid.
+    """
+    results: list[tuple[int, str, str]] = []
+    current_xref = ''
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m0 = re.match(r'^0 (@[^@]+@) ', line)
+            if m0:
+                current_xref = m0.group(1)
+            m = re.match(r'^\d+ CONC(?: (.*))?$', line)
+            if m:
+                val = m.group(1) or ''
+                if len(val) < min_len:
+                    results.append((lineno, current_xref, val))
+    return results
+
+
+def fix_note_reflow(path: str, dry_run: bool = False, min_len: int = 5) -> int:
+    """
+    Re-encode shared NOTE records (``0 @xref@ NOTE``) that contain any CONC
+    line shorter than *min_len* characters.  The logical text is reconstructed
+    from the existing CONC/CONT lines, then re-split into properly-sized chunks
+    (≤ 255 chars per physical line, accounting for the longer first-line prefix).
+
+    Only single-paragraph notes (no CONT lines) are reflowed; notes with CONT
+    lines are left unchanged to avoid altering paragraph structure.
+    Returns the number of NOTE records reflowed.
+    """
+    GEDCOM_MAX = 255
+
+    def _chunk(text: str, first_prefix: str, cont_prefix: str) -> list[str]:
+        out: list[str] = []
+        prefix = first_prefix
+        while True:
+            max_val = GEDCOM_MAX - len(prefix) - 1
+            if len(text) <= max_val:
+                out.append(f'{prefix} {text}')
+                break
+            cut = max_val
+            while cut > 0 and text[cut - 1] == ' ':
+                cut -= 1
+            if cut == 0:
+                cut = max_val
+            out.append(f'{prefix} {text[:cut]}')
+            text = text[cut:]
+            prefix = cont_prefix
+        return out
+
+    with open(path, encoding='utf-8') as f:
+        lines_in = f.readlines()
+
+    note_re = re.compile(r'^0 (@[^@]+@) NOTE(?: (.*))?$')
+    tag_re  = re.compile(r'^(\d+) (CONC|CONT)(?: (.*))?$')
+
+    # Collect candidate blocks: shared NOTE records with at least one short CONC
+    # and no CONT lines (to preserve paragraph structure in multi-paragraph notes)
+    blocks: list[tuple[int, int, str, str]] = []
+    i = 0
+    while i < len(lines_in):
+        line = lines_in[i].rstrip('\n')
+        m = note_re.match(line)
+        if m:
+            xref = m.group(1)
+            text = m.group(2) or ''
+            has_short = False
+            has_cont = False
+            j = i + 1
+            while j < len(lines_in):
+                nline = lines_in[j].rstrip('\n')
+                if nline.startswith('0 '):
+                    break
+                tm = tag_re.match(nline)
+                if tm:
+                    tag2, val2 = tm.group(2), (tm.group(3) or '')
+                    if tag2 == 'CONC':
+                        if len(val2) < min_len:
+                            has_short = True
+                        text += val2
+                    elif tag2 == 'CONT':
+                        has_cont = True
+                j += 1
+            if has_short and not has_cont:
+                blocks.append((i, j, xref, text))
+        i += 1
+
+    if not blocks:
+        return 0
+
+    lines_out = list(lines_in)
+    for start, end, xref, full_text in reversed(blocks):
+        new_block = _chunk(full_text, f'0 {xref} NOTE', '1 CONC')
+        lines_out[start:end] = [l + '\n' for l in new_block]
+
+    if not dry_run:
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.writelines(lines_out)
+        os.replace(tmp, path)
+
+    return len(blocks)
+
+
 # ---------------------------------------------------------------------------
 # Bare @ sign detection  (spec 1.4 — pointer escape rule)
 # ---------------------------------------------------------------------------
@@ -4834,6 +4942,10 @@ def main():
         help='Rewrite CONC/CONT lines at wrong level (must be parent_level+1) in-place',
     )
     parser.add_argument(
+        '--fix-note-reflow', action='store_true',
+        help='Re-encode shared NOTE records that contain abnormally short CONC values (<5 chars) in-place',
+    )
+    parser.add_argument(
         '--fix-date-caps', action='store_true',
         help='Normalize month abbreviations in DATE lines to uppercase in-place',
     )
@@ -4927,6 +5039,7 @@ def main():
         args.fix_record_order = True
         args.fix_sort_events = True
         args.fix_conc_cont_levels = True
+        args.fix_note_reflow = True
 
     if not os.path.isfile(args.gedfile):
         sys.exit(f'Error: file not found: {args.gedfile}')
@@ -5079,6 +5192,15 @@ def main():
             print(f'  {changed} CONC/CONT line(s) would be corrected.')
         else:
             print(f'  {changed} CONC/CONT line(s) corrected.')
+
+    if args.fix_note_reflow:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Reflowing shared NOTE records with short CONC values in: {args.gedfile}')
+        changed = fix_note_reflow(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {changed} NOTE record(s) would be reflowed.')
+        else:
+            print(f'  {changed} NOTE record(s) reflowed.')
 
     if args.fix_date_caps:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
@@ -5234,7 +5356,8 @@ def main():
                 args.fix_duplicate_names, args.fix_duplicate_resi,
                 args.fix_bare_events, args.fix_birth_from_bapm,
                 args.fix_record_order, args.fix_sort_events,
-                args.fix_conc_cont_levels, args.merge_sources]):
+                args.fix_conc_cont_levels, args.fix_note_reflow,
+                args.merge_sources]):
         print(f'[CHECK] Scanning: {args.gedfile}')
         errors = False
         # counters for summary statistics
@@ -5751,6 +5874,22 @@ def main():
                     print(f'  ... and {len(unsorted_evs) - 20} more.')
             else:
                 print('OK: all events are in chronological order.')
+
+            short_concs = scan_short_conc(args.gedfile)
+            if short_concs:
+                print(f'\n{_WARN} {len(short_concs)} CONC line(s) with very short values '
+                      f'(<5 chars) — likely a note-encoding artifact '
+                      f'(run --fix-note-reflow to re-encode):')
+                by_xref: dict[str, list[tuple[int, str]]] = {}
+                for ln, xref, val in short_concs:
+                    by_xref.setdefault(xref, []).append((ln, val))
+                for xref, entries in list(by_xref.items())[:10]:
+                    sample = ', '.join(f'line {ln}: {val!r}' for ln, val in entries[:3])
+                    print(f'  {xref}: {sample}')
+                if len(by_xref) > 10:
+                    print(f'  ... and {len(by_xref) - 10} more record(s).')
+            else:
+                print('OK: no abnormally short CONC lines.')
 
             # ── New structural checks ────────────────────────────────────────
 
