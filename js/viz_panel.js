@@ -498,7 +498,7 @@ function renderPanel() {
           const spClickable = spXref && (typeof PARENTS !== 'undefined') && PARENTS[spXref];
           const spXrefAttr = spClickable ? escHtml(spXref) : '';
           const marrClick = spClickable
-            ? ` style="cursor:pointer" data-spouse-xref="${spXrefAttr}" onclick="setState({focusXref:this.dataset.spouseXref})"` : '';
+            ? ` style="cursor:pointer" data-spouse-xref="${spXrefAttr}" onclick="setState({focusXref:this.dataset.spouseXref,panelXref:this.dataset.spouseXref,panelOpen:true})"` : '';
           const proseHtml = spClickable
             ? `<div class="marr-prose marr-link">${escHtml(prose)}</div>`
             : `<div class="marr-prose">${escHtml(prose)}</div>`;
@@ -628,7 +628,7 @@ function renderPanel() {
       const ly = _ly(p);
       const sx = _sx(p);
       const pxQ = JSON.stringify(px).replace(/"/g, '&quot;');
-      const link = `<span class="family-link" onclick="setState({focusXref:${pxQ}})">${name}</span>`;
+      const link = `<span class="family-link" onclick="setState({focusXref:${pxQ},panelXref:${pxQ},panelOpen:true})">${name}</span>`;
       const years = ly ? `<span class="family-years">${escHtml(ly)}</span>` : '';
       return `<div class="family-row">${sx}${link}${years}</div>`;
     };
@@ -646,7 +646,7 @@ function renderPanel() {
       const ly = _ly(p);
       const sx = _sx(p);
       const pxQ = JSON.stringify(px).replace(/"/g, '&quot;');
-      const link = `<span class="family-link" onclick="setState({focusXref:${pxQ}})">${name}</span>`;
+      const link = `<span class="family-link" onclick="setState({focusXref:${pxQ},panelXref:${pxQ},panelOpen:true})">${name}</span>`;
       const years = ly ? `<span class="family-years">${escHtml(ly)}</span>` : '';
       const actions = `<span class="family-parent-actions">`
         + `<button class="family-parent-btn" title="Change parent" onclick="openChangeParentModal(${xrefQ},${pxQ})">\u270f</button>`
@@ -677,11 +677,11 @@ function renderPanel() {
         const sp = (typeof PEOPLE !== 'undefined') && PEOPLE[grp.shared_parent];
         const sharedName = sp ? escHtml(sp.name || '?') : '?';
         const sharedQ = JSON.stringify(grp.shared_parent).replace(/"/g, '&quot;');
-        const sharedLink = `<span class="family-link" onclick="setState({focusXref:${sharedQ}})">${sharedName}</span>`;
+        const sharedLink = `<span class="family-link" onclick="setState({focusXref:${sharedQ},panelXref:${sharedQ},panelOpen:true})">${sharedName}</span>`;
         const op = grp.other_parent ? ((typeof PEOPLE !== 'undefined') && PEOPLE[grp.other_parent]) : null;
         const otherName = op ? escHtml(op.name || '?') : '?';
         const otherLink = grp.other_parent
-          ? `<span class="family-link" onclick="setState({focusXref:${JSON.stringify(grp.other_parent).replace(/"/g, '&quot;')}})">${otherName}</span>`
+          ? `<span class="family-link" onclick="setState({focusXref:${JSON.stringify(grp.other_parent).replace(/"/g, '&quot;')},panelXref:${JSON.stringify(grp.other_parent).replace(/"/g, '&quot;')},panelOpen:true})">${otherName}</span>`
           : `<span class="family-unknown">unknown</span>`;
         _sibHtml += `<div class="family-halfsib-group">`;
         _sibHtml += `<div class="family-halfsib-label">${sharedLink} &amp; ${otherLink}</div>`;
