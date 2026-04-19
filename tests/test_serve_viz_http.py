@@ -810,6 +810,28 @@ class TestAddCitationEndpoint:
             for c in birt_events[0].get('citations', [])
         ), 'new citation must appear in refreshed BIRT.citations'
 
+    def test_add_citation_with_url_writes_www_under_data(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': '', 'text': '', 'note': '',
+            'url': 'https://example.com/record/42',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        in_i1 = False; in_birt = False; in_data = False; found = False
+        for ln in lines:
+            if ln.startswith('0 @I1@ INDI'):  in_i1 = True; continue
+            if in_i1 and ln.startswith('0 '): break
+            if in_i1 and ln == '1 BIRT':      in_birt = True; continue
+            if in_birt and ln.startswith('1 '): in_birt = False
+            if in_birt and ln.startswith(f'2 SOUR {sour_xref}'): in_data = True; continue
+            if in_data and ln == '3 DATA':    continue
+            if in_data and ln == '4 WWW https://example.com/record/42': found = True; break
+        assert found, f'4 WWW not found under BIRT SOUR block in @I1@\n{text}'
+
 
 # ===========================================================================
 # /api/edit_citation
@@ -1092,6 +1114,24 @@ class TestFamCitationEndpoints:
                 found_sour = True
         assert found_sour, f'2 SOUR {sour_xref} not found inside @F1@\'s MARR block'
         assert '3 PAGE p.7' in text
+
+    def test_edit_citation_updates_url(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.1', 'text': '', 'note': '',
+            'url': 'https://old.example.com',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@F5@', 'citation_key': 'MARR:0:0',
+            'page': 'p.1', 'text': '', 'note': '',
+            'url': 'https://new.example.com',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '4 WWW https://new.example.com' in text
+        assert 'https://old.example.com' not in text
 
 
 # ===========================================================================
