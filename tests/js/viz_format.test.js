@@ -31,8 +31,8 @@ const { fmtDate, fmtPlace } = require('../../js/viz_panel.js');
 // ── fmtDate ───────────────────────────────────────────────────────────────
 
 describe('fmtDate', () => {
-  it('"ABT 1820" → "around 1820"', () => {
-    expect(fmtDate('ABT 1820')).toBe('around 1820');
+  it('"ABT 1820" → "about 1820"', () => {
+    expect(fmtDate('ABT 1820')).toBe('about 1820');
   });
 
   it('"BEF 1900" → "before 1900"', () => {
@@ -43,12 +43,12 @@ describe('fmtDate', () => {
     expect(fmtDate('AFT 1900')).toBe('after 1900');
   });
 
-  it('"CAL 1835" → "around 1835"', () => {
-    expect(fmtDate('CAL 1835')).toBe('around 1835');
+  it('"CAL 1835" → "about 1835"', () => {
+    expect(fmtDate('CAL 1835')).toBe('about 1835');
   });
 
-  it('"EST 1835" → "around 1835"', () => {
-    expect(fmtDate('EST 1835')).toBe('around 1835');
+  it('"EST 1835" → "about 1835"', () => {
+    expect(fmtDate('EST 1835')).toBe('about 1835');
   });
 
   it('"BET SEP 1942 AND DEC 1944" → "September 1942 – December 1944"', () => {
