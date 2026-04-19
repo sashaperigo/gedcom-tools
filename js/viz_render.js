@@ -90,7 +90,7 @@ function _formatYears(person) {
   return parts.join('  ');
 }
 
-function _renderNode(node, onNodeClick, onExpandClick) {
+function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()) {
   const {
     BG_NODE, BG_NODE_FOCUS, BORDER, BORDER_FOCUS, ACCENT_SPOUSE,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_DIM,
@@ -213,33 +213,37 @@ function _renderNode(node, onNodeClick, onExpandClick) {
   if (isAncestor) {
     const btnCx = w / 2;
     const btnCy = -8;
+    const parents = PARENTS[node.xref] || [null, null];
+    const hasParents = parents.some(p => p !== null);
+    const isExpanded = expandedNodes.has(node.xref);
+    const canExpand = hasParents && !isExpanded;
+    const btnFill = canExpand ? '#2a7a4a' : '#4a4a6a';
+    const chevronD = canExpand
+      ? `M ${btnCx - 3.5} ${btnCy + 1.5} L ${btnCx} ${btnCy - 2} L ${btnCx + 3.5} ${btnCy + 1.5}`
+      : `M ${btnCx - 3.5} ${btnCy - 1.5} L ${btnCx} ${btnCy + 2} L ${btnCx + 3.5} ${btnCy - 1.5}`;
     const btn = _svgEl('circle', {
       cx: btnCx,
       cy: btnCy,
-      r: 7,
-      fill: '#131330',
-      stroke: '#383870',
-      'stroke-width': 1,
+      r: 8,
+      fill: btnFill,
       class: 'expand-btn',
       cursor: 'pointer',
     });
-    const btnLabel = _svgEl('text', {
-      x: btnCx,
-      y: btnCy,
-      'text-anchor': 'middle',
-      'dominant-baseline': 'middle',
-      fill: '#8080b0',
-      'font-size': 9,
-      'font-family': 'system-ui, sans-serif',
+    const chevron = _svgEl('path', {
+      d: chevronD,
+      stroke: '#ffffff',
+      'stroke-width': 1.5,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      fill: 'none',
       'pointer-events': 'none',
     });
-    btnLabel.textContent = '+';
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       onExpandClick(node.xref);
     });
     g.appendChild(btn);
-    g.appendChild(btnLabel);
+    g.appendChild(chevron);
   }
 
   return g;
@@ -338,7 +342,7 @@ function render() {
 
   // ── Render nodes ─────────────────────────────────────────────────────────
   for (const node of nodes) {
-    const g = _renderNode(node, onNodeClick, onExpandClick);
+    const g = _renderNode(node, onNodeClick, onExpandClick, expandedNodes);
     _treeRoot.appendChild(g);
   }
 }

@@ -414,6 +414,106 @@ describe('render — ancestor expand buttons', () => {
     );
     expect(expandBtn).toBeUndefined();
   });
+
+  it('expand button uses a <path> chevron, not a <text> "+"', () => {
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const textPlus = fatherG.children.find(
+      c => c.tagName === 'text' && c.textContent === '+'
+    );
+    expect(textPlus).toBeUndefined();
+    const chevronPath = fatherG.children.find(c => c.tagName === 'path');
+    expect(chevronPath).toBeDefined();
+  });
+
+  it('expand button circle is green when ancestor has parents and is not expanded', () => {
+    // @FATHER@ needs his own parents so his button shows green
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const treeRoot = svg2.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn._attrs['fill']).toBe('#2a7a4a');
+  });
+
+  it('expand button circle is gray when ancestor is already expanded', () => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    stateMod.setState({ expandedNodes: new Set(['@FATHER@']) });
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const treeRoot = svg2.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn._attrs['fill']).toBe('#4a4a6a');
+  });
+
+  it('expand button circle is gray when ancestor has no parents', () => {
+    // Default beforeEach: PARENTS has no entry for @FATHER@, so he has no parents
+    const treeRoot = svg.querySelector('#tree-root');
+    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+    const expandBtn = fatherG.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
+    );
+    expect(expandBtn._attrs['fill']).toBe('#4a4a6a');
+  });
+
+  it('up-chevron path when can expand, down-chevron path when expanded', () => {
+    // Set up @FATHER@ with parents so he can expand
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
+    loadRenderMod();
+    const svgUp = makeSvgEl();
+    renderMod.initRenderer(svgUp);
+    const fatherGUp = svgUp.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const upD = fatherGUp.children.find(c => c.tagName === 'path')._attrs['d'];
+
+    stateMod.setState({ expandedNodes: new Set(['@FATHER@']) });
+    loadRenderMod();
+    const svgDown = makeSvgEl();
+    renderMod.initRenderer(svgDown);
+    const fatherGDown = svgDown.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const downD = fatherGDown.children.find(c => c.tagName === 'path')._attrs['d'];
+
+    expect(upD).not.toBe(downD);
+  });
 });
 
 describe('render — click handlers', () => {
