@@ -4176,132 +4176,12 @@ def fix_redundant_citation_page(path: str, dry_run: bool = False) -> int:
     return len(violations)
 
 
-def scan_repeated_citation_text(path: str) -> list[tuple[str, str, int]]:
-    """
-    Return (source_xref, text_preview, count) for sources where ≥ 2 citations
-    contain identical TEXT blocks.  These texts are narrative/essay content that
-    belongs in the source record, not repeated in every citation.
-    """
-    with open(path, encoding='utf-8') as f:
-        lines = f.readlines()
-
-    source_titles = _build_source_titles(lines)
-    groups: dict[tuple, list] = defaultdict(list)
-
-    for xref, text_key, text_start, text_end, _ in _collect_sour_text_blocks(lines, source_titles):
-        groups[(xref, text_key)].append((text_start, text_end))
-
-    results = []
-    for (xref, text_key), occurrences in groups.items():
-        if len(occurrences) >= 2:
-            preview = text_key[0][1][:60] if text_key else ''
-            results.append((xref, preview, len(occurrences)))
-
-    return results
-
-
 def fix_repeated_citation_text(path: str, dry_run: bool = False) -> int:
-    """
-    For each source whose citations share ≥ 2 identical TEXT blocks, move the
-    text to the source record (as a level-1 TEXT block) and remove it from all
-    citations.  Returns the total number of citation TEXT blocks removed.
-    """
-    with open(path, encoding='utf-8') as f:
-        lines = f.readlines()
-
-    source_titles = _build_source_titles(lines)
-    groups: dict[tuple, list] = defaultdict(list)
-
-    for xref, text_key, text_start, text_end, _ in _collect_sour_text_blocks(lines, source_titles):
-        groups[(xref, text_key)].append((text_start, text_end))
-
-    to_process = {k: v for k, v in groups.items() if len(v) >= 2}
-    if not to_process:
-        return 0
-
-    # ── Lines to remove from citations ───────────────────────────────────────
-    remove_indices: set[int] = set()
-    total_removed = 0
-    for (_xref, _text_key), occurrences in to_process.items():
-        for text_start, text_end in occurrences:
-            for idx in range(text_start, text_end):
-                remove_indices.add(idx)
-            total_removed += 1
-
-    # ── Lines to inject into source records ──────────────────────────────────
-    # Build {xref: [text_lines_at_level_1]} for each source that needs injection.
-    # A source may have multiple distinct repeated-text blocks; add all of them.
-    injections: dict[str, list[str]] = defaultdict(list)
-    seen_keys: set[tuple] = set()
-    for (xref, text_key), occurrences in to_process.items():
-        if (xref, text_key) in seen_keys:
-            continue
-        seen_keys.add((xref, text_key))
-        text_lines: list[str] = []
-        first = True
-        for tag, val in text_key:
-            if first:
-                text_lines.append(f'1 TEXT {val}\n')
-                first = False
-            elif tag == 'CONT':
-                text_lines.append(f'2 CONT {val}\n')
-            elif tag == 'CONC':
-                text_lines.append(f'2 CONC {val}\n')
-        injections[xref].extend(text_lines)
-
-    # Find end-of-record line index for each source that needs injection.
-    # "End" = the first '0 ' line after the source record starts.
-    injection_points: dict[int, list[str]] = {}   # line_idx → lines to insert before it
-    current_xref: str | None = None
-    for i, line in enumerate(lines):
-        m0 = re.match(r'^0\s+(@[^@]+@)\s+SOUR', line.rstrip('\n'))
-        if m0:
-            current_xref = m0.group(1)
-            continue
-        if line.startswith('0 ') and current_xref:
-            if current_xref in injections:
-                injection_points[i] = injections.pop(current_xref)
-            current_xref = None
-    # Handle source record at end of file (before TRLR or EOF)
-    if current_xref and current_xref in injections:
-        injection_points[len(lines)] = injections.pop(current_xref)
-
-    if dry_run:
-        return total_removed
-
-    # ── Build output ─────────────────────────────────────────────────────────
-    out: list[str] = []
-    for i, line in enumerate(lines):
-        if i in injection_points:
-            out.extend(injection_points[i])
-        if i not in remove_indices:
-            out.append(line)
-
-    # ── Remove DATA lines that became childless after TEXT removal ────────────
-    clean: list[str] = []
-    for i, line in enumerate(out):
-        m = re.match(r'^(\d+)\s+DATA\s*$', line.rstrip('\n'))
-        if m:
-            data_level = int(m.group(1))
-            # Check whether the very next non-blank content line is at data_level or lower
-            has_child = False
-            j = i + 1
-            while j < len(out):
-                nm = re.match(r'^(\d+)', out[j].rstrip('\n'))
-                if nm:
-                    has_child = int(nm.group(1)) > data_level
-                    break
-                j += 1
-            if not has_child:
-                continue            # skip the bare DATA line
-        clean.append(line)
-
-    tmp = path + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        f.writelines(clean)
-    os.replace(tmp, path)
-
-    return total_removed
+    # Retired: identical TEXT across citations doesn't mean it belongs at
+    # the source level — it's usually citation-specific context (person,
+    # voyage, document excerpt) that happens to be repeated for related
+    # events on the same individual.
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -4902,7 +4782,6 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_name_piece_order(path, dry_run=dry_run)
     fixes_applied += fix_event_source_order(path, dry_run=dry_run)
     fixes_applied += fix_redundant_citation_page(path, dry_run=dry_run)
-    fixes_applied += fix_repeated_citation_text(path, dry_run=dry_run)
     fixes_applied += fix_dateless_dates(path, dry_run=dry_run)
     fixes_applied += fix_aka_facts(path, dry_run=dry_run)
     fixes_applied += fix_broken_xrefs(path, dry_run=dry_run)
@@ -5043,10 +4922,6 @@ def main():
         help='Remove citation PAGE lines that just repeat the source TITL verbatim',
     )
     parser.add_argument(
-        '--fix-repeated-citation-text', action='store_true',
-        help='Move repeated TEXT blocks from citations into their source records',
-    )
-    parser.add_argument(
         '--fix-dateless-dates', action='store_true',
         help='Wrap day+month-only DATE values as date phrases in-place',
     )
@@ -5100,7 +4975,6 @@ def main():
         args.fix_name_piece_order = True
         args.fix_event_source_order = True
         args.fix_redundant_citation_page = True
-        args.fix_repeated_citation_text = True
         args.fix_dateless_dates = True
         args.fix_aka_facts = True
         args.fix_broken_xrefs = True
@@ -5329,15 +5203,6 @@ def main():
         else:
             print(f'{changed} redundant PAGE line(s) removed.')
 
-    if args.fix_repeated_citation_text:
-        mode = 'DRY RUN' if args.dry_run else 'FIX'
-        print(f'[{mode}] Moving repeated citation TEXT to source records in: {args.gedfile}')
-        changed = fix_repeated_citation_text(args.gedfile, dry_run=args.dry_run)
-        if args.dry_run:
-            print(f'\n{changed} repeated citation TEXT block(s) would be moved.')
-        else:
-            print(f'{changed} repeated citation TEXT block(s) moved to source records.')
-
     if args.fix_dateless_dates:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Wrapping day+month-only DATE values in: {args.gedfile}')
@@ -5423,7 +5288,7 @@ def main():
                 args.fix_note_under_plac, args.fix_note_under_addr,
                 args.fix_date_caps, args.fix_nicknames, args.fix_name_pieces,
                 args.fix_name_piece_order, args.fix_event_source_order,
-                args.fix_redundant_citation_page, args.fix_repeated_citation_text,
+                args.fix_redundant_citation_page,
                 args.fix_dateless_dates, args.fix_aka_facts,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
