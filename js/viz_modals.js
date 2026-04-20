@@ -149,6 +149,7 @@ function _updateEventModalFields(tag) {
   const inlineRow = document.getElementById('event-modal-inline-row');
   const inlineLbl = document.getElementById('event-modal-inline-label');
   const typeRow   = document.getElementById('event-modal-type-row');
+  const ageRow    = document.getElementById('event-modal-age-row');
   const causeRow  = document.getElementById('event-modal-cause-row');
   const placeRow  = document.getElementById('event-modal-place-row');
   const addrRow   = document.getElementById('event-modal-addr-row');
@@ -156,6 +157,7 @@ function _updateEventModalFields(tag) {
   const preset = _FACT_PRESETS[tag];
   if (preset) {
     // Preset fact: hide cause, place, address — only date and note are relevant.
+    if (ageRow) ageRow.style.display = 'none';
     causeRow.style.display = 'none';
     if (placeRow) placeRow.style.display = 'none';
     if (addrRow)  addrRow.style.display  = 'none';
@@ -191,6 +193,7 @@ function _updateEventModalFields(tag) {
   // For inline-type tags (EDUC, OCCU, etc.) the inline value IS the type —
   // showing a separate TYPE field would duplicate it and cause confusion.
   typeRow.style.display = (_TYPE_TAGS.has(tag) && !_INLINE_TYPE_TAGS.has(tag)) ? '' : 'none';
+  if (ageRow) ageRow.style.display = (tag === 'DEAT') ? '' : 'none';
   causeRow.style.display = (tag === 'DEAT') ? '' : 'none';
   const hidePlaceAddr = (tag === 'NATI');
   if (placeRow) placeRow.style.display = hidePlaceAddr ? 'none' : '';
@@ -269,6 +272,7 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
   document.getElementById('event-modal-type').value   = evt.type || '';
   document.getElementById('event-modal-date').value   = evt.date || '';
   document.getElementById('event-modal-place').value  = placeVal;
+  document.getElementById('event-modal-age').value    = evt.age || '';
   document.getElementById('event-modal-cause').value  = evt.cause || '';
   document.getElementById('event-modal-note').value   = evt.note || '';
   document.getElementById('event-modal-addr').value   = evt.addr || '';
@@ -315,6 +319,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
   document.getElementById('event-modal-type').value   = prefillType || '';
   document.getElementById('event-modal-date').value   = '';
   document.getElementById('event-modal-place').value  = '';
+  document.getElementById('event-modal-age').value    = '';
   document.getElementById('event-modal-cause').value  = '';
   document.getElementById('event-modal-note').value   = '';
   document.getElementById('event-modal-addr').value   = '';
@@ -354,6 +359,7 @@ async function submitEventModal() {
   const preset   = _FACT_PRESETS[rawTag];
   const tag      = preset ? preset.baseTag : rawTag;
   const typeRow  = document.getElementById('event-modal-type-row');
+  const ageRow   = document.getElementById('event-modal-age-row');
   const causeRow = document.getElementById('event-modal-cause-row');
   const fields = {
     inline_val: document.getElementById('event-modal-inline').value.trim(),
@@ -370,7 +376,10 @@ async function submitEventModal() {
   } else if (isAdd && preset && !preset.showInline && preset.type) {
     fields.TYPE = preset.type;
   }
-  // Only include CAUS when the cause row is visible (DEAT events)
+  // Only include AGE/CAUS when their rows are visible (DEAT events)
+  if (ageRow && ageRow.style.display !== 'none') {
+    fields.AGE = document.getElementById('event-modal-age').value.trim();
+  }
   if (causeRow && causeRow.style.display !== 'none') {
     fields.CAUS = document.getElementById('event-modal-cause').value.trim();
   }

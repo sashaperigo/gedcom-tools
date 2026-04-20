@@ -1316,6 +1316,10 @@ header h1 { font-size: 16px; font-weight: 600; }
              onkeydown="if(event.key==='Escape')closeEventModal()">
       <datalist id="addr-suggestions"></datalist>
     </div>
+    <div class="event-modal-field" id="event-modal-age-row" style="display:none">
+      <label>Age at Death</label>
+      <input type="text" id="event-modal-age" placeholder="e.g. 72" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
     <div class="event-modal-field" id="event-modal-cause-row" style="display:none">
       <label>Cause of Death</label>
       <input type="text" id="event-modal-cause" onkeydown="if(event.key==='Escape')closeEventModal()">

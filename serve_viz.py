@@ -653,7 +653,7 @@ def _find_fam_event_block(
 # Event editing / creation helpers
 # ---------------------------------------------------------------------------
 
-_MANAGED_SUBTAGS = frozenset({'DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS', 'ADDR'})
+_MANAGED_SUBTAGS = frozenset({'DATE', 'PLAC', 'TYPE', 'NOTE', 'CAUS', 'ADDR', 'AGE'})
 _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC', 'DSCR', 'NCHI'})
 
 
@@ -687,7 +687,7 @@ def _edit_event_fields(
 ) -> list[str]:
     """
     Apply field updates to an event block.
-    updates keys: DATE, PLAC, TYPE, NOTE, CAUS, inline_val.
+    updates keys: DATE, PLAC, TYPE, NOTE, CAUS, AGE, inline_val.
     Empty/None value = remove that sub-field.
     inline_val rewrites the level-1 header line.
     """
@@ -727,7 +727,7 @@ def _edit_event_fields(
             new_block.append(line)
 
     # Append new sub-tags not already in the block
-    for tag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS'):
+    for tag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS', 'AGE'):
         if tag in updates and tag not in handled:
             new_val = (updates[tag] or '').strip()
             if new_val:
@@ -755,7 +755,7 @@ def _insert_new_event(
     else:
         header = f'1 {event_tag}'
     new_block = [header]
-    for subtag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS'):
+    for subtag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS', 'AGE'):
         val = (fields.get(subtag) or '').strip()
         if val:
             if subtag == 'NOTE':
