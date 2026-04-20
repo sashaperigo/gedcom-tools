@@ -22,11 +22,12 @@ const SLOT = NODE_W + H_GAP;
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-function resetGlobals({ people = {}, parents = {}, children = {}, relatives = {} } = {}) {
+function resetGlobals({ people = {}, parents = {}, children = {}, relatives = {}, families = {} } = {}) {
   global.PEOPLE    = people;
   global.PARENTS   = parents;
   global.CHILDREN  = children;
   global.RELATIVES = relatives;
+  global.FAMILIES  = families;
 }
 
 // ── _sortByBirthYear ───────────────────────────────────────────────────────
@@ -1897,3 +1898,102 @@ describe('computeLayout — right-wing via father-then-mother path', () => {
     expect(rc.length).toBeGreaterThanOrEqual(4);
   });
 });
+
+// ── Expanded children of non-focus families ────────────────────────────────
+
+describe('computeLayout — expandedChildrenFams: brother\'s kids', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':   { birth_year: 1900 },
+        '@BROTHER@': { birth_year: 1897 },
+        '@NIECE1@':  { birth_year: 1920 },
+        '@NIECE2@':  { birth_year: 1923 },
+      },
+      relatives: {
+        '@FOCUS@': { siblings: ['@BROTHER@'], spouses: [] },
+      },
+      families: {
+        '@BFAM@': { husb: '@BROTHER@', wife: null, chil: ['@NIECE1@', '@NIECE2@'] },
+      },
+    });
+  });
+
+  it('nieces do NOT appear when @BFAM@ is NOT in expandedChildrenFams', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set());
+    expect(nodes.find(n => n.xref === '@NIECE1@')).toBeUndefined();
+    expect(nodes.find(n => n.xref === '@NIECE2@')).toBeUndefined();
+  });
+
+  it('nieces appear at y = +ROW_HEIGHT when @BFAM@ is in expandedChildrenFams', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+    const n1 = nodes.find(n => n.xref === '@NIECE1@');
+    const n2 = nodes.find(n => n.xref === '@NIECE2@');
+    expect(n1).toBeDefined();
+    expect(n2).toBeDefined();
+    expect(n1.y).toBe(ROW_HEIGHT);
+    expect(n2.y).toBe(ROW_HEIGHT);
+  });
+
+  it('nieces have role "descendant" and generation +1', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+    const n1 = nodes.find(n => n.xref === '@NIECE1@');
+    expect(n1.role).toBe('descendant');
+    expect(n1.generation).toBe(1);
+  });
+
+  it('nieces are centered under the brother', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+    const brother = nodes.find(n => n.xref === '@BROTHER@');
+    const n1 = nodes.find(n => n.xref === '@NIECE1@');
+    const n2 = nodes.find(n => n.xref === '@NIECE2@');
+    const brotherCenter = brother.x + NODE_W / 2;
+    const niecesCenter = ((n1.x + NODE_W / 2) + (n2.x + NODE_W / 2)) / 2;
+    expect(niecesCenter).toBeCloseTo(brotherCenter);
+  });
+
+  it('nieces sorted by birth year left-to-right', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+    const n1 = nodes.find(n => n.xref === '@NIECE1@');
+    const n2 = nodes.find(n => n.xref === '@NIECE2@');
+    expect(n1.x).toBeLessThan(n2.x);
+  });
+
+  it('emits descendant edges for the children umbrella', () => {
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+    const desc = edges.filter(e => e.type === 'descendant');
+    expect(desc.length).toBeGreaterThan(0);
+  });
+});
+
+describe('computeLayout — expandedChildrenFams: aunt\'s kids (cousins)', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 1900 },
+        '@MOTHER@': { birth_year: 1875 },
+        '@AUNT@':   { birth_year: 1870 },
+        '@C1@':     { birth_year: 1895 },
+        '@C2@':     { birth_year: 1898 },
+      },
+      parents: {
+        '@FOCUS@': [null, '@MOTHER@'],
+      },
+      relatives: {
+        '@MOTHER@': { siblings: ['@AUNT@'], spouses: [] },
+      },
+      families: {
+        '@AFAM@': { husb: null, wife: '@AUNT@', chil: ['@C1@', '@C2@'] },
+      },
+    });
+  });
+
+  it('cousins appear at y=0 (focus row) when aunt\'s FAM is expanded and mother\'s siblings are expanded', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@AFAM@']));
+    const c1 = nodes.find(n => n.xref === '@C1@');
+    expect(c1).toBeDefined();
+    expect(c1.y).toBe(0);
+    expect(c1.generation).toBe(0);
+  });
+});
+

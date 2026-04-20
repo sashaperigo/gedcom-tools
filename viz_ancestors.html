@@ -366,6 +366,7 @@ const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
 const SOURCES = __SOURCES_JSON__;
 let RELATIVES = __RELATIVES_JSON__;
 let PARENTS = __PARENTS_JSON__;
+let FAMILIES = __FAMILIES_JSON__;
 let CHILDREN = {};
 for (const [cx, [fa, mo]] of Object.entries(PARENTS)) {
   for (const p of [fa, mo]) { if (p) { (CHILDREN[p] = CHILDREN[p] || []).push(cx); } }
@@ -375,6 +376,7 @@ function _applyFamilyMaps(fm) {
   if (fm.parents)   PARENTS   = fm.parents;
   if (fm.children)  CHILDREN  = fm.children;
   if (fm.relatives) RELATIVES = fm.relatives;
+  if (fm.families)  FAMILIES  = fm.families;
 }
 const ROOT_XREF = __ROOT_XREF_JSON__;
 const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;

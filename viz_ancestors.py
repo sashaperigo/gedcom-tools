@@ -838,6 +838,16 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
             else:
                 parents[xref] = [None, None]
     parents_json        = _json_for_script(parents)
+    # Build families map for JS: {fam_xref: {husb, wife, chil: [...]}}
+    families_js = {}
+    if fams:
+        for fam_xref, fam in fams.items():
+            families_js[fam_xref] = {
+                'husb': fam.get('husb'),
+                'wife': fam.get('wife'),
+                'chil': list(fam.get('chil', [])),
+            }
+    families_json       = _json_for_script(families_js)
     root_xref_json      = _json_for_script(root_xref or '')
     addr_by_place_json  = _json_for_script(build_addr_by_place(indis))
     all_places_json     = _json_for_script(build_all_places(indis, fams))
@@ -868,6 +878,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         .replace('__ALL_PEOPLE_JSON__', all_people_json)
         .replace('__RELATIVES_JSON__', relatives_json)
         .replace('__PARENTS_JSON__', parents_json)
+        .replace('__FAMILIES_JSON__', families_json)
         .replace('__ROOT_XREF_JSON__', root_xref_json)
         .replace('__ADDR_BY_PLACE_JSON__', addr_by_place_json)
         .replace('__ALL_PLACES_JSON__', all_places_json)

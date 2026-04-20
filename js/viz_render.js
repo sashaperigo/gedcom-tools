@@ -408,8 +408,9 @@ function render() {
   const focusXref = state.focusXref;
   const expandedNodes = state.expandedNodes || new Set();
   const expandedSiblingsXrefs = state.expandedSiblingsXrefs || new Set();
+  const expandedChildrenFams = state.expandedChildrenFams || new Set();
 
-  const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs);
+  const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams);
 
   // Clear tree-root contents
   _treeRoot.innerHTML = '';

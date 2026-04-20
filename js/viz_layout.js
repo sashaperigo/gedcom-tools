@@ -62,7 +62,8 @@ function _packRow(items, startX, y, role) {
  * Edge: { x1, y1, x2, y2, type }
  *   type: 'ancestor' | 'descendant' | 'marriage'
  */
-function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs) {
+function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams) {
+  expandedChildrenFams = expandedChildrenFams || new Set();
   const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
   const SLOT = NODE_W + H_GAP;
 
@@ -348,7 +349,89 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs) {
     });
   }
 
+  // ── Phase 3: Expanded children of non-focus families ────────────────────
+  expandedChildrenFams.forEach(famXref => {
+    _placeChildrenOfFam(famXref, nodes, edges);
+  });
+
   return { nodes, edges };
+}
+
+// ---------------------------------------------------------------------------
+// Non-focus family children placement
+// ---------------------------------------------------------------------------
+
+function _placeChildrenOfFam(famXref, nodes, edges) {
+  const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
+  const SLOT = NODE_W + H_GAP;
+
+  const fam = (typeof FAMILIES !== 'undefined' ? FAMILIES[famXref] : null);
+  if (!fam) return;
+  const chilXrefs = fam.chil || [];
+  if (chilXrefs.length === 0) return;
+
+  // Find already-placed parent nodes to anchor under.
+  const husbNode = fam.husb ? nodes.find(n => n.xref === fam.husb) : null;
+  const wifeNode = fam.wife ? nodes.find(n => n.xref === fam.wife) : null;
+  const parentNodes = [husbNode, wifeNode].filter(Boolean);
+  if (parentNodes.length === 0) return;
+
+  // Parent row y (both parents should be on the same row).
+  const parentY = parentNodes[0].y;
+  const childY  = parentY + ROW_HEIGHT;
+
+  // Anchor x: center between husband and wife, or center of single parent.
+  const parentCenters = parentNodes.map(n => n.x + NODE_W / 2);
+  const anchorX = parentCenters.length === 2
+    ? (parentCenters[0] + parentCenters[1]) / 2
+    : parentCenters[0];
+
+  // Sort children by birth year and pack them centered under anchorX.
+  const sorted = _sortByBirthYear(chilXrefs);
+  const totalWidth = sorted.length * NODE_W + (sorted.length - 1) * H_GAP;
+  const startX = anchorX - totalWidth / 2;
+
+  const generation = Math.round(childY / ROW_HEIGHT);
+  const childCenters = [];
+  sorted.forEach((cxref, i) => {
+    const cx = startX + i * SLOT;
+    nodes.push({
+      xref: cxref,
+      x: cx,
+      y: childY,
+      generation,
+      role: 'descendant',
+    });
+    childCenters.push(cx + NODE_W / 2);
+  });
+
+  // Umbrella geometry (mirrors focus-children umbrella).
+  const umbrellaY = parentY + NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+  const anchorTopY = parentNodes.length === 2
+    ? parentY + NODE_H / 2     // marriage line center
+    : parentY + NODE_H;        // bottom of single parent
+
+  edges.push({
+    x1: anchorX, y1: anchorTopY,
+    x2: anchorX, y2: umbrellaY,
+    type: 'descendant',
+  });
+
+  if (childCenters.length > 1) {
+    edges.push({
+      x1: Math.min(...childCenters), y1: umbrellaY,
+      x2: Math.max(...childCenters), y2: umbrellaY,
+      type: 'descendant',
+    });
+  }
+
+  childCenters.forEach(cx => {
+    edges.push({
+      x1: cx, y1: umbrellaY,
+      x2: cx, y2: childY,
+      type: 'descendant',
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
