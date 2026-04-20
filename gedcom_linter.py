@@ -144,7 +144,7 @@ _AGE_RE = re.compile(
 # separately because it requires .strip() on captured groups.
 _DATE_RULES: list[tuple[str, str, int]] = [
     # Approximate qualifiers → ABT
-    (r'^(about|abt\.?|circa|ca\.?|approx\.?|maybe)\s+', 'ABT ', re.I),
+    (r'^(about|around|abt\.?|circa|ca\.?|approx\.?|maybe)\s+', 'ABT ', re.I),
     # Before / After
     (r'^(before|bef\.?)\s+', 'BEF ', re.I),
     (r'^(after|aft\.?)\s+', 'AFT ', re.I),
