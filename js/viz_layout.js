@@ -491,7 +491,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
     (parentPair[0] || parentPair[1]) &&
     effectiveExpandedAncestors && effectiveExpandedAncestors.has(ancXref);
 
-  const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+  const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
   const sorted = _sortByBirthYear(sibs);
   const sex = PEOPLE[ancXref]?.sex;
   // Female parent → siblings extend right. Male (or unknown) → left.
@@ -502,6 +502,9 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
   // Clearance between the ancestor pill and the first sibling to leave room
   // for the outward sibling-expand chevron (r=8, 4px off the pill → 20px).
   const SIB_CHEVRON_CLEARANCE = 24;
+  // Sibling-spouse gap is tight (match descendant child-spouse spacing); the
+  // focus-couple MARRIAGE_GAP is only needed to make room for the child drop.
+  const SIB_MARRIAGE_GAP = H_GAP;
 
   if (side === 'right') {
     let leftEdge = ancX + NODE_W + SIB_CHEVRON_CLEARANCE;  // left edge of first (oldest) sibling
@@ -512,7 +515,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
       let cursorRight = sibX + NODE_W;
       const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
       sibSpouses.forEach(spXref => {
-        const spX = cursorRight + MARRIAGE_GAP;
+        const spX = cursorRight + SIB_MARRIAGE_GAP;
         nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
         edges.push({
           x1: cursorRight, y1: midY,
@@ -540,7 +543,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
       let cursorLeft = sibX;
       const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
       sibSpouses.forEach(spXref => {
-        const spX = cursorLeft - MARRIAGE_GAP - NODE_W;
+        const spX = cursorLeft - SIB_MARRIAGE_GAP - NODE_W;
         nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
         edges.push({
           x1: spX + NODE_W, y1: midY,
