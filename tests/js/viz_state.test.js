@@ -21,7 +21,7 @@ function loadModule(search = '') {
 
   // Stub globals before require
   vi.stubGlobal('location', makeURL(search));
-  vi.stubGlobal('history', { pushState: vi.fn() });
+  vi.stubGlobal('history', { pushState: vi.fn(), replaceState: vi.fn() });
 
   const popstateListeners = [];
   vi.stubGlobal('addEventListener', (event, cb) => {
@@ -96,6 +96,15 @@ describe('setState', () => {
     mod.initState('@I1@');
     global.history.pushState.mockClear();
     mod.setState({ panelOpen: true });
+    expect(global.history.pushState).not.toHaveBeenCalled();
+  });
+
+  it('calls history.replaceState when only expandedNodes changes', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    global.history.pushState.mockClear();
+    mod.setState({ expandedNodes: new Set(['@I5@']) });
+    expect(global.history.replaceState).toHaveBeenCalledOnce();
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
 });
