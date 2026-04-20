@@ -90,7 +90,7 @@ function _formatYears(person) {
   return parts.join('  ');
 }
 
-function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()) {
+function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set()) {
   const {
     BG_NODE, BG_NODE_FOCUS, BORDER, BORDER_FOCUS, ACCENT_SPOUSE,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_DIM,
@@ -258,6 +258,63 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     g.appendChild(chevron);
   }
 
+  // Sibling expand chevron — outward-facing horizontal chevron on the short
+  // edge of ancestor pills. Male → left, female → right.
+  // Tri-state (mirrors the parent chevron colours):
+  //   !hasSiblings → grey,  inert
+  //   can expand   → green, chevron points outward
+  //   can collapse → blue,  chevron points inward
+  if (isAncestor) {
+    const person2 = PEOPLE[node.xref] || {};
+    const sibs = (RELATIVES[node.xref] && RELATIVES[node.xref].siblings) || [];
+    const hasSiblings = sibs.length > 0;
+    const isSibExpanded = expandedSiblingsXrefs.has(node.xref);
+    const sibCanExpand   = hasSiblings && !isSibExpanded;
+    const sibCanCollapse = hasSiblings &&  isSibExpanded;
+    const side = person2.sex === 'F' ? 'right' : 'left';
+    const R = 8;
+    const GAP = 4;
+    const sibCx = side === 'right' ? (w + GAP + R) : -(GAP + R);
+    const sibCy = h / 2;
+
+    const sibFill = sibCanCollapse ? '#2a5a7a'
+                  : sibCanExpand   ? '#2a7a4a'
+                  :                  '#4a4a6a';
+
+    // Outward-pointing chevron (left-side: points left, right-side: points right)
+    // Inward when expanded (collapse indicator).
+    const pointRight = side === 'right' ? sibCanExpand : sibCanCollapse;
+    const chevronOut = pointRight
+      ? `M ${sibCx - 1.5} ${sibCy - 3.5} L ${sibCx + 2} ${sibCy} L ${sibCx - 1.5} ${sibCy + 3.5}`
+      : `M ${sibCx + 1.5} ${sibCy - 3.5} L ${sibCx - 2} ${sibCy} L ${sibCx + 1.5} ${sibCy + 3.5}`;
+
+    const sibBtn = _svgEl('circle', {
+      cx: sibCx,
+      cy: sibCy,
+      r: R,
+      fill: sibFill,
+      class: 'sibling-expand-btn',
+      cursor: hasSiblings ? 'pointer' : 'default',
+    });
+    const sibChevron = _svgEl('path', {
+      d: chevronOut,
+      stroke: '#ffffff',
+      'stroke-width': 1.5,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      fill: 'none',
+      'pointer-events': 'none',
+    });
+    if (hasSiblings) {
+      sibBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onSiblingExpandClick(node.xref);
+      });
+    }
+    g.appendChild(sibBtn);
+    g.appendChild(sibChevron);
+  }
+
   return g;
 }
 
@@ -347,6 +404,23 @@ function render() {
     setState({ expandedNodes: next });
   }
 
+  // ── Sibling expand click handler ─────────────────────────────────────────
+  // Expanding also auto-expands the ancestor's parents so the sibling bracket
+  // has an anchor. Collapsing only removes from expandedSiblingsXrefs.
+  function onSiblingExpandClick(xref) {
+    const current = getState();
+    const sibs = new Set(current.expandedSiblingsXrefs || new Set());
+    if (sibs.has(xref)) {
+      sibs.delete(xref);
+      setState({ expandedSiblingsXrefs: sibs });
+    } else {
+      sibs.add(xref);
+      const parents = new Set(current.expandedNodes || new Set());
+      parents.add(xref);
+      setState({ expandedSiblingsXrefs: sibs, expandedNodes: parents });
+    }
+  }
+
   // ── Render edges (below nodes) ───────────────────────────────────────────
   for (const edge of edges) {
     _treeRoot.appendChild(_renderEdge(edge));
@@ -354,7 +428,7 @@ function render() {
 
   // ── Render nodes ─────────────────────────────────────────────────────────
   for (const node of nodes) {
-    const g = _renderNode(node, onNodeClick, onExpandClick, expandedNodes);
+    const g = _renderNode(node, onNodeClick, onExpandClick, expandedNodes, onSiblingExpandClick, expandedSiblingsXrefs);
     _treeRoot.appendChild(g);
   }
 }

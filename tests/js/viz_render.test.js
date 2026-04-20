@@ -847,3 +847,162 @@ describe('render — descendant umbrella edges', () => {
     expect(childRowMarriage).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ancestor sibling expand chevron
+// ---------------------------------------------------------------------------
+//
+// Each ancestor pill gets an outward-facing horizontal chevron on its short
+// edge (male → left, female → right). Tri-state:
+//   hasSiblings && !isExpanded → green, points outward  (click to expand)
+//   hasSiblings &&  isExpanded → blue,  points inward   (click to collapse)
+//   !hasSiblings              → grey,  inert            (no click listener)
+// Clicking an expand adds the xref to BOTH expandedSiblingsXrefs AND
+// expandedNodes (auto-expand parents).
+
+describe('render — ancestor sibling chevron', () => {
+  let svg;
+
+  beforeEach(() => {
+    global.PEOPLE = {
+      '@FOCUS@':  { name: 'Focus',  birth_year: 2000, sex: 'M' },
+      '@FATHER@': { name: 'Father', birth_year: 1970, sex: 'M' },
+      '@MOTHER@': { name: 'Mother', birth_year: 1972, sex: 'F' },
+      '@F_SIB@':  { name: 'F-Sib',  birth_year: 1968, sex: 'M' },
+      '@M_SIB@':  { name: 'M-Sib',  birth_year: 1974, sex: 'F' },
+    };
+    global.PARENTS = {
+      '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': [null, null],
+      '@MOTHER@': [null, null],
+    };
+    global.CHILDREN = {};
+    global.RELATIVES = {
+      '@FOCUS@':  { siblings: [], spouses: [] },
+      '@FATHER@': { siblings: ['@F_SIB@'], spouses: [] },
+      '@MOTHER@': { siblings: ['@M_SIB@'], spouses: [] },
+    };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+  });
+
+  function getSibBtn(xref, svgEl = svg) {
+    const g = svgEl.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(gr => gr._attrs['data-xref'] === xref);
+    return g && g.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('sibling-expand-btn')
+    );
+  }
+
+  it('ancestor with siblings has a <circle class="sibling-expand-btn">', () => {
+    const btn = getSibBtn('@MOTHER@');
+    expect(btn).toBeDefined();
+  });
+
+  it('ancestor with no siblings has a grey sibling chevron', () => {
+    global.RELATIVES = {
+      '@FOCUS@':  { siblings: [], spouses: [] },
+      '@FATHER@': { siblings: [], spouses: [] },
+      '@MOTHER@': { siblings: [], spouses: [] },
+    };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getSibBtn('@MOTHER@', svg2);
+    expect(btn).toBeDefined();
+    expect(btn._attrs['fill']).toBe('#4a4a6a');
+  });
+
+  it('ancestor with siblings, not expanded → green fill', () => {
+    const btn = getSibBtn('@MOTHER@');
+    expect(btn._attrs['fill']).toBe('#2a7a4a');
+  });
+
+  it('ancestor with siblings, already expanded → blue fill', () => {
+    stateMod.setState({ expandedSiblingsXrefs: new Set(['@MOTHER@']) });
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getSibBtn('@MOTHER@', svg2);
+    expect(btn._attrs['fill']).toBe('#2a5a7a');
+  });
+
+  it('female ancestor sibling chevron sits to the right of the pill', () => {
+    const btn = getSibBtn('@MOTHER@');
+    const cx = parseFloat(btn._attrs['cx']);
+    // g is translated to node.x,node.y; the button's cx is relative to that
+    // group. Right-side chevron: cx must be > NODE_W.
+    expect(cx).toBeGreaterThan(NODE_W);
+  });
+
+  it('male ancestor sibling chevron sits to the left of the pill', () => {
+    const btn = getSibBtn('@FATHER@');
+    const cx = parseFloat(btn._attrs['cx']);
+    // Left-side chevron: cx must be < 0.
+    expect(cx).toBeLessThan(0);
+  });
+
+  it('focus node does NOT get a sibling chevron', () => {
+    expect(getSibBtn('@FOCUS@')).toBeUndefined();
+  });
+
+  it('clicking a green chevron adds xref to BOTH expandedSiblingsXrefs AND expandedNodes', () => {
+    const spy = vi.fn();
+    global.setState = spy;
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getSibBtn('@MOTHER@', svg2);
+    spy.mockClear();
+    btn.dispatchEvent('click', { stopPropagation: () => {} });
+
+    expect(spy).toHaveBeenCalled();
+    const call = spy.mock.calls.find(([u]) => u && u.expandedSiblingsXrefs !== undefined);
+    expect(call).toBeDefined();
+    const update = call[0];
+    expect(update.expandedSiblingsXrefs instanceof Set).toBe(true);
+    expect(update.expandedSiblingsXrefs.has('@MOTHER@')).toBe(true);
+    expect(update.expandedNodes instanceof Set).toBe(true);
+    expect(update.expandedNodes.has('@MOTHER@')).toBe(true);
+  });
+
+  it('clicking a blue chevron removes xref from expandedSiblingsXrefs only', () => {
+    stateMod.setState({ expandedSiblingsXrefs: new Set(['@MOTHER@']), expandedNodes: new Set(['@MOTHER@']) });
+    const spy = vi.fn();
+    global.setState = spy;
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getSibBtn('@MOTHER@', svg2);
+    spy.mockClear();
+    btn.dispatchEvent('click', { stopPropagation: () => {} });
+
+    const call = spy.mock.calls.find(([u]) => u && u.expandedSiblingsXrefs !== undefined);
+    expect(call).toBeDefined();
+    const update = call[0];
+    expect(update.expandedSiblingsXrefs.has('@MOTHER@')).toBe(false);
+    // expandedNodes should NOT be touched on collapse.
+    expect('expandedNodes' in update).toBe(false);
+  });
+
+  it('grey chevron has no click listener', () => {
+    global.RELATIVES = {
+      '@FOCUS@':  { siblings: [], spouses: [] },
+      '@FATHER@': { siblings: [], spouses: [] },
+      '@MOTHER@': { siblings: [], spouses: [] },
+    };
+    const spy = vi.fn();
+    global.setState = spy;
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getSibBtn('@MOTHER@', svg2);
+    spy.mockClear();
+    btn.dispatchEvent('click', { stopPropagation: () => {} });
+    const call = spy.mock.calls.find(([u]) => u && u.expandedSiblingsXrefs !== undefined);
+    expect(call).toBeUndefined();
+  });
+});
