@@ -1208,7 +1208,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   <g id="canvas"></g>
 </svg>
 </div>
-<div id="note-modal-overlay" onclick="if(event.target===this)closeNoteModal()">
+<div id="note-modal-overlay">
   <div id="note-modal">
     <h3 id="note-modal-title">Edit Note</h3>
     <div id="note-modal-shared-warning" style="display:none;background:rgba(251,113,83,0.15);border:1px solid rgba(251,113,83,0.4);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#fca5a5;">&#9888; This is a shared note &mdash; edits will apply to all profiles that contain it.</div>
@@ -1302,7 +1302,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="alias-modal-overlay" onclick="if(event.target===this)closeAliasModal()">
+<div id="alias-modal-overlay">
   <div id="alias-modal">
     <h3 id="alias-modal-title">Add Secondary Name</h3>
     <div class="event-modal-field">
@@ -1333,7 +1333,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="add-godparent-modal-overlay" onclick="if(event.target===this)closeAddGodparentModal()">
+<div id="add-godparent-modal-overlay">
   <div id="add-godparent-modal">
     <h3 id="add-godparent-modal-title">Add Godparent</h3>
     <div class="event-modal-field">
@@ -1348,7 +1348,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="add-person-modal-overlay" onclick="if(event.target===this)closeAddPersonModal()">
+<div id="add-person-modal-overlay">
   <div id="add-person-modal" onkeydown="if(event.key==='Escape')closeAddPersonModal()">
     <h3 id="add-person-modal-title">Add Person</h3>
     <div class="event-modal-field">
@@ -1381,7 +1381,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="change-parent-modal-overlay" onclick="if(event.target===this)closeChangeParentModal()">
+<div id="change-parent-modal-overlay">
   <div id="change-parent-modal">
     <h3 id="change-parent-modal-title">Change Parent</h3>
     <div class="event-modal-field">
@@ -1396,7 +1396,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="sources-modal-overlay" onclick="if(event.target===this)closeSourcesModal()">
+<div id="sources-modal-overlay">
   <div id="sources-modal">
     <div id="sources-modal-header">
       <div id="sources-modal-title">Sources</div>
@@ -1405,7 +1405,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     <div id="sources-modal-list"></div>
   </div>
 </div>
-<div id="add-citation-modal-overlay" onclick="if(event.target===this)closeAddCitationModal()">
+<div id="add-citation-modal-overlay">
   <div id="add-citation-modal" onkeydown="if(event.key==='Escape')closeAddCitationModal()">
     <h3 id="add-citation-modal-title">Add Citation</h3>
     <div class="event-modal-field">
@@ -1434,7 +1434,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="edit-citation-modal-overlay" onclick="if(event.target===this)closeEditCitationModal()">
+<div id="edit-citation-modal-overlay">
   <div id="edit-citation-modal" onkeydown="if(event.key==='Escape')closeEditCitationModal()">
     <h3 id="edit-citation-modal-title">Edit Citation</h3>
     <div class="event-modal-field">
@@ -1460,7 +1460,7 @@ header h1 { font-size: 16px; font-weight: 600; }
     </div>
   </div>
 </div>
-<div id="name-modal-overlay" onclick="if(event.target===this)closeNameModal()">
+<div id="name-modal-overlay">
   <div id="name-modal">
     <h3 id="name-modal-title">Edit Name</h3>
     <div class="event-modal-field">
