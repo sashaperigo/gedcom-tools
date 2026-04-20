@@ -83,30 +83,247 @@ def _collect_shared_notes(lines: list[str]) -> dict[str, dict]:
     return shared
 
 
+def _parse_sour_line(lvl: int, tag: str, val: str, rec: dict) -> None:
+    if lvl == 1 and tag in ('TITL', 'AUTH', 'PUBL', 'NOTE'):
+        rec[tag.lower()] = val
+    elif lvl == 1 and tag == 'REPO':
+        rec['repo'] = val
+
+
+def _parse_fam_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec: dict) -> None:
+    current_evt = state['current_evt']
+    if lvl == 1 and tag == 'HUSB':
+        rec['husb'] = val
+        state['current_evt'] = None
+    elif lvl == 1 and tag == 'WIFE':
+        rec['wife'] = val
+        state['current_evt'] = None
+    elif lvl == 1 and tag == 'CHIL':
+        rec['chil'].append(val)
+        state['current_evt'] = None
+    elif lvl == 1 and tag == 'MARR':
+        evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None,
+               'note': None, 'age': None, 'addr': None, 'citations': []}
+        rec.setdefault('marrs', []).append(evt)
+        state['current_evt'] = evt
+    elif lvl == 1 and tag == 'DIV':
+        evt = {'tag': 'DIV', 'type': None, 'date': None, 'place': None,
+               'note': None, 'age': None, 'addr': None, 'citations': []}
+        rec.setdefault('divs', []).append(evt)
+        state['current_evt'] = evt
+    elif lvl == 2 and current_evt is not None:
+        if tag == 'DATE':
+            current_evt['date'] = val
+        elif tag == 'PLAC':
+            current_evt['place'] = val
+        elif tag == 'ADDR':
+            current_evt['addr'] = val
+        elif tag == 'NOTE':
+            current_evt['note'] = val
+        elif tag == 'SOUR' and val.startswith('@'):
+            current_evt['citations'].append({'sour_xref': val, 'page': None})
+    elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['page'] = val
+    elif lvl in (3, 4) and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
+        if not current_evt['citations'][-1].get('url'):
+            current_evt['citations'][-1]['url'] = val
+    elif lvl == 1:
+        state['current_evt'] = None
+
+
+_INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC', 'NCHI', 'DSCR'})
+
+
+def _parse_indi_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec: dict) -> None:
+    # Reset cross-tag cursors when a new level-1 tag arrives
+    if lvl == 1 and tag != 'SOUR':
+        state['current_sour_xref']   = None
+        state['current_person_cite'] = None
+        state['current_cite_field']  = None
+    if lvl == 1 and tag != 'ASSO':
+        state['current_asso'] = None
+
+    current_evt         = state['current_evt']
+    current_note        = state['current_note']
+    current_person_cite = state['current_person_cite']
+    current_asso        = state['current_asso']
+
+    if lvl == 1 and tag == 'NAME' and rec['name'] is None:
+        name = re.sub(r'/', '', html_mod.unescape(val))
+        name = re.sub(r'\s+', ' ', name).strip()
+        rec['name'] = name
+        state['current_evt'] = state['current_note'] = None
+
+    elif lvl == 1 and tag == 'NAME':
+        alias = re.sub(r'/', '', html_mod.unescape(val))
+        alias = re.sub(r'\s+', ' ', alias).strip()
+        n = state['secondary_name_n']
+        evt = {'tag': 'FACT', 'type': 'AKA', 'date': None, 'place': None,
+               'cause': None, 'addr': None, 'note': alias, 'inline_val': None,
+               'age': None, 'citations': [], '_name_record': True, '_name_occurrence': n}
+        state['secondary_name_n'] += 1
+        rec['events'].append(evt)
+        state['current_evt']  = evt
+        state['current_note'] = None
+
+    elif lvl == 1 and tag == 'SEX':
+        rec['sex'] = val
+        state['current_evt'] = state['current_note'] = None
+
+    elif lvl == 1 and tag in _EVENT_TAGS:
+        inline_type  = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
+        initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
+        evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None,
+               'cause': None, 'addr': None, 'note': initial_note,
+               'inline_val': val if val else None, 'age': None, 'citations': []}
+        rec['events'].append(evt)
+        state['current_evt']  = evt
+        state['current_note'] = None
+
+    elif lvl == 2 and current_evt is not None:
+        if tag == 'DATE':
+            current_evt['date'] = val
+            ym = _YEAR_RE.search(val)
+            if ym:
+                yr = ym.group(1)
+                if current_evt['tag'] == 'BIRT' and rec['birth_year'] is None:
+                    rec['birth_year'] = yr
+                elif current_evt['tag'] == 'DEAT' and rec['death_year'] is None:
+                    rec['death_year'] = yr
+        elif tag == 'PLAC':
+            current_evt['place'] = html_mod.unescape(val)
+        elif tag == 'TYPE':
+            current_evt['type'] = html_mod.unescape(val)
+        elif tag == 'CAUS':
+            current_evt['cause'] = html_mod.unescape(val)
+        elif tag == 'ADDR':
+            current_evt['addr'] = html_mod.unescape(val)
+        elif tag == 'NOTE':
+            current_evt['note'] = _ged_val(val)
+            state['current_note'] = 'event'
+        elif tag == 'AGE':
+            current_evt['age'] = val
+        elif tag == 'SOUR' and val.startswith('@'):
+            current_evt['citations'].append({'sour_xref': val, 'page': None})
+
+    elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['page'] = val
+
+    elif lvl in (3, 4) and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
+        if not current_evt['citations'][-1].get('url'):
+            current_evt['citations'][-1]['url'] = val
+
+    elif lvl == 3 and tag in ('CONT', 'CONC') and current_note == 'event':
+        sep = '\n' if tag == 'CONT' else ''
+        current_evt['note'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
+
+    elif lvl == 1 and tag == 'NOTE':
+        raw = _ged_val(val) if val else ''
+        note_idx = len(rec['notes'])
+        if val and val.startswith('@'):
+            note_xref = val.rstrip()
+            entry = state.get('shared_notes', {}).get(note_xref, {'text': raw, 'citations': []})
+            note_obj = {'text': entry['text'], 'shared': True, 'note_xref': note_xref,
+                        'citations': list(entry['citations']), 'note_idx': note_idx}
+            state['current_note'] = None
+        else:
+            note_obj = {'text': raw, 'shared': False, 'note_xref': None,
+                        'citations': [], 'note_idx': note_idx}
+            state['current_note'] = note_idx
+        rec['notes'].append(note_obj)
+        state['current_evt'] = None
+
+    elif lvl == 2 and tag in ('CONT', 'CONC') and isinstance(current_note, int):
+        sep = '\n' if tag == 'CONT' else ''
+        rec['notes'][current_note]['text'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
+
+    elif lvl == 2 and tag == 'SOUR' and isinstance(current_note, int) and val.startswith('@'):
+        rec['notes'][current_note]['citations'].append({'sour_xref': val, 'page': None})
+
+    elif lvl == 3 and tag == 'PAGE' and isinstance(current_note, int):
+        cites = rec['notes'][current_note].get('citations')
+        if cites:
+            cites[-1]['page'] = val
+
+    elif lvl == 1 and tag == 'FAMC' and rec['famc'] is None:
+        rec['famc'] = val
+        state['current_evt'] = state['current_note'] = None
+
+    elif lvl == 1 and tag == 'FAMS':
+        rec['fams'].append(val)
+        state['current_evt'] = state['current_note'] = None
+
+    elif lvl == 1 and tag == 'SOUR' and val.startswith('@'):
+        if val not in rec['source_xrefs']:
+            rec['source_xrefs'].append(val)
+        cite_entry = {'sour_xref': val, 'page': None, 'text': None, 'note': None, 'url': None}
+        rec['source_citations'].append(cite_entry)
+        state['current_person_cite'] = cite_entry
+        state['current_sour_xref']   = val
+        state['current_cite_field']  = None
+        state['current_evt'] = state['current_note'] = None
+
+    elif lvl == 1 and tag == 'ASSO' and val.startswith('@'):
+        state['current_asso'] = {'xref': val, 'rela': None}
+        rec['asso'].append(state['current_asso'])
+        state['current_evt'] = state['current_note'] = None
+
+    elif lvl == 2 and tag == 'RELA' and current_asso is not None:
+        current_asso['rela'] = html_mod.unescape(val)
+
+    elif lvl == 2 and tag == 'PAGE' and current_person_cite is not None:
+        current_person_cite['page'] = val
+
+    elif lvl == 2 and tag == 'NOTE' and current_person_cite is not None:
+        current_person_cite['note'] = _ged_val(val)
+        state['current_cite_field'] = 'note'
+
+    elif lvl == 2 and tag == 'WWW' and current_person_cite is not None:
+        if current_person_cite.get('url') is None:
+            current_person_cite['url'] = val
+
+    elif lvl == 3 and tag == 'TEXT' and current_person_cite is not None:
+        current_person_cite['text'] = _ged_val(val)
+        state['current_cite_field'] = 'text'
+
+    elif lvl == 4 and tag in ('CONT', 'CONC') and current_person_cite is not None and state['current_cite_field'] == 'text':
+        sep = '\n' if tag == 'CONT' else ''
+        current_person_cite['text'] = (current_person_cite['text'] or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
+
+    elif lvl == 3 and tag in ('CONT', 'CONC') and current_person_cite is not None and state['current_cite_field'] == 'note':
+        sep = '\n' if tag == 'CONT' else ''
+        current_person_cite['note'] = (current_person_cite['note'] or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
+
+    elif lvl == 3 and tag == 'WWW' and state['current_sour_xref'] is not None:
+        sxref = state['current_sour_xref']
+        if sxref not in rec['source_urls']:
+            rec['source_urls'][sxref] = val
+        if current_person_cite is not None and current_person_cite.get('url') is None:
+            current_person_cite['url'] = val
+
+    elif lvl == 1:
+        state['current_evt'] = state['current_note'] = None
+
+
 def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     """
-    Returns (indis, fams).
+    Returns (indis, fams, sources).
       indis: {xref: {name, birth_year, death_year, famc, sex, events, notes}}
         events: list of {tag, type, date, place}
-        notes:  list of str (CONT lines joined with \\n)
-      fams:  {xref: {'husb': str|None, 'wife': str|None}}
+        notes:  list of str (CONT lines joined with \n)
+      fams:  {xref: {husb, wife, chil, marrs, divs}}
     """
     with open(path, encoding='utf-8') as f:
         lines = [ln.rstrip('\n') for ln in f]
 
     shared_notes = _collect_shared_notes(lines)
 
-    indis: dict  = {}
-    fams: dict   = {}
-    sources: dict = {}   # xref -> title
-    ctx                = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
-    current_evt        = None   # current event dict being built
-    current_note       = None   # index into notes[] for CONT assembly
-    current_sour_xref  = None   # xref of the 1 SOUR citation currently being parsed
-    current_person_cite = None  # dict for the current person-level SOUR citation
-    current_cite_field  = None  # 'text' or 'note' — which field CONT/CONC lines belong to
-    current_asso       = None   # dict being built for an in-progress 1 ASSO block
-    secondary_name_n   = 0      # counter for secondary NAME records within current INDI
+    indis: dict   = {}
+    fams: dict    = {}
+    sources: dict = {}
+    ctx       = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
+    indi_st   = {}     # state dict passed to _parse_indi_line
+    fam_st    = {}     # state dict passed to _parse_fam_line
 
     for line in lines:
         m = _INDI_RE.match(line)
@@ -114,40 +331,35 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             indis[xref] = {
                 'name': None, 'birth_year': None, 'death_year': None,
-                'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [], 'source_urls': {},
-                'source_citations': [],
-                'asso': [],
+                'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [],
+                'source_xrefs': [], 'source_urls': {}, 'source_citations': [], 'asso': [],
             }
-            ctx                 = ('indi', xref)
-            current_evt         = None
-            current_note        = None
-            current_person_cite = None
-            current_cite_field  = None
-            secondary_name_n    = 0
+            ctx     = ('indi', xref)
+            indi_st = {
+                'current_evt': None, 'current_note': None,
+                'current_sour_xref': None, 'current_person_cite': None,
+                'current_cite_field': None, 'current_asso': None,
+                'secondary_name_n': 0, 'shared_notes': shared_notes,
+            }
             continue
 
         m = _FAM_RE.match(line)
         if m:
             xref = m.group(1)
             fams[xref] = {'husb': None, 'wife': None, 'chil': []}
-            ctx          = ('fam', xref)
-            current_evt  = None
-            current_note = None
+            ctx    = ('fam', xref)
+            fam_st = {'current_evt': None}
             continue
 
         m = _SOUR_RE.match(line)
         if m:
             xref = m.group(1)
             sources[xref] = {'titl': None, 'auth': None, 'publ': None, 'repo': None, 'note': None}
-            ctx          = ('sour', xref)
-            current_evt  = None
-            current_note = None
+            ctx = ('sour', xref)
             continue
 
         if line.startswith('0 '):
-            ctx          = None
-            current_evt  = None
-            current_note = None
+            ctx = None
             continue
 
         if ctx is None:
@@ -156,213 +368,20 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
         tm = _TAG_RE.match(line)
         if not tm:
             continue
-        lvl = int(tm.group(1))
-        tag = tm.group(2)
+        lvl     = int(tm.group(1))
+        tag     = tm.group(2)
         raw_val = tm.group(3) or ''
-        val = raw_val.strip()
+        val     = raw_val.strip()
 
         if ctx[0] == 'indi':
-            xref = ctx[1]
-            if lvl == 1 and tag != 'SOUR':
-                current_sour_xref   = None
-                current_person_cite = None
-                current_cite_field  = None
-            if lvl == 1 and tag != 'ASSO':
-                current_asso = None
-            if lvl == 1 and tag == 'NAME' and indis[xref]['name'] is None:
-                name = re.sub(r'/', '', html_mod.unescape(val))
-                name = re.sub(r'\s+', ' ', name).strip()
-                indis[xref]['name'] = name
-                current_evt = current_note = None
-            elif lvl == 1 and tag == 'NAME' and indis[xref]['name'] is not None:
-                # Secondary NAME record — treat as an AKA alias (FACT/AKA)
-                alias = re.sub(r'/', '', html_mod.unescape(val))
-                alias = re.sub(r'\s+', ' ', alias).strip()
-                evt = {'tag': 'FACT', 'type': 'AKA', 'date': None, 'place': None,
-                       'cause': None, 'addr': None, 'note': alias, 'inline_val': None,
-                       'age': None, 'citations': [], '_name_record': True, '_name_occurrence': secondary_name_n}
-                secondary_name_n += 1
-                indis[xref]['events'].append(evt)
-                current_evt  = evt
-                current_note = None
-            elif lvl == 1 and tag == 'SEX':
-                indis[xref]['sex'] = val
-                current_evt = current_note = None
-            elif lvl == 1 and tag in _EVENT_TAGS:
-                # For tags where the inline value IS the semantic type (e.g. "1 OCCU Consul",
-                # "1 TITL Knight", "1 NATI French"), seed type from it.  A later 2 TYPE sub-tag
-                # will override.  EVEN/FACT carry no inline value and use 2 TYPE exclusively.
-                _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC', 'NCHI', 'DSCR'})
-                inline_type = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
-                initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
-                evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None, 'cause': None, 'addr': None, 'note': initial_note, 'inline_val': val if val else None, 'age': None, 'citations': []}
-                indis[xref]['events'].append(evt)
-                current_evt  = evt
-                current_note = None
-            elif lvl == 2 and current_evt is not None:
-                if tag == 'DATE':
-                    current_evt['date'] = val
-                    ym = _YEAR_RE.search(val)
-                    if ym:
-                        yr = ym.group(1)
-                        if current_evt['tag'] == 'BIRT' and indis[xref]['birth_year'] is None:
-                            indis[xref]['birth_year'] = yr
-                        elif current_evt['tag'] == 'DEAT' and indis[xref]['death_year'] is None:
-                            indis[xref]['death_year'] = yr
-                elif tag == 'PLAC':
-                    current_evt['place'] = html_mod.unescape(val)
-                elif tag == 'TYPE':
-                    current_evt['type'] = html_mod.unescape(val)
-                elif tag == 'CAUS':
-                    current_evt['cause'] = html_mod.unescape(val)
-                elif tag == 'ADDR':
-                    current_evt['addr'] = html_mod.unescape(val)
-                elif tag == 'NOTE':
-                    current_evt['note'] = _ged_val(val)
-                    current_note = 'event'   # sentinel: subsequent CONT/CONC at lvl 3 belong here
-                elif tag == 'AGE':
-                    current_evt['age'] = val
-                elif tag == 'SOUR' and val.startswith('@'):
-                    current_evt['citations'].append({'sour_xref': val, 'page': None})
-            elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
-                current_evt['citations'][-1]['page'] = val
-            elif lvl == 3 and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
-                if not current_evt['citations'][-1].get('url'):
-                    current_evt['citations'][-1]['url'] = val
-            elif lvl == 4 and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
-                if not current_evt['citations'][-1].get('url'):
-                    current_evt['citations'][-1]['url'] = val
-            elif lvl == 3 and tag in ('CONT', 'CONC') and current_note == 'event':
-                sep = '\n' if tag == 'CONT' else ''
-                current_evt['note'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
-            elif lvl == 1 and tag == 'NOTE':
-                raw = _ged_val(val) if val else ''
-                note_idx = len(indis[xref]['notes'])
-                if val and val.startswith('@'):
-                    note_xref = val.rstrip()
-                    entry = shared_notes.get(note_xref, {'text': raw, 'citations': []})
-                    note_obj = {'text': entry['text'], 'shared': True, 'note_xref': note_xref,
-                                'citations': list(entry['citations']), 'note_idx': note_idx}
-                    current_note = None  # shared note: CONT/CONC belong to top-level record, not here
-                else:
-                    note_obj = {'text': raw, 'shared': False, 'note_xref': None,
-                                'citations': [], 'note_idx': note_idx}
-                    current_note = note_idx
-                indis[xref]['notes'].append(note_obj)
-                current_evt  = None
-            elif lvl == 2 and tag in ('CONT', 'CONC') and isinstance(current_note, int):
-                sep = '\n' if tag == 'CONT' else ''
-                indis[xref]['notes'][current_note]['text'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
-            elif lvl == 2 and tag == 'SOUR' and isinstance(current_note, int) and val.startswith('@'):
-                indis[xref]['notes'][current_note]['citations'].append({'sour_xref': val, 'page': None})
-            elif lvl == 3 and tag == 'PAGE' and isinstance(current_note, int):
-                cites = indis[xref]['notes'][current_note].get('citations')
-                if cites:
-                    cites[-1]['page'] = val
-            elif lvl == 1 and tag == 'FAMC' and indis[xref]['famc'] is None:
-                indis[xref]['famc'] = val
-                current_evt = current_note = None
-            elif lvl == 1 and tag == 'FAMS':
-                indis[xref]['fams'].append(val)
-                current_evt = current_note = None
-            elif lvl == 1 and tag == 'SOUR' and val.startswith('@'):
-                if val not in indis[xref]['source_xrefs']:
-                    indis[xref]['source_xrefs'].append(val)
-                cite_entry = {'sour_xref': val, 'page': None, 'text': None, 'note': None, 'url': None}
-                indis[xref]['source_citations'].append(cite_entry)
-                current_person_cite = cite_entry
-                current_sour_xref   = val
-                current_cite_field  = None
-                current_evt = current_note = None
-            elif lvl == 1 and tag == 'ASSO' and val.startswith('@'):
-                current_asso = {'xref': val, 'rela': None}
-                indis[xref]['asso'].append(current_asso)
-                current_evt = current_note = None
-            elif lvl == 2 and tag == 'RELA' and current_asso is not None:
-                current_asso['rela'] = html_mod.unescape(val)
-            elif lvl == 2 and tag == 'PAGE' and current_person_cite is not None:
-                current_person_cite['page'] = val
-            elif lvl == 2 and tag == 'NOTE' and current_person_cite is not None:
-                current_person_cite['note'] = _ged_val(val)
-                current_cite_field = 'note'
-            elif lvl == 2 and tag == 'WWW' and current_person_cite is not None:
-                if current_person_cite.get('url') is None:
-                    current_person_cite['url'] = val
-            elif lvl == 3 and tag == 'TEXT' and current_person_cite is not None:
-                current_person_cite['text'] = _ged_val(val)
-                current_cite_field = 'text'
-            elif lvl == 4 and tag in ('CONT', 'CONC') and current_person_cite is not None and current_cite_field == 'text':
-                sep = '\n' if tag == 'CONT' else ''
-                current_person_cite['text'] = (current_person_cite['text'] or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
-            elif lvl == 3 and tag in ('CONT', 'CONC') and current_person_cite is not None and current_cite_field == 'note':
-                sep = '\n' if tag == 'CONT' else ''
-                current_person_cite['note'] = (current_person_cite['note'] or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
-            elif lvl == 3 and tag == 'WWW' and current_sour_xref is not None:
-                if current_sour_xref not in indis[xref]['source_urls']:
-                    indis[xref]['source_urls'][current_sour_xref] = val
-                if current_person_cite is not None and current_person_cite.get('url') is None:
-                    current_person_cite['url'] = val
-            elif lvl == 1:
-                current_evt = current_note = None
-
+            _parse_indi_line(indi_st, lvl, tag, val, raw_val, indis[ctx[1]])
         elif ctx[0] == 'fam':
-            xref = ctx[1]
-            if lvl == 1 and tag == 'HUSB':
-                fams[xref]['husb'] = val
-                current_evt = None
-            elif lvl == 1 and tag == 'WIFE':
-                fams[xref]['wife'] = val
-                current_evt = None
-            elif lvl == 1 and tag == 'CHIL':
-                fams[xref]['chil'].append(val)
-                current_evt = None
-            elif lvl == 1 and tag == 'MARR':
-                # Always start a fresh event dict for each 1 MARR block so that
-                # multiple ceremonies (e.g. civil + religious) are all captured.
-                # Empty entries (bare duplicate "1 MARR" lines from a merge with no
-                # sub-tags) are filtered out in build_people_json.
-                evt = {'tag': 'MARR', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None, 'citations': []}
-                fams[xref].setdefault('marrs', []).append(evt)
-                current_evt = evt
-            elif lvl == 1 and tag == 'DIV':
-                evt = {'tag': 'DIV', 'type': None, 'date': None, 'place': None, 'note': None, 'age': None, 'addr': None, 'citations': []}
-                fams[xref].setdefault('divs', []).append(evt)
-                current_evt = evt
-            elif lvl == 2 and current_evt is not None:
-                if tag == 'DATE':
-                    current_evt['date'] = val
-                elif tag == 'PLAC':
-                    current_evt['place'] = val
-                elif tag == 'ADDR':
-                    current_evt['addr'] = val
-                elif tag == 'NOTE':
-                    current_evt['note'] = val
-                elif tag == 'SOUR' and val.startswith('@'):
-                    current_evt['citations'].append({'sour_xref': val, 'page': None})
-            elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
-                current_evt['citations'][-1]['page'] = val
-            elif lvl == 3 and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
-                if not current_evt['citations'][-1].get('url'):
-                    current_evt['citations'][-1]['url'] = val
-            elif lvl == 4 and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
-                if not current_evt['citations'][-1].get('url'):
-                    current_evt['citations'][-1]['url'] = val
-            elif lvl == 1:
-                current_evt = None
-
+            _parse_fam_line(fam_st, lvl, tag, val, raw_val, fams[ctx[1]])
         elif ctx[0] == 'sour':
-            xref = ctx[1]
-            if lvl == 1 and tag in ('TITL', 'AUTH', 'PUBL', 'NOTE'):
-                sources[xref][tag.lower()] = val
-            elif lvl == 1 and tag == 'REPO':
-                sources[xref]['repo'] = val
+            _parse_sour_line(lvl, tag, val, sources[ctx[1]])
 
     return indis, fams, sources
 
-
-# ---------------------------------------------------------------------------
-# Ancestor graph
-# ---------------------------------------------------------------------------
 
 def get_parents(xref: str, indis: dict, fams: dict) -> tuple[str | None, str | None]:
     """Return (father_xref, mother_xref) or (None, None) if unknown."""
