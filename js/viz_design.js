@@ -24,6 +24,7 @@ var DESIGN = {
   ROW_HEIGHT:   116,  // vertical distance between generation rows (gap stays 52px)
   H_GAP:        12,   // gap between sibling nodes
   MARRIAGE_GAP: 60,   // gap between last sibling and spouse
+  FAMILY_GAP:   40,   // padding between two separate family subtrees at depth >= 1
   NODE_RADIUS:  4,    // border-radius for nodes
 };
 
