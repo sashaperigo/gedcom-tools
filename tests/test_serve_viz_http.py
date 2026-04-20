@@ -948,6 +948,40 @@ class TestAddCitationEndpoint:
             for c in birt_events[0].get('citations', [])
         ), 'new citation must appear in refreshed BIRT.citations'
 
+    def test_empty_citation_writes_only_sour_line(self, live_server):
+        """Citation with no page/text/note/url must write just a bare SOUR line."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': '', 'text': '', 'note': '', 'url': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert f'2 SOUR {sour_xref}' in text
+        # No sub-tags written for empty fields
+        lines = text.splitlines()
+        sour_idx = next(i for i, l in enumerate(lines) if l.strip() == f'2 SOUR {sour_xref}')
+        next_line = lines[sour_idx + 1] if sour_idx + 1 < len(lines) else ''
+        assert not next_line.startswith('3 PAGE'), 'no PAGE sub-tag for empty page'
+        assert not next_line.startswith('3 DATA'), 'no DATA sub-tag when text and url are empty'
+
+    def test_long_text_is_chunked_into_conc_lines(self, live_server):
+        """TEXT fields exceeding 248 chars must be split into CONC continuation lines."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        long_text = 'A' * 200 + ' ' + 'B' * 200  # 401 chars, split at space
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': '', 'text': long_text, 'note': '',
+        })
+        text = _ged_text(ged)
+        assert '4 TEXT ' in text, 'TEXT line must be written'
+        assert '5 CONC ' in text, 'long line must produce CONC continuation'
+        # No single physical line should exceed 255 chars (level+space+tag+space+value)
+        for line in text.splitlines():
+            assert len(line) <= 255, f'physical line too long ({len(line)}): {line[:60]}...'
+
     def test_add_citation_with_url_writes_www_under_data(self, live_server):
         ged, post, _, _ = live_server
         sour_xref = self._add_source(post)
@@ -1056,6 +1090,70 @@ class TestEditCitationEndpoint:
         assert any(c.get('page') == 'p. 99' for c in birt_events[0].get('citations', [])), \
             'updated page must appear in refreshed BIRT.citations'
 
+    def test_edit_second_citation_not_first(self, live_server):
+        """Editing citation index 1 must not corrupt citation index 0."""
+        ged, post, _, _ = live_server
+        sour_xref = self._setup_citation(post)  # adds citation 0 with page 'p. 1'
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 2', 'text': '', 'note': '',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:1',
+            'page': 'p. 99', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '3 PAGE p. 1' in text,  'citation 0 must be untouched'
+        assert '3 PAGE p. 99' in text, 'citation 1 must be updated'
+        assert '3 PAGE p. 2' not in text
+
+    def test_edit_shrinks_multiline_text(self, live_server):
+        """Editing a citation that had multi-line TEXT down to one line must not
+        leave orphan CONT lines behind."""
+        ged, post, _, _ = live_server
+        sour_xref = self._setup_citation(post)
+        post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 1', 'text': 'First\nSecond\nThird', 'note': '',
+        })
+        assert '5 CONT Second' in _ged_text(ged)  # confirm CONT lines were written
+        post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 1', 'text': 'Just one line', 'note': '',
+        })
+        text = _ged_text(ged)
+        assert '4 TEXT Just one line' in text
+        assert '5 CONT Second' not in text, 'orphan CONT must be removed after edit'
+        assert '5 CONT Third' not in text
+
+    def test_out_of_bounds_citation_key_returns_400(self, live_server):
+        """Editing a citation index that does not exist must return HTTP 400."""
+        import urllib.error
+        ged, post, _, _ = live_server
+        self._setup_citation(post)  # only BIRT:0:0 exists
+        try:
+            post('/api/edit_citation', {
+                'xref': '@I1@', 'citation_key': 'BIRT:0:5',
+                'page': 'p. 99', 'text': '', 'note': '',
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_malformed_citation_key_returns_400(self, live_server):
+        """A citation_key with the wrong number of parts must return HTTP 400."""
+        import urllib.error
+        ged, post, _, _ = live_server
+        try:
+            post('/api/edit_citation', {
+                'xref': '@I1@', 'citation_key': 'BIRT:0',  # missing cite_n
+                'page': 'p. 1', 'text': '', 'note': '',
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
 
 # ===========================================================================
 # /api/delete_citation
@@ -1136,6 +1234,47 @@ class TestDeleteCitationEndpoint:
             (c.get('sourceXref') == sour_xref) or (c.get('sour_xref') == sour_xref)
             for c in birt.get('citations', [])
         ), 'deleted citation must not be in refreshed BIRT.citations'
+
+    def test_delete_middle_citation_leaves_others_intact(self, live_server):
+        """Delete citation #1 of 3; citations #0 and (former #2, now #1) survive."""
+        ged, post, _, _ = live_server
+        sour_xref = post('/api/add_source', {
+            'titl': 'S', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+        for page in ('p.A', 'p.B', 'p.C'):
+            post('/api/add_citation', {
+                'xref': '@I1@', 'sour_xref': sour_xref,
+                'fact_key': 'BIRT:0', 'page': page, 'text': '', 'note': '',
+            })
+        # Delete the middle citation (index 1)
+        resp = post('/api/delete_citation', {'xref': '@I1@', 'citation_key': 'BIRT:0:1'})
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '3 PAGE p.A' in text, 'first citation must survive'
+        assert '3 PAGE p.B' not in text, 'deleted citation must be gone'
+        assert '3 PAGE p.C' in text, 'third citation must survive'
+
+    def test_delete_middle_then_edit_new_index(self, live_server):
+        """After deleting citation #1, the former #2 becomes #1 and is still editable."""
+        ged, post, _, _ = live_server
+        sour_xref = post('/api/add_source', {
+            'titl': 'S', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+        for page in ('p.A', 'p.B', 'p.C'):
+            post('/api/add_citation', {
+                'xref': '@I1@', 'sour_xref': sour_xref,
+                'fact_key': 'BIRT:0', 'page': page, 'text': '', 'note': '',
+            })
+        post('/api/delete_citation', {'xref': '@I1@', 'citation_key': 'BIRT:0:1'})
+        # Former p.C is now at index 1
+        resp = post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:1',
+            'page': 'p.C-edited', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '3 PAGE p.C-edited' in text
+        assert '3 PAGE p.C' not in text or 'p.C-edited' in text  # old value gone
 
 
 # ===========================================================================
