@@ -21,3 +21,6 @@ merge-report.txt
 
 # Node.js
 node_modules/
+
+# Superpowers brainstorm session files
+.superpowers/

@@ -4,6 +4,7 @@ let _state = {
   focusXref:             null,
   expandedNodes:         new Set(),
   expandedSiblingsXrefs: new Set(),
+  expandedChildrenFams:  new Set(),
   panelOpen:             false,
   panelXref:             null,
 };
@@ -39,6 +40,11 @@ function _xrefToToken(xref) {
 function _tokenToXref(token) {
   // '6GRCj0Y' → '@I380071267816@'
   return '@I' + _fromBase62(token) + '@';
+}
+
+function _tokenToFamXref(token) {
+  // '6GRCj0Y' → '@F380071267816@'
+  return '@F' + _fromBase62(token) + '@';
 }
 
 // ── URL helpers ───────────────────────────────────────────────────────────
@@ -91,6 +97,16 @@ function _siblingsFromParam(search) {
   return _setFromParam(search, 's');
 }
 
+function _childrenFamsToParam(expandedChildrenFams) {
+  return _setToParam(expandedChildrenFams);
+}
+
+function _childrenFamsFromParam(search) {
+  const raw = _getRawParam(search, 'c');
+  if (!raw) return new Set();
+  return new Set(raw.split('+').filter(Boolean).map(_tokenToFamXref));
+}
+
 function _xrefFromUrl(search) {
   const params = new URLSearchParams(search);
   const p = params.get('p');
@@ -100,40 +116,43 @@ function _xrefFromUrl(search) {
   return null;
 }
 
-function _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs) {
+function _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams) {
   if (!focusXref) return '';
   const token = _xrefToToken(focusXref);
   const expandedParam = _expandedToParam(expandedNodes);
   const siblingsParam = _siblingsToParam(expandedSiblingsXrefs);
+  const childrenParam = _childrenFamsToParam(expandedChildrenFams);
   let url = '?p=' + token;
   if (expandedParam) url += '&e=' + expandedParam;
   if (siblingsParam) url += '&s=' + siblingsParam;
+  if (childrenParam) url += '&c=' + childrenParam;
   return url;
 }
 
-function _historyState(focusXref, expandedNodes, expandedSiblingsXrefs) {
+function _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams) {
   return {
     focusXref,
-    expandedXrefs: _expandedToParam(expandedNodes),
-    siblingsXrefs: _siblingsToParam(expandedSiblingsXrefs),
+    expandedXrefs:      _expandedToParam(expandedNodes),
+    siblingsXrefs:      _siblingsToParam(expandedSiblingsXrefs),
+    childrenFamsXrefs:  _childrenFamsToParam(expandedChildrenFams),
   };
 }
 
-function _pushHistory(focusXref, expandedNodes, expandedSiblingsXrefs) {
+function _pushHistory(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams) {
   if (typeof history === 'undefined') return;
   history.pushState(
-    _historyState(focusXref, expandedNodes, expandedSiblingsXrefs),
+    _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams),
     '',
-    _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs),
+    _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams),
   );
 }
 
-function _replaceHistory(focusXref, expandedNodes, expandedSiblingsXrefs) {
+function _replaceHistory(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams) {
   if (typeof history === 'undefined') return;
   history.replaceState(
-    _historyState(focusXref, expandedNodes, expandedSiblingsXrefs),
+    _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams),
     '',
-    _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs),
+    _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams),
   );
 }
 
@@ -151,11 +170,13 @@ function initState(rootXref) {
     expandedNodes         = _expandedFromParam(search);
     expandedSiblingsXrefs = _siblingsFromParam(search);
   }
+  const expandedChildrenFams = _childrenFamsFromParam(search);
 
   _state = {
     focusXref:             fromUrl || rootXref,
     expandedNodes,
     expandedSiblingsXrefs,
+    expandedChildrenFams,
     panelOpen:             false,
     panelXref:             null,
   };
@@ -192,11 +213,21 @@ function initState(rootXref) {
         newSiblings = _siblingsFromParam(locSearch);
       }
 
+      let newChildrenFams;
+      if (event.state && event.state.childrenFamsXrefs !== undefined) {
+        newChildrenFams = event.state.childrenFamsXrefs
+          ? new Set(event.state.childrenFamsXrefs.split('+').map(_tokenToFamXref))
+          : new Set();
+      } else {
+        newChildrenFams = _childrenFamsFromParam(locSearch);
+      }
+
       if (newXref) {
         _state = Object.assign({}, _state, {
           focusXref:             newXref,
           expandedNodes:         newExpanded,
           expandedSiblingsXrefs: newSiblings,
+          expandedChildrenFams:  newChildrenFams,
         });
         _callbacks.forEach(cb => cb(_state));
       }
@@ -208,16 +239,18 @@ function setState(updates) {
   const prevFocusXref = _state.focusXref;
   const prevExpanded = _state.expandedNodes;
   const prevSiblings = _state.expandedSiblingsXrefs;
+  const prevChildrenFams = _state.expandedChildrenFams;
   _state = Object.assign({}, _state, updates);
 
   const focusChanged    = 'focusXref' in updates && updates.focusXref !== prevFocusXref;
   const expandedChanged = 'expandedNodes' in updates && updates.expandedNodes !== prevExpanded;
   const siblingsChanged = 'expandedSiblingsXrefs' in updates && updates.expandedSiblingsXrefs !== prevSiblings;
+  const childrenFamsChanged = 'expandedChildrenFams' in updates && updates.expandedChildrenFams !== prevChildrenFams;
 
   if (focusChanged) {
-    _pushHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs);
-  } else if (expandedChanged || siblingsChanged) {
-    _replaceHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs);
+    _pushHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenFams);
+  } else if (expandedChanged || siblingsChanged || childrenFamsChanged) {
+    _replaceHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenFams);
   }
 
   _callbacks.forEach(cb => cb(_state));
@@ -240,8 +273,11 @@ if (typeof module !== 'undefined') module.exports = {
   _fromBase62,
   _xrefToToken,
   _tokenToXref,
+  _tokenToFamXref,
   _expandedToParam,
   _expandedFromParam,
   _siblingsToParam,
   _siblingsFromParam,
+  _childrenFamsToParam,
+  _childrenFamsFromParam,
 };
