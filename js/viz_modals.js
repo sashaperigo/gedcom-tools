@@ -1651,6 +1651,7 @@ if (typeof module !== 'undefined' && module.exports) {
     openSourcesModal, openNoteSourcesModal, openIndiSourcesModal, closeSourcesModal, _buildSourcesModalContent,
     deleteSourceFromModal,
     copyCitation, getCopiedCitation, clearCopiedCitation,
+    handleCitationPaste, handleCitationCopy,
     showEditNameModal, showAddNoteModal, showAddCitationModal,
     showEditCitationModal, submitEditCitationModal, showEditSourceModal, showAddGodparentModal,
     submitAddGodparentModal, _selectGodparent,

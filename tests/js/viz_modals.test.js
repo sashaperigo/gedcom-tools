@@ -1497,3 +1497,119 @@ describe('_buildSourcesModalContent — paste button visibility', () => {
     expect(html).toContain('Ellis Island Records');
   });
 });
+
+// ── handleCitationPaste — UI refresh after paste ──────────────────────────
+
+describe('handleCitationPaste — refreshes modal and panel after paste', () => {
+  function makeFakeElement(id) {
+    return {
+      id, textContent: '', innerHTML: '',
+      classList: {
+        _classes: new Set(),
+        add(c)    { this._classes.add(c); },
+        remove(c) { this._classes.delete(c); },
+        contains(c) { return this._classes.has(c); },
+      },
+    };
+  }
+
+  let overlay, title, list;
+
+  beforeEach(() => {
+    overlay = makeFakeElement('sources-modal-overlay');
+    title   = makeFakeElement('sources-modal-title');
+    list    = makeFakeElement('sources-modal-list');
+    global.document = {
+      getElementById(id) {
+        if (id === 'sources-modal-overlay') return overlay;
+        if (id === 'sources-modal-title')   return title;
+        if (id === 'sources-modal-list')    return list;
+        return null;
+      },
+      addEventListener: () => {},
+    };
+    global.PEOPLE = {
+      '@I1@': {
+        name: 'Rose Smith',
+        sources: [],
+        events: [
+          { tag: 'BIRT', date: '1900', type: null, citations: [], event_idx: 0 },
+        ],
+        notes: [],
+      },
+    };
+    global.SOURCES = { '@S1@': { titl: 'Ellis Island Records' } };
+    global.EVENT_LABELS = { BIRT: 'Birth' };
+    const mods = require('../../js/viz_modals.js');
+    mods.clearCopiedCitation();
+  });
+
+  it('updates the modal list HTML to include the newly-pasted source (INDI-level)', async () => {
+    const {
+      openIndiSourcesModal, copyCitation, handleCitationPaste,
+    } = require('../../js/viz_modals.js');
+
+    copyCitation(
+      { sourceXref: '@S1@', page: '7', text: '', note: '', url: null },
+      'Ellis Island Records p. 7'
+    );
+
+    global.apiAddCitation = async (xref /*...*/) => {
+      return {
+        ok: true,
+        people: {
+          [xref]: {
+            name: 'Rose Smith',
+            sources: [
+              { sourceXref: '@S1@', citationKey: 'SOUR:0', page: '7', text: '', note: '', title: 'Ellis Island Records', url: null },
+            ],
+            events: PEOPLE[xref].events,
+            notes: [],
+          },
+        },
+      };
+    };
+
+    openIndiSourcesModal('@I1@');
+    expect(list.innerHTML).toContain('No sources recorded');
+
+    await handleCitationPaste('@I1@', 'null');
+
+    expect(list.innerHTML).toContain('Ellis Island Records');
+    expect(list.innerHTML).not.toContain('No sources recorded');
+  });
+
+  it('updates the modal list HTML for an event-level paste', async () => {
+    const {
+      openSourcesModal, copyCitation, handleCitationPaste,
+    } = require('../../js/viz_modals.js');
+
+    copyCitation(
+      { sourceXref: '@S1@', page: '12', text: '', note: '', url: null },
+      'Ellis Island Records p. 12'
+    );
+
+    global.apiAddCitation = async (xref) => ({
+      ok: true,
+      people: {
+        [xref]: {
+          name: 'Rose Smith',
+          sources: [],
+          events: [
+            { tag: 'BIRT', date: '1900', type: null, event_idx: 0,
+              citations: [{ sourceXref: '@S1@', page: '12', text: '', note: '' }] },
+          ],
+          notes: [],
+        },
+      },
+    });
+
+    openSourcesModal('@I1@', 0);
+    expect(list.innerHTML).toContain('No sources recorded');
+
+    await handleCitationPaste('@I1@', 'BIRT:0');
+
+    expect(list.innerHTML).toContain('Ellis Island Records');
+    expect(list.innerHTML).not.toContain('No sources recorded');
+  });
+});

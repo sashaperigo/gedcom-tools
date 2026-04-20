@@ -1064,3 +1064,33 @@ describe('convertEventTag', () => {
     expect(global.alert).toHaveBeenCalledWith(expect.stringContaining('Conversion failed'));
   });
 });
+
+// ── _buildGodparentPillsHtml — onclick attribute is well-formed ──────────
+
+describe('_buildGodparentPillsHtml', () => {
+  const { _buildGodparentPillsHtml } = require('../../js/viz_panel.js');
+
+  beforeEach(() => {
+    global.PEOPLE = {
+      '@I5@': { name: 'Maria Godmother', sex: 'F' },
+    };
+  });
+
+  it('escapes double-quotes in the onclick attribute so the pill is clickable', () => {
+    const evt = {
+      tag: 'BAPM',
+      asso: [{ xref: '@I5@', rela: 'Godmother' }],
+    };
+    const html = _buildGodparentPillsHtml(evt, '@I1@', '&quot;@I1@&quot;');
+
+    // The onclick attribute uses double quotes; embedded string literals must
+    // be HTML-escaped (&quot;) — otherwise the browser closes the attribute
+    // early and the click handler never fires.
+    const onclickMatch = html.match(/onclick="([^"]*)"/);
+    expect(onclickMatch).not.toBeNull();
+    // The actual asso.xref should NOT appear as a raw double-quoted string
+    // inside the attribute value; it must be &quot;-escaped.
+    expect(html).not.toMatch(/onclick="[^"]*"@I5@"/);
+    expect(html).toMatch(/onclick="[^"]*&quot;@I5@&quot;/);
+  });
+});

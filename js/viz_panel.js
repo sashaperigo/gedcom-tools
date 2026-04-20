@@ -263,7 +263,7 @@ function _buildGodparentPillsHtml(evt, xref, xrefQ) {
   for (const asso of assoArr) {
     const gp     = (typeof PEOPLE !== 'undefined') && PEOPLE[asso.xref];
     const gpName = gp ? escHtml(gp.name) : escHtml(asso.xref);
-    const xrefJs = JSON.stringify(asso.xref);
+    const xrefJs = JSON.stringify(asso.xref).replace(/"/g, '&quot;');
     const roleSuffix = (asso.rela === 'Godfather' || asso.rela === 'Godmother')
       ? ` <span class="panel-godparent-role">(${asso.rela === 'Godfather' ? '\u2642' : '\u2640'})</span>`
       : '';
@@ -819,7 +819,7 @@ if (typeof module !== 'undefined') {
     collapseResidences,
     buildSourceBadgeHtml,
     buildNoteSourceBadgeHtml,
-    _handleGodparentClick,
+    _handleGodparentClick, _buildGodparentPillsHtml,
     convertEventTag,
   };
 }
