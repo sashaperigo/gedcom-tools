@@ -556,6 +556,52 @@ class TestIndiSourceCitationParsing:
 """))
         assert indis['@I1@']['source_citations'] == []
 
+    def test_person_level_sour_text_multiline_cont(self, tmp_path):
+        """4 CONT lines after 3 TEXT are joined with newlines into cite['text']."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Death Record
+0 @I1@ INDI
+1 NAME Antonio /Malamo/
+1 SOUR @S1@
+2 DATA
+3 TEXT Name    Antonio V Malamo
+4 CONT Age     45
+4 CONT Cause   Heart failure
+"""))
+        text = indis['@I1@']['source_citations'][0]['text']
+        assert text == 'Name    Antonio V Malamo\nAge     45\nCause   Heart failure'
+
+    def test_person_level_sour_text_conc_no_newline(self, tmp_path):
+        """4 CONC lines are concatenated without a newline (long-line wrapping)."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Register
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 SOUR @S1@
+2 DATA
+3 TEXT This is a very long line that was split
+4 CONC  by CONC for line-length reasons
+"""))
+        text = indis['@I1@']['source_citations'][0]['text']
+        assert text == 'This is a very long line that was split by CONC for line-length reasons'
+
+    def test_person_level_sour_note_multiline_cont(self, tmp_path):
+        """3 CONT lines after 2 NOTE are joined with newlines into cite['note']."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+2 NOTE First line of note
+3 CONT Second line of note
+3 CONT Third line of note
+"""))
+        note = indis['@I1@']['source_citations'][0]['note']
+        assert note == 'First line of note\nSecond line of note\nThird line of note'
+
 
 class TestBuildPeopleJsonIndiCitations:
 

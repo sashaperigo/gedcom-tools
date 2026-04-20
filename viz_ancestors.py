@@ -103,6 +103,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     current_note       = None   # index into notes[] for CONT assembly
     current_sour_xref  = None   # xref of the 1 SOUR citation currently being parsed
     current_person_cite = None  # dict for the current person-level SOUR citation
+    current_cite_field  = None  # 'text' or 'note' — which field CONT/CONC lines belong to
     current_asso       = None   # dict being built for an in-progress 1 ASSO block
     secondary_name_n   = 0      # counter for secondary NAME records within current INDI
 
@@ -120,6 +121,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             current_evt         = None
             current_note        = None
             current_person_cite = None
+            current_cite_field  = None
             secondary_name_n    = 0
             continue
 
@@ -163,6 +165,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             if lvl == 1 and tag != 'SOUR':
                 current_sour_xref   = None
                 current_person_cite = None
+                current_cite_field  = None
             if lvl == 1 and tag != 'ASSO':
                 current_asso = None
             if lvl == 1 and tag == 'NAME' and indis[xref]['name'] is None:
@@ -265,6 +268,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 indis[xref]['source_citations'].append(cite_entry)
                 current_person_cite = cite_entry
                 current_sour_xref   = val
+                current_cite_field  = None
                 current_evt = current_note = None
             elif lvl == 1 and tag == 'ASSO' and val.startswith('@'):
                 current_asso = {'xref': val, 'rela': None}
@@ -276,8 +280,16 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 current_person_cite['page'] = val
             elif lvl == 2 and tag == 'NOTE' and current_person_cite is not None:
                 current_person_cite['note'] = _ged_val(val)
+                current_cite_field = 'note'
             elif lvl == 3 and tag == 'TEXT' and current_person_cite is not None:
                 current_person_cite['text'] = _ged_val(val)
+                current_cite_field = 'text'
+            elif lvl == 4 and tag in ('CONT', 'CONC') and current_person_cite is not None and current_cite_field == 'text':
+                sep = '\n' if tag == 'CONT' else ''
+                current_person_cite['text'] = (current_person_cite['text'] or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
+            elif lvl == 3 and tag in ('CONT', 'CONC') and current_person_cite is not None and current_cite_field == 'note':
+                sep = '\n' if tag == 'CONT' else ''
+                current_person_cite['note'] = (current_person_cite['note'] or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
             elif lvl == 3 and tag == 'WWW' and current_sour_xref is not None:
                 if current_sour_xref not in indis[xref]['source_urls']:
                     indis[xref]['source_urls'][current_sour_xref] = val
@@ -1468,7 +1480,7 @@ header h1 { font-size: 16px; font-weight: 600; }
   </div>
 </div>
 <div id="edit-citation-modal-overlay" onclick="closeIfFarFromPanel(event,'edit-citation-modal',closeEditCitationModal)">
-  <div id="edit-citation-modal" onkeydown="if(event.key==='Escape')closeEditCitationModal()">
+  <div id="edit-citation-modal">
     <h3 id="edit-citation-modal-title">Edit Citation</h3>
     <div class="event-modal-field">
       <label>Page / reference</label>

@@ -7,7 +7,7 @@ function closeIfFarFromPanel(event, panelId, closeFn) {
   const r = panel.getBoundingClientRect();
   const dx = Math.max(r.left - event.clientX, 0, event.clientX - r.right);
   const dy = Math.max(r.top - event.clientY, 0, event.clientY - r.bottom);
-  if (Math.sqrt(dx * dx + dy * dy) > 50) closeFn();
+  if (Math.sqrt(dx * dx + dy * dy) > 100) closeFn();
 }
 
 // ---------------------------------------------------------------------------
