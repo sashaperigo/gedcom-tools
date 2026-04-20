@@ -395,3 +395,62 @@ class TestNoteCitationParsing:
         assert notes[1]['note_idx'] == 1
         assert notes[1]['shared'] is False
         assert len(notes[1]['citations']) == 1
+
+
+# ---------------------------------------------------------------------------
+# age_at_death — numeric AGE values should classify as INFANT / CHILD
+# ---------------------------------------------------------------------------
+
+class TestAgeAtDeathFromNumericAge:
+    """
+    build_people_json sets age_at_death from the DEAT AGE tag.  When AGE is
+    a keyword (STILLBORN / INFANT / CHILD) it passes through; when AGE is
+    numeric (e.g. "2y", "6m", "14d") it should still classify as CHILD or
+    INFANT so the died-young badge renders.
+    """
+
+    def _build(self, tmp_path, age_value: str):
+        from viz_ancestors import build_people_json
+        ged = f"""0 HEAD
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+0 @I1@ INDI
+1 NAME George /Vitalis/
+1 SEX M
+1 BIRT
+2 DATE 1905
+1 DEAT
+2 DATE 1907
+2 AGE {age_value}
+0 TRLR
+"""
+        ged_path = tmp_path / 'a.ged'
+        ged_path.write_text(ged, encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged_path))
+        people = build_people_json({'@I1@'}, indis, fams, sources)
+        return people['@I1@']['age_at_death']
+
+    def test_two_years_is_child(self, tmp_path):
+        assert self._build(tmp_path, '2y') == 'CHILD'
+
+    def test_six_months_is_infant(self, tmp_path):
+        assert self._build(tmp_path, '6m') == 'INFANT'
+
+    def test_fourteen_days_is_infant(self, tmp_path):
+        assert self._build(tmp_path, '14d') == 'INFANT'
+
+    def test_under_one_year_is_infant(self, tmp_path):
+        # Composite "0y 11m" — still under 1 year → INFANT
+        assert self._build(tmp_path, '0y 11m') == 'INFANT'
+
+    def test_twelve_years_is_child(self, tmp_path):
+        assert self._build(tmp_path, '12y') == 'CHILD'
+
+    def test_adult_age_is_none(self, tmp_path):
+        assert self._build(tmp_path, '45y') is None
+
+    def test_keyword_still_works(self, tmp_path):
+        assert self._build(tmp_path, 'STILLBORN') == 'STILLBORN'
+        assert self._build(tmp_path, 'INFANT') == 'INFANT'
+        assert self._build(tmp_path, 'CHILD') == 'CHILD'

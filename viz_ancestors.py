@@ -411,6 +411,36 @@ _AGE_RE = re.compile(
 )
 
 
+_DEAT_AGE_KEYWORDS = frozenset({'STILLBORN', 'INFANT', 'CHILD'})
+
+
+def _classify_death_age(age: str) -> str | None:
+    """Return 'STILLBORN' / 'INFANT' / 'CHILD' for early-death ages, else None.
+    Accepts keyword values and numeric forms: 'INFANT' for < 1 year, 'CHILD'
+    for 1–12 years inclusive."""
+    if not age:
+        return None
+    s = age.strip().upper().lstrip('<>').strip()
+    if s in _DEAT_AGE_KEYWORDS:
+        return s
+    m = re.match(
+        r'^(?:(\d+)Y)?\s*(?:(\d+)M)?\s*(?:(\d+)D)?$',
+        s,
+    )
+    if not m or not any(m.groups()):
+        return None
+    years  = int(m.group(1) or 0)
+    months = int(m.group(2) or 0)
+    days   = int(m.group(3) or 0)
+    if years == 0 and months == 0 and days == 0:
+        return None
+    if years < 1:
+        return 'INFANT'
+    if years <= 12:
+        return 'CHILD'
+    return None
+
+
 def is_valid_age(s: str) -> bool:
     """Return True if s is a valid GEDCOM AGE tag value.
 
@@ -605,10 +635,10 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                                    'event_idx': None, 'div_idx': div_idx,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
-        _deat_age_keywords = frozenset({'STILLBORN', 'INFANT', 'CHILD'})
         age_at_death = next(
-            (e['age'].upper() for e in events
-             if e['tag'] == 'DEAT' and e.get('age') and e['age'].upper() in _deat_age_keywords),
+            (_classify_death_age(e['age']) for e in events
+             if e['tag'] == 'DEAT' and e.get('age')
+             and _classify_death_age(e['age'])),
             None
         )
         normalised_notes = []
