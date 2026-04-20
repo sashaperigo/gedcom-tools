@@ -1662,7 +1662,12 @@ document.addEventListener('DOMContentLoaded', function () {
   onStateChange(function (state) { render(); });
 
   const homeBtn = document.getElementById('home-btn');
-  if (homeBtn) homeBtn.addEventListener('click', () => setState({ focusXref: ROOT_XREF }));
+  if (homeBtn) homeBtn.addEventListener('click', () => setState({
+    focusXref: ROOT_XREF,
+    expandedNodes: new Set(),
+    expandedSiblingsXrefs: new Set(),
+    panelOpen: false,
+  }));
 
   try {
     render();

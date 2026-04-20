@@ -881,10 +881,14 @@ class TestHomeBtnWiring:
     """
 
     def test_home_btn_listener_wired_in_boot_script(self):
-        """Boot script in _HTML_TEMPLATE must wire home-btn to setState with ROOT_XREF."""
-        assert "setState({ focusXref: ROOT_XREF })" in _HTML_TEMPLATE, (
-            "Boot script must contain: "
-            "homeBtn.addEventListener('click', () => setState({ focusXref: ROOT_XREF }))"
+        """Boot script wires home-btn click to reset focus AND clear expansions."""
+        assert "focusXref: ROOT_XREF" in _HTML_TEMPLATE
+        assert "expandedNodes: new Set()" in _HTML_TEMPLATE, (
+            "Home button must also clear expandedNodes so the tree returns to "
+            "the default root view (just the focal person's parents visible)."
+        )
+        assert "expandedSiblingsXrefs: new Set()" in _HTML_TEMPLATE, (
+            "Home button must also clear expandedSiblingsXrefs."
         )
 
     def test_home_btn_listener_references_home_btn_id(self):
@@ -894,9 +898,10 @@ class TestHomeBtnWiring:
         )
 
     def test_rendered_html_contains_home_btn_wiring(self, html):
-        """Rendered HTML must contain both home-btn and setState({ focusXref: ROOT_XREF })."""
+        """Rendered HTML must contain home-btn wiring that resets expansions."""
         assert "home-btn" in html
-        assert "setState({ focusXref: ROOT_XREF })" in html
+        assert "focusXref: ROOT_XREF" in html
+        assert "expandedNodes: new Set()" in html
 
 
 # ---------------------------------------------------------------------------
