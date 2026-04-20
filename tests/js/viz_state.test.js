@@ -266,6 +266,18 @@ describe('popstate handler', () => {
     expect(mod.getState().expandedNodes).toEqual(new Set());
   });
 
+  it('restores expandedNodes from event.state.expandedXrefs when present', () => {
+    const mod = loadModule('?person=I1&expanded=I99');
+    mod.initState('@I1@');
+    global.history.pushState.mockClear();
+
+    // location still has I99 — but state has I7,I8
+    const listeners = global._popstateListeners;
+    listeners[0]({ state: { focusXref: '@I5@', expandedXrefs: 'I7,I8' } });
+
+    expect(mod.getState().expandedNodes).toEqual(new Set(['@I7@', '@I8@']));
+  });
+
   it('popstate does not call pushState or replaceState', () => {
     const mod = loadModule('');
     mod.initState('@I1@');

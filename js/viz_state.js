@@ -43,12 +43,12 @@ function _buildUrl(focusXref, expandedNodes) {
 
 function _pushHistory(focusXref, expandedNodes) {
   if (typeof history === 'undefined') return;
-  history.pushState({ focusXref }, '', _buildUrl(focusXref, expandedNodes));
+  history.pushState({ focusXref, expandedXrefs: _expandedToParam(expandedNodes) }, '', _buildUrl(focusXref, expandedNodes));
 }
 
 function _replaceHistory(focusXref, expandedNodes) {
   if (typeof history === 'undefined') return;
-  history.replaceState({ focusXref }, '', _buildUrl(focusXref, expandedNodes));
+  history.replaceState({ focusXref, expandedXrefs: _expandedToParam(expandedNodes) }, '', _buildUrl(focusXref, expandedNodes));
 }
 
 // ── public API ────────────────────────────────────────────────────────────
@@ -71,9 +71,16 @@ function initState(rootXref) {
       } else if (typeof location !== 'undefined') {
         newXref = _xrefFromUrl(location.search);
       }
-      const newExpanded = typeof location !== 'undefined'
-        ? _expandedFromParam(location.search)
-        : new Set();
+      let newExpanded;
+      if (event.state && event.state.expandedXrefs !== undefined) {
+        newExpanded = event.state.expandedXrefs
+          ? new Set(event.state.expandedXrefs.split(',').map(x => '@' + x + '@'))
+          : new Set();
+      } else if (typeof location !== 'undefined') {
+        newExpanded = _expandedFromParam(location.search);
+      } else {
+        newExpanded = new Set();
+      }
       if (newXref) {
         _state = Object.assign({}, _state, { focusXref: newXref, expandedNodes: newExpanded });
         _callbacks.forEach(cb => cb(_state));
