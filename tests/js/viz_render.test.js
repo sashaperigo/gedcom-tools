@@ -1059,3 +1059,101 @@ describe('render — ancestor sibling chevron', () => {
     expect(getSibBtn('@FATHER@', svg2)).toBeUndefined();
   });
 });
+
+// ── Tests: children-expand chevron ────────────────────────────────────────
+
+describe('render — children-expand chevron', () => {
+  let svg;
+
+  beforeEach(() => {
+    global.PEOPLE = {
+      '@FOCUS@':   { name: 'Focus',   birth_year: 1900, sex: 'M' },
+      '@BROTHER@': { name: 'Brother', birth_year: 1897, sex: 'M' },
+      '@NIECE@':   { name: 'Niece',   birth_year: 1920, sex: 'F' },
+    };
+    global.PARENTS  = { '@FOCUS@': [null, null] };
+    global.CHILDREN = {};
+    global.RELATIVES = {
+      '@FOCUS@': { siblings: ['@BROTHER@'], spouses: [] },
+    };
+    global.FAMILIES = {
+      '@BFAM@': { husb: '@BROTHER@', wife: null, chil: ['@NIECE@'] },
+    };
+    resetState();
+    loadRenderMod();
+    svg = makeSvgEl();
+    renderMod.initRenderer(svg);
+  });
+
+  function getChildBtn(xref, svgEl = svg) {
+    const g = svgEl.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(gr => gr._attrs['data-xref'] === xref);
+    return g && g.children.find(
+      c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('children-expand-btn')
+    );
+  }
+
+  it('non-focus node with a FAM in FAMILIES gets a children-expand-btn circle', () => {
+    const btn = getChildBtn('@BROTHER@');
+    expect(btn).toBeDefined();
+  });
+
+  it('focus node does NOT get a children-expand chevron', () => {
+    expect(getChildBtn('@FOCUS@')).toBeUndefined();
+  });
+
+  it('children chevron is green (expandable) when FAM is not in expandedChildrenFams', () => {
+    const btn = getChildBtn('@BROTHER@');
+    expect(btn._attrs['fill']).toBe('#2a7a4a');
+  });
+
+  it('children chevron is blue (collapsible) when FAM is in expandedChildrenFams', () => {
+    stateMod.setState({ expandedChildrenFams: new Set(['@BFAM@']) });
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getChildBtn('@BROTHER@', svg2);
+    expect(btn._attrs['fill']).toBe('#2a5a7a');
+  });
+
+  it('clicking a green chevron adds the FAM xref to expandedChildrenFams', () => {
+    const spy = vi.fn();
+    global.setState = spy;
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getChildBtn('@BROTHER@', svg2);
+    spy.mockClear();
+    btn.dispatchEvent('click', { stopPropagation: () => {} });
+    expect(spy).toHaveBeenCalled();
+    const update = spy.mock.calls[0][0];
+    expect(update.expandedChildrenFams).toBeInstanceOf(Set);
+    expect(update.expandedChildrenFams.has('@BFAM@')).toBe(true);
+    // Restore real setState
+    global.setState = stateMod.setState;
+  });
+
+  it('clicking a blue (expanded) chevron removes the FAM xref from expandedChildrenFams', () => {
+    stateMod.setState({ expandedChildrenFams: new Set(['@BFAM@']) });
+    const spy = vi.fn();
+    global.setState = spy;
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const btn = getChildBtn('@BROTHER@', svg2);
+    spy.mockClear();
+    btn.dispatchEvent('click', { stopPropagation: () => {} });
+    const update = spy.mock.calls[0][0];
+    expect(update.expandedChildrenFams.has('@BFAM@')).toBe(false);
+    global.setState = stateMod.setState;
+  });
+
+  it('node with no FAMILIES entry has no children-expand chevron', () => {
+    global.FAMILIES = {};
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    expect(getChildBtn('@BROTHER@', svg2)).toBeUndefined();
+  });
+});

@@ -104,7 +104,7 @@ function _formatYears(person) {
   return parts.join('  ');
 }
 
-function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set()) {
+function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set(), onChildrenExpandClick = () => {}, expandedChildrenFams = new Set()) {
   const {
     BG_NODE, BG_NODE_FOCUS, BORDER, BORDER_FOCUS, ACCENT_SPOUSE,
     TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_DIM,
@@ -340,6 +340,59 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     }
   }
 
+  // Children-expand chevron — downward-facing button below non-focus nodes
+  // whose xref appears as a parent (husb/wife) in any FAMILIES entry. Each
+  // such FAM gets one chevron; clicking toggles the FAM in expandedChildrenFams.
+  if (!isFocus && typeof FAMILIES !== 'undefined') {
+    const famsForNode = [];
+    for (const famXref in FAMILIES) {
+      const fam = FAMILIES[famXref];
+      if (!fam) continue;
+      if (fam.husb === node.xref || fam.wife === node.xref) {
+        famsForNode.push(famXref);
+      }
+    }
+    famsForNode.forEach((famXref, idx) => {
+      const R = 8;
+      const GAP = 6;
+      // Stack horizontally when multiple FAMs on one node.
+      const offset = (idx - (famsForNode.length - 1) / 2) * (R * 2 + 4);
+      const ccx = w / 2 + offset;
+      const ccy = h + GAP + R;
+      const isChildExpanded = expandedChildrenFams.has(famXref);
+      const ccFill = isChildExpanded ? '#2a5a7a' : '#2a7a4a';
+
+      // Down chevron (expandable); up chevron (collapsible).
+      const chevronDown = `M ${ccx - 3.5} ${ccy - 1.5} L ${ccx} ${ccy + 2} L ${ccx + 3.5} ${ccy - 1.5}`;
+      const chevronUp   = `M ${ccx - 3.5} ${ccy + 1.5} L ${ccx} ${ccy - 2} L ${ccx + 3.5} ${ccy + 1.5}`;
+      const ccD = isChildExpanded ? chevronUp : chevronDown;
+
+      const ccBtn = _svgEl('circle', {
+        cx: ccx,
+        cy: ccy,
+        r: R,
+        fill: ccFill,
+        class: 'children-expand-btn',
+        cursor: 'pointer',
+      });
+      const ccChevron = _svgEl('path', {
+        d: ccD,
+        stroke: '#ffffff',
+        'stroke-width': 1.5,
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        fill: 'none',
+        'pointer-events': 'none',
+      });
+      ccBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onChildrenExpandClick(famXref);
+      });
+      g.appendChild(ccBtn);
+      g.appendChild(ccChevron);
+    });
+  }
+
   return g;
 }
 
@@ -447,6 +500,16 @@ function render() {
     }
   }
 
+  // ── Children-expand click handler ────────────────────────────────────────
+  // Toggles a FAM xref in expandedChildrenFams.
+  function onChildrenExpandClick(famXref) {
+    const current = getState().expandedChildrenFams || new Set();
+    const next = new Set(current);
+    if (next.has(famXref)) next.delete(famXref);
+    else next.add(famXref);
+    setState({ expandedChildrenFams: next });
+  }
+
   // ── Render edges (below nodes) ───────────────────────────────────────────
   for (const edge of edges) {
     _treeRoot.appendChild(_renderEdge(edge));
@@ -454,7 +517,7 @@ function render() {
 
   // ── Render nodes ─────────────────────────────────────────────────────────
   for (const node of nodes) {
-    const g = _renderNode(node, onNodeClick, onExpandClick, expandedNodes, onSiblingExpandClick, expandedSiblingsXrefs);
+    const g = _renderNode(node, onNodeClick, onExpandClick, expandedNodes, onSiblingExpandClick, expandedSiblingsXrefs, onChildrenExpandClick, expandedChildrenFams);
     _treeRoot.appendChild(g);
   }
 }
