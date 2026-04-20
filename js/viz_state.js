@@ -11,6 +11,21 @@ const _callbacks = [];
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
+function _expandedToParam(expandedNodes) {
+  if (!expandedNodes || expandedNodes.size === 0) return null;
+  return Array.from(expandedNodes)
+    .map(x => x.replace(/@/g, ''))
+    .sort()
+    .join(',');
+}
+
+function _expandedFromParam(search) {
+  const params = new URLSearchParams(search);
+  const raw = params.get('expanded');
+  if (!raw) return new Set();
+  return new Set(raw.split(',').filter(Boolean).map(x => '@' + x + '@'));
+}
+
 function _xrefFromUrl(search) {
   const params = new URLSearchParams(search);
   const person = params.get('person');
@@ -75,4 +90,4 @@ function getState() {
   return _state;
 }
 
-if (typeof module !== 'undefined') module.exports = { initState, setState, onStateChange, getState };
+if (typeof module !== 'undefined') module.exports = { initState, setState, onStateChange, getState, _expandedToParam, _expandedFromParam };

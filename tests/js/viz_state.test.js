@@ -43,6 +43,46 @@ beforeEach(() => {
 
 // ── Test suite ────────────────────────────────────────────────────────────
 
+describe('expanded param serialization', () => {
+  it('_expandedToParam returns null for empty Set', () => {
+    const mod = loadModule('');
+    expect(mod._expandedToParam(new Set())).toBeNull();
+  });
+
+  it('_expandedToParam returns sorted comma-joined xrefs without @ signs', () => {
+    const mod = loadModule('');
+    const result = mod._expandedToParam(new Set(['@I23@', '@I5@', '@I12@']));
+    expect(result).toBe('I12,I23,I5');
+  });
+
+  it('_expandedToParam returns single xref without @ signs', () => {
+    const mod = loadModule('');
+    expect(mod._expandedToParam(new Set(['@I42@']))).toBe('I42');
+  });
+
+  it('_expandedFromParam returns empty Set when no expanded param', () => {
+    const mod = loadModule('');
+    expect(mod._expandedFromParam('')).toEqual(new Set());
+  });
+
+  it('_expandedFromParam returns empty Set for empty param value', () => {
+    const mod = loadModule('');
+    expect(mod._expandedFromParam('?expanded=')).toEqual(new Set());
+  });
+
+  it('_expandedFromParam parses multiple xrefs with @ wrappers', () => {
+    const mod = loadModule('');
+    expect(mod._expandedFromParam('?expanded=I5,I12,I23')).toEqual(
+      new Set(['@I5@', '@I12@', '@I23@'])
+    );
+  });
+
+  it('_expandedFromParam parses single xref', () => {
+    const mod = loadModule('');
+    expect(mod._expandedFromParam('?expanded=I5')).toEqual(new Set(['@I5@']));
+  });
+});
+
 describe('initState', () => {
   it('uses rootXref when no ?person= param in URL', () => {
     const mod = loadModule('');
