@@ -2418,35 +2418,108 @@ def scan_short_conc(path: str, min_len: int = 5) -> list[tuple[int, str, str]]:
     return results
 
 
+def scan_mid_word_conc(path: str) -> list[tuple[int, str, str]]:
+    """
+    Return (lineno, xref_context, boundary) for CONC lines in shared NOTE
+    records where the join creates a mid-word transition: the preceding value
+    ends with an alphabetic character and the CONC value starts with a
+    lowercase letter (no leading space).
+
+    This detects splits like ``bapti`` + ``zed`` or ``cah`` + ``ier`` that
+    occur when a note was encoded with hard line-length cuts rather than
+    word-boundary cuts.  Digit-to-letter transitions (e.g. ``18`` + ``th``)
+    and CONC values that start with a space are excluded.
+    """
+    results: list[tuple[int, str, str]] = []
+    current_xref = ''
+    prev_tail = ''
+    in_shared_note = False
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+            m0 = re.match(r'^0 (@[^@]+@) NOTE(?: (.*))?$', line)
+            if m0:
+                current_xref = m0.group(1)
+                note_val = m0.group(2) or ''
+                prev_tail = note_val[-1:] if note_val else ''
+                in_shared_note = True
+                continue
+            if line.startswith('0 '):
+                in_shared_note = False
+                prev_tail = ''
+                continue
+            if not in_shared_note:
+                continue
+            mc = re.match(r'^\d+ CONC(?: (.*))?$', line)
+            if mc:
+                val = mc.group(1) or ''
+                if prev_tail.isalpha() and val and val[0].islower():
+                    results.append((lineno, current_xref, prev_tail + '|' + val[:10]))
+                prev_tail = val[-1:] if val else prev_tail
+                continue
+            mt = re.match(r'^\d+ CONT(?: (.*))?$', line)
+            if mt:
+                val = mt.group(1) or ''
+                prev_tail = val[-1:] if val else ''
+    return results
+
+
 def fix_note_reflow(path: str, dry_run: bool = False, min_len: int = 5) -> int:
     """
-    Re-encode shared NOTE records (``0 @xref@ NOTE``) that contain any CONC
-    line shorter than *min_len* characters.  The logical text is reconstructed
-    from the existing CONC/CONT lines, then re-split into properly-sized chunks
-    (≤ 255 chars per physical line, accounting for the longer first-line prefix).
+    Re-encode shared NOTE records (``0 @xref@ NOTE``) that have bad CONC
+    wrapping: a CONC value shorter than *min_len* characters, or a mid-word
+    CONC join (preceding value ends with alpha, CONC value starts with a
+    lowercase letter without a leading space).
 
-    Only single-paragraph notes (no CONT lines) are reflowed; notes with CONT
-    lines are left unchanged to avoid altering paragraph structure.
+    Notes with CONT lines are handled: empty CONTs are preserved as paragraph
+    breaks; non-empty CONTs begin a new paragraph whose text is the CONT value
+    followed by any subsequent CONC continuations.
+
     Returns the number of NOTE records reflowed.
     """
     GEDCOM_MAX = 255
 
-    def _chunk(text: str, first_prefix: str, cont_prefix: str) -> list[str]:
+    def _is_mid_word(prev_tail: str, conc_val: str) -> bool:
+        return bool(prev_tail and prev_tail.isalpha() and conc_val and conc_val[0].islower())
+
+    def _chunk_paragraph(para: str, first_prefix: str) -> list[str]:
+        """Split one paragraph into GEDCOM lines at word boundaries."""
         out: list[str] = []
         prefix = first_prefix
-        while True:
+        remaining = para
+        while remaining:
             max_val = GEDCOM_MAX - len(prefix) - 1
-            if len(text) <= max_val:
-                out.append(f'{prefix} {text}')
+            if len(remaining) <= max_val:
+                out.append(f'{prefix} {remaining}')
                 break
-            cut = max_val
-            while cut > 0 and text[cut - 1] == ' ':
-                cut -= 1
-            if cut == 0:
-                cut = max_val
-            out.append(f'{prefix} {text[:cut]}')
-            text = text[cut:]
-            prefix = cont_prefix
+            chunk = remaining[:max_val]
+            split_pos = chunk.rfind(' ')
+            if split_pos <= 0:
+                out.append(f'{prefix} {remaining[:max_val]}')
+                remaining = remaining[max_val:]
+            else:
+                out.append(f'{prefix} {remaining[:split_pos]}')
+                remaining = remaining[split_pos:]  # leading space goes to next CONC
+            prefix = '1 CONC'
+        return out
+
+    def _emit_note(xref: str, segments: list[tuple[str, str]]) -> list[str]:
+        """Reconstruct logical text and re-emit with proper word-boundary wrapping."""
+        # CONC → append to current paragraph; CONT → start a new paragraph
+        paragraphs: list[str] = ['']
+        for kind, val in segments:
+            if kind == 'CONC':
+                paragraphs[-1] += val
+            else:  # CONT
+                paragraphs.append(val)
+
+        out: list[str] = []
+        for p_idx, para in enumerate(paragraphs):
+            first_prefix = f'0 {xref} NOTE' if p_idx == 0 else '1 CONT'
+            if para:
+                out.extend(_chunk_paragraph(para, first_prefix))
+            else:
+                out.append(first_prefix)
         return out
 
     with open(path, encoding='utf-8') as f:
@@ -2455,18 +2528,17 @@ def fix_note_reflow(path: str, dry_run: bool = False, min_len: int = 5) -> int:
     note_re = re.compile(r'^0 (@[^@]+@) NOTE(?: (.*))?$')
     tag_re  = re.compile(r'^(\d+) (CONC|CONT)(?: (.*))?$')
 
-    # Collect candidate blocks: shared NOTE records with at least one short CONC
-    # and no CONT lines (to preserve paragraph structure in multi-paragraph notes)
-    blocks: list[tuple[int, int, str, str]] = []
+    blocks: list[tuple[int, int, str, list[tuple[str, str]]]] = []
     i = 0
     while i < len(lines_in):
         line = lines_in[i].rstrip('\n')
         m = note_re.match(line)
         if m:
             xref = m.group(1)
-            text = m.group(2) or ''
-            has_short = False
-            has_cont = False
+            note_val = m.group(2) or ''
+            segments: list[tuple[str, str]] = []
+            needs_reflow = False
+            prev_tail = note_val[-1:] if note_val else ''
             j = i + 1
             while j < len(lines_in):
                 nline = lines_in[j].rstrip('\n')
@@ -2475,23 +2547,24 @@ def fix_note_reflow(path: str, dry_run: bool = False, min_len: int = 5) -> int:
                 tm = tag_re.match(nline)
                 if tm:
                     tag2, val2 = tm.group(2), (tm.group(3) or '')
+                    segments.append((tag2, val2))
                     if tag2 == 'CONC':
-                        if len(val2) < min_len:
-                            has_short = True
-                        text += val2
+                        if len(val2) < min_len or _is_mid_word(prev_tail, val2):
+                            needs_reflow = True
+                        prev_tail = val2[-1:] if val2 else prev_tail
                     elif tag2 == 'CONT':
-                        has_cont = True
+                        prev_tail = val2[-1:] if val2 else ''
                 j += 1
-            if has_short and not has_cont:
-                blocks.append((i, j, xref, text))
+            if needs_reflow:
+                blocks.append((i, j, xref, [('CONC', note_val)] + segments))
         i += 1
 
     if not blocks:
         return 0
 
     lines_out = list(lines_in)
-    for start, end, xref, full_text in reversed(blocks):
-        new_block = _chunk(full_text, f'0 {xref} NOTE', '1 CONC')
+    for start, end, xref, segs in reversed(blocks):
+        new_block = _emit_note(xref, segs)
         lines_out[start:end] = [l + '\n' for l in new_block]
 
     if not dry_run:
@@ -5890,6 +5963,22 @@ def main():
                     print(f'  ... and {len(by_xref) - 10} more record(s).')
             else:
                 print('OK: no abnormally short CONC lines.')
+
+            mid_word_concs = scan_mid_word_conc(args.gedfile)
+            if mid_word_concs:
+                print(f'\n{_WARN} {len(mid_word_concs)} CONC line(s) with mid-word joins '
+                      f'(letter+lowercase boundary) — bad wrapping '
+                      f'(run --fix-note-reflow to re-encode):')
+                mw_by_xref: dict[str, list[tuple[int, str]]] = {}
+                for ln, xref, boundary in mid_word_concs:
+                    mw_by_xref.setdefault(xref, []).append((ln, boundary))
+                for xref, entries in list(mw_by_xref.items())[:10]:
+                    sample = ', '.join(f'line {ln}: {b!r}' for ln, b in entries[:3])
+                    print(f'  {xref}: {sample}')
+                if len(mw_by_xref) > 10:
+                    print(f'  ... and {len(mw_by_xref) - 10} more record(s).')
+            else:
+                print('OK: no mid-word CONC joins.')
 
             # ── New structural checks ────────────────────────────────────────
 

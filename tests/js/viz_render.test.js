@@ -325,11 +325,14 @@ describe('render — node pill text spacing', () => {
     const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
     expect(fatherG).toBeDefined();
     const texts = fatherG.children.filter(c => c.tagName === 'text');
-    // First text = name, second text = years
-    expect(texts.length).toBeGreaterThanOrEqual(2);
-    const nameY  = parseFloat(texts[0]._attrs['y']);
-    const yearsY = parseFloat(texts[1]._attrs['y']);
-    expect(yearsY).toBeGreaterThanOrEqual(nameY + 8);
+    // Years text has font-size 9; name text has a larger font-size.
+    const yearsText = texts.find(t => t._attrs['font-size'] === '9');
+    const nameTexts = texts.filter(t => t._attrs['font-size'] !== '9');
+    expect(yearsText).toBeDefined();
+    expect(nameTexts.length).toBeGreaterThanOrEqual(1);
+    const lastNameY = Math.max(...nameTexts.map(t => parseFloat(t._attrs['y'])));
+    const yearsY = parseFloat(yearsText._attrs['y']);
+    expect(yearsY).toBeGreaterThanOrEqual(lastNameY + 8);
   });
 
   it('years text y is at least 8px below name text y on the focused node', () => {
@@ -338,10 +341,13 @@ describe('render — node pill text spacing', () => {
     const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
     expect(focusG).toBeDefined();
     const texts = focusG.children.filter(c => c.tagName === 'text');
-    expect(texts.length).toBeGreaterThanOrEqual(2);
-    const nameY  = parseFloat(texts[0]._attrs['y']);
-    const yearsY = parseFloat(texts[1]._attrs['y']);
-    expect(yearsY).toBeGreaterThanOrEqual(nameY + 8);
+    const yearsText = texts.find(t => t._attrs['font-size'] === '9');
+    const nameTexts = texts.filter(t => t._attrs['font-size'] !== '9');
+    expect(yearsText).toBeDefined();
+    expect(nameTexts.length).toBeGreaterThanOrEqual(1);
+    const lastNameY = Math.max(...nameTexts.map(t => parseFloat(t._attrs['y'])));
+    const yearsY = parseFloat(yearsText._attrs['y']);
+    expect(yearsY).toBeGreaterThanOrEqual(lastNameY + 8);
   });
 
   it('NODE_H and NODE_H_FOCUS are tall enough to contain name + years without cramping', () => {
@@ -349,6 +355,50 @@ describe('render — node pill text spacing', () => {
     // we need at least 28px total node height to avoid cramping.
     expect(NODE_H).toBeGreaterThanOrEqual(38);
     expect(NODE_H_FOCUS).toBeGreaterThanOrEqual(42);
+  });
+
+  it('a two-word name renders on two separate text elements', () => {
+    // Default @FATHER@ name is "Father Person" — two words.
+    const treeRoot = svg.querySelector('#tree-root');
+    const fatherG = treeRoot.querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const nameTexts = fatherG.children
+      .filter(c => c.tagName === 'text' && c._attrs['font-size'] !== '9');
+    expect(nameTexts).toHaveLength(2);
+    const contents = nameTexts.map(t => t.textContent).sort();
+    expect(contents).toEqual(['Father', 'Person']);
+  });
+
+  it('a single-word name renders on one text element', () => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@FATHER@': { name: 'Cher', birth_year: 1870, death_year: 1940 },
+    };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const fatherG = svg2.querySelector('#tree-root').querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const nameTexts = fatherG.children
+      .filter(c => c.tagName === 'text' && c._attrs['font-size'] !== '9');
+    expect(nameTexts).toHaveLength(1);
+    expect(nameTexts[0].textContent).toBe('Cher');
+  });
+
+  it('a word longer than the per-line budget is truncated with an ellipsis', () => {
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@FATHER@': { name: 'Hippopotomonstro Sesquippedaliophobia', birth_year: 1870 },
+    };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const fatherG = svg2.querySelector('#tree-root').querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
+    const nameTexts = fatherG.children
+      .filter(c => c.tagName === 'text' && c._attrs['font-size'] !== '9');
+    expect(nameTexts.length).toBeGreaterThanOrEqual(1);
+    expect(nameTexts.some(t => t.textContent.includes('\u2026'))).toBe(true);
   });
 });
 

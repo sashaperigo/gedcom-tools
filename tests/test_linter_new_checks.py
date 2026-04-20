@@ -57,6 +57,7 @@ from gedcom_linter import (
     scan_asso_without_rela,
     scan_sour_without_titl,
     scan_short_conc,
+    scan_mid_word_conc,
     fix_note_reflow,
 )
 
@@ -3315,8 +3316,8 @@ class TestFixNoteReflow:
         for line in p.read_text(encoding='utf-8').splitlines():
             assert len(line) <= 255, f'Line too long ({len(line)}): {line!r}'
 
-    def test_reflow_skips_multi_paragraph_notes(self, tmp_path):
-        """Notes with CONT lines (multi-paragraph) are left unchanged."""
+    def test_reflow_handles_cont_paragraph_with_short_conc(self, tmp_path):
+        """Notes with CONT lines are reflowed when bad CONC wrapping is present."""
         p = write_ged(tmp_path, """\
             0 HEAD
             0 @N1@ NOTE First paragraph with a short
@@ -3325,8 +3326,11 @@ class TestFixNoteReflow:
             0 TRLR
         """)
         count = fix_note_reflow(str(p))
-        assert count == 0
-        assert '1 CONC x\n' in p.read_text(encoding='utf-8')
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        assert '1 CONC x\n' not in content
+        assert 'First paragraph with a shortx' in content
+        assert '1 CONT Second paragraph.' in content
 
     def test_dry_run_makes_no_changes(self, tmp_path):
         original = textwrap.dedent("""\
@@ -3341,3 +3345,140 @@ class TestFixNoteReflow:
         count = fix_note_reflow(str(p), dry_run=True)
         assert count == 1
         assert p.read_text(encoding='utf-8') == original
+
+
+# ===========================================================================
+# scan_mid_word_conc
+# ===========================================================================
+
+class TestMidWordConc:
+
+    def test_detects_mid_word_split(self, tmp_path):
+        """CONC starting with lowercase after alpha prev_tail is flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE They were bapti
+            1 CONC zed in 1692.
+            0 TRLR
+        """)
+        hits = scan_mid_word_conc(str(p))
+        assert len(hits) == 1
+        lineno, xref, boundary = hits[0]
+        assert xref == '@N1@'
+        assert boundary == 'i|zed in 169'
+
+    def test_ignores_digit_to_letter_boundary(self, tmp_path):
+        """18 + th (digit→letter) is NOT a mid-word split."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE in the 18
+            1 CONC th century.
+            0 TRLR
+        """)
+        assert scan_mid_word_conc(str(p)) == []
+
+    def test_ignores_leading_space_conc(self, tmp_path):
+        """CONC values starting with a space are intentional and not flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE families that chose in the 18th century
+            1 CONC  to maintain endogamous patterns.
+            0 TRLR
+        """)
+        assert scan_mid_word_conc(str(p)) == []
+
+    def test_ignores_uppercase_conc_start(self, tmp_path):
+        """CONC starting with uppercase (new proper noun) is not flagged."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE He founded
+            1 CONC The Firm.
+            0 TRLR
+        """)
+        assert scan_mid_word_conc(str(p)) == []
+
+    def test_detects_cont_to_conc_mid_word(self, tmp_path):
+        """Mid-word split spanning a CONT boundary is also caught."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE Title
+            1 CONT In 1413, Emperor Sigismund grant
+            1 CONC ed Francesco a noble title.
+            0 TRLR
+        """)
+        hits = scan_mid_word_conc(str(p))
+        assert len(hits) == 1
+        assert hits[0][1] == '@N1@'
+
+    def test_only_triggers_for_shared_notes(self, tmp_path):
+        """Inline NOTE records (no xref) are not checked."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NOTE They were bapti
+            2 CONC zed in 1692.
+            0 TRLR
+        """)
+        assert scan_mid_word_conc(str(p)) == []
+
+
+# ===========================================================================
+# fix_note_reflow — mid-word and CONT-paragraph coverage
+# ===========================================================================
+
+class TestFixNoteReflowMidWord:
+
+    def test_fixes_mid_word_conc_split(self, tmp_path):
+        """Mid-word CONC boundary (no short CONC) triggers reflow."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE They were bapti
+            1 CONC zed in 1692 in Smyrna.
+            0 TRLR
+        """)
+        count = fix_note_reflow(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        assert 'baptized in 1692 in Smyrna.' in content
+        assert '1 CONC zed' not in content
+
+    def test_fixes_mid_word_across_cont_paragraph(self, tmp_path):
+        """Mid-word split at CONT→CONC boundary is fixed while preserving paragraphs."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE Title
+            1 CONT Emperor Sigismund grant
+            1 CONC ed Francesco a hereditary title.
+            0 TRLR
+        """)
+        count = fix_note_reflow(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        assert 'Title' in content
+        assert '1 CONT Emperor Sigismund granted Francesco a hereditary title.' in content
+        assert '1 CONC ed' not in content
+
+    def test_skips_clean_notes(self, tmp_path):
+        """Notes with properly-placed CONC splits are left untouched."""
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @N1@ NOTE A well-wrapped note that splits only
+            1 CONC  at word boundaries.
+            0 TRLR
+        """)
+        count = fix_note_reflow(str(p))
+        assert count == 0
+
+    def test_all_lines_within_limit(self, tmp_path):
+        """After reflow, every line in the file must be ≤ 255 characters."""
+        long_para = 'word ' * 55  # 275 chars — needs splitting
+        p = write_ged(tmp_path, (
+            '0 HEAD\n'
+            f'0 @N1@ NOTE {long_para[:4]}\n'
+            '1 CONC x\n'
+            f'1 CONC {long_para[4:]}\n'
+            '0 TRLR\n'
+        ))
+        fix_note_reflow(str(p))
+        for line in p.read_text(encoding='utf-8').splitlines():
+            assert len(line) <= 255, f'Line too long ({len(line)}): {line!r}'

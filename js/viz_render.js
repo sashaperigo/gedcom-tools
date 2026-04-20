@@ -77,10 +77,24 @@ function _drawDiedYoungBadge(g, w, ageAtDeath) {
   g.appendChild(sym);
 }
 
-function _truncateName(name, maxLen) {
-  if (!name) return '?';
-  if (name.length <= maxLen) return name;
-  return name.slice(0, maxLen - 1) + '\u2026';
+function _truncateLine(text, maxLen) {
+  if (!text) return '';
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen - 1) + '\u2026';
+}
+
+// Split a full name into (line1, line2) for two-line wrapping.
+// Strategy: split on the LAST whitespace so "Given middle Surname" becomes
+// ["Given middle", "Surname"]. Single-word names render on one line.
+function _splitName(name, maxLen) {
+  if (!name) return ['?', ''];
+  const trimmed = name.trim();
+  const idx = trimmed.lastIndexOf(' ');
+  if (idx < 0) return [_truncateLine(trimmed, maxLen), ''];
+  return [
+    _truncateLine(trimmed.slice(0, idx), maxLen),
+    _truncateLine(trimmed.slice(idx + 1), maxLen),
+  ];
 }
 
 function _formatYears(person) {
@@ -146,7 +160,7 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
   }
 
   const person = PEOPLE[node.xref] || {};
-  const displayName = _truncateName(person.name, 20);
+  const [nameLine1, nameLine2] = _splitName(person.name, 13);
   const years = _formatYears(person);
 
   // Group positioned at (node.x, node.y)
@@ -169,11 +183,15 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
   });
   g.appendChild(rect);
 
-  // Name text — in upper half of rect, leaving room for years below
-  const nameY = isFocus ? h * 0.40 : h * 0.42;
+  // Name text — wraps to two lines when the name has whitespace. Line 1 sits
+  // in the upper portion of the pill; line 2 (when present) sits just below.
+  const hasTwoLines = nameLine2.length > 0;
+  const line1Y = hasTwoLines ? h * 0.28 : h * 0.40;
+  const line2Y = h * 0.52;
+
   const nameEl = _svgEl('text', {
     x: w / 2,
-    y: nameY,
+    y: line1Y,
     'text-anchor': 'middle',
     'dominant-baseline': 'middle',
     fill: nameFill,
@@ -182,14 +200,30 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     'font-family': 'system-ui, sans-serif',
     'pointer-events': 'none',
   });
-  nameEl.textContent = displayName;
+  nameEl.textContent = nameLine1;
   g.appendChild(nameEl);
 
-  // Years text — below name with comfortable padding
+  if (hasTwoLines) {
+    const nameEl2 = _svgEl('text', {
+      x: w / 2,
+      y: line2Y,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'middle',
+      fill: nameFill,
+      'font-size': nameFontSize,
+      'font-weight': nameWeight,
+      'font-family': 'system-ui, sans-serif',
+      'pointer-events': 'none',
+    });
+    nameEl2.textContent = nameLine2;
+    g.appendChild(nameEl2);
+  }
+
+  // Years text — bottom gutter
   if (years) {
     const yearsEl = _svgEl('text', {
       x: w / 2,
-      y: h - 7,
+      y: h - 10,
       'text-anchor': 'middle',
       fill: yearFill,
       'font-size': 9,
