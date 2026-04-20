@@ -43,85 +43,150 @@ beforeEach(() => {
 
 // ── Test suite ────────────────────────────────────────────────────────────
 
+// Token values for test IDs (base62 of numeric suffix):
+//   @I1@  → '1'   @I5@  → '5'   @I7@  → '7'   @I8@  → '8'
+//   @I12@ → 'c'   @I23@ → 'n'   @I42@ → 'G'   @I99@ → '1B'
+
+describe('base62 encoding', () => {
+  it('_toBase62(0) returns "0"', () => {
+    const mod = loadModule('');
+    expect(mod._toBase62(0)).toBe('0');
+  });
+
+  it('_toBase62(42) returns "G"', () => {
+    const mod = loadModule('');
+    expect(mod._toBase62(42)).toBe('G');
+  });
+
+  it('_toBase62(380071267816) returns "6GRCj0Y"', () => {
+    const mod = loadModule('');
+    expect(mod._toBase62(380071267816)).toBe('6GRCj0Y');
+  });
+
+  it('_fromBase62("G") returns 42', () => {
+    const mod = loadModule('');
+    expect(mod._fromBase62('G')).toBe(42);
+  });
+
+  it('_fromBase62("6GRCj0Y") returns 380071267816', () => {
+    const mod = loadModule('');
+    expect(mod._fromBase62('6GRCj0Y')).toBe(380071267816);
+  });
+
+  it('_toBase62 / _fromBase62 roundtrip', () => {
+    const mod = loadModule('');
+    const n = 380071267816;
+    expect(mod._fromBase62(mod._toBase62(n))).toBe(n);
+  });
+
+  it('_xrefToToken converts @I42@ to "G"', () => {
+    const mod = loadModule('');
+    expect(mod._xrefToToken('@I42@')).toBe('G');
+  });
+
+  it('_tokenToXref converts "G" to @I42@', () => {
+    const mod = loadModule('');
+    expect(mod._tokenToXref('G')).toBe('@I42@');
+  });
+
+  it('_xrefToToken / _tokenToXref roundtrip', () => {
+    const mod = loadModule('');
+    const xref = '@I380071267816@';
+    expect(mod._tokenToXref(mod._xrefToToken(xref))).toBe(xref);
+  });
+});
+
 describe('expanded param serialization', () => {
   it('_expandedToParam returns null for empty Set', () => {
     const mod = loadModule('');
     expect(mod._expandedToParam(new Set())).toBeNull();
   });
 
-  it('_expandedToParam returns sorted comma-joined xrefs without @ signs', () => {
+  it('_expandedToParam returns sorted +-joined tokens', () => {
     const mod = loadModule('');
     const result = mod._expandedToParam(new Set(['@I23@', '@I5@', '@I12@']));
-    expect(result).toBe('I12,I23,I5');
+    expect(result).toBe('5+c+n');
   });
 
-  it('_expandedToParam returns single xref without @ signs', () => {
+  it('_expandedToParam returns single token for single xref', () => {
     const mod = loadModule('');
-    expect(mod._expandedToParam(new Set(['@I42@']))).toBe('I42');
+    expect(mod._expandedToParam(new Set(['@I42@']))).toBe('G');
   });
 
-  it('_expandedFromParam returns empty Set when no expanded param', () => {
+  it('_expandedFromParam returns empty Set when no e param', () => {
     const mod = loadModule('');
     expect(mod._expandedFromParam('')).toEqual(new Set());
   });
 
-  it('_expandedFromParam returns empty Set for empty param value', () => {
+  it('_expandedFromParam returns empty Set for empty compact param value', () => {
     const mod = loadModule('');
-    expect(mod._expandedFromParam('?expanded=')).toEqual(new Set());
+    expect(mod._expandedFromParam('?e=')).toEqual(new Set());
   });
 
-  it('_expandedFromParam parses multiple xrefs with @ wrappers', () => {
+  it('_expandedFromParam parses multiple compact xrefs with + separator', () => {
     const mod = loadModule('');
-    expect(mod._expandedFromParam('?expanded=I5,I12,I23')).toEqual(
+    expect(mod._expandedFromParam('?e=5+c+n')).toEqual(
       new Set(['@I5@', '@I12@', '@I23@'])
     );
   });
 
-  it('_expandedFromParam parses single xref', () => {
+  it('_expandedFromParam parses single compact xref', () => {
     const mod = loadModule('');
-    expect(mod._expandedFromParam('?expanded=I5')).toEqual(new Set(['@I5@']));
+    expect(mod._expandedFromParam('?e=5')).toEqual(new Set(['@I5@']));
   });
 });
 
 describe('initState', () => {
-  it('uses rootXref when no ?person= param in URL', () => {
+  it('uses rootXref when no ?p= param in URL', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     expect(mod.getState().focusXref).toBe('@I1@');
   });
 
-  it('reads ?person=I42 from URL and reconstructs xref @I42@', () => {
+  it('reads ?p= compact token from URL', () => {
+    const mod = loadModule('?p=G');
+    mod.initState('@I1@');
+    expect(mod.getState().focusXref).toBe('@I42@');
+  });
+
+  it('reads legacy ?person=I42 for backward compatibility', () => {
     const mod = loadModule('?person=I42');
     mod.initState('@I1@');
     expect(mod.getState().focusXref).toBe('@I42@');
   });
 
   it('does NOT push to history on initState', () => {
-    const mod = loadModule('?person=I42');
+    const mod = loadModule('?p=G');
     mod.initState('@I1@');
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
 
-  it('reads ?expanded=I5,I12,I23 and reconstructs expandedNodes Set', () => {
+  it('reads ?e= compact param and reconstructs expandedNodes Set', () => {
+    const mod = loadModule('?p=G&e=5+c+n');
+    mod.initState('@I1@');
+    expect(mod.getState().expandedNodes).toEqual(new Set(['@I5@', '@I12@', '@I23@']));
+  });
+
+  it('reads legacy ?expanded= for backward compatibility', () => {
     const mod = loadModule('?person=I42&expanded=I5,I12,I23');
     mod.initState('@I1@');
     expect(mod.getState().expandedNodes).toEqual(new Set(['@I5@', '@I12@', '@I23@']));
   });
 
-  it('expandedNodes is empty Set when no ?expanded= param', () => {
-    const mod = loadModule('?person=I42');
+  it('expandedNodes is empty Set when no ?e= param', () => {
+    const mod = loadModule('?p=G');
     mod.initState('@I1@');
     expect(mod.getState().expandedNodes).toEqual(new Set());
   });
 
-  it('reads ?expanded= with empty value as empty Set', () => {
-    const mod = loadModule('?person=I42&expanded=');
+  it('reads ?e= with empty value as empty Set', () => {
+    const mod = loadModule('?p=G&e=');
     mod.initState('@I1@');
     expect(mod.getState().expandedNodes).toEqual(new Set());
   });
 
-  it('restores both focusXref and expandedNodes from URL', () => {
-    const mod = loadModule('?person=I42&expanded=I5');
+  it('restores both focusXref and expandedNodes from compact URL', () => {
+    const mod = loadModule('?p=G&e=5');
     mod.initState('@I1@');
     expect(mod.getState().focusXref).toBe('@I42@');
     expect(mod.getState().expandedNodes).toEqual(new Set(['@I5@']));
@@ -129,13 +194,13 @@ describe('initState', () => {
 });
 
 describe('setState', () => {
-  it('calls history.pushState with ?person=I42 when focusXref changes', () => {
+  it('calls history.pushState with compact ?p= URL when focusXref changes', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ focusXref: '@I42@' });
     expect(global.history.pushState).toHaveBeenCalledOnce();
     const [, , url] = global.history.pushState.mock.calls[0];
-    expect(url).toContain('?person=I42');
+    expect(url).toContain('?p=G');
   });
 
   it('calls registered onStateChange callbacks', () => {
@@ -150,7 +215,6 @@ describe('setState', () => {
   it('does NOT call history.pushState again when focusXref is unchanged', () => {
     const mod = loadModule('');
     mod.initState('@I42@');
-    // Clear any calls from initState (there should be none, but be safe)
     global.history.pushState.mockClear();
     mod.setState({ focusXref: '@I42@' });
     expect(global.history.pushState).not.toHaveBeenCalled();
@@ -173,30 +237,30 @@ describe('setState', () => {
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
 
-  it('URL from replaceState contains sorted expanded= param', () => {
+  it('URL from replaceState contains compact sorted e= param with + separator', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ expandedNodes: new Set(['@I23@', '@I5@']) });
     const [, , url] = global.history.replaceState.mock.calls[0];
-    expect(url).toContain('?person=I1');
-    expect(url).toContain('expanded=I23,I5');
+    expect(url).toContain('?p=1');
+    expect(url).toContain('e=5+n');
   });
 
-  it('expanded= param is omitted when expandedNodes is empty', () => {
+  it('e= param is omitted when expandedNodes is empty', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ expandedNodes: new Set() });
     const [, , url] = global.history.replaceState.mock.calls[0];
-    expect(url).not.toContain('expanded');
+    expect(url).not.toContain('e=');
   });
 
-  it('pushState URL contains both person= and expanded= when focusXref changes', () => {
+  it('pushState URL contains compact p= and e= when focusXref changes', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ focusXref: '@I42@', expandedNodes: new Set(['@I5@']) });
     const [, , url] = global.history.pushState.mock.calls[0];
-    expect(url).toContain('?person=I42');
-    expect(url).toContain('expanded=I5');
+    expect(url).toContain('?p=G');
+    expect(url).toContain('e=5');
   });
 
   it('when both focusXref and expandedNodes change, only pushState is called', () => {
@@ -225,12 +289,12 @@ describe('setState', () => {
     expect(global.history.replaceState).not.toHaveBeenCalled();
   });
 
-  it('replaceState state object contains expandedXrefs field', () => {
+  it('replaceState state object contains expandedXrefs as +-joined tokens', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ expandedNodes: new Set(['@I5@', '@I12@']) });
     const [stateObj] = global.history.replaceState.mock.calls[0];
-    expect(stateObj).toHaveProperty('expandedXrefs', 'I12,I5');
+    expect(stateObj).toHaveProperty('expandedXrefs', '5+c');
   });
 });
 
@@ -240,17 +304,27 @@ describe('popstate handler', () => {
     mod.initState('@I1@');
     global.history.pushState.mockClear();
 
-    // Fire the popstate listener
     const listeners = global._popstateListeners;
     expect(listeners.length).toBeGreaterThan(0);
     listeners[0]({ state: { focusXref: '@I5@' } });
 
     expect(mod.getState().focusXref).toBe('@I5@');
-    // popstate should NOT push to history again
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
 
-  it('restores expandedNodes from URL on popstate', () => {
+  it('restores expandedNodes from compact URL on popstate', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    global.history.pushState.mockClear();
+
+    vi.stubGlobal('location', makeURL('?p=5&e=c+n'));
+    const listeners = global._popstateListeners;
+    listeners[0]({ state: null });
+
+    expect(mod.getState().expandedNodes).toEqual(new Set(['@I12@', '@I23@']));
+  });
+
+  it('restores expandedNodes from legacy URL on popstate', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     global.history.pushState.mockClear();
@@ -262,12 +336,12 @@ describe('popstate handler', () => {
     expect(mod.getState().expandedNodes).toEqual(new Set(['@I12@', '@I23@']));
   });
 
-  it('sets expandedNodes to empty Set on popstate with no expanded param', () => {
-    const mod = loadModule('?person=I1&expanded=I5');
+  it('sets expandedNodes to empty Set on popstate with no e param', () => {
+    const mod = loadModule('?p=1&e=5');
     mod.initState('@I1@');
     global.history.pushState.mockClear();
 
-    vi.stubGlobal('location', makeURL('?person=I42'));
+    vi.stubGlobal('location', makeURL('?p=G'));
     const listeners = global._popstateListeners;
     listeners[0]({ state: null });
 
@@ -275,13 +349,12 @@ describe('popstate handler', () => {
   });
 
   it('restores expandedNodes from event.state.expandedXrefs when present', () => {
-    const mod = loadModule('?person=I1&expanded=I99');
+    const mod = loadModule('?p=1&e=1B');
     mod.initState('@I1@');
     global.history.pushState.mockClear();
 
-    // location still has I99 — but state has I7,I8
     const listeners = global._popstateListeners;
-    listeners[0]({ state: { focusXref: '@I5@', expandedXrefs: 'I7,I8' } });
+    listeners[0]({ state: { focusXref: '@I5@', expandedXrefs: '7+8' } });
 
     expect(mod.getState().expandedNodes).toEqual(new Set(['@I7@', '@I8@']));
   });
@@ -292,7 +365,7 @@ describe('popstate handler', () => {
     global.history.pushState.mockClear();
     global.history.replaceState.mockClear();
 
-    vi.stubGlobal('location', makeURL('?person=I5&expanded=I12'));
+    vi.stubGlobal('location', makeURL('?p=5&e=c'));
     const listeners = global._popstateListeners;
     listeners[0]({ state: null });
 
@@ -325,42 +398,48 @@ describe('siblings param serialization', () => {
     expect(mod._siblingsToParam(new Set())).toBeNull();
   });
 
-  it('_siblingsToParam returns sorted comma-joined xrefs without @ signs', () => {
+  it('_siblingsToParam returns sorted +-joined tokens', () => {
     const mod = loadModule('');
-    expect(mod._siblingsToParam(new Set(['@I23@', '@I5@', '@I12@']))).toBe('I12,I23,I5');
+    expect(mod._siblingsToParam(new Set(['@I23@', '@I5@', '@I12@']))).toBe('5+c+n');
   });
 
-  it('_siblingsFromParam returns empty Set when no siblings param', () => {
+  it('_siblingsFromParam returns empty Set when no s param', () => {
     const mod = loadModule('');
     expect(mod._siblingsFromParam('')).toEqual(new Set());
   });
 
-  it('_siblingsFromParam parses multiple xrefs with @ wrappers', () => {
+  it('_siblingsFromParam parses multiple compact xrefs with + separator', () => {
     const mod = loadModule('');
-    expect(mod._siblingsFromParam('?siblings=I5,I12')).toEqual(new Set(['@I5@', '@I12@']));
+    expect(mod._siblingsFromParam('?s=5+c')).toEqual(new Set(['@I5@', '@I12@']));
   });
 
-  it('_siblingsFromParam ignores ?expanded= param', () => {
+  it('_siblingsFromParam ignores ?e= param', () => {
     const mod = loadModule('');
-    expect(mod._siblingsFromParam('?expanded=I5')).toEqual(new Set());
+    expect(mod._siblingsFromParam('?e=5')).toEqual(new Set());
   });
 });
 
 describe('initState with siblings', () => {
-  it('reads ?siblings=I5,I12 and reconstructs expandedSiblingsXrefs Set', () => {
+  it('reads ?s= compact param and reconstructs expandedSiblingsXrefs Set', () => {
+    const mod = loadModule('?p=G&s=5+c');
+    mod.initState('@I1@');
+    expect(mod.getState().expandedSiblingsXrefs).toEqual(new Set(['@I5@', '@I12@']));
+  });
+
+  it('reads legacy ?siblings= for backward compatibility', () => {
     const mod = loadModule('?person=I42&siblings=I5,I12');
     mod.initState('@I1@');
     expect(mod.getState().expandedSiblingsXrefs).toEqual(new Set(['@I5@', '@I12@']));
   });
 
-  it('expandedSiblingsXrefs is empty Set when no ?siblings= param', () => {
-    const mod = loadModule('?person=I42');
+  it('expandedSiblingsXrefs is empty Set when no ?s= param', () => {
+    const mod = loadModule('?p=G');
     mod.initState('@I1@');
     expect(mod.getState().expandedSiblingsXrefs).toEqual(new Set());
   });
 
-  it('restores all three: focusXref, expandedNodes, expandedSiblingsXrefs', () => {
-    const mod = loadModule('?person=I42&expanded=I5&siblings=I8');
+  it('restores all three: focusXref, expandedNodes, expandedSiblingsXrefs from compact URL', () => {
+    const mod = loadModule('?p=G&e=5&s=8');
     mod.initState('@I1@');
     const s = mod.getState();
     expect(s.focusXref).toBe('@I42@');
@@ -379,20 +458,20 @@ describe('setState with siblings', () => {
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
 
-  it('URL from replaceState contains sorted siblings= param', () => {
+  it('URL from replaceState contains compact sorted s= param with + separator', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ expandedSiblingsXrefs: new Set(['@I23@', '@I5@']) });
     const [, , url] = global.history.replaceState.mock.calls[0];
-    expect(url).toContain('siblings=I23,I5');
+    expect(url).toContain('s=5+n');
   });
 
-  it('siblings= param is omitted when expandedSiblingsXrefs is empty', () => {
+  it('s= param is omitted when expandedSiblingsXrefs is empty', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ expandedSiblingsXrefs: new Set() });
     const [, , url] = global.history.replaceState.mock.calls[0];
-    expect(url).not.toContain('siblings');
+    expect(url).not.toContain('s=');
   });
 
   it('does NOT call replaceState when expandedSiblingsXrefs reference is unchanged', () => {
@@ -405,7 +484,7 @@ describe('setState with siblings', () => {
     expect(global.history.replaceState).not.toHaveBeenCalled();
   });
 
-  it('pushState URL contains person=, expanded=, and siblings= when focusXref changes', () => {
+  it('pushState URL contains compact p=, e=, and s= when focusXref changes', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({
@@ -414,17 +493,17 @@ describe('setState with siblings', () => {
       expandedSiblingsXrefs: new Set(['@I8@']),
     });
     const [, , url] = global.history.pushState.mock.calls[0];
-    expect(url).toContain('?person=I42');
-    expect(url).toContain('expanded=I5');
-    expect(url).toContain('siblings=I8');
+    expect(url).toContain('?p=G');
+    expect(url).toContain('e=5');
+    expect(url).toContain('s=8');
   });
 
-  it('replaceState state object contains siblingsXrefs field', () => {
+  it('replaceState state object contains siblingsXrefs as +-joined tokens', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     mod.setState({ expandedSiblingsXrefs: new Set(['@I5@', '@I12@']) });
     const [stateObj] = global.history.replaceState.mock.calls[0];
-    expect(stateObj).toHaveProperty('siblingsXrefs', 'I12,I5');
+    expect(stateObj).toHaveProperty('siblingsXrefs', '5+c');
   });
 
   it('changing both expanded sets in one call triggers exactly one replaceState', () => {
@@ -445,11 +524,20 @@ describe('popstate with siblings', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     const listeners = global._popstateListeners;
-    listeners[0]({ state: { focusXref: '@I5@', siblingsXrefs: 'I7,I8' } });
+    listeners[0]({ state: { focusXref: '@I5@', siblingsXrefs: '7+8' } });
     expect(mod.getState().expandedSiblingsXrefs).toEqual(new Set(['@I7@', '@I8@']));
   });
 
-  it('restores expandedSiblingsXrefs from URL when state is null', () => {
+  it('restores expandedSiblingsXrefs from compact URL when state is null', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    vi.stubGlobal('location', makeURL('?p=5&s=c+n'));
+    const listeners = global._popstateListeners;
+    listeners[0]({ state: null });
+    expect(mod.getState().expandedSiblingsXrefs).toEqual(new Set(['@I12@', '@I23@']));
+  });
+
+  it('restores expandedSiblingsXrefs from legacy URL when state is null', () => {
     const mod = loadModule('');
     mod.initState('@I1@');
     vi.stubGlobal('location', makeURL('?person=I5&siblings=I12,I23'));
@@ -458,10 +546,10 @@ describe('popstate with siblings', () => {
     expect(mod.getState().expandedSiblingsXrefs).toEqual(new Set(['@I12@', '@I23@']));
   });
 
-  it('sets expandedSiblingsXrefs to empty Set on popstate with no siblings param', () => {
-    const mod = loadModule('?person=I1&siblings=I5');
+  it('sets expandedSiblingsXrefs to empty Set on popstate with no s param', () => {
+    const mod = loadModule('?p=1&s=5');
     mod.initState('@I1@');
-    vi.stubGlobal('location', makeURL('?person=I42'));
+    vi.stubGlobal('location', makeURL('?p=G'));
     const listeners = global._popstateListeners;
     listeners[0]({ state: null });
     expect(mod.getState().expandedSiblingsXrefs).toEqual(new Set());

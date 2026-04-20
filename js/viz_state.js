@@ -10,21 +10,69 @@ let _state = {
 
 const _callbacks = [];
 
-// ── helpers ───────────────────────────────────────────────────────────────
+// ── base62 helpers ────────────────────────────────────────────────────────
 
-function _setToParam(set) {
-  if (!set || set.size === 0) return null;
-  return Array.from(set)
-    .map(x => x.replace(/@/g, ''))
-    .sort()
-    .join(',');
+const BASE62 = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function _toBase62(n) {
+  if (n === 0) return '0';
+  let s = '';
+  while (n > 0) {
+    s = BASE62[n % 62] + s;
+    n = Math.floor(n / 62);
+  }
+  return s;
 }
 
-function _setFromParam(search, paramName) {
+function _fromBase62(s) {
+  let n = 0;
+  for (const c of s) n = n * 62 + BASE62.indexOf(c);
+  return n;
+}
+
+function _xrefToToken(xref) {
+  // '@I380071267816@' → '6GRCj0Y'
+  const inner = xref.replace(/@/g, '').slice(1);
+  return /^\d+$/.test(inner) ? _toBase62(Number(inner)) : inner;
+}
+
+function _tokenToXref(token) {
+  // '6GRCj0Y' → '@I380071267816@'
+  return '@I' + _fromBase62(token) + '@';
+}
+
+// ── URL helpers ───────────────────────────────────────────────────────────
+
+// Extract raw param value from search string without URLSearchParams
+// so that literal '+' characters are preserved (URLSearchParams decodes '+' as space).
+function _getRawParam(search, name) {
+  const m = new RegExp('[?&]' + name + '=([^&]*)').exec(search);
+  return m ? m[1] : null;
+}
+
+function _isLegacyUrl(search) {
+  return new URLSearchParams(search).has('person');
+}
+
+function _legacySetFromParam(search, paramName) {
   const params = new URLSearchParams(search);
   const raw = params.get(paramName);
   if (!raw) return new Set();
   return new Set(raw.split(',').filter(Boolean).map(x => '@' + x + '@'));
+}
+
+function _setToParam(set) {
+  if (!set || set.size === 0) return null;
+  return Array.from(set)
+    .map(_xrefToToken)
+    .sort()
+    .join('+');
+}
+
+function _setFromParam(search, paramName) {
+  const raw = _getRawParam(search, paramName);
+  if (!raw) return new Set();
+  return new Set(raw.split('+').filter(Boolean).map(_tokenToXref));
 }
 
 function _expandedToParam(expandedNodes) {
@@ -32,7 +80,7 @@ function _expandedToParam(expandedNodes) {
 }
 
 function _expandedFromParam(search) {
-  return _setFromParam(search, 'expanded');
+  return _setFromParam(search, 'e');
 }
 
 function _siblingsToParam(expandedSiblingsXrefs) {
@@ -40,11 +88,13 @@ function _siblingsToParam(expandedSiblingsXrefs) {
 }
 
 function _siblingsFromParam(search) {
-  return _setFromParam(search, 'siblings');
+  return _setFromParam(search, 's');
 }
 
 function _xrefFromUrl(search) {
   const params = new URLSearchParams(search);
+  const p = params.get('p');
+  if (p) return _tokenToXref(p);
   const person = params.get('person');
   if (person) return '@' + person + '@';
   return null;
@@ -52,12 +102,12 @@ function _xrefFromUrl(search) {
 
 function _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs) {
   if (!focusXref) return '';
-  const clean = focusXref.replace(/@/g, '');
+  const token = _xrefToToken(focusXref);
   const expandedParam = _expandedToParam(expandedNodes);
   const siblingsParam = _siblingsToParam(expandedSiblingsXrefs);
-  let url = '?person=' + clean;
-  if (expandedParam) url += '&expanded=' + expandedParam;
-  if (siblingsParam) url += '&siblings=' + siblingsParam;
+  let url = '?p=' + token;
+  if (expandedParam) url += '&e=' + expandedParam;
+  if (siblingsParam) url += '&s=' + siblingsParam;
   return url;
 }
 
@@ -92,10 +142,20 @@ function _replaceHistory(focusXref, expandedNodes, expandedSiblingsXrefs) {
 function initState(rootXref) {
   const search = typeof location !== 'undefined' ? location.search : '';
   const fromUrl = _xrefFromUrl(search);
+
+  let expandedNodes, expandedSiblingsXrefs;
+  if (_isLegacyUrl(search)) {
+    expandedNodes         = _legacySetFromParam(search, 'expanded');
+    expandedSiblingsXrefs = _legacySetFromParam(search, 'siblings');
+  } else {
+    expandedNodes         = _expandedFromParam(search);
+    expandedSiblingsXrefs = _siblingsFromParam(search);
+  }
+
   _state = {
     focusXref:             fromUrl || rootXref,
-    expandedNodes:         _expandedFromParam(search),
-    expandedSiblingsXrefs: _siblingsFromParam(search),
+    expandedNodes,
+    expandedSiblingsXrefs,
     panelOpen:             false,
     panelXref:             null,
   };
@@ -113,8 +173,10 @@ function initState(rootXref) {
       let newExpanded;
       if (event.state && event.state.expandedXrefs !== undefined) {
         newExpanded = event.state.expandedXrefs
-          ? new Set(event.state.expandedXrefs.split(',').map(x => '@' + x + '@'))
+          ? new Set(event.state.expandedXrefs.split('+').map(_tokenToXref))
           : new Set();
+      } else if (_isLegacyUrl(locSearch)) {
+        newExpanded = _legacySetFromParam(locSearch, 'expanded');
       } else {
         newExpanded = _expandedFromParam(locSearch);
       }
@@ -122,8 +184,10 @@ function initState(rootXref) {
       let newSiblings;
       if (event.state && event.state.siblingsXrefs !== undefined) {
         newSiblings = event.state.siblingsXrefs
-          ? new Set(event.state.siblingsXrefs.split(',').map(x => '@' + x + '@'))
+          ? new Set(event.state.siblingsXrefs.split('+').map(_tokenToXref))
           : new Set();
+      } else if (_isLegacyUrl(locSearch)) {
+        newSiblings = _legacySetFromParam(locSearch, 'siblings');
       } else {
         newSiblings = _siblingsFromParam(locSearch);
       }
@@ -172,6 +236,10 @@ if (typeof module !== 'undefined') module.exports = {
   setState,
   onStateChange,
   getState,
+  _toBase62,
+  _fromBase62,
+  _xrefToToken,
+  _tokenToXref,
   _expandedToParam,
   _expandedFromParam,
   _siblingsToParam,
