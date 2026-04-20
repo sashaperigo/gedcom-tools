@@ -1185,7 +1185,7 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
       const n = (person.notes || []).find(n => n.note_xref === String(eventOcc));
       cite = (n && n.citations || [])[citationIndex] || null;
     } else {
-      const fact = (person.events || []).find(f => f.tag === factTag);
+      const fact = (person.events || []).find(f => f.tag === factTag && f.event_idx === _editCitationEventOcc);
       if (fact) cite = (fact.citations || [])[citationIndex] || null;
     }
   }

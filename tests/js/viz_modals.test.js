@@ -769,6 +769,7 @@ describe('showEditCitationModal', () => {
         events: [
           {
             tag: 'BIRT',
+            event_idx: 0,
             date: '1900',
             citations: [
               { sourceXref: '@S1@', page: 'p. 42', text: 'Full transcript', note: 'Researcher note', url: 'https://example.com/src' },
@@ -854,6 +855,16 @@ describe('showEditCitationModal', () => {
     showEditCitationModal('@I1@', 'BIRT', 0);
     await submitEditCitationModal();
     expect(global.PEOPLE['@I1@']).toEqual(updatedPerson);
+  });
+
+  it('pre-fills from the correct occurrence when multiple events share the same tag', () => {
+    if (!showEditCitationModal) return;
+    global.PEOPLE['@I1@'].events = [
+      { tag: 'OCCU', event_idx: 0, citations: [{ sourceXref: '@S1@', page: 'First job page', text: '', note: '', url: '' }] },
+      { tag: 'OCCU', event_idx: 1, citations: [{ sourceXref: '@S1@', page: 'Second job page', text: '', note: '', url: '' }] },
+    ];
+    showEditCitationModal('@I1@', 'OCCU', 0, undefined, 1);
+    expect(pageInp.value).toBe('Second job page');
   });
 });
 
