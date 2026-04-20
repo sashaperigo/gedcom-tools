@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from viz_ancestors import parse_gedcom, build_addr_by_place, build_all_places, _find_person
+from viz_ancestors import parse_gedcom, build_addr_by_place, build_all_places, _find_person, _normalize_citation, _spouse_of
 
 _FIXTURE_GED = str(Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged')
 
@@ -454,3 +454,59 @@ class TestAgeAtDeathFromNumericAge:
         assert self._build(tmp_path, 'STILLBORN') == 'STILLBORN'
         assert self._build(tmp_path, 'INFANT') == 'INFANT'
         assert self._build(tmp_path, 'CHILD') == 'CHILD'
+
+
+# ---------------------------------------------------------------------------
+# _normalize_citation
+# ---------------------------------------------------------------------------
+
+class TestNormalizeCitation:
+    def test_sour_xref_renamed_to_sourceXref(self):
+        c = {'sour_xref': '@S1@', 'page': 'p. 5'}
+        result = _normalize_citation(c)
+        assert result['sourceXref'] == '@S1@'
+        assert 'sour_xref' not in result
+
+    def test_other_fields_preserved(self):
+        c = {'sour_xref': '@S1@', 'page': 'p. 5', 'url': 'http://example.com'}
+        result = _normalize_citation(c)
+        assert result['page'] == 'p. 5'
+        assert result['url'] == 'http://example.com'
+
+    def test_extra_fields_passed_through(self):
+        c = {'sour_xref': '@S2@', 'text': 'some text', 'note': 'a note'}
+        result = _normalize_citation(c)
+        assert result['text'] == 'some text'
+        assert result['note'] == 'a note'
+
+    def test_none_fields_preserved(self):
+        c = {'sour_xref': '@S3@', 'page': None, 'url': None}
+        result = _normalize_citation(c)
+        assert result['page'] is None
+        assert result['url'] is None
+
+
+# ---------------------------------------------------------------------------
+# _spouse_of
+# ---------------------------------------------------------------------------
+
+class TestSpouseOf:
+    def test_returns_wife_when_xref_is_husb(self):
+        fam = {'husb': '@I1@', 'wife': '@I2@', 'chil': []}
+        assert _spouse_of(fam, '@I1@') == '@I2@'
+
+    def test_returns_husb_when_xref_is_wife(self):
+        fam = {'husb': '@I1@', 'wife': '@I2@', 'chil': []}
+        assert _spouse_of(fam, '@I2@') == '@I1@'
+
+    def test_returns_none_when_xref_not_in_fam(self):
+        fam = {'husb': '@I1@', 'wife': '@I2@', 'chil': []}
+        assert _spouse_of(fam, '@I9@') is None
+
+    def test_returns_wife_when_husb_missing(self):
+        fam = {'husb': None, 'wife': '@I2@', 'chil': []}
+        assert _spouse_of(fam, '@I2@') is None
+
+    def test_returns_none_when_both_missing(self):
+        fam = {'husb': None, 'wife': None, 'chil': []}
+        assert _spouse_of(fam, '@I1@') is None

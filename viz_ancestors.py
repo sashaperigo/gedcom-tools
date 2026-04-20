@@ -541,6 +541,18 @@ def _matches_exclusion(evt: dict, excl: dict) -> bool:
     return True
 
 
+def _normalize_citation(c: dict) -> dict:
+    return {'sourceXref': c['sour_xref'], **{k: v for k, v in c.items() if k != 'sour_xref'}}
+
+
+def _spouse_of(fam: dict, xref: str) -> str | None:
+    if fam.get('husb') == xref:
+        return fam.get('wife')
+    if fam.get('wife') == xref:
+        return fam.get('husb')
+    return None
+
+
 def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                       sources: dict | None = None,
                       exclude: list | None = None) -> dict:
@@ -587,15 +599,7 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         tagged_events = []
         for e in info['events']:
             t = e['tag']
-            # Normalise citation keys: sour_xref → sourceXref so JS can resolve
-            # source titles via SOURCES[citation.sourceXref].titl.
-            normalised_cites = [
-                {
-                    'sourceXref': c['sour_xref'],
-                    **{k: v for k, v in c.items() if k != 'sour_xref'},
-                }
-                for c in e.get('citations', [])
-            ]
+            normalised_cites = [_normalize_citation(c) for c in e.get('citations', [])]
             e_out = {**e, 'citations': normalised_cites}
             # Attach godparent ASSOs (stored at the INDI level) to BAPM/CHR
             # events so the panel can render them as pills.
@@ -618,17 +622,14 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
             for fam_xref in info.get('fams', []):
                 fam = fams.get(fam_xref, {})
                 marrs = fam.get('marrs', [])
-                spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
+                spouse_xref = _spouse_of(fam, xref)
                 spouse_name = indis[spouse_xref]['name'] if spouse_xref and spouse_xref in indis else None
                 appended = False
                 for marr_idx, marr in enumerate(marrs):
                     # Skip bare duplicate MARR entries (no sub-tags) that can appear after a merge
                     if not any(marr.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
                         continue
-                    marr_cites = [
-                        {'sourceXref': c['sour_xref'], **{k: v for k, v in c.items() if k != 'sour_xref'}}
-                        for c in marr.get('citations', [])
-                    ]
+                    marr_cites = [_normalize_citation(c) for c in marr.get('citations', [])]
                     # MARR events live in FAM blocks; event_idx=None marks them as non-editable via INDI
                     events.append({**marr, 'citations': marr_cites,
                                    'event_idx': None, 'marr_idx': marr_idx,
@@ -647,10 +648,7 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                 for div_idx, div in enumerate(fam.get('divs', [])):
                     if not any(div.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
                         continue
-                    div_cites = [
-                        {'sourceXref': c['sour_xref'], **{k: v for k, v in c.items() if k != 'sour_xref'}}
-                        for c in div.get('citations', [])
-                    ]
+                    div_cites = [_normalize_citation(c) for c in div.get('citations', [])]
                     events.append({**div, 'citations': div_cites,
                                    'event_idx': None, 'div_idx': div_idx,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
@@ -663,10 +661,7 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         )
         normalised_notes = []
         for n in info.get('notes', []):
-            norm_cites = [
-                {'sourceXref': c['sour_xref'], **{k: v for k, v in c.items() if k != 'sour_xref'}}
-                for c in n.get('citations', [])
-            ]
+            norm_cites = [_normalize_citation(c) for c in n.get('citations', [])]
             normalised_notes.append({**n, 'citations': norm_cites})
         result[xref] = {
             'name':         info['name'] or '?',
@@ -735,7 +730,7 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
         spouses = []
         for fam_xref in p.get('fams', []):
             fam = fams.get(fam_xref, {})
-            spouse_xref = fam.get('wife') if fam.get('husb') == xref else fam.get('husb')
+            spouse_xref = _spouse_of(fam, xref)
             if spouse_xref and spouse_xref in indis:
                 spouses.append(spouse_xref)
 
@@ -747,7 +742,7 @@ def build_relatives_json(tree: dict, indis: dict, fams: dict) -> dict:
             sib_sp = []
             for fam_xref in sib.get('fams', []):
                 fam = fams.get(fam_xref, {})
-                sp_xref = fam.get('wife') if fam.get('husb') == sib_xref else fam.get('husb')
+                sp_xref = _spouse_of(fam, sib_xref)
                 if sp_xref and sp_xref in indis:
                     sib_sp.append(sp_xref)
             if sib_sp:
