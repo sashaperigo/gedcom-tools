@@ -34,6 +34,7 @@ function _xrefFromUrl(search) {
 }
 
 function _buildUrl(focusXref, expandedNodes) {
+  if (!focusXref) return '';
   const clean = focusXref.replace(/@/g, '');
   const expandedParam = _expandedToParam(expandedNodes);
   return expandedParam

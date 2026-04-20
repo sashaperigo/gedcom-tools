@@ -224,6 +224,14 @@ describe('setState', () => {
     mod.setState({ expandedNodes: sameSet });
     expect(global.history.replaceState).not.toHaveBeenCalled();
   });
+
+  it('replaceState state object contains expandedXrefs field', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    mod.setState({ expandedNodes: new Set(['@I5@', '@I12@']) });
+    const [stateObj] = global.history.replaceState.mock.calls[0];
+    expect(stateObj).toHaveProperty('expandedXrefs', 'I12,I5');
+  });
 });
 
 describe('popstate handler', () => {
