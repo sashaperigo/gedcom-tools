@@ -1705,14 +1705,21 @@ def build_addr_by_place(indis: dict) -> dict:
     return {k: sorted(v) for k, v in result.items()}
 
 
+def _json_for_script(obj) -> str:
+    """Serialize to JSON safe for embedding in an inline <script> block.
+    Escapes `</` as `<\\/` so a user-supplied "</script" substring cannot
+    terminate the enclosing <script> element."""
+    return json.dumps(obj).replace('</', '<\\/')
+
+
 def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis: dict,
                 fams: dict | None = None, root_xref: str | None = None,
                 sources: dict | None = None) -> str:
     """Return a complete self-contained HTML string."""
     safe_name      = html_mod.escape(root_name)
-    tree_json      = json.dumps(tree)
-    people_json    = json.dumps(people)
-    relatives_json = json.dumps(relatives)
+    tree_json      = _json_for_script(tree)
+    people_json    = _json_for_script(people)
+    relatives_json = _json_for_script(relatives)
     all_people     = sorted(
         [{"id": xref, "name": info["name"] or "",
           "birth_year": info.get("birth_year") or "",
@@ -1720,7 +1727,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
          for xref, info in indis.items()],
         key=lambda p: p["name"].lower()
     )
-    all_people_json = json.dumps(all_people)
+    all_people_json = _json_for_script(all_people)
     # Build parent map for JS tree rebuilding
     parents = {}
     if fams:
@@ -1731,10 +1738,10 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
                 parents[xref] = [fam.get('husb'), fam.get('wife')]
             else:
                 parents[xref] = [None, None]
-    parents_json        = json.dumps(parents)
-    root_xref_json      = json.dumps(root_xref or '')
-    addr_by_place_json  = json.dumps(build_addr_by_place(indis))
-    all_places_json     = json.dumps(build_all_places(indis, fams))
+    parents_json        = _json_for_script(parents)
+    root_xref_json      = _json_for_script(root_xref or '')
+    addr_by_place_json  = _json_for_script(build_addr_by_place(indis))
+    all_places_json     = _json_for_script(build_all_places(indis, fams))
     # Build global SOURCES dict: {xref: {titl, auth, publ, repo, note, url}}
     source_urls_global: dict[str, str] = {}
     for indi_info in indis.values():
@@ -1752,7 +1759,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         }
         for xref, sour in (sources or {}).items()
     }
-    sources_json = json.dumps(sources_js)
+    sources_json = _json_for_script(sources_js)
     return (
         _HTML_TEMPLATE
         .replace('__ROOT_NAME__', safe_name)

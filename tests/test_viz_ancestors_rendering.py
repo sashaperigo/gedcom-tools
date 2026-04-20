@@ -238,6 +238,32 @@ class TestHtmlAttributeSafety:
                 f'Double-quote injection in changeRoot onclick: {m.group(0)!r}'
             )
 
+    def test_embedded_json_escapes_closing_script_tag(self, indis, fams, parsed, tree, relatives):
+        """
+        JSON data injected into an inline <script> block must escape `</` as
+        `<\\/` — otherwise any note/name containing the substring "</script"
+        closes the script element early, producing "Unexpected end of input".
+        """
+        from viz_ancestors import render_html, build_people_json
+        _, fams2, sources = parsed
+        # Inject a hostile substring into the first person's name.
+        hostile_indis = {k: dict(v) for k, v in indis.items()}
+        first = next(iter(hostile_indis))
+        hostile_indis[first] = dict(hostile_indis[first])
+        hostile_indis[first]['name'] = 'Rose </script><img src=x> Smith'
+        people = build_people_json(set(hostile_indis.keys()), hostile_indis, fams2, sources)
+        html_out = render_html(tree, 'Rose Smith', people, relatives, hostile_indis,
+                               fams=fams2, root_xref='@I1@')
+        # Count of "</script" must equal the count of "<script" — anything
+        # extra means the HTML parser will terminate a script block early.
+        open_tags  = len(re.findall(r'<script\b', html_out, re.IGNORECASE))
+        close_tags = html_out.lower().count('</script')
+        assert open_tags == close_tags, (
+            f'script open tags ({open_tags}) != close tags ({close_tags}). '
+            'Embedded JSON must escape "</" as "<\\/" so user-supplied strings '
+            'containing "</script" do not prematurely end the <script> element.'
+        )
+
 
 # ---------------------------------------------------------------------------
 # B5  PARENTS and ROOT_XREF present in rendered HTML
