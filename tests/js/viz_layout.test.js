@@ -1448,3 +1448,111 @@ describe('computeLayout — ancestor sibling expansion', () => {
     }
   });
 });
+
+// ── Sibling umbrella (force-expand parents, umbrella spans ancestor+sibs) ──
+
+describe('computeLayout — sibling expansion umbrella', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':  { birth_year: 2000, sex: 'M' },
+        '@FATHER@': { birth_year: 1970, sex: 'M' },
+        '@MOTHER@': { birth_year: 1972, sex: 'F' },
+        '@M_GF@':   { birth_year: 1945, sex: 'M' },  // mother's father
+        '@M_GM@':   { birth_year: 1947, sex: 'F' },  // mother's mother
+        '@M_SIB1@': { birth_year: 1968, sex: 'F' },
+        '@M_SIB2@': { birth_year: 1976, sex: 'M' },
+        '@M_SIB2_SP@': { birth_year: 1975, sex: 'F' },
+      },
+      parents: {
+        '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+        '@FATHER@': [null, null],
+        '@MOTHER@': ['@M_GF@', '@M_GM@'],
+      },
+      relatives: {
+        '@FOCUS@':  { siblings: [], spouses: [] },
+        '@FATHER@': { siblings: [], spouses: [] },
+        '@MOTHER@': { siblings: ['@M_SIB1@', '@M_SIB2@'], spouses: [] },
+        '@M_SIB1@': { siblings: [], spouses: [] },
+        '@M_SIB2@': { siblings: [], spouses: ['@M_SIB2_SP@'] },
+      },
+    });
+  });
+
+  it('force-expands the ancestor\'s parents when only siblings are expanded', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    expect(nodes.find(n => n.xref === '@M_GF@')).toBeDefined();
+    expect(nodes.find(n => n.xref === '@M_GM@')).toBeDefined();
+  });
+
+  it('emits a crossbar at umbrella-y spanning leftmost to rightmost of (ancestor + siblings)', () => {
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const umbrellaY = -ROW_HEIGHT - (ROW_HEIGHT - NODE_H) / 2;
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
+    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
+    const bioCenters = [mother, sib1, sib2].map(n => n.x + NODE_W / 2).sort((a, b) => a - b);
+    const leftX = bioCenters[0];
+    const rightX = bioCenters[bioCenters.length - 1];
+    const crossbar = edges.find(e =>
+      Math.abs(e.y1 - umbrellaY) < 0.5 && Math.abs(e.y2 - umbrellaY) < 0.5 &&
+      Math.abs(e.x1 - leftX) < 0.5 && Math.abs(e.x2 - rightX) < 0.5
+    );
+    expect(crossbar).toBeDefined();
+  });
+
+  it('emits a vertical drop from umbrella to each biological child (ancestor + each sibling)', () => {
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const umbrellaY = -ROW_HEIGHT - (ROW_HEIGHT - NODE_H) / 2;
+    const bioXrefs = ['@MOTHER@', '@M_SIB1@', '@M_SIB2@'];
+    for (const xref of bioXrefs) {
+      const n = nodes.find(nn => nn.xref === xref);
+      const cx = n.x + NODE_W / 2;
+      const drop = edges.find(e =>
+        Math.abs(e.x1 - cx) < 0.5 && Math.abs(e.x2 - cx) < 0.5 &&
+        Math.abs(e.y1 - umbrellaY) < 0.5 && Math.abs(e.y2 - n.y) < 0.5
+      );
+      expect(drop).toBeDefined();
+    }
+  });
+
+  it('does NOT drop to siblings\' spouses (only biological children)', () => {
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const umbrellaY = -ROW_HEIGHT - (ROW_HEIGHT - NODE_H) / 2;
+    const sp = nodes.find(n => n.xref === '@M_SIB2_SP@');
+    expect(sp).toBeDefined();
+    const cx = sp.x + NODE_W / 2;
+    const dropToSpouse = edges.find(e =>
+      Math.abs(e.x1 - cx) < 0.5 && Math.abs(e.x2 - cx) < 0.5 &&
+      Math.abs(e.y1 - umbrellaY) < 0.5
+    );
+    expect(dropToSpouse).toBeUndefined();
+  });
+
+  it('anchor drop goes from parent marriage midpoint down to umbrella-y', () => {
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const umbrellaY = -ROW_HEIGHT - (ROW_HEIGHT - NODE_H) / 2;
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const parentMidY = -2 * ROW_HEIGHT + NODE_H / 2;
+    const anchorCx = mother.x + NODE_W / 2;
+    const anchor = edges.find(e =>
+      Math.abs(e.x1 - anchorCx) < 0.5 && Math.abs(e.x2 - anchorCx) < 0.5 &&
+      Math.abs(e.y1 - parentMidY) < 0.5 && Math.abs(e.y2 - umbrellaY) < 0.5
+    );
+    expect(anchor).toBeDefined();
+  });
+
+  it('does NOT emit the legacy straight drop from parent marriage to child top when siblings are expanded', () => {
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const cx = mother.x + NODE_W / 2;
+    const parentMidY = -2 * ROW_HEIGHT + NODE_H / 2;
+    // The old behavior was a drop from parentMidY down to y=-ROW_HEIGHT (mother top).
+    // With umbrella, that direct drop is replaced by an anchor-to-umbrella drop.
+    const legacyDrop = edges.find(e =>
+      Math.abs(e.x1 - cx) < 0.5 && Math.abs(e.x2 - cx) < 0.5 &&
+      Math.abs(e.y1 - parentMidY) < 0.5 && Math.abs(e.y2 - (-ROW_HEIGHT)) < 0.5
+    );
+    expect(legacyDrop).toBeUndefined();
+  });
+});

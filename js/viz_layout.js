@@ -65,6 +65,13 @@ function _packRow(items, startX, y, role) {
 function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs) {
   const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
   const SLOT = NODE_W + H_GAP;
+
+  // Force-expand: any ancestor whose siblings are shown also needs their
+  // parents placed, so the sibling group can hang from a proper umbrella.
+  const effectiveExpandedAncestors = new Set([
+    ...(expandedAncestors || []),
+    ...(expandedSiblingsXrefs || []),
+  ]);
   // Gap between focus node edge and nearest sibling: account for focus being wider than NODE_W.
   const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
 
@@ -182,7 +189,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs) {
       // Separation is driven by each parent's subtree contour so that deep
       // ancestors on either side don't collide while keeping the marriage-line
       // midpoint above the child.
-      const sep = _requiredSeparation(fatherXref, motherXref, expandedAncestors);
+      const sep = _requiredSeparation(fatherXref, motherXref, effectiveExpandedAncestors);
       const fatherX = focusCenterX - sep / 2 - NODE_W / 2;
       const motherX = focusCenterX + sep / 2 - NODE_W / 2;
 
@@ -196,18 +203,20 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs) {
         type: 'marriage',
       });
 
-      _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
-      _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+      // Place siblings BEFORE parents so _placeAncestors can emit an umbrella
+      // spanning each ancestor + its siblings.
+      _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges);
+      _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges);
 
-      _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, nodes, edges);
-      _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, nodes, edges);
+      _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, nodes, edges);
+      _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, nodes, edges);
     } else {
       // Single parent: centered on focus center.
       const singleParent = fatherXref || motherXref;
       const singleParentX = focusCenterX - NODE_W / 2;
       nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-      _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
-      _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, nodes, edges);
+      _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges);
+      _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, nodes, edges);
     }
 
     // Umbrella geometry (mirrors the descendant umbrella).
@@ -368,39 +377,95 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSibl
     nodes.push({ xref: fatherXref, x: fatherX, y: nextY, generation: nextGen, role: 'ancestor' });
     nodes.push({ xref: motherXref, x: motherX, y: nextY, generation: nextGen, role: 'ancestor' });
 
-    // Universal umbrella: marriage edge between the parents + a single vertical drop
-    // from the marriage-line midpoint (= child's center) down to the child's top.
+    // Marriage edge between the parents.
     const parentMidY = nextY + NODE_H / 2;
     edges.push({
       x1: fatherX + NODE_W, y1: parentMidY,
       x2: motherX,           y2: parentMidY,
       type: 'marriage',
     });
-    edges.push({
-      x1: x + NODE_W / 2, y1: parentMidY,
-      x2: x + NODE_W / 2, y2: y,
-      type: 'ancestor',
-    });
+
+    // Umbrella down to the child row. If the child (xref) has expanded
+    // siblings, the umbrella spans all biological children of this couple;
+    // otherwise it's a single vertical drop.
+    _emitChildUmbrella(xref, x, y, parentMidY, nodes, edges);
+
+    // Place siblings of f/m BEFORE recursing deeper so their subtree umbrellas
+    // can span the right groups.
+    _placeAncestorSiblings(fatherXref, fatherX, nextY, expandedSiblingsXrefs, expandedAncestors, nodes, edges);
+    _placeAncestorSiblings(motherXref, motherX, nextY, expandedSiblingsXrefs, expandedAncestors, nodes, edges);
 
     _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
     _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
-
-    _placeAncestorSiblings(fatherXref, fatherX, nextY, expandedSiblingsXrefs, nodes, edges);
-    _placeAncestorSiblings(motherXref, motherX, nextY, expandedSiblingsXrefs, nodes, edges);
   } else {
     const singleParent = fatherXref || motherXref;
     nodes.push({ xref: singleParent, x, y: nextY, generation: nextGen, role: 'ancestor' });
 
-    // Single parent → one straight vertical from parent bottom to child top.
+    // Single parent → umbrella / straight drop from parent bottom to child top.
+    _emitChildUmbrella(xref, x, y, nextY + NODE_H, nodes, edges);
+
+    _placeAncestorSiblings(singleParent, x, nextY, expandedSiblingsXrefs, expandedAncestors, nodes, edges);
+    _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+  }
+}
+
+// For the given child (xref) at (x, y), emit edges connecting the parent
+// layer's anchor (at anchorY) down to this child. If xref has siblings
+// already placed in `nodes` at the same row, emit a proper umbrella:
+// anchor-drop → horizontal crossbar → per-child drops to each biological
+// child (xref + siblings, NOT siblings' spouses).
+// Otherwise, emit a single vertical drop from anchorY to the child's top.
+function _emitChildUmbrella(xref, x, y, anchorY, nodes, edges) {
+  const { NODE_W, NODE_H, ROW_HEIGHT } = DESIGN;
+
+  const sibXrefs = (RELATIVES[xref] && RELATIVES[xref].siblings) || [];
+  const sibNodes = sibXrefs
+    .map(sx => nodes.find(n => n.xref === sx && n.y === y))
+    .filter(Boolean);
+
+  const childCx = x + NODE_W / 2;
+
+  if (sibNodes.length === 0) {
+    // Simple drop, no siblings to group under an umbrella.
     edges.push({
-      x1: x + NODE_W / 2, y1: nextY + NODE_H,
-      x2: x + NODE_W / 2, y2: y,
+      x1: childCx, y1: anchorY,
+      x2: childCx, y2: y,
       type: 'ancestor',
     });
-
-    _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
-    _placeAncestorSiblings(singleParent, x, nextY, expandedSiblingsXrefs, nodes, edges);
+    return;
   }
+
+  const umbrellaY = y - (ROW_HEIGHT - NODE_H) / 2;
+
+  // Anchor drop from parent anchor down to the umbrella bar. By convention
+  // the parent separation is calibrated so the marriage midpoint sits above
+  // the biological child center — we preserve that anchor x.
+  edges.push({
+    x1: childCx, y1: anchorY,
+    x2: childCx, y2: umbrellaY,
+    type: 'ancestor',
+  });
+
+  // Per-child centers (ancestor + each expanded sibling; NOT spouses).
+  const centers = [childCx, ...sibNodes.map(n => n.x + NODE_W / 2)].sort((a, b) => a - b);
+
+  // Crossbar from leftmost to rightmost child center.
+  if (centers.length > 1) {
+    edges.push({
+      x1: centers[0], y1: umbrellaY,
+      x2: centers[centers.length - 1], y2: umbrellaY,
+      type: 'ancestor',
+    });
+  }
+
+  // Vertical drop from umbrella down to each child's top.
+  centers.forEach(cx => {
+    edges.push({
+      x1: cx, y1: umbrellaY,
+      x2: cx, y2: y,
+      type: 'ancestor',
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -411,10 +476,20 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSibl
 // place its full siblings outward (male → left, female → right), each with
 // their spouse adjacent, and emit a sibling_bracket edge tying the group back
 // to the ancestor node.
-function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, nodes, edges) {
+function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges) {
   if (!expandedSiblingsXrefs || !expandedSiblingsXrefs.has(ancXref)) return;
   const sibs = RELATIVES[ancXref]?.siblings ?? [];
   if (sibs.length === 0) return;
+
+  // If the ancestor's parents will be placed (force-expanded + parent data
+  // exists), their _placeAncestors call emits a proper umbrella spanning the
+  // ancestor and siblings. In that case, we skip the fallback flat bracket
+  // here. Otherwise (no parent data), fall back to a horizontal bracket at
+  // pill-mid-y so the siblings are still visually grouped with the ancestor.
+  const parentPair = PARENTS[ancXref] || [];
+  const parentsWillRender =
+    (parentPair[0] || parentPair[1]) &&
+    effectiveExpandedAncestors && effectiveExpandedAncestors.has(ancXref);
 
   const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
   const sorted = _sortByBirthYear(sibs);
@@ -449,11 +524,13 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, node
       lastRightEdge = cursorRight;
       leftEdge = cursorRight + H_GAP;
     });
-    edges.push({
-      x1: ancX + NODE_W, y1: midY,
-      x2: lastRightEdge, y2: midY,
-      type: 'sibling_bracket',
-    });
+    if (!parentsWillRender) {
+      edges.push({
+        x1: ancX + NODE_W, y1: midY,
+        x2: lastRightEdge, y2: midY,
+        type: 'sibling_bracket',
+      });
+    }
   } else {
     let rightEdge = ancX - SIB_CHEVRON_CLEARANCE;  // right edge of first (oldest) sibling
     let lastLeftEdge = rightEdge;
@@ -475,11 +552,13 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, node
       lastLeftEdge = cursorLeft;
       rightEdge = cursorLeft - H_GAP;
     });
-    edges.push({
-      x1: lastLeftEdge, y1: midY,
-      x2: ancX,         y2: midY,
-      type: 'sibling_bracket',
-    });
+    if (!parentsWillRender) {
+      edges.push({
+        x1: lastLeftEdge, y1: midY,
+        x2: ancX,         y2: midY,
+        type: 'sibling_bracket',
+      });
+    }
   }
 }
 
