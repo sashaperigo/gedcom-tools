@@ -1052,6 +1052,13 @@ header h1 { font-size: 16px; font-weight: 600; }
 #edit-citation-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 420px; max-width: 90vw; }
 #edit-citation-modal h3 { margin: 0 0 12px; font-size: 14px; color: #94a3b8; font-weight: 600; }
+#edit-source-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  z-index: 1200; align-items: center; justify-content: center; }
+#edit-source-modal-overlay.open { display: flex; }
+#edit-source-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+  padding: 20px; width: 420px; max-width: 90vw; }
+#edit-source-modal h3 { margin: 0 0 12px; font-size: 14px; color: #94a3b8; font-weight: 600; }
+#edit-source-modal-warning { font-size: 11px; color: #f59e0b; margin: 0 0 12px; line-height: 1.4; }
 #sources-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 20px; width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
 #sources-modal-header { display: flex; align-items: flex-start; justify-content: space-between;
@@ -1457,6 +1464,36 @@ header h1 { font-size: 16px; font-weight: 600; }
       <button id="edit-citation-view-source-btn" class="event-modal-cancel" style="display:none">View Source</button>
       <button class="event-modal-cancel" onclick="closeEditCitationModal()">Cancel</button>
       <button class="event-modal-save" onclick="submitEditCitationModal()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="edit-source-modal-overlay">
+  <div id="edit-source-modal" onkeydown="if(event.key==='Escape')closeEditSourceModal()">
+    <h3 id="edit-source-modal-title">Edit Source Record</h3>
+    <div id="edit-source-modal-warning"></div>
+    <div class="event-modal-field">
+      <label>Title</label>
+      <input type="text" id="edit-source-modal-titl" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Author (optional)</label>
+      <input type="text" id="edit-source-modal-auth" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Publication (optional)</label>
+      <input type="text" id="edit-source-modal-publ" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Repository (optional)</label>
+      <input type="text" id="edit-source-modal-repo" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Note (optional)</label>
+      <textarea id="edit-source-modal-note" rows="2"></textarea>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeEditSourceModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitEditSourceModal()">Save</button>
     </div>
   </div>
 </div>
