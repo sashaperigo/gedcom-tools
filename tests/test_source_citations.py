@@ -161,6 +161,28 @@ class TestEventCitationParsing:
         assert birt['note'] == 'Born at home'
         assert birt['citations'] == [{'sour_xref': '@S1@', 'page': '3'}]
 
+    def test_event_citation_url_from_direct_www(self, tmp_path):
+        """3 WWW directly under 2 SOUR (not inside DATA) should populate url field."""
+        indis, _, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Some Source
+0 @I1@ INDI
+1 NAME John /Smith/
+1 BIRT
+2 DATE 1 JAN 1900
+2 SOUR @S1@
+3 PAGE p. 12
+3 WWW https://example.com/event-direct
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        person = people['@I1@']
+        events = person['events']
+        birt = next(e for e in events if e['tag'] == 'BIRT')
+        assert len(birt['citations']) == 1
+        cite = birt['citations'][0]
+        assert cite.get('url') == 'https://example.com/event-direct'
+        assert cite['page'] == 'p. 12'
+
     def test_all_event_types_get_citations_field(self, tmp_path):
         """Every event tag in _EVENT_TAGS must have a citations list after parsing."""
         indis, _, _ = _parse(tmp_path, _ged("""\
