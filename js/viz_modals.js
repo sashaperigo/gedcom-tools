@@ -378,7 +378,8 @@ async function submitEventModal() {
   }
   // Only include AGE/CAUS when their rows are visible (DEAT events)
   if (ageRow && ageRow.style.display !== 'none') {
-    fields.AGE = document.getElementById('event-modal-age').value.trim();
+    const _age = document.getElementById('event-modal-age').value.trim();
+    fields.AGE = /^\d+$/.test(_age) ? _age + 'y' : _age;
   }
   if (causeRow && causeRow.style.display !== 'none') {
     fields.CAUS = document.getElementById('event-modal-cause').value.trim();
