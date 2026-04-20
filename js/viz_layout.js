@@ -424,8 +424,12 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, node
   const generation = Math.round(ancY / ROW_HEIGHT);
   const midY = ancY + NODE_H / 2;
 
+  // Clearance between the ancestor pill and the first sibling to leave room
+  // for the outward sibling-expand chevron (r=8, 4px off the pill → 20px).
+  const SIB_CHEVRON_CLEARANCE = 24;
+
   if (side === 'right') {
-    let leftEdge = ancX + NODE_W + H_GAP;  // left edge of first (oldest) sibling
+    let leftEdge = ancX + NODE_W + SIB_CHEVRON_CLEARANCE;  // left edge of first (oldest) sibling
     let lastRightEdge = leftEdge;
     sorted.forEach(sibXref => {
       const sibX = leftEdge;
@@ -451,7 +455,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, node
       type: 'sibling_bracket',
     });
   } else {
-    let rightEdge = ancX - H_GAP;  // right edge of first (oldest) sibling
+    let rightEdge = ancX - SIB_CHEVRON_CLEARANCE;  // right edge of first (oldest) sibling
     let lastLeftEdge = rightEdge;
     sorted.forEach(sibXref => {
       const sibX = rightEdge - NODE_W;
