@@ -340,6 +340,9 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                     current_evt['citations'].append({'sour_xref': val, 'page': None})
             elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
                 current_evt['citations'][-1]['page'] = val
+            elif lvl == 3 and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
+                if not current_evt['citations'][-1].get('url'):
+                    current_evt['citations'][-1]['url'] = val
             elif lvl == 4 and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
                 if not current_evt['citations'][-1].get('url'):
                     current_evt['citations'][-1]['url'] = val

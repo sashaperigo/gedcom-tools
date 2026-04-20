@@ -436,6 +436,35 @@ class TestFamEventCitations:
         assert fam['marrs'][0]['citations'] == [{'sour_xref': '@S1@', 'page': '1'}]
         assert fam['divs'][0]['citations'] == [{'sour_xref': '@S2@', 'page': '2'}]
 
+    def test_fam_event_citation_url_from_direct_www(self, tmp_path):
+        """3 WWW directly under 2 SOUR in FAM event should populate url field."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Test Source
+0 @I1@ INDI
+1 NAME Husb /Test/
+1 SEX M
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Wife /Test/
+1 SEX F
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1 JAN 1920
+2 SOUR @S1@
+3 PAGE certificate 42
+3 WWW https://example.com/fam-direct
+"""))
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        person = people['@I1@']
+        marr_events = [e for e in person['events'] if e['tag'] == 'MARR']
+        assert len(marr_events) == 1
+        cite = marr_events[0]['citations'][0]
+        assert cite.get('url') == 'https://example.com/fam-direct'
+
     def test_build_people_json_carries_marr_citations(self, tmp_path):
         """build_people_json must include citations on the MARR events it merges into each spouse's event list."""
         indis, fams, sources = _parse(tmp_path, _ged("""\
