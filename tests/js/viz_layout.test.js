@@ -1760,3 +1760,140 @@ describe('computeLayout — sibling expansion umbrella', () => {
     expect(legacyDrop).toBeUndefined();
   });
 });
+
+// ── Regression: deep-ancestor overlap via alternating parent paths ─────────
+//
+// Reproduces the Vitali/Dellatolla collision in Sasha's tree. Before the fix,
+// _rightContour only recursed through the mother (right parent) and
+// _leftContour only through the father (left parent). This missed deep
+// ancestors reached via alternating paths — e.g. a node's MOTHER's FATHER's
+// FATHER can stick out LEFTWARD past the node's own center when the deep
+// father-chain is wider than the node's own parent separation.
+//
+// Layout below:
+//
+//   gen -5:                          Y_MFF   Y_MFM
+//   gen -4:               X_MMF X_MMM  Y_MF  Y_MM
+//   gen -3:     X_MF X_MM    X_M         Y_M         Y_F
+//   gen -2:          X_F         X            Y
+//   gen -1:                   X        Y
+//   gen  0:                       F (focus)
+//
+// Both X's right contour and Y's left contour need to reach depth 3 for
+// the pair (X_MMM | Y_MFF) at gen -5 to avoid overlap.
+describe('computeLayout — deep-ancestor overlap via alternating parent paths', () => {
+  const { FAMILY_GAP } = DESIGN;
+
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@F@':      { birth_year: 2000, sex: 'M' },
+        '@X@':      { birth_year: 1970, sex: 'M' },
+        '@Y@':      { birth_year: 1972, sex: 'F' },
+        '@X_F@':    { birth_year: 1940, sex: 'M' },
+        '@X_M@':    { birth_year: 1942, sex: 'F' },
+        '@X_MF@':   { birth_year: 1910, sex: 'M' },
+        '@X_MM@':   { birth_year: 1912, sex: 'F' },
+        '@X_MMF@':  { birth_year: 1880, sex: 'M' },
+        '@X_MMM@':  { birth_year: 1882, sex: 'F' },
+        '@Y_F@':    { birth_year: 1940, sex: 'M' },
+        '@Y_M@':    { birth_year: 1942, sex: 'F' },
+        '@Y_MF@':   { birth_year: 1910, sex: 'M' },
+        '@Y_MM@':   { birth_year: 1912, sex: 'F' },
+        '@Y_MFF@':  { birth_year: 1880, sex: 'M' },
+        '@Y_MFM@':  { birth_year: 1882, sex: 'F' },
+      },
+      parents: {
+        '@F@':     ['@X@', '@Y@'],
+        '@X@':     ['@X_F@', '@X_M@'],
+        '@X_M@':   ['@X_MF@', '@X_MM@'],
+        '@X_MM@':  ['@X_MMF@', '@X_MMM@'],
+        '@Y@':     ['@Y_F@', '@Y_M@'],
+        '@Y_M@':   ['@Y_MF@', '@Y_MM@'],
+        '@Y_MF@':  ['@Y_MFF@', '@Y_MFM@'],
+      },
+    });
+  });
+
+  const fullyExpanded = new Set([
+    '@X@', '@X_M@', '@X_MM@',
+    '@Y@', '@Y_M@', '@Y_MF@',
+  ]);
+
+  it('_rightContour(X) reaches depth 3 (mother-path wing)', () => {
+    const rc = _rightContour('@X@', fullyExpanded, new Set());
+    expect(rc.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('_leftContour(Y) reaches depth 3 via mother→father→father (alternating) path', () => {
+    // Buggy implementation only traces Y's father path (Y_F, who is a leaf),
+    // so leftContour length is only 2. With both-parent recursion the left
+    // wing through Y_M → Y_MF → Y_MFF makes it length 4.
+    const lc = _leftContour('@Y@', fullyExpanded, new Set());
+    expect(lc.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('no two nodes at the same generation overlap horizontally', () => {
+    const { nodes } = computeLayout('@F@', fullyExpanded, new Set());
+    const byGen = {};
+    for (const n of nodes) {
+      if (!byGen[n.generation]) byGen[n.generation] = [];
+      byGen[n.generation].push(n);
+    }
+    for (const [gen, ns] of Object.entries(byGen)) {
+      const sorted = ns.slice().sort((a, b) => a.x - b.x);
+      for (let i = 1; i < sorted.length; i++) {
+        const gap = sorted[i].x - (sorted[i - 1].x + NODE_W);
+        expect(gap, `gen ${gen}: ${sorted[i - 1].xref} → ${sorted[i].xref}`)
+          .toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('deepest great-great-grandparents on X side do not overlap those on Y side', () => {
+    const { nodes } = computeLayout('@F@', fullyExpanded, new Set());
+    const x_mmm = nodes.find(n => n.xref === '@X_MMM@');  // rightmost of X's subtree at gen -5
+    const y_mff = nodes.find(n => n.xref === '@Y_MFF@');  // leftmost of Y's subtree at gen -5
+    expect(x_mmm).toBeDefined();
+    expect(y_mff).toBeDefined();
+    const gap = y_mff.x - (x_mmm.x + NODE_W);
+    expect(gap).toBeGreaterThanOrEqual(FAMILY_GAP);
+  });
+});
+
+// ── Mirror: deep right wing on father side (symmetric to above) ────────────
+//
+// Father's MOTHER's MOTHER's MOTHER is reached via L→R→R→R. That wing can
+// stick out to the right of the father's own center. _rightContour must
+// capture it via the father subtree (not just the mother subtree).
+describe('computeLayout — right-wing via father-then-mother path', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@F@':     { birth_year: 2000, sex: 'M' },
+        '@X@':     { birth_year: 1970, sex: 'M' },
+        '@Y@':     { birth_year: 1972, sex: 'F' },
+        '@X_F@':   { birth_year: 1940, sex: 'M' },
+        '@X_M@':   { birth_year: 1942, sex: 'F' },
+        '@X_FF@':  { birth_year: 1910, sex: 'M' },
+        '@X_FM@':  { birth_year: 1912, sex: 'F' },
+        '@X_FMF@': { birth_year: 1880, sex: 'M' },
+        '@X_FMM@': { birth_year: 1882, sex: 'F' },
+      },
+      parents: {
+        '@F@':    ['@X@', '@Y@'],
+        '@X@':    ['@X_F@', '@X_M@'],
+        '@X_F@':  ['@X_FF@', '@X_FM@'],
+        '@X_FM@': ['@X_FMF@', '@X_FMM@'],
+      },
+    });
+  });
+
+  it('_rightContour(X) captures the right-wing reached via father-then-mother-then-mother', () => {
+    // X's right wing: X_F (left of X) → X_FM (right of X_F) → X_FMM (right of X_FM).
+    // Buggy code only traces mother path (X_M, a leaf) → depth 1. With fix,
+    // rightContour extends to depth 3 via the father subtree.
+    const rc = _rightContour('@X@', new Set(['@X@', '@X_F@', '@X_FM@']), new Set());
+    expect(rc.length).toBeGreaterThanOrEqual(4);
+  });
+});

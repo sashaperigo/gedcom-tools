@@ -677,10 +677,20 @@ function _rightContour(xref, expandedAncestors, expandedSiblingsXrefs) {
   // above xref is shifted by groupOffset relative to xref's own center.
   const groupOffset = _bioGroupOffset(xref, expandedSiblingsXrefs);
   if (f && m) {
-    // Mother is the right-side parent; mother.cx = xref.cx + groupOffset + sep/2.
+    // father.cx = xref.cx + groupOffset - sep/2; mother.cx = xref.cx + groupOffset + sep/2.
+    // Either subtree can extend rightward at any depth — the father's own
+    // maternal line can reach past the father's center even though the father
+    // sits left of xref. Take the max of both contributions at each depth.
     const sep = _requiredSeparation(f, m, expandedAncestors, expandedSiblingsXrefs);
+    const fc  = _rightContour(f, expandedAncestors, expandedSiblingsXrefs);
     const mc  = _rightContour(m, expandedAncestors, expandedSiblingsXrefs);
-    for (let d = 0; d < mc.length; d++) contour[d + 1] = groupOffset + sep / 2 + mc[d];
+    const maxD = Math.max(fc.length, mc.length);
+    for (let d = 0; d < maxD; d++) {
+      let best = -Infinity;
+      if (d < fc.length) best = Math.max(best, groupOffset - sep / 2 + fc[d]);
+      if (d < mc.length) best = Math.max(best, groupOffset + sep / 2 + mc[d]);
+      contour[d + 1] = best;
+    }
   } else {
     const only = f || m;
     const oc = _rightContour(only, expandedAncestors, expandedSiblingsXrefs);
@@ -699,11 +709,22 @@ function _leftContour(xref, expandedAncestors, expandedSiblingsXrefs) {
   if (!f && !m) return contour;
   const groupOffset = _bioGroupOffset(xref, expandedSiblingsXrefs);
   if (f && m) {
-    // Father is the left-side parent; father.cx = xref.cx + groupOffset - sep/2.
-    // Left-contour distance = -father.cx + (leftmost of father's subtree).
+    // Leftward distance from xref of a node at depth d+1 =
+    //   father side: -groupOffset + sep/2 + fc[d]   (father is left of xref)
+    //   mother side: -groupOffset - sep/2 + mc[d]   (mother is right of xref;
+    //                                                her own left wing can still
+    //                                                poke left of xref.cx)
+    // Take max (most-leftward) at each depth.
     const sep = _requiredSeparation(f, m, expandedAncestors, expandedSiblingsXrefs);
     const fc  = _leftContour(f, expandedAncestors, expandedSiblingsXrefs);
-    for (let d = 0; d < fc.length; d++) contour[d + 1] = -groupOffset + sep / 2 + fc[d];
+    const mc  = _leftContour(m, expandedAncestors, expandedSiblingsXrefs);
+    const maxD = Math.max(fc.length, mc.length);
+    for (let d = 0; d < maxD; d++) {
+      let best = -Infinity;
+      if (d < fc.length) best = Math.max(best, -groupOffset + sep / 2 + fc[d]);
+      if (d < mc.length) best = Math.max(best, -groupOffset - sep / 2 + mc[d]);
+      contour[d + 1] = best;
+    }
   } else {
     const only = f || m;
     const oc = _leftContour(only, expandedAncestors, expandedSiblingsXrefs);
