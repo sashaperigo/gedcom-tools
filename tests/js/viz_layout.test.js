@@ -1381,28 +1381,30 @@ describe('computeLayout — ancestor sibling expansion', () => {
     expect(nodes.find(n => n.xref === '@M_SIB1@')).toBeUndefined();
   });
 
-  it('places older siblings to the LEFT and younger siblings to the RIGHT of mother (inline)', () => {
-    // MOTHER: 1972. M_SIB1: 1968 (older). M_SIB2: 1976 (younger).
+  it('places ALL of mother\'s siblings to the RIGHT of mother (outward/chevron side)', () => {
+    // Spouses must stay adjacent → siblings extend only to the outward side
+    // of the couple, regardless of birth year. Mother is the right-side parent,
+    // so her siblings stack right of her.
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
     const mother = nodes.find(n => n.xref === '@MOTHER@');
-    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
-    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
+    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');   // 1968, older than mother
+    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');   // 1976, younger
     expect(sib1).toBeDefined();
     expect(sib2).toBeDefined();
-    expect(sib1.x).toBeLessThan(mother.x);      // older → left
-    expect(sib2.x).toBeGreaterThan(mother.x);   // younger → right
+    expect(sib1.x).toBeGreaterThan(mother.x);
+    expect(sib2.x).toBeGreaterThan(mother.x);
   });
 
-  it('places older siblings to the LEFT and younger siblings to the RIGHT of father (inline)', () => {
-    // FATHER: 1970. F_SIB1: 1965 (older). F_SIB2: 1975 (younger).
+  it('places ALL of father\'s siblings to the LEFT of father (outward/chevron side)', () => {
+    // Father is the left-side parent; his siblings stack left of him.
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@']));
     const father = nodes.find(n => n.xref === '@FATHER@');
-    const sib1   = nodes.find(n => n.xref === '@F_SIB1@');
-    const sib2   = nodes.find(n => n.xref === '@F_SIB2@');
+    const sib1   = nodes.find(n => n.xref === '@F_SIB1@');   // 1965, older
+    const sib2   = nodes.find(n => n.xref === '@F_SIB2@');   // 1975, younger
     expect(sib1).toBeDefined();
     expect(sib2).toBeDefined();
-    expect(sib1.x).toBeLessThan(father.x);      // older → left
-    expect(sib2.x).toBeGreaterThan(father.x);   // younger → right
+    expect(sib1.x).toBeLessThan(father.x);
+    expect(sib2.x).toBeLessThan(father.x);
   });
 
   it('ancestor siblings sit at the same y as their parent-node', () => {
@@ -1418,24 +1420,43 @@ describe('computeLayout — ancestor sibling expansion', () => {
     expect(sib.role).toBe('ancestor_sibling');
   });
 
-  it('inline siblings are chronologically ordered left-to-right', () => {
-    // M_SIB1: 1968 (older than mother). M_SIB2: 1976 (younger).
-    // All biological children at this row, sorted by birth-year asc:
-    // M_SIB1 (1968) → MOTHER (1972) → M_SIB2 (1976)
+  it('mother\'s inline siblings are chronologically ordered left-to-right (oldest closest to mother)', () => {
+    // All of mother's siblings sit on her right. Sorted by birth-year asc from
+    // mother outward: MOTHER → M_SIB1 (1968) → M_SIB2 (1976).
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
     const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
     const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
-    const mother = nodes.find(n => n.xref === '@MOTHER@');
-    expect(sib1.x).toBeLessThan(mother.x);
-    expect(mother.x).toBeLessThan(sib2.x);
+    expect(mother.x).toBeLessThan(sib1.x);
+    expect(sib1.x).toBeLessThan(sib2.x);
   });
 
-  it('inline siblings sit tight against the ancestor with H_GAP spacing', () => {
-    // Younger sibling immediately right of mother: mother right edge + H_GAP = sib left edge.
+  it('father\'s inline siblings are chronologically ordered left-to-right (youngest closest to father)', () => {
+    // All of father's siblings sit on his left. Sorted by birth-year asc from
+    // far-left inward: F_SIB1 (1965) → F_SIB2 (1975) → FATHER.
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@']));
+    const father = nodes.find(n => n.xref === '@FATHER@');
+    const sib1   = nodes.find(n => n.xref === '@F_SIB1@');
+    const sib2   = nodes.find(n => n.xref === '@F_SIB2@');
+    expect(sib1.x).toBeLessThan(sib2.x);
+    expect(sib2.x).toBeLessThan(father.x);
+  });
+
+  it('inline siblings leave chevron clearance on the ancestor side', () => {
+    // Chevron (r=8, 4px off pill edge) sits between ancestor and first sibling.
+    // First gap ≥ 20px (chevron reach) so the chevron doesn't overlap siblings.
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
     const mother = nodes.find(n => n.xref === '@MOTHER@');
-    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
-    expect(sib2.x).toBe(mother.x + NODE_W + H_GAP);
+    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');  // closest to mother
+    const firstGap = sib1.x - (mother.x + NODE_W);
+    expect(firstGap).toBeGreaterThanOrEqual(20);
+  });
+
+  it('siblings after the first sit tight with H_GAP between them', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const sib1 = nodes.find(n => n.xref === '@M_SIB1@');
+    const sib2 = nodes.find(n => n.xref === '@M_SIB2@');
+    expect(sib2.x - (sib1.x + NODE_W)).toBe(H_GAP);
   });
 
   it('renders a sibling\'s spouse adjacent to the sibling', () => {
@@ -1456,9 +1477,11 @@ describe('computeLayout — ancestor sibling expansion', () => {
     expect(edges.filter(e => e.type === 'sibling_bracket').length).toBe(0);
   });
 
-  it('expanding both parents inlines each side\'s siblings with its own ancestor', () => {
+  it('expanding both parents groups each side\'s siblings on the outward side, keeping the couple adjacent', () => {
     // FATHER: 1970, siblings F_SIB1 (1965, older), F_SIB2 (1975, younger)
     // MOTHER: 1972, siblings M_SIB1 (1968, older), M_SIB2 (1976, younger)
+    // Father's sibs ALL go left of father; mother's sibs ALL go right of mother.
+    // Father and mother stay adjacent (marriage gap) — no sibling between them.
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@', '@MOTHER@']));
     const father = nodes.find(n => n.xref === '@FATHER@');
     const mother = nodes.find(n => n.xref === '@MOTHER@');
@@ -1466,13 +1489,19 @@ describe('computeLayout — ancestor sibling expansion', () => {
     const fSib2  = nodes.find(n => n.xref === '@F_SIB2@');
     const mSib1  = nodes.find(n => n.xref === '@M_SIB1@');
     const mSib2  = nodes.find(n => n.xref === '@M_SIB2@');
-    // Each ancestor flanked by its own siblings by birth order.
+    // All of father's siblings sit left of father.
     expect(fSib1.x).toBeLessThan(father.x);
-    expect(father.x).toBeLessThan(fSib2.x);
-    expect(mSib1.x).toBeLessThan(mother.x);
-    expect(mother.x).toBeLessThan(mSib2.x);
-    // Father's group stays left of mother's group (no interleaving).
-    expect(fSib2.x).toBeLessThan(mSib1.x);
+    expect(fSib2.x).toBeLessThan(father.x);
+    // All of mother's siblings sit right of mother.
+    expect(mSib1.x).toBeGreaterThan(mother.x);
+    expect(mSib2.x).toBeGreaterThan(mother.x);
+    // Couple stays together: no node between father and mother on this row.
+    const between = nodes.filter(n =>
+      n.y === father.y &&
+      n.x > father.x && n.x < mother.x &&
+      n.xref !== '@FATHER@' && n.xref !== '@MOTHER@'
+    );
+    expect(between).toHaveLength(0);
   });
 
   it('no overlap between father\'s siblings and any other node on the same row', () => {

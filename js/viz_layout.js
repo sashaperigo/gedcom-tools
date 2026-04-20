@@ -516,83 +516,73 @@ function _emitChildUmbrella(xref, x, y, anchorY, nodes, edges) {
 // ---------------------------------------------------------------------------
 
 // For a single ancestor node at (ancX, ancY), if it's in expandedSiblingsXrefs,
-// place its full siblings INLINE at the same y as the ancestor: older siblings
-// leftward, younger (tie = younger) rightward, each followed by its spouse(s).
-// Grouping is handled by the parent umbrella (_emitChildUmbrella) — no bracket
-// edge is emitted from here.
+// place its full siblings INLINE at the same y as the ancestor, ALL on the
+// OUTWARD side of the couple (same side as the sibling-expand chevron):
+//   - Female ancestor (right-side of a couple) → siblings stack to her RIGHT
+//   - Male ancestor (left-side of a couple)    → siblings stack to his LEFT
+// This keeps spouses adjacent (no sibling ever splits the couple) and matches
+// the direction the sibling-expand chevron points.
 //
-// Note: the sibling-expand chevron currently sits 4px off the ancestor pill,
-// which will overlap the first inline sibling. Chevron relocation (move to the
-// outer edge of the inline group) is tracked as a follow-up polish task.
+// Within the sibling stack, siblings are chronologically ordered left-to-right:
+//   - Right stack (female): ancestor → oldest sibling → ... → youngest
+//   - Left stack (male):    oldest → ... → youngest → ancestor
+// The ancestor is pinned to the innermost edge even if that puts her outside
+// strict birth order — spouse-adjacency wins over chronology.
+//
+// The gap between ancestor and first sibling is CHEVRON_CLEARANCE (not H_GAP)
+// so the r=8 sibling-expand chevron fits between them without overlap.
+// Grouping is handled by the parent umbrella (_emitChildUmbrella); no bracket
+// edge is emitted from here.
 function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges) {
   if (!expandedSiblingsXrefs || !expandedSiblingsXrefs.has(ancXref)) return;
   const sibs = RELATIVES[ancXref]?.siblings ?? [];
   if (sibs.length === 0) return;
 
   const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
-  // Sibling↔spouse gap mirrors descendant-row convention (tight, no MARRIAGE_GAP).
   const SIB_MARRIAGE_GAP = H_GAP;
-
   const sorted = _sortByBirthYear(sibs);
-  const ancBY  = PEOPLE[ancXref]?.birth_year ?? 9999;
-  const older   = sorted.filter(s => (PEOPLE[s]?.birth_year ?? 9999) <  ancBY);
-  const younger = sorted.filter(s => (PEOPLE[s]?.birth_year ?? 9999) >= ancBY);
   const generation = Math.round(ancY / ROW_HEIGHT);
   const midY = ancY + NODE_H / 2;
+  const toRight = _hasRightChevron(ancXref);  // female with siblings
 
-  // Younger siblings: pack right of ancestor, chronologically asc (closest = oldest-younger).
-  let cursor = ancX + NODE_W;
-  younger.forEach(sibXref => {
-    const sibX = cursor + H_GAP;
-    nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
-    let cursorRight = sibX + NODE_W;
-    const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
-    sibSpouses.forEach(spXref => {
-      const spX = cursorRight + SIB_MARRIAGE_GAP;
-      nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
-      edges.push({
-        x1: cursorRight, y1: midY,
-        x2: spX,          y2: midY,
-        type: 'marriage',
+  if (toRight) {
+    // Siblings fan right of ancestor, chronological L→R (oldest closest to ancestor).
+    let cursor = ancX + NODE_W + CHEVRON_CLEARANCE;
+    sorted.forEach((sibXref, i) => {
+      if (i > 0) cursor += H_GAP;
+      const sibX = cursor;
+      nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
+      cursor = sibX + NODE_W;
+      const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
+      sibSpouses.forEach(spXref => {
+        const spX = cursor + SIB_MARRIAGE_GAP;
+        nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
+        edges.push({ x1: cursor, y1: midY, x2: spX, y2: midY, type: 'marriage' });
+        cursor = spX + NODE_W;
       });
-      cursorRight = spX + NODE_W;
     });
-    cursor = cursorRight;
-  });
-
-  // Older siblings: pack left of ancestor. Iterate oldest→newest (sorted asc)
-  // so the oldest sibling ends up furthest from the ancestor.
-  let leftCursor = ancX;  // leftCursor is the left edge of whatever was most-recently placed
-  older.forEach(sibXref => {
-    // sibling's spouse(s) sit to the LEFT of the sibling (closer to ancestor)
-    // if we imagine the sibling as the "anchor" of its own nuclear family. But
-    // for consistency with focus-row packing, put the sibling first and its
-    // spouse(s) further LEFT (further from ancestor). That mirrors how older
-    // focus-row siblings pack (oldest on the far left).
-    const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
-    // Compute the full width of this sibling's group: sib + spouses + gaps.
-    let groupW = NODE_W;
-    sibSpouses.forEach(() => { groupW += SIB_MARRIAGE_GAP + NODE_W; });
-    // Group's right edge sits H_GAP left of leftCursor.
-    const groupRight = leftCursor - H_GAP;
-    const groupLeft  = groupRight - groupW;
-    // Sibling pill goes at groupRight - NODE_W (rightmost slot of the group).
-    const sibX = groupRight - NODE_W;
-    nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
-    // Spouses fan leftward from the sibling.
-    let cursorLeft = sibX;
-    sibSpouses.forEach(spXref => {
-      const spX = cursorLeft - SIB_MARRIAGE_GAP - NODE_W;
-      nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
-      edges.push({
-        x1: spX + NODE_W, y1: midY,
-        x2: cursorLeft,    y2: midY,
-        type: 'marriage',
+  } else {
+    // Siblings fan left of ancestor, chronological L→R (youngest closest to ancestor).
+    // Iterate siblings innermost-first (youngest first) so we walk leftward from
+    // the ancestor. Reverse `sorted` (which is asc by birth year) to get desc.
+    const reversed = [...sorted].reverse();
+    let rightEdge = ancX - CHEVRON_CLEARANCE;  // right edge of next group placed
+    reversed.forEach((sibXref, i) => {
+      if (i > 0) rightEdge -= H_GAP;
+      const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
+      // Sibling occupies the rightmost slot of its own group; spouses fan further left.
+      const sibX = rightEdge - NODE_W;
+      nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
+      let cursorLeft = sibX;
+      sibSpouses.forEach(spXref => {
+        const spX = cursorLeft - SIB_MARRIAGE_GAP - NODE_W;
+        nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
+        edges.push({ x1: spX + NODE_W, y1: midY, x2: cursorLeft, y2: midY, type: 'marriage' });
+        cursorLeft = spX;
       });
-      cursorLeft = spX;
+      rightEdge = cursorLeft;
     });
-    leftCursor = groupLeft;
-  });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -603,35 +593,59 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
 // Element d = distance from the subtree-root center to the rightmost
 // (_rightContour) or leftmost (_leftContour) point of the subtree at depth d.
 
-// Right extension of xref's own inline sibling-group from xref's right edge.
-// Returns 0 when the ancestor is not sibling-expanded or has no younger sibs.
+// Clearance kept on the chevron side of every ancestor pill that has siblings,
+// so the r=8 sibling-expand chevron at 4px offset doesn't collide with a
+// neighbor pill or an adjacent couple across the row. 24 = r(8)*2 + gap(4) + buffer(4).
+const CHEVRON_CLEARANCE = 24;
+
+// Female ancestor with siblings → chevron sits on the right side of the pill.
+function _hasRightChevron(xref) {
+  return (PEOPLE[xref]?.sex === 'F') &&
+         (((RELATIVES[xref] && RELATIVES[xref].siblings) || []).length > 0);
+}
+
+// Male (or unknown) ancestor with siblings → chevron sits on the left side.
+function _hasLeftChevron(xref) {
+  return (PEOPLE[xref]?.sex !== 'F') &&
+         (((RELATIVES[xref] && RELATIVES[xref].siblings) || []).length > 0);
+}
+
+// Right-side extension from xref's right edge outward. Accounts for both the
+// sibling-expand chevron (which sits 4px off a female pill with siblings) and
+// the inline sibling group when expanded.
+//
+// - Female ancestor with siblings, NOT expanded: returns CHEVRON_CLEARANCE (the
+//   chevron's outward reach beyond the pill edge).
+// - Female ancestor with siblings, EXPANDED: returns the full width of the
+//   inline sibling group (CHEVRON_CLEARANCE + NODE_W*n + H_GAP*(n-1) + spouse widths).
+// - Male / no-chevron / no-siblings: returns 0.
 function _inlineSiblingExtentRight(xref, expandedSiblingsXrefs) {
-  if (!expandedSiblingsXrefs || !expandedSiblingsXrefs.has(xref)) return 0;
+  if (!_hasRightChevron(xref)) return 0;
+  const expanded = expandedSiblingsXrefs && expandedSiblingsXrefs.has(xref);
+  if (!expanded) return CHEVRON_CLEARANCE;
   const { NODE_W, H_GAP } = DESIGN;
   const sibs = (RELATIVES[xref] && RELATIVES[xref].siblings) || [];
-  if (sibs.length === 0) return 0;
-  const bY = PEOPLE[xref]?.birth_year ?? 9999;
-  const younger = _sortByBirthYear(sibs).filter(s => (PEOPLE[s]?.birth_year ?? 9999) >= bY);
-  let extent = 0;
-  younger.forEach(s => {
-    extent += H_GAP + NODE_W;
+  let extent = CHEVRON_CLEARANCE;
+  sibs.forEach((s, i) => {
+    if (i > 0) extent += H_GAP;
+    extent += NODE_W;
     const sp = (RELATIVES[s] && RELATIVES[s].spouses) || [];
     sp.forEach(() => { extent += H_GAP + NODE_W; });
   });
   return extent;
 }
 
-// Mirror of the above: left extension from xref's left edge, driven by older sibs.
+// Mirror of the above for the left-side extension from xref's left edge.
 function _inlineSiblingExtentLeft(xref, expandedSiblingsXrefs) {
-  if (!expandedSiblingsXrefs || !expandedSiblingsXrefs.has(xref)) return 0;
+  if (!_hasLeftChevron(xref)) return 0;
+  const expanded = expandedSiblingsXrefs && expandedSiblingsXrefs.has(xref);
+  if (!expanded) return CHEVRON_CLEARANCE;
   const { NODE_W, H_GAP } = DESIGN;
   const sibs = (RELATIVES[xref] && RELATIVES[xref].siblings) || [];
-  if (sibs.length === 0) return 0;
-  const bY = PEOPLE[xref]?.birth_year ?? 9999;
-  const older = _sortByBirthYear(sibs).filter(s => (PEOPLE[s]?.birth_year ?? 9999) < bY);
-  let extent = 0;
-  older.forEach(s => {
-    extent += H_GAP + NODE_W;
+  let extent = CHEVRON_CLEARANCE;
+  sibs.forEach((s, i) => {
+    if (i > 0) extent += H_GAP;
+    extent += NODE_W;
     const sp = (RELATIVES[s] && RELATIVES[s].spouses) || [];
     sp.forEach(() => { extent += H_GAP + NODE_W; });
   });
