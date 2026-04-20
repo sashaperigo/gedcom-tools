@@ -54,17 +54,15 @@ function _replaceHistory(focusXref, expandedNodes) {
 // ── public API ────────────────────────────────────────────────────────────
 
 function initState(rootXref) {
-  const fromUrl = _xrefFromUrl(
-    typeof location !== 'undefined' ? location.search : ''
-  );
+  const search = typeof location !== 'undefined' ? location.search : '';
+  const fromUrl = _xrefFromUrl(search);
   _state = {
     focusXref:     fromUrl || rootXref,
-    expandedNodes: new Set(),
+    expandedNodes: _expandedFromParam(search),
     panelOpen:     false,
     panelXref:     null,
   };
 
-  // Register popstate listener (browser only)
   if (typeof addEventListener !== 'undefined') {
     addEventListener('popstate', function (event) {
       let newXref = null;
@@ -73,9 +71,11 @@ function initState(rootXref) {
       } else if (typeof location !== 'undefined') {
         newXref = _xrefFromUrl(location.search);
       }
+      const newExpanded = typeof location !== 'undefined'
+        ? _expandedFromParam(location.search)
+        : new Set();
       if (newXref) {
-        // Update state directly without pushing to history
-        _state = Object.assign({}, _state, { focusXref: newXref });
+        _state = Object.assign({}, _state, { focusXref: newXref, expandedNodes: newExpanded });
         _callbacks.forEach(cb => cb(_state));
       }
     });

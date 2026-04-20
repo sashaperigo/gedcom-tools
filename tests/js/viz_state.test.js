@@ -101,6 +101,31 @@ describe('initState', () => {
     mod.initState('@I1@');
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
+
+  it('reads ?expanded=I5,I12,I23 and reconstructs expandedNodes Set', () => {
+    const mod = loadModule('?person=I42&expanded=I5,I12,I23');
+    mod.initState('@I1@');
+    expect(mod.getState().expandedNodes).toEqual(new Set(['@I5@', '@I12@', '@I23@']));
+  });
+
+  it('expandedNodes is empty Set when no ?expanded= param', () => {
+    const mod = loadModule('?person=I42');
+    mod.initState('@I1@');
+    expect(mod.getState().expandedNodes).toEqual(new Set());
+  });
+
+  it('reads ?expanded= with empty value as empty Set', () => {
+    const mod = loadModule('?person=I42&expanded=');
+    mod.initState('@I1@');
+    expect(mod.getState().expandedNodes).toEqual(new Set());
+  });
+
+  it('restores both focusXref and expandedNodes from URL', () => {
+    const mod = loadModule('?person=I42&expanded=I5');
+    mod.initState('@I1@');
+    expect(mod.getState().focusXref).toBe('@I42@');
+    expect(mod.getState().expandedNodes).toEqual(new Set(['@I5@']));
+  });
 });
 
 describe('setState', () => {
@@ -215,6 +240,44 @@ describe('popstate handler', () => {
     expect(mod.getState().focusXref).toBe('@I5@');
     // popstate should NOT push to history again
     expect(global.history.pushState).not.toHaveBeenCalled();
+  });
+
+  it('restores expandedNodes from URL on popstate', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    global.history.pushState.mockClear();
+
+    vi.stubGlobal('location', makeURL('?person=I5&expanded=I12,I23'));
+    const listeners = global._popstateListeners;
+    listeners[0]({ state: null });
+
+    expect(mod.getState().expandedNodes).toEqual(new Set(['@I12@', '@I23@']));
+  });
+
+  it('sets expandedNodes to empty Set on popstate with no expanded param', () => {
+    const mod = loadModule('?person=I1&expanded=I5');
+    mod.initState('@I1@');
+    global.history.pushState.mockClear();
+
+    vi.stubGlobal('location', makeURL('?person=I42'));
+    const listeners = global._popstateListeners;
+    listeners[0]({ state: null });
+
+    expect(mod.getState().expandedNodes).toEqual(new Set());
+  });
+
+  it('popstate does not call pushState or replaceState', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    global.history.pushState.mockClear();
+    global.history.replaceState.mockClear();
+
+    vi.stubGlobal('location', makeURL('?person=I5&expanded=I12'));
+    const listeners = global._popstateListeners;
+    listeners[0]({ state: null });
+
+    expect(global.history.pushState).not.toHaveBeenCalled();
+    expect(global.history.replaceState).not.toHaveBeenCalled();
   });
 });
 
