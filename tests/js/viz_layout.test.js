@@ -974,12 +974,19 @@ describe('computeLayout — ancestor umbrella', () => {
     );
     expect(crossbar).toBeDefined();
 
-    // Anchor drop at focus center x — starts at marriage line y (both parents present).
-    const anchorDrop = ancEdges.find(e =>
+    // Anchor routing: either a straight drop (when marriage midpoint aligns
+    // with group center) or a three-segment L-shape that starts at focusCenterX
+    // from PARENT_MID_Y and lands at group center at ANC_UMBRELLA_Y.
+    const groupCenterX = (leftmost + rightmost) / 2;
+    const topSegment = ancEdges.find(e =>
       e.x1 === focusCenterX && e.y1 === PARENT_MID_Y &&
-      e.x2 === focusCenterX && e.y2 === ANC_UMBRELLA_Y
+      e.x2 === focusCenterX && (e.y2 === ANC_UMBRELLA_Y || e.y2 === (PARENT_MID_Y + ANC_UMBRELLA_Y) / 2)
     );
-    expect(anchorDrop).toBeDefined();
+    expect(topSegment).toBeDefined();
+    const bottomSegment = ancEdges.find(e =>
+      e.x1 === groupCenterX && e.x2 === groupCenterX && e.y2 === ANC_UMBRELLA_Y
+    );
+    expect(bottomSegment).toBeDefined();
 
     // Per-child drops — one per gen-0 child of the parents (focus + siblings).
     centers.forEach(cx => {
@@ -1019,12 +1026,19 @@ describe('computeLayout — ancestor umbrella', () => {
 
     const ancEdges = edges.filter(e => e.type === 'ancestor');
 
-    // Anchor drop from (focusCenterX, PARENT_BOTTOM) to (focusCenterX, umbrellaY).
-    const anchorDrop = ancEdges.find(e =>
+    // Anchor routing: straight drop when aligned, L-shape otherwise.
+    // Top vertical segment starts at focusCenterX/PARENT_BOTTOM.
+    const topSegment = ancEdges.find(e =>
       e.x1 === focusCenterX && e.y1 === PARENT_BOTTOM &&
-      e.x2 === focusCenterX && e.y2 === ANC_UMBRELLA_Y
+      e.x2 === focusCenterX && (e.y2 === ANC_UMBRELLA_Y || e.y2 === (PARENT_BOTTOM + ANC_UMBRELLA_Y) / 2)
     );
-    expect(anchorDrop).toBeDefined();
+    expect(topSegment).toBeDefined();
+    // Bottom vertical segment lands at umbrellaY at the group center.
+    const groupCenterX = (Math.min(focusCenterX, olderCenterX) + Math.max(focusCenterX, olderCenterX)) / 2;
+    const bottomSegment = ancEdges.find(e =>
+      e.x1 === groupCenterX && e.x2 === groupCenterX && e.y2 === ANC_UMBRELLA_Y
+    );
+    expect(bottomSegment).toBeDefined();
 
     // Crossbar spans the two gen-0 children.
     const crossbar = ancEdges.find(e =>
@@ -1367,26 +1381,28 @@ describe('computeLayout — ancestor sibling expansion', () => {
     expect(nodes.find(n => n.xref === '@M_SIB1@')).toBeUndefined();
   });
 
-  it('renders mother\'s siblings to the right of mother when mother is expanded', () => {
+  it('places older siblings to the LEFT and younger siblings to the RIGHT of mother (inline)', () => {
+    // MOTHER: 1972. M_SIB1: 1968 (older). M_SIB2: 1976 (younger).
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
     const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
     expect(sib1).toBeDefined();
     expect(sib2).toBeDefined();
-    expect(sib1.x).toBeGreaterThan(mother.x);
-    expect(sib2.x).toBeGreaterThan(mother.x);
+    expect(sib1.x).toBeLessThan(mother.x);      // older → left
+    expect(sib2.x).toBeGreaterThan(mother.x);   // younger → right
   });
 
-  it('renders father\'s siblings to the left of father when father is expanded', () => {
+  it('places older siblings to the LEFT and younger siblings to the RIGHT of father (inline)', () => {
+    // FATHER: 1970. F_SIB1: 1965 (older). F_SIB2: 1975 (younger).
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@']));
     const father = nodes.find(n => n.xref === '@FATHER@');
     const sib1   = nodes.find(n => n.xref === '@F_SIB1@');
     const sib2   = nodes.find(n => n.xref === '@F_SIB2@');
     expect(sib1).toBeDefined();
     expect(sib2).toBeDefined();
-    expect(sib1.x).toBeLessThan(father.x);
-    expect(sib2.x).toBeLessThan(father.x);
+    expect(sib1.x).toBeLessThan(father.x);      // older → left
+    expect(sib2.x).toBeGreaterThan(father.x);   // younger → right
   });
 
   it('ancestor siblings sit at the same y as their parent-node', () => {
@@ -1402,12 +1418,24 @@ describe('computeLayout — ancestor sibling expansion', () => {
     expect(sib.role).toBe('ancestor_sibling');
   });
 
-  it('ancestor siblings are sorted chronologically within their stack', () => {
+  it('inline siblings are chronologically ordered left-to-right', () => {
+    // M_SIB1: 1968 (older than mother). M_SIB2: 1976 (younger).
+    // All biological children at this row, sorted by birth-year asc:
+    // M_SIB1 (1968) → MOTHER (1972) → M_SIB2 (1976)
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
-    const sib1 = nodes.find(n => n.xref === '@M_SIB1@'); // 1968
-    const sib2 = nodes.find(n => n.xref === '@M_SIB2@'); // 1976
-    // On mother's right (increasing x = younger→further right): older sib closer to mother
-    expect(sib1.x).toBeLessThan(sib2.x);
+    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
+    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    expect(sib1.x).toBeLessThan(mother.x);
+    expect(mother.x).toBeLessThan(sib2.x);
+  });
+
+  it('inline siblings sit tight against the ancestor with H_GAP spacing', () => {
+    // Younger sibling immediately right of mother: mother right edge + H_GAP = sib left edge.
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
+    expect(sib2.x).toBe(mother.x + NODE_W + H_GAP);
   });
 
   it('renders a sibling\'s spouse adjacent to the sibling', () => {
@@ -1423,20 +1451,28 @@ describe('computeLayout — ancestor sibling expansion', () => {
     expect(sp.y).toBe(sib2.y);
   });
 
-  it('emits a sibling_bracket edge when an ancestor\'s siblings are expanded', () => {
+  it('never emits a sibling_bracket edge (inline model retires that type)', () => {
     const { edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
-    const brackets = edges.filter(e => e.type === 'sibling_bracket');
-    expect(brackets.length).toBeGreaterThan(0);
+    expect(edges.filter(e => e.type === 'sibling_bracket').length).toBe(0);
   });
 
-  it('expanding both parents places each side\'s siblings on the correct outward side', () => {
+  it('expanding both parents inlines each side\'s siblings with its own ancestor', () => {
+    // FATHER: 1970, siblings F_SIB1 (1965, older), F_SIB2 (1975, younger)
+    // MOTHER: 1972, siblings M_SIB1 (1968, older), M_SIB2 (1976, younger)
     const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@', '@MOTHER@']));
     const father = nodes.find(n => n.xref === '@FATHER@');
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     const fSib1  = nodes.find(n => n.xref === '@F_SIB1@');
+    const fSib2  = nodes.find(n => n.xref === '@F_SIB2@');
     const mSib1  = nodes.find(n => n.xref === '@M_SIB1@');
+    const mSib2  = nodes.find(n => n.xref === '@M_SIB2@');
+    // Each ancestor flanked by its own siblings by birth order.
     expect(fSib1.x).toBeLessThan(father.x);
-    expect(mSib1.x).toBeGreaterThan(mother.x);
+    expect(father.x).toBeLessThan(fSib2.x);
+    expect(mSib1.x).toBeLessThan(mother.x);
+    expect(mother.x).toBeLessThan(mSib2.x);
+    // Father's group stays left of mother's group (no interleaving).
+    expect(fSib2.x).toBeLessThan(mSib1.x);
   });
 
   it('no overlap between father\'s siblings and any other node on the same row', () => {
@@ -1529,17 +1565,87 @@ describe('computeLayout — sibling expansion umbrella', () => {
     expect(dropToSpouse).toBeUndefined();
   });
 
-  it('anchor drop goes from parent marriage midpoint down to umbrella-y', () => {
+  it('L-shape anchor: parent midpoint over mother elbows across to group center, then drops to umbrella-y', () => {
+    // Override fixture to force asymmetric bio-child distribution around mother:
+    // BOTH of mother's siblings are YOUNGER than mother, so every bio child
+    // sits at or to the right of mother's center → group center ≠ mother center.
+    resetGlobals({
+      people: {
+        '@FOCUS@':     { birth_year: 2000, sex: 'M' },
+        '@FATHER@':    { birth_year: 1970, sex: 'M' },
+        '@MOTHER@':    { birth_year: 1972, sex: 'F' },
+        '@M_GF@':      { birth_year: 1945, sex: 'M' },
+        '@M_GM@':      { birth_year: 1947, sex: 'F' },
+        '@M_SIB1@':    { birth_year: 1974, sex: 'F' },
+        '@M_SIB2@':    { birth_year: 1978, sex: 'M' },
+      },
+      parents: {
+        '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+        '@FATHER@': [null, null],
+        '@MOTHER@': ['@M_GF@', '@M_GM@'],
+      },
+      relatives: {
+        '@FOCUS@':  { siblings: [], spouses: [] },
+        '@FATHER@': { siblings: [], spouses: [] },
+        '@MOTHER@': { siblings: ['@M_SIB1@', '@M_SIB2@'], spouses: [] },
+        '@M_SIB1@': { siblings: [], spouses: [] },
+        '@M_SIB2@': { siblings: [], spouses: [] },
+      },
+    });
     const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
-    const umbrellaY = -ROW_HEIGHT - (ROW_HEIGHT - NODE_H) / 2;
     const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
+    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
+    const bioCenters = [mother, sib1, sib2].map(n => n.x + NODE_W / 2).sort((a, b) => a - b);
+    const groupCenterX = (bioCenters[0] + bioCenters[bioCenters.length - 1]) / 2;
+    const motherCx     = mother.x + NODE_W / 2;
+
+    expect(Math.abs(motherCx - groupCenterX)).toBeGreaterThan(0.5);  // sanity: asymmetric
+
+    const umbrellaY  = -ROW_HEIGHT - (ROW_HEIGHT - NODE_H) / 2;
     const parentMidY = -2 * ROW_HEIGHT + NODE_H / 2;
-    const anchorCx = mother.x + NODE_W / 2;
-    const anchor = edges.find(e =>
-      Math.abs(e.x1 - anchorCx) < 0.5 && Math.abs(e.x2 - anchorCx) < 0.5 &&
-      Math.abs(e.y1 - parentMidY) < 0.5 && Math.abs(e.y2 - umbrellaY) < 0.5
+    const elbowY     = (parentMidY + umbrellaY) / 2;
+
+    // Segment 1: vertical drop at motherCx from parentMidY to elbowY
+    const seg1 = edges.find(e =>
+      e.type === 'ancestor' &&
+      Math.abs(e.x1 - motherCx) < 0.5 && Math.abs(e.x2 - motherCx) < 0.5 &&
+      Math.abs(e.y1 - parentMidY) < 0.5 && Math.abs(e.y2 - elbowY) < 0.5
     );
-    expect(anchor).toBeDefined();
+    expect(seg1).toBeDefined();
+
+    // Segment 2: horizontal run at elbowY from motherCx to groupCenterX
+    const seg2 = edges.find(e =>
+      e.type === 'ancestor' &&
+      Math.abs(e.y1 - elbowY) < 0.5 && Math.abs(e.y2 - elbowY) < 0.5 &&
+      ((Math.abs(e.x1 - motherCx) < 0.5 && Math.abs(e.x2 - groupCenterX) < 0.5) ||
+       (Math.abs(e.x1 - groupCenterX) < 0.5 && Math.abs(e.x2 - motherCx) < 0.5))
+    );
+    expect(seg2).toBeDefined();
+
+    // Segment 3: vertical drop at groupCenterX from elbowY to umbrellaY
+    const seg3 = edges.find(e =>
+      e.type === 'ancestor' &&
+      Math.abs(e.x1 - groupCenterX) < 0.5 && Math.abs(e.x2 - groupCenterX) < 0.5 &&
+      Math.abs(e.y1 - elbowY) < 0.5 && Math.abs(e.y2 - umbrellaY) < 0.5
+    );
+    expect(seg3).toBeDefined();
+  });
+
+  it('straight anchor drop (no L-shape) when only ancestors are expanded (no sibling offset)', () => {
+    // Siblings not expanded → mother is the sole bio child visible under her parents.
+    // The legacy straight-drop from parentMidY to mother-top should render (no umbrella).
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(['@MOTHER@']), new Set());
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const motherCx = mother.x + NODE_W / 2;
+    const parentMidY = -2 * ROW_HEIGHT + NODE_H / 2;
+
+    const straight = edges.find(e =>
+      e.type === 'ancestor' &&
+      Math.abs(e.x1 - motherCx) < 0.5 && Math.abs(e.x2 - motherCx) < 0.5 &&
+      Math.abs(e.y1 - parentMidY) < 0.5 && Math.abs(e.y2 - (-ROW_HEIGHT)) < 0.5
+    );
+    expect(straight).toBeDefined();
   });
 
   it('does NOT emit the legacy straight drop from parent marriage to child top when siblings are expanded', () => {
