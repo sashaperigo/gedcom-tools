@@ -88,7 +88,7 @@ function setState(updates) {
   _state = Object.assign({}, _state, updates);
 
   const focusChanged = 'focusXref' in updates && updates.focusXref !== prevFocusXref;
-  const expandedChanged = 'expandedNodes' in updates;
+  const expandedChanged = 'expandedNodes' in updates && updates.expandedNodes !== prevExpanded;
 
   if (focusChanged) {
     _pushHistory(_state.focusXref, _state.expandedNodes);

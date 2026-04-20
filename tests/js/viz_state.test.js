@@ -189,6 +189,16 @@ describe('setState', () => {
     expect(global.history.replaceState).not.toHaveBeenCalled();
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
+
+  it('does NOT call replaceState when expandedNodes reference is unchanged', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    const sameSet = new Set(['@I5@']);
+    mod.setState({ expandedNodes: sameSet });
+    global.history.replaceState.mockClear();
+    mod.setState({ expandedNodes: sameSet });
+    expect(global.history.replaceState).not.toHaveBeenCalled();
+  });
 });
 
 describe('popstate handler', () => {
