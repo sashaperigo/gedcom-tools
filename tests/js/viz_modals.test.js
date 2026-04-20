@@ -17,6 +17,7 @@ global.ADDR_BY_PLACE = {};
 const {
   _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
   openSourcesModal, closeSourcesModal, _buildSourcesModalContent,
+  openIndiSourcesModal,
 } = require('../../js/viz_modals.js');
 
 // ── _isFamEventTag ────────────────────────────────────────────────────────
@@ -1297,6 +1298,163 @@ describe('_buildSourcesModalContent — copy button per citation', () => {
   it('no copy buttons rendered when citations list is empty', () => {
     const html = _buildSourcesModalContent([], SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 });
     expect(html).not.toContain('citation-copy-btn');
+  });
+});
+
+// ── openIndiSourcesModal ──────────────────────────────────────────────────
+
+describe('openIndiSourcesModal', () => {
+  function makeFakeElement(id) {
+    return {
+      id,
+      textContent: '',
+      innerHTML: '',
+      classList: {
+        _classes: new Set(),
+        add(c)    { this._classes.add(c); },
+        remove(c) { this._classes.delete(c); },
+        contains(c) { return this._classes.has(c); },
+      },
+    };
+  }
+
+  let overlay, title, list;
+
+  beforeEach(() => {
+    overlay = makeFakeElement('sources-modal-overlay');
+    title   = makeFakeElement('sources-modal-title');
+    list    = makeFakeElement('sources-modal-list');
+
+    global.document = {
+      getElementById(id) {
+        if (id === 'sources-modal-overlay') return overlay;
+        if (id === 'sources-modal-title')   return title;
+        if (id === 'sources-modal-list')    return list;
+        return null;
+      },
+      addEventListener: () => {},
+    };
+
+    global.PEOPLE = {
+      '@I1@': {
+        events: [],
+        sources: [
+          { sourceXref: '@S1@', title: 'Parish Register', citationKey: 'SOUR:0', page: 'p.5', text: '', note: '', url: null },
+          { sourceXref: '@S2@', title: 'Vital Records', citationKey: 'SOUR:1', page: '', text: '', note: '', url: null },
+        ],
+      },
+    };
+    global.SOURCES = {
+      '@S1@': { titl: 'Parish Register' },
+      '@S2@': { titl: 'Vital Records' },
+    };
+  });
+
+  it('adds "open" class to overlay', () => {
+    openIndiSourcesModal('@I1@');
+    expect(overlay.classList.contains('open')).toBe(true);
+  });
+
+  it('sets title text to "Person Sources"', () => {
+    openIndiSourcesModal('@I1@');
+    expect(title.textContent).toBe('Person Sources');
+  });
+
+  it('populates the list with person sources content', () => {
+    openIndiSourcesModal('@I1@');
+    expect(list.innerHTML).toContain('Parish Register');
+    expect(list.innerHTML).toContain('Vital Records');
+  });
+
+  it('closeSourcesModal removes "open" class from overlay', () => {
+    openIndiSourcesModal('@I1@');
+    closeSourcesModal();
+    expect(overlay.classList.contains('open')).toBe(false);
+  });
+
+  it('shows fallback text when person has no sources', () => {
+    global.PEOPLE['@I1@'].sources = [];
+    openIndiSourcesModal('@I1@');
+    expect(list.innerHTML).toContain('No sources recorded');
+  });
+
+  it('renders an "+ Add source" button', () => {
+    openIndiSourcesModal('@I1@');
+    expect(list.innerHTML).toContain('src-modal-add-btn');
+    expect(list.innerHTML).toContain('showAddCitationModal');
+  });
+
+  it('renders delete buttons for each citation', () => {
+    openIndiSourcesModal('@I1@');
+    expect(list.innerHTML).toContain('src-modal-delete-btn');
+  });
+
+  it('renders edit buttons for each citation', () => {
+    openIndiSourcesModal('@I1@');
+    expect(list.innerHTML).toContain('src-modal-edit-btn');
+  });
+});
+
+// ── _buildSourcesModalContent — SOUR (person-level) ──────────────────────
+
+describe('_buildSourcesModalContent — SOUR tag (person-level citations)', () => {
+  const SOURCES = { '@S1@': { titl: 'Parish Register' }, '@S2@': { titl: 'Vital Records' } };
+  const sourEvt = { tag: 'SOUR' };
+
+  it('delete button uses SOUR:N citation key from citationKey field', () => {
+    const citations = [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: '', text: '', note: '', url: null }];
+    const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
+    expect(html).toContain('SOUR:0');
+    expect(html).toMatch(/deleteSourceFromModal\([^)]*SOUR:0/);
+  });
+
+  it('delete button uses SOUR:N index fallback when citationKey missing', () => {
+    const citations = [{ sourceXref: '@S1@', page: '', text: '', note: '', url: null }];
+    const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
+    expect(html).toMatch(/deleteSourceFromModal\([^)]*SOUR:0/);
+  });
+
+  it('does NOT produce SOUR:0:0 format (three-part key)', () => {
+    const citations = [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: '', text: '', note: '', url: null }];
+    const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
+    expect(html).not.toContain('SOUR:0:0');
+  });
+
+  it('sequential citations get SOUR:0, SOUR:1 keys', () => {
+    const citations = [
+      { sourceXref: '@S1@', citationKey: 'SOUR:0', page: '' },
+      { sourceXref: '@S2@', citationKey: 'SOUR:1', page: '' },
+    ];
+    const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
+    expect(html).toContain('SOUR:0');
+    expect(html).toContain('SOUR:1');
+  });
+
+  it('edit button calls showEditCitationModal with null factTag', () => {
+    const citations = [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: '' }];
+    const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
+    expect(html).toContain('showEditCitationModal');
+    // factTag should be null (not "SOUR")
+    expect(html).toMatch(/showEditCitationModal\([^,]+,\s*null/);
+  });
+
+  it('add button uses null as factKey for person-level', () => {
+    const html = _buildSourcesModalContent([], SOURCES, '@I1@', sourEvt);
+    expect(html).toContain('showAddCitationModal');
+    expect(html).toMatch(/showAddCitationModal\([^,]+,\s*&quot;null&quot;/);
+  });
+
+  it('renders source title', () => {
+    const citations = [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.5' }];
+    const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
+    expect(html).toContain('Parish Register');
+  });
+
+  it('renders page when present', () => {
+    const citations = [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.47' }];
+    const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
+    expect(html).toContain('p.47');
+    expect(html).toContain('src-modal-page');
   });
 });
 

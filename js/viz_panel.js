@@ -757,10 +757,12 @@ function renderPanel() {
   // ── Sources (person-level, collapsed by default) ─────────────────────
   const sourcesDiv = document.getElementById('detail-sources');
   if (sourcesDiv) {
-    const srcs = (data.sources || []).slice().sort((a, b) => (a.title||'').localeCompare(b.title||''));
+    const srcs = data.sources || [];
+    const xrefQ = escHtml(JSON.stringify(xref));
     const _srcHtml = s => s.url
       ? `<a href="${escHtml(s.url)}" target="_blank" rel="noopener" class="source-link">${escHtml(s.title)}</a>`
       : escHtml(s.title);
+    const editBtn = `<button class="notes-edit-btn" title="Manage sources" onclick="openIndiSourcesModal(${xrefQ})">&#9998;</button>`;
     if (srcs.length) {
       const count = srcs.length;
       const label = `Sources (${count})`;
@@ -770,10 +772,15 @@ function renderPanel() {
         `<button class="notes-toggle" onclick="this.closest('.notes-header').nextElementSibling.style.display=` +
         `this.classList.toggle('open')?'block':'none'">` +
         `<span class="notes-toggle-arrow">&#9658;</span>${escHtml(label)}</button>` +
+        editBtn +
         `</div>` +
         `<div class="notes-body" style="display:none">${cards}</div>`;
     } else {
-      sourcesDiv.innerHTML = '';
+      sourcesDiv.innerHTML =
+        `<div class="notes-header">` +
+        `<span class="notes-header-label">Sources</span>` +
+        editBtn +
+        `</div>`;
     }
   }
 

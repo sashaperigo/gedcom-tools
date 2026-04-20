@@ -439,3 +439,188 @@ class TestFamEventCitations:
         for xref in ('@I1@', '@I2@'):
             marr = next(e for e in people[xref]['events'] if e['tag'] == 'MARR')
             assert marr['citations'] == [{'sourceXref': '@S1@', 'page': 'p.47'}]
+
+
+# ---------------------------------------------------------------------------
+# TestIndiSourceCitationParsing — person-level SOUR with full citation data
+# ---------------------------------------------------------------------------
+
+class TestIndiSourceCitationParsing:
+
+    def test_person_level_sour_captured_in_source_citations(self, tmp_path):
+        """1 SOUR @xref@ at person level is stored in source_citations list."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+"""))
+        assert len(indis['@I1@']['source_citations']) == 1
+        assert indis['@I1@']['source_citations'][0]['sour_xref'] == '@S1@'
+
+    def test_person_level_sour_captures_page(self, tmp_path):
+        """2 PAGE under 1 SOUR is stored on the citation entry."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+2 PAGE p.47
+"""))
+        assert indis['@I1@']['source_citations'][0]['page'] == 'p.47'
+
+    def test_person_level_sour_captures_note(self, tmp_path):
+        """2 NOTE under 1 SOUR is stored on the citation entry."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+2 NOTE cited online
+"""))
+        assert indis['@I1@']['source_citations'][0]['note'] == 'cited online'
+
+    def test_person_level_sour_captures_text(self, tmp_path):
+        """3 TEXT under 2 DATA under 1 SOUR is stored on the citation entry."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+2 DATA
+3 TEXT Born in Athens
+"""))
+        assert indis['@I1@']['source_citations'][0]['text'] == 'Born in Athens'
+
+    def test_person_level_sour_captures_url(self, tmp_path):
+        """3 WWW under 1 SOUR is stored as url on the citation entry."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+3 WWW https://example.com/record
+"""))
+        assert indis['@I1@']['source_citations'][0]['url'] == 'https://example.com/record'
+
+    def test_multiple_person_level_sour_entries_preserved(self, tmp_path):
+        """Multiple 1 SOUR entries (even same xref) each get their own entry in source_citations."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Source One
+0 @S2@ SOUR
+1 TITL Source Two
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 SOUR @S1@
+2 PAGE p.1
+1 SOUR @S2@
+2 PAGE p.99
+"""))
+        cites = indis['@I1@']['source_citations']
+        assert len(cites) == 2
+        assert cites[0] == {'sour_xref': '@S1@', 'page': 'p.1', 'text': None, 'note': None, 'url': None}
+        assert cites[1] == {'sour_xref': '@S2@', 'page': 'p.99', 'text': None, 'note': None, 'url': None}
+
+    def test_person_sour_does_not_bleed_into_event(self, tmp_path):
+        """A person-level SOUR after a BIRT event doesn't affect the event's citations."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Some Source
+0 @I1@ INDI
+1 NAME Bob /Brown/
+1 BIRT
+2 DATE 1900
+1 SOUR @S1@
+"""))
+        birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
+        assert birt['citations'] == []
+        assert len(indis['@I1@']['source_citations']) == 1
+
+    def test_event_sour_does_not_bleed_into_person_citations(self, tmp_path):
+        """A 2 SOUR under a BIRT event doesn't appear in source_citations."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Some Source
+0 @I1@ INDI
+1 NAME Bob /Brown/
+1 BIRT
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE 5
+"""))
+        assert indis['@I1@']['source_citations'] == []
+
+
+class TestBuildPeopleJsonIndiCitations:
+
+    def test_sources_includes_citation_key(self, tmp_path):
+        """build_people_json returns citationKey='SOUR:0' on first person source."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        src = people['@I1@']['sources'][0]
+        assert src['citationKey'] == 'SOUR:0'
+
+    def test_sources_includes_source_xref(self, tmp_path):
+        """build_people_json returns sourceXref on each person source entry."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        assert people['@I1@']['sources'][0]['sourceXref'] == '@S1@'
+
+    def test_sources_includes_page(self, tmp_path):
+        """build_people_json includes page from the person-level citation."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+2 PAGE p.47
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        assert people['@I1@']['sources'][0]['page'] == 'p.47'
+
+    def test_sources_sequential_citation_keys(self, tmp_path):
+        """Multiple person-level sources get SOUR:0, SOUR:1, etc. in file order."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Source One
+0 @S2@ SOUR
+1 TITL Source Two
+0 @I1@ INDI
+1 NAME Jane /Doe/
+1 SOUR @S1@
+1 SOUR @S2@
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        srcs = people['@I1@']['sources']
+        assert srcs[0]['citationKey'] == 'SOUR:0'
+        assert srcs[1]['citationKey'] == 'SOUR:1'
+
+    def test_sources_empty_when_no_person_level_sour(self, tmp_path):
+        """Person with no 1 SOUR lines gets an empty sources list."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @I1@ INDI
+1 NAME Nobody /Known/
+1 BIRT
+2 DATE 1900
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        assert people['@I1@']['sources'] == []

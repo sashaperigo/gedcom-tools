@@ -98,12 +98,13 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     indis: dict  = {}
     fams: dict   = {}
     sources: dict = {}   # xref -> title
-    ctx               = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
-    current_evt       = None   # current event dict being built
-    current_note      = None   # index into notes[] for CONT assembly
-    current_sour_xref = None   # xref of the 1 SOUR citation currently being parsed
-    current_asso      = None   # dict being built for an in-progress 1 ASSO block
-    secondary_name_n  = 0      # counter for secondary NAME records within current INDI
+    ctx                = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
+    current_evt        = None   # current event dict being built
+    current_note       = None   # index into notes[] for CONT assembly
+    current_sour_xref  = None   # xref of the 1 SOUR citation currently being parsed
+    current_person_cite = None  # dict for the current person-level SOUR citation
+    current_asso       = None   # dict being built for an in-progress 1 ASSO block
+    secondary_name_n   = 0      # counter for secondary NAME records within current INDI
 
     for line in lines:
         m = _INDI_RE.match(line)
@@ -112,12 +113,14 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             indis[xref] = {
                 'name': None, 'birth_year': None, 'death_year': None,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [], 'source_xrefs': [], 'source_urls': {},
+                'source_citations': [],
                 'asso': [],
             }
-            ctx                = ('indi', xref)
-            current_evt        = None
-            current_note       = None
-            secondary_name_n   = 0
+            ctx                 = ('indi', xref)
+            current_evt         = None
+            current_note        = None
+            current_person_cite = None
+            secondary_name_n    = 0
             continue
 
         m = _FAM_RE.match(line)
@@ -158,7 +161,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
         if ctx[0] == 'indi':
             xref = ctx[1]
             if lvl == 1 and tag != 'SOUR':
-                current_sour_xref = None
+                current_sour_xref   = None
+                current_person_cite = None
             if lvl == 1 and tag != 'ASSO':
                 current_asso = None
             if lvl == 1 and tag == 'NAME' and indis[xref]['name'] is None:
@@ -257,7 +261,10 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             elif lvl == 1 and tag == 'SOUR' and val.startswith('@'):
                 if val not in indis[xref]['source_xrefs']:
                     indis[xref]['source_xrefs'].append(val)
-                current_sour_xref = val
+                cite_entry = {'sour_xref': val, 'page': None, 'text': None, 'note': None, 'url': None}
+                indis[xref]['source_citations'].append(cite_entry)
+                current_person_cite = cite_entry
+                current_sour_xref   = val
                 current_evt = current_note = None
             elif lvl == 1 and tag == 'ASSO' and val.startswith('@'):
                 current_asso = {'xref': val, 'rela': None}
@@ -265,9 +272,17 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 current_evt = current_note = None
             elif lvl == 2 and tag == 'RELA' and current_asso is not None:
                 current_asso['rela'] = html_mod.unescape(val)
+            elif lvl == 2 and tag == 'PAGE' and current_person_cite is not None:
+                current_person_cite['page'] = val
+            elif lvl == 2 and tag == 'NOTE' and current_person_cite is not None:
+                current_person_cite['note'] = _ged_val(val)
+            elif lvl == 3 and tag == 'TEXT' and current_person_cite is not None:
+                current_person_cite['text'] = _ged_val(val)
             elif lvl == 3 and tag == 'WWW' and current_sour_xref is not None:
                 if current_sour_xref not in indis[xref]['source_urls']:
                     indis[xref]['source_urls'][current_sour_xref] = val
+                if current_person_cite is not None and current_person_cite.get('url') is None:
+                    current_person_cite['url'] = val
             elif lvl == 1:
                 current_evt = current_note = None
 
@@ -474,15 +489,22 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
         if not info:
             continue
         src_list = []
-        seen_src_titles: set[str] = set()
         if sources:
             source_urls = info.get('source_urls', {})
-            for sxref in info.get('source_xrefs', []):
-                sour = sources.get(sxref) or {}
-                title = sour.get('titl') if isinstance(sour, dict) else sour
-                if title and title not in seen_src_titles:
-                    seen_src_titles.add(title)
-                    src_list.append({'title': title, 'url': source_urls.get(sxref) or None})
+            for i, cite in enumerate(info.get('source_citations', [])):
+                sxref = cite.get('sour_xref') or ''
+                sour  = sources.get(sxref) or {}
+                title = (sour.get('titl') if isinstance(sour, dict) else sour) or ''
+                url   = cite.get('url') or source_urls.get(sxref) or None
+                src_list.append({
+                    'title':       title or sxref,
+                    'url':         url,
+                    'sourceXref':  sxref,
+                    'citationKey': f'SOUR:{i}',
+                    'page':        cite.get('page') or '',
+                    'text':        cite.get('text') or '',
+                    'note':        cite.get('note') or '',
+                })
         excl_list = excl_by_xref.get(xref, [])
         # Assign per-tag occurrence index before exclusion filtering.
         # Secondary NAME records (_name_record=True) are stored as "1 NAME" in the
