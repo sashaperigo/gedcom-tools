@@ -73,7 +73,7 @@ describe('_packRow', () => {
 describe('computeLayout — return shape', () => {
   it('returns { nodes, edges }', () => {
     resetGlobals({ people: { '@I1@': { birth_year: 1900 } } });
-    const result = computeLayout('@I1@', new Set(), false);
+    const result = computeLayout('@I1@', new Set(), new Set());
     expect(result).toHaveProperty('nodes');
     expect(result).toHaveProperty('edges');
     expect(Array.isArray(result.nodes)).toBe(true);
@@ -89,12 +89,12 @@ describe('computeLayout — focus-only tree', () => {
   });
 
   it('has exactly one node', () => {
-    const { nodes } = computeLayout('@I1@', new Set(), false);
+    const { nodes } = computeLayout('@I1@', new Set(), new Set());
     expect(nodes).toHaveLength(1);
   });
 
   it('focus node is at x=0, y=0, generation=0, role=focus', () => {
-    const { nodes } = computeLayout('@I1@', new Set(), false);
+    const { nodes } = computeLayout('@I1@', new Set(), new Set());
     const focus = nodes.find(n => n.xref === '@I1@');
     expect(focus).toBeDefined();
     expect(focus.x).toBe(0);
@@ -121,27 +121,27 @@ describe('computeLayout — focus with siblings', () => {
   });
 
   it('focus is at x=0', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const focus = nodes.find(n => n.xref === '@FOCUS@');
     expect(focus.x).toBe(0);
   });
 
   it('older sibling is at x = -FOCUS_TO_SIB (accounts for wider focus node)', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const older = nodes.find(n => n.xref === '@OLDER@');
     expect(older).toBeDefined();
     expect(older.x).toBe(-FOCUS_TO_SIB);
   });
 
   it('younger sibling is at x = +FOCUS_TO_SIB (accounts for wider focus node)', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const younger = nodes.find(n => n.xref === '@YOUNGER@');
     expect(younger).toBeDefined();
     expect(younger.x).toBe(FOCUS_TO_SIB);
   });
 
   it('all generation-0 nodes are at y=0', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     nodes.filter(n => n.generation === 0).forEach(n => {
       expect(n.y).toBe(0);
     });
@@ -165,7 +165,7 @@ describe('computeLayout — focus with parents', () => {
   });
 
   it('father is at x < 0, y = -ROW_HEIGHT', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const father = nodes.find(n => n.xref === '@FATHER@');
     expect(father).toBeDefined();
     expect(father.x).toBeLessThan(0);
@@ -173,7 +173,7 @@ describe('computeLayout — focus with parents', () => {
   });
 
   it('mother is at x > 0, y = -ROW_HEIGHT', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     expect(mother).toBeDefined();
     expect(mother.x).toBeGreaterThan(0);
@@ -181,13 +181,13 @@ describe('computeLayout — focus with parents', () => {
   });
 
   it('parent nodes have generation = -1', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const parents = nodes.filter(n => n.generation === -1);
     expect(parents).toHaveLength(2);
   });
 
   it('edges include an ancestor edge for each parent', () => {
-    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const ancestorEdges = edges.filter(e => e.type === 'ancestor');
     expect(ancestorEdges.length).toBeGreaterThanOrEqual(2);
   });
@@ -211,7 +211,7 @@ describe('computeLayout — focus with children', () => {
   });
 
   it('children are at y = +ROW_HEIGHT', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     ['@C1@', '@C2@', '@C3@'].forEach(xref => {
       const child = nodes.find(n => n.xref === xref);
       expect(child).toBeDefined();
@@ -220,13 +220,13 @@ describe('computeLayout — focus with children', () => {
   });
 
   it('children have generation = +1', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const children = nodes.filter(n => n.generation === 1);
     expect(children).toHaveLength(3);
   });
 
   it('children are centered under the focus node center', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const focus = nodes.find(n => n.xref === '@FOCUS@');
     // Focus uses NODE_W_FOCUS; its true visual center is focus.x + NODE_W_FOCUS/2.
     const focusCenterX = focus.x + NODE_W_FOCUS / 2;
@@ -239,7 +239,7 @@ describe('computeLayout — focus with children', () => {
   });
 
   it('children are evenly spaced', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const childXs = ['@C1@', '@C2@', '@C3@']
       .map(xref => nodes.find(n => n.xref === xref).x)
       .sort((a, b) => a - b);
@@ -266,7 +266,7 @@ describe('computeLayout — focus with spouse', () => {
   });
 
   it('spouse is to the right of focus (no siblings)', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const focus  = nodes.find(n => n.xref === '@FOCUS@');
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
     expect(spouse).toBeDefined();
@@ -274,7 +274,7 @@ describe('computeLayout — focus with spouse', () => {
   });
 
   it('spouse is at x = NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 (no siblings)', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
     // Focus at x=0 has width NODE_W_FOCUS; right edge = NODE_W_FOCUS/2.
     // Spouse center = right edge + MARRIAGE_GAP + NODE_W/2.
@@ -282,19 +282,19 @@ describe('computeLayout — focus with spouse', () => {
   });
 
   it('spouse has role "spouse"', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
     expect(spouse.role).toBe('spouse');
   });
 
   it('edges include a marriage edge', () => {
-    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const marriageEdges = edges.filter(e => e.type === 'marriage');
     expect(marriageEdges.length).toBeGreaterThanOrEqual(1);
   });
 
   it('marriage edge x1 is the right edge of the focus node (no siblings)', () => {
-    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const me = edges.find(e => e.type === 'marriage');
     // Focus at x=0 has width NODE_W_FOCUS; right edge center = NODE_W_FOCUS/2.
     expect(me.x1).toBe(NODE_W_FOCUS / 2);
@@ -315,7 +315,7 @@ describe('computeLayout — multi-spouse marriage edges', () => {
         '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@', '@SPOUSE2@'] },
       },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const sp1 = nodes.find(n => n.xref === '@SPOUSE1@');
     const sp2 = nodes.find(n => n.xref === '@SPOUSE2@');
     const marriageEdges = edges.filter(e => e.type === 'marriage');
@@ -348,7 +348,7 @@ describe('computeLayout — spouse siblings expanded', () => {
   });
 
   it('spouse siblings appear to the right of the spouse', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
     const ss1    = nodes.find(n => n.xref === '@SS1@');
     const ss2    = nodes.find(n => n.xref === '@SS2@');
@@ -359,7 +359,7 @@ describe('computeLayout — spouse siblings expanded', () => {
   });
 
   it('first spouse sibling is exactly one SLOT to the right of the spouse', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
     // spouse siblings sorted by birth_year; @SS1@ (1895) comes first
     const ss1 = nodes.find(n => n.xref === '@SS1@');
@@ -367,13 +367,13 @@ describe('computeLayout — spouse siblings expanded', () => {
   });
 
   it('spouse siblings have role "spouse_sibling"', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
     const spouseSibs = nodes.filter(n => n.role === 'spouse_sibling');
     expect(spouseSibs).toHaveLength(2);
   });
 
   it('spouse siblings do NOT appear when spouseSiblingsExpanded is false', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const spouseSibs = nodes.filter(n => n.role === 'spouse_sibling');
     expect(spouseSibs).toHaveLength(0);
   });
@@ -393,7 +393,7 @@ describe('computeLayout — no sibling_bracket edges', () => {
         '@FOCUS@': { siblings: ['@OLDER@', '@YOUNGER@'], spouses: [] },
       },
     });
-    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set());
     expect(edges.filter(e => e.type === 'sibling_bracket').length).toBe(0);
   });
 });
@@ -412,7 +412,7 @@ describe('computeLayout — spouse before younger siblings', () => {
         '@FOCUS@': { siblings: ['@YOUNGER@'], spouses: ['@SPOUSE@'] },
       },
     });
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const spouse = nodes.find(n => n.xref === '@SPOUSE@');
     expect(spouse.x).toBe(NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2);
   });
@@ -428,7 +428,7 @@ describe('computeLayout — spouse before younger siblings', () => {
         '@FOCUS@': { siblings: ['@YOUNGER@'], spouses: ['@SPOUSE@'] },
       },
     });
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const spouse  = nodes.find(n => n.xref === '@SPOUSE@');
     const younger = nodes.find(n => n.xref === '@YOUNGER@');
     expect(younger.x).toBeGreaterThan(spouse.x);
@@ -445,7 +445,7 @@ describe('computeLayout — spouse before younger siblings', () => {
         '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@', '@SPOUSE2@'] },
       },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
     const marriageEdges = edges.filter(e => e.type === 'marriage');
     expect(marriageEdges[1].x1).toBe(firstSpouseX + NODE_W / 2);
@@ -478,7 +478,7 @@ describe('computeLayout — no overlap', () => {
     };
     resetGlobals({ people, relatives });
 
-    const { nodes } = computeLayout('@FOCUS@', new Set(), true);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
     const gen0 = nodes.filter(n => n.generation === 0);
     const xs = gen0.map(n => n.x);
     const uniqueXs = new Set(xs);
@@ -506,7 +506,7 @@ describe('computeLayout — grandparent expansion', () => {
   });
 
   it('grandparents appear at y = -2 * ROW_HEIGHT when father is in expandedAncestors', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@']), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@']), new Set());
     const gff = nodes.find(n => n.xref === '@GFF@');
     const gfm = nodes.find(n => n.xref === '@GFM@');
     expect(gff).toBeDefined();
@@ -516,13 +516,13 @@ describe('computeLayout — grandparent expansion', () => {
   });
 
   it('grandparents do NOT appear when father is NOT in expandedAncestors', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const gff = nodes.find(n => n.xref === '@GFF@');
     expect(gff).toBeUndefined();
   });
 
   it('grandparent nodes have generation = -2', () => {
-    const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@']), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@']), new Set());
     const grandparents = nodes.filter(n => n.generation === -2);
     expect(grandparents).toHaveLength(2);
   });
@@ -543,7 +543,7 @@ describe('computeLayout — single parent', () => {
       },
       parents: { '@FOCUS@': [null, '@MOTHER@'] },
     });
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     expect(mother).toBeDefined();
     expect(mother.x).toBe(SINGLE_PARENT_X);
@@ -558,7 +558,7 @@ describe('computeLayout — single parent', () => {
       },
       parents: { '@FOCUS@': ['@FATHER@', null] },
     });
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const father = nodes.find(n => n.xref === '@FATHER@');
     expect(father).toBeDefined();
     expect(father.x).toBe(SINGLE_PARENT_X);
@@ -600,7 +600,7 @@ describe('computeLayout — width-aware ancestor placement', () => {
 
   it('no two ancestor nodes at the same generation overlap', () => {
     const expanded = new Set(['@MOTHER@', '@MGF@', '@MGM@']);
-    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
     const ancestorsByGen = {};
     for (const node of nodes) {
       if (node.role !== 'ancestor') continue;
@@ -618,7 +618,7 @@ describe('computeLayout — width-aware ancestor placement', () => {
 
   it('parent pair midpoint aligns with child center when both parents expanded', () => {
     const expanded = new Set(['@MOTHER@', '@MGF@', '@MGM@']);
-    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
     const nodeMap = new Map(nodes.map(n => [n.xref, n]));
     const mgf = nodeMap.get('@MGF@');
     const mgm = nodeMap.get('@MGM@');
@@ -630,7 +630,7 @@ describe('computeLayout — width-aware ancestor placement', () => {
 
   it('gen-3 nodes are exactly SLOT apart (4 leaf grandparents, all non-overlapping)', () => {
     const expanded = new Set(['@MOTHER@', '@MGF@', '@MGM@']);
-    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
     const gen3 = nodes.filter(n => n.generation === -3).sort((a, b) => a.x - b.x);
     expect(gen3).toHaveLength(4);
     for (let i = 1; i < gen3.length; i++) {
@@ -641,7 +641,7 @@ describe('computeLayout — width-aware ancestor placement', () => {
   it('unexpanded ancestor keeps symmetric ±SLOT/2 placement (backward compat)', () => {
     // Only @MOTHER@ expanded (neither of her parents is expanded)
     const expanded = new Set(['@MOTHER@']);
-    const { nodes } = computeLayout('@FOCUS@', expanded, false);
+    const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
     const mgf = nodes.find(n => n.xref === '@MGF@');
     const mgm = nodes.find(n => n.xref === '@MGM@');
     const mother = nodes.find(n => n.xref === '@MOTHER@');
@@ -665,7 +665,7 @@ describe('computeLayout — descendant umbrella', () => {
       children:  { '@FOCUS@': ['@C1@'] },
       relatives: { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] } },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
 
     const focusCenter  = NODE_W_FOCUS / 2;                       // 80
     const spouseX      = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2; // 210 (left edge)
@@ -705,7 +705,7 @@ describe('computeLayout — descendant umbrella', () => {
       },
       children: { '@FOCUS@': ['@C1@', '@C2@', '@C3@'] },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const anchorX = NODE_W_FOCUS / 2; // no focus-spouse → focus center
 
     const centers = ['@C1@', '@C2@', '@C3@']
@@ -747,7 +747,7 @@ describe('computeLayout — descendant umbrella', () => {
       children:  { '@FOCUS@': ['@C1@'] },
       relatives: { '@C1@': { siblings: [], spouses: ['@C1SP@'] } },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const sp = nodes.find(n => n.xref === '@C1SP@');
     expect(sp).toBeDefined();
     expect(sp.role).toBe('descendant_spouse');
@@ -774,7 +774,7 @@ describe('computeLayout — descendant umbrella', () => {
       },
       children: { '@FOCUS@': ['@C1@'] },
     });
-    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const anchorX = NODE_W_FOCUS / 2;
     // No spouse → drop starts at NODE_H_FOCUS (the bottom of the focus node).
     const anchorDrop = edges.find(e =>
@@ -799,7 +799,7 @@ describe('computeLayout — descendant umbrella', () => {
         '@C2@': { siblings: [], spouses: ['@C2SP@'] },
       },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const c1 = nodes.find(n => n.xref === '@C1@');
     const c2 = nodes.find(n => n.xref === '@C2@');
     const sp1 = nodes.find(n => n.xref === '@C1SP@');
@@ -843,7 +843,7 @@ describe('computeLayout — descendant umbrella', () => {
       children:  { '@FOCUS@': ['@C1@', '@C2@'] },
       relatives: { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] } },
     });
-    const { nodes } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
     const c1Center = nodes.find(n => n.xref === '@C1@').x + NODE_W / 2;
     const c2Center = nodes.find(n => n.xref === '@C2@').x + NODE_W / 2;
     const mid = (c1Center + c2Center) / 2;
@@ -865,7 +865,7 @@ describe('computeLayout — descendant umbrella', () => {
       },
       children: { '@FOCUS@': ['@C1@', '@C2@'] },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const childCenters = ['@C1@', '@C2@']
       .map(x => nodes.find(n => n.xref === x).x + NODE_W / 2);
     childCenters.forEach(cx => {
@@ -895,7 +895,7 @@ describe('computeLayout — ancestor umbrella', () => {
       },
       parents: { '@FOCUS@': ['@FATHER@', '@MOTHER@'] },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
 
     const father = nodes.find(n => n.xref === '@FATHER@');
     const mother = nodes.find(n => n.xref === '@MOTHER@');
@@ -951,7 +951,7 @@ describe('computeLayout — ancestor umbrella', () => {
       parents:   { '@FOCUS@': ['@FATHER@', '@MOTHER@'] },
       relatives: { '@FOCUS@': { siblings: ['@OLDER@', '@YOUNGER@'], spouses: [] } },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
 
     const focus   = nodes.find(n => n.xref === '@FOCUS@');
     const older   = nodes.find(n => n.xref === '@OLDER@');
@@ -1001,7 +1001,7 @@ describe('computeLayout — ancestor umbrella', () => {
       parents:   { '@FOCUS@': [null, '@MOTHER@'] },
       relatives: { '@FOCUS@': { siblings: ['@OLDER@'], spouses: [] } },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
 
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     const focusCenterX = NODE_W_FOCUS / 2;
@@ -1053,7 +1053,7 @@ describe('computeLayout — ancestor umbrella', () => {
       },
       parents: { '@FOCUS@': ['@FATHER@', '@MOTHER@'] },
     });
-    const { edges } = computeLayout('@FOCUS@', new Set(), false);
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set());
     const oldCrossbar = edges.find(e =>
       e.type === 'ancestor' &&
       e.y1 === -ROW_HEIGHT / 2 && e.y2 === -ROW_HEIGHT / 2 && e.x1 !== e.x2
@@ -1079,7 +1079,7 @@ describe('computeLayout — recursive ancestor umbrella', () => {
         '@MOTHER@': ['@MGF@', '@MGM@'],
       },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(['@MOTHER@']), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(['@MOTHER@']), new Set());
 
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     const mgf    = nodes.find(n => n.xref === '@MGF@');
@@ -1128,7 +1128,7 @@ describe('computeLayout — recursive ancestor umbrella', () => {
         '@MOTHER@': [null, '@MGM@'],
       },
     });
-    const { nodes, edges } = computeLayout('@FOCUS@', new Set(['@MOTHER@']), false);
+    const { nodes, edges } = computeLayout('@FOCUS@', new Set(['@MOTHER@']), new Set());
 
     const mother = nodes.find(n => n.xref === '@MOTHER@');
     const motherCenterX = mother.x + NODE_W / 2;
@@ -1167,7 +1167,7 @@ describe('computeLayout — recursive ancestor umbrella', () => {
       },
     });
     const expanded = new Set(['@MOTHER@', '@MGF@']);
-    const { nodes, edges } = computeLayout('@FOCUS@', expanded, false);
+    const { nodes, edges } = computeLayout('@FOCUS@', expanded, new Set());
 
     const mgf   = nodes.find(n => n.xref === '@MGF@');
     const mggf  = nodes.find(n => n.xref === '@MGGF@');
@@ -1270,23 +1270,23 @@ describe('computeLayout — imbalanced ancestor subtrees keep midpoint above chi
   });
 
   it('Pietro (leaf) stays put when Elena expands her own subtree', () => {
-    const { nodes: before } = computeLayout('@HELENA@', new Set(['@JOSEPH@']), false);
-    const { nodes: after  } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), false);
+    const { nodes: before } = computeLayout('@HELENA@', new Set(['@JOSEPH@']), new Set());
+    const { nodes: after  } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), new Set());
     const pietroBefore = before.find(n => n.xref === '@PIETRO@');
     const pietroAfter  = after.find(n => n.xref === '@PIETRO@');
     expect(pietroAfter.x).toBe(pietroBefore.x);
   });
 
   it('symmetric case: Elena (leaf) stays put when Pietro expands', () => {
-    const { nodes: before } = computeLayout('@HELENA@', new Set(['@JOSEPH@']), false);
-    const { nodes: after  } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@PIETRO@']), false);
+    const { nodes: before } = computeLayout('@HELENA@', new Set(['@JOSEPH@']), new Set());
+    const { nodes: after  } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@PIETRO@']), new Set());
     const elenaBefore = before.find(n => n.xref === '@ELENA@');
     const elenaAfter  = after.find(n => n.xref === '@ELENA@');
     expect(elenaAfter.x).toBe(elenaBefore.x);
   });
 
   it('couple marriage midpoint = child center when only Elena expands', () => {
-    const { nodes } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), false);
+    const { nodes } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), new Set());
     const joseph = nodes.find(n => n.xref === '@JOSEPH@');
     const pietro = nodes.find(n => n.xref === '@PIETRO@');
     const elena  = nodes.find(n => n.xref === '@ELENA@');
@@ -1295,7 +1295,7 @@ describe('computeLayout — imbalanced ancestor subtrees keep midpoint above chi
   });
 
   it('ancestor drop to child starts at child center on the marriage line', () => {
-    const { nodes, edges } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), false);
+    const { nodes, edges } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@ELENA@']), new Set());
     const joseph = nodes.find(n => n.xref === '@JOSEPH@');
     const jcenter = joseph.x + NODE_W / 2;
     const parentMidY = -2 * ROW_HEIGHT + NODE_H / 2;
@@ -1308,12 +1308,143 @@ describe('computeLayout — imbalanced ancestor subtrees keep midpoint above chi
   });
 
   it('balanced case (both expanded): placement unchanged from previous behaviour', () => {
-    const { nodes } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@PIETRO@', '@ELENA@']), false);
+    const { nodes } = computeLayout('@HELENA@', new Set(['@JOSEPH@', '@PIETRO@', '@ELENA@']), new Set());
     const joseph = nodes.find(n => n.xref === '@JOSEPH@');
     const pietro = nodes.find(n => n.xref === '@PIETRO@');
     const elena  = nodes.find(n => n.xref === '@ELENA@');
     // Both sides have 1-level subtrees → sep = 2*SLOT.
     expect(pietro.x).toBeCloseTo(joseph.x + NODE_W / 2 - SLOT - NODE_W / 2, 1);
     expect(elena.x).toBeCloseTo(joseph.x + NODE_W / 2 + SLOT - NODE_W / 2, 1);
+  });
+});
+
+// ── Ancestor sibling expansion ─────────────────────────────────────────────
+//
+// Fixture: focus has both parents (FATHER, MOTHER). Each parent has two
+// full siblings (same FAMC) and one of those siblings has a spouse.
+//
+//        gp_father ═══ gp_mother           (not rendered by default)
+//        /    |    \
+//   F_SIB1  FATHER  F_SIB2══F_SIB2_SP     (father + father's siblings)
+//
+//                     MOTHER ═══ father    (standard couple)
+//                        |
+//                      FOCUS
+
+describe('computeLayout — ancestor sibling expansion', () => {
+  beforeEach(() => {
+    resetGlobals({
+      people: {
+        '@FOCUS@':       { birth_year: 2000, sex: 'M' },
+        '@FATHER@':      { birth_year: 1970, sex: 'M' },
+        '@MOTHER@':      { birth_year: 1972, sex: 'F' },
+        '@F_SIB1@':      { birth_year: 1965, sex: 'M' },
+        '@F_SIB2@':      { birth_year: 1975, sex: 'F' },
+        '@F_SIB2_SP@':   { birth_year: 1974, sex: 'M' },
+        '@M_SIB1@':      { birth_year: 1968, sex: 'F' },
+        '@M_SIB2@':      { birth_year: 1976, sex: 'M' },
+      },
+      parents: {
+        '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+        '@FATHER@': [null, null],
+        '@MOTHER@': [null, null],
+      },
+      relatives: {
+        '@FOCUS@':  { siblings: [], spouses: [] },
+        '@FATHER@': { siblings: ['@F_SIB1@', '@F_SIB2@'], spouses: [] },
+        '@MOTHER@': { siblings: ['@M_SIB1@', '@M_SIB2@'], spouses: [] },
+        '@F_SIB1@': { siblings: [], spouses: [] },
+        '@F_SIB2@': { siblings: [], spouses: ['@F_SIB2_SP@'] },
+        '@M_SIB1@': { siblings: [], spouses: [] },
+        '@M_SIB2@': { siblings: [], spouses: [] },
+      },
+    });
+  });
+
+  it('does NOT render ancestor siblings when set is empty', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
+    expect(nodes.find(n => n.xref === '@F_SIB1@')).toBeUndefined();
+    expect(nodes.find(n => n.xref === '@M_SIB1@')).toBeUndefined();
+  });
+
+  it('renders mother\'s siblings to the right of mother when mother is expanded', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
+    const sib2   = nodes.find(n => n.xref === '@M_SIB2@');
+    expect(sib1).toBeDefined();
+    expect(sib2).toBeDefined();
+    expect(sib1.x).toBeGreaterThan(mother.x);
+    expect(sib2.x).toBeGreaterThan(mother.x);
+  });
+
+  it('renders father\'s siblings to the left of father when father is expanded', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@']));
+    const father = nodes.find(n => n.xref === '@FATHER@');
+    const sib1   = nodes.find(n => n.xref === '@F_SIB1@');
+    const sib2   = nodes.find(n => n.xref === '@F_SIB2@');
+    expect(sib1).toBeDefined();
+    expect(sib2).toBeDefined();
+    expect(sib1.x).toBeLessThan(father.x);
+    expect(sib2.x).toBeLessThan(father.x);
+  });
+
+  it('ancestor siblings sit at the same y as their parent-node', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const sib1   = nodes.find(n => n.xref === '@M_SIB1@');
+    expect(sib1.y).toBe(mother.y);
+  });
+
+  it('ancestor siblings have role "ancestor_sibling"', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const sib = nodes.find(n => n.xref === '@M_SIB1@');
+    expect(sib.role).toBe('ancestor_sibling');
+  });
+
+  it('ancestor siblings are sorted chronologically within their stack', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const sib1 = nodes.find(n => n.xref === '@M_SIB1@'); // 1968
+    const sib2 = nodes.find(n => n.xref === '@M_SIB2@'); // 1976
+    // On mother's right (increasing x = younger→further right): older sib closer to mother
+    expect(sib1.x).toBeLessThan(sib2.x);
+  });
+
+  it('renders a sibling\'s spouse adjacent to the sibling', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    // F_SIB2 has a spouse; but we only expanded MOTHER, not FATHER.
+    // Switch to father expansion to exercise the spouse rendering path.
+    const { nodes: nodes2 } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@']));
+    const sib2 = nodes2.find(n => n.xref === '@F_SIB2@');
+    const sp   = nodes2.find(n => n.xref === '@F_SIB2_SP@');
+    expect(sib2).toBeDefined();
+    expect(sp).toBeDefined();
+    expect(sp.role).toBe('ancestor_sibling_spouse');
+    expect(sp.y).toBe(sib2.y);
+  });
+
+  it('emits a sibling_bracket edge when an ancestor\'s siblings are expanded', () => {
+    const { edges } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']));
+    const brackets = edges.filter(e => e.type === 'sibling_bracket');
+    expect(brackets.length).toBeGreaterThan(0);
+  });
+
+  it('expanding both parents places each side\'s siblings on the correct outward side', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@', '@MOTHER@']));
+    const father = nodes.find(n => n.xref === '@FATHER@');
+    const mother = nodes.find(n => n.xref === '@MOTHER@');
+    const fSib1  = nodes.find(n => n.xref === '@F_SIB1@');
+    const mSib1  = nodes.find(n => n.xref === '@M_SIB1@');
+    expect(fSib1.x).toBeLessThan(father.x);
+    expect(mSib1.x).toBeGreaterThan(mother.x);
+  });
+
+  it('no overlap between father\'s siblings and any other node on the same row', () => {
+    const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@FATHER@', '@MOTHER@']));
+    const rowNodes = nodes.filter(n => n.y === -ROW_HEIGHT);
+    const sorted = [...rowNodes].sort((a, b) => a.x - b.x);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i].x).toBeGreaterThanOrEqual(sorted[i - 1].x + NODE_W);
+    }
   });
 });

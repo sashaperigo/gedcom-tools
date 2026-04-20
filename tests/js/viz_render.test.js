@@ -188,7 +188,7 @@ describe('render — node presence', () => {
   it('each node in layout has a corresponding <g> element with data-xref attribute', () => {
     const { computeLayout } = require('../../js/viz_layout.js');
     const state = stateMod.getState();
-    const { nodes } = computeLayout(state.focusXref, state.expandedNodes || new Set(), false);
+    const { nodes } = computeLayout(state.focusXref, state.expandedNodes || new Set(), new Set());
 
     const treeRoot = svg.querySelector('#tree-root');
     const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
@@ -202,7 +202,7 @@ describe('render — node presence', () => {
   it('each node <g> has a translate transform matching layout position', () => {
     const { computeLayout } = require('../../js/viz_layout.js');
     const state = stateMod.getState();
-    const { nodes } = computeLayout(state.focusXref, state.expandedNodes || new Set(), false);
+    const { nodes } = computeLayout(state.focusXref, state.expandedNodes || new Set(), new Set());
 
     const treeRoot = svg.querySelector('#tree-root');
     const nodeGs = treeRoot.querySelectorAll('g[data-xref]');

@@ -52,16 +52,17 @@ function _packRow(items, startX, y, role) {
  *
  * @param {string} focusXref - xref of the person at the center of the tree
  * @param {Set<string>} expandedAncestors - set of xrefs whose parents are shown
- * @param {boolean} spouseSiblingsExpanded - whether to show spouse's sibling row
+ * @param {Set<string>} expandedSiblingsXrefs - set of xrefs whose siblings are shown
  * @returns {{ nodes: Node[], edges: Edge[] }}
  *
  * Node: { xref, x, y, generation, role }
  *   role: 'focus' | 'ancestor' | 'descendant' | 'sibling' | 'spouse' | 'spouse_sibling'
+ *       | 'ancestor_sibling' | 'ancestor_sibling_spouse'
  *
  * Edge: { x1, y1, x2, y2, type }
  *   type: 'ancestor' | 'descendant' | 'sibling_bracket' | 'marriage'
  */
-function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
+function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs) {
   const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
   const SLOT = NODE_W + H_GAP;
   // Gap between focus node edge and nearest sibling: account for focus being wider than NODE_W.
@@ -125,7 +126,7 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
     });
 
     // Spouse's siblings (if expanded and this is the primary spouse)
-    if (spouseSiblingsExpanded && si === 0) {
+    if (si === 0 && expandedSiblingsXrefs.has(spouseXref)) {
       const spouseSibs = _sortByBirthYear(RELATIVES[spouseXref]?.siblings ?? []);
       if (spouseSibs.length > 0) {
         const spouseSibNodes = _packRow(
@@ -195,14 +196,18 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
         type: 'marriage',
       });
 
-      _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
-      _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
+      _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+      _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+
+      _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, nodes, edges);
+      _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, nodes, edges);
     } else {
       // Single parent: centered on focus center.
       const singleParent = fatherXref || motherXref;
       const singleParentX = focusCenterX - NODE_W / 2;
       nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-      _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, expandedAncestors, nodes, edges);
+      _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+      _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, nodes, edges);
     }
 
     // Umbrella geometry (mirrors the descendant umbrella).
@@ -337,7 +342,7 @@ function computeLayout(focusXref, expandedAncestors, spouseSiblingsExpanded) {
 // Recursive ancestor placement
 // ---------------------------------------------------------------------------
 
-function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges) {
+function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSiblingsXrefs, nodes, edges) {
   const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
   const SLOT = NODE_W + H_GAP;
 
@@ -377,8 +382,11 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
       type: 'ancestor',
     });
 
-    _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, nodes, edges);
-    _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, nodes, edges);
+    _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+    _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+
+    _placeAncestorSiblings(fatherXref, fatherX, nextY, expandedSiblingsXrefs, nodes, edges);
+    _placeAncestorSiblings(motherXref, motherX, nextY, expandedSiblingsXrefs, nodes, edges);
   } else {
     const singleParent = fatherXref || motherXref;
     nodes.push({ xref: singleParent, x, y: nextY, generation: nextGen, role: 'ancestor' });
@@ -390,7 +398,84 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, nodes, edges
       type: 'ancestor',
     });
 
-    _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, nodes, edges);
+    _placeAncestors(singleParent, x, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+    _placeAncestorSiblings(singleParent, x, nextY, expandedSiblingsXrefs, nodes, edges);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ancestor sibling placement
+// ---------------------------------------------------------------------------
+
+// For a single ancestor node at (ancX, ancY), if it's in expandedSiblingsXrefs,
+// place its full siblings outward (male → left, female → right), each with
+// their spouse adjacent, and emit a sibling_bracket edge tying the group back
+// to the ancestor node.
+function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, nodes, edges) {
+  if (!expandedSiblingsXrefs || !expandedSiblingsXrefs.has(ancXref)) return;
+  const sibs = RELATIVES[ancXref]?.siblings ?? [];
+  if (sibs.length === 0) return;
+
+  const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
+  const sorted = _sortByBirthYear(sibs);
+  const sex = PEOPLE[ancXref]?.sex;
+  // Female parent → siblings extend right. Male (or unknown) → left.
+  const side = sex === 'F' ? 'right' : 'left';
+  const generation = Math.round(ancY / ROW_HEIGHT);
+  const midY = ancY + NODE_H / 2;
+
+  if (side === 'right') {
+    let leftEdge = ancX + NODE_W + H_GAP;  // left edge of first (oldest) sibling
+    let lastRightEdge = leftEdge;
+    sorted.forEach(sibXref => {
+      const sibX = leftEdge;
+      nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
+      let cursorRight = sibX + NODE_W;
+      const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
+      sibSpouses.forEach(spXref => {
+        const spX = cursorRight + MARRIAGE_GAP;
+        nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
+        edges.push({
+          x1: cursorRight, y1: midY,
+          x2: spX,          y2: midY,
+          type: 'marriage',
+        });
+        cursorRight = spX + NODE_W;
+      });
+      lastRightEdge = cursorRight;
+      leftEdge = cursorRight + H_GAP;
+    });
+    edges.push({
+      x1: ancX + NODE_W, y1: midY,
+      x2: lastRightEdge, y2: midY,
+      type: 'sibling_bracket',
+    });
+  } else {
+    let rightEdge = ancX - H_GAP;  // right edge of first (oldest) sibling
+    let lastLeftEdge = rightEdge;
+    sorted.forEach(sibXref => {
+      const sibX = rightEdge - NODE_W;
+      nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
+      let cursorLeft = sibX;
+      const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
+      sibSpouses.forEach(spXref => {
+        const spX = cursorLeft - MARRIAGE_GAP - NODE_W;
+        nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
+        edges.push({
+          x1: spX + NODE_W, y1: midY,
+          x2: cursorLeft,    y2: midY,
+          type: 'marriage',
+        });
+        cursorLeft = spX;
+      });
+      lastLeftEdge = cursorLeft;
+      rightEdge = cursorLeft - H_GAP;
+    });
+    edges.push({
+      x1: lastLeftEdge, y1: midY,
+      x2: ancX,         y2: midY,
+      type: 'sibling_bracket',
+    });
   }
 }
 

@@ -325,9 +325,9 @@ function render() {
   const state = getState();
   const focusXref = state.focusXref;
   const expandedNodes = state.expandedNodes || new Set();
-  const spouseSiblingsExpanded = state.spouseSiblingsExpanded || false;
+  const expandedSiblingsXrefs = state.expandedSiblingsXrefs || new Set();
 
-  const { nodes, edges } = computeLayout(focusXref, expandedNodes, spouseSiblingsExpanded);
+  const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs);
 
   // Clear tree-root contents
   _treeRoot.innerHTML = '';
