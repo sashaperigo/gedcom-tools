@@ -26,6 +26,15 @@ function _evtLabel(tag, typeVal) {
 
 let _noteEditXref = null, _noteEditIdx = null;
 
+// Citation clipboard — persists across modal opens within the same page session.
+let _copiedCitation = null;
+
+function copyCitation(citationFields, label) {
+  _copiedCitation = { ...citationFields, label };
+}
+function getCopiedCitation() { return _copiedCitation; }
+function clearCopiedCitation() { _copiedCitation = null; }
+
 async function deleteNote(xref, noteIdx) {
   if (!confirm('Delete this note? The GEDCOM file will be updated immediately (a backup will be saved).')) return;
   try {
@@ -822,9 +831,20 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
         : isFamEvt
           ? `showEditCitationModal(${indiXrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},${apiXrefQ},${eventOcc})`
           : `showEditCitationModal(${xrefQ},${JSON.stringify(tag).replace(/"/g,'&quot;')},${idx},undefined,${eventOcc})`;
+      const xrefKey2 = c.sourceXref || c.sour_xref || '';
+      const pageVal  = c.page || '';
+      const copyDataAttrs =
+        `data-sour-xref="${escHtml(xrefKey2)}" ` +
+        `data-page="${escHtml(pageVal)}" ` +
+        `data-text="${escHtml(c.text || '')}" ` +
+        `data-note="${escHtml(c.note || '')}" ` +
+        `data-url="${escHtml(c.url || '')}" ` +
+        `data-label="${escHtml((src.titl || src.title || xrefKey2) + (pageVal ? ' p. ' + pageVal : ''))}"`;
       return (
         `<div class="src-modal-item">` +
           `<div class="src-modal-item-body"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>` +
+          `<button class="citation-copy-btn src-modal-icon-btn" title="Copy citation" ` +
+            `${copyDataAttrs} onclick="handleCitationCopy(this)">\u29c9</button>` +
           `<button class="src-modal-edit-btn" title="Edit this citation" ` +
             `onclick="${editOnclick}">\u270f</button>` +
           `<button class="src-modal-delete-btn" title="Remove this citation" ` +
@@ -833,9 +853,16 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
       );
     }).join('');
   }
+  const pasteLabel = _copiedCitation
+    ? escHtml((_copiedCitation.label || '').slice(0, 60))
+    : '';
+  const pasteHidden = _copiedCitation ? '' : ' hidden';
   html += `<div class="src-modal-add">` +
           `<button class="src-modal-add-btn" ` +
             `onclick="showAddCitationModal(${xrefQ},${factKeyQ})">+ Add source</button>` +
+          `<button class="citation-paste-btn src-modal-add-btn${pasteHidden}" ` +
+            `onclick="handleCitationPaste(${xrefQ},${factKeyQ})">` +
+            `Paste: \u201c${pasteLabel}\u201d</button>` +
           `</div>`;
   return html;
 }
@@ -857,6 +884,42 @@ async function deleteSourceFromModal(xref, citationKey) {
     }
   } catch (e) {
     alert('Delete failed: ' + e);
+  }
+}
+
+function handleCitationCopy(btn) {
+  const xref    = btn.dataset.sourXref;
+  const page    = btn.dataset.page    || null;
+  const text    = btn.dataset.text    || '';
+  const note    = btn.dataset.note    || '';
+  const url     = btn.dataset.url     || null;
+  const label   = btn.dataset.label   || xref;
+  copyCitation({ sourceXref: xref, page, text, note, url }, label);
+  // Flash button to confirm copy, then refresh the modal to show paste button.
+  btn.classList.add('citation-copy-btn--copied');
+  setTimeout(() => btn.classList.remove('citation-copy-btn--copied'), 700);
+  _refreshSourcesModalContent();
+}
+
+async function handleCitationPaste(xref, factKey) {
+  const c = getCopiedCitation();
+  if (!c) return;
+  try {
+    const resp = await apiAddCitation(
+      xref, c.sourceXref, factKey,
+      c.page || '', c.text || '', c.note || '', c.url || ''
+    );
+    if (resp && resp.ok) {
+      if (resp.people) {
+        for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+      }
+      _refreshSourcesModalContent();
+      if (typeof renderPanel === 'function') renderPanel();
+    } else {
+      alert('Paste failed: ' + ((resp && resp.error) || 'unknown'));
+    }
+  } catch (e) {
+    alert('Paste failed: ' + e);
   }
 }
 
@@ -1538,6 +1601,7 @@ if (typeof module !== 'undefined' && module.exports) {
     _filterSpouseResults, _isFamEventTag, _buildSpouseResultsHtml, _FACT_PRESETS,
     openSourcesModal, openNoteSourcesModal, closeSourcesModal, _buildSourcesModalContent,
     deleteSourceFromModal,
+    copyCitation, getCopiedCitation, clearCopiedCitation,
     showEditNameModal, showAddNoteModal, showAddCitationModal,
     showEditCitationModal, submitEditCitationModal, showEditSourceModal, showAddGodparentModal,
     submitAddGodparentModal, _selectGodparent,

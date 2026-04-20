@@ -1235,3 +1235,96 @@ describe('_buildSourcesModalContent — SNOTE tag produces SNOTE factKey', () =>
     expect(html).toContain('SNOTE:@N1@:0');
   });
 });
+
+// ── Copy/Paste citation clipboard ─────────────────────────────────────────
+
+const {
+  copyCitation, getCopiedCitation, clearCopiedCitation,
+} = require('../../js/viz_modals.js');
+
+describe('copyCitation / getCopiedCitation / clearCopiedCitation', () => {
+  beforeEach(() => { clearCopiedCitation(); });
+
+  it('getCopiedCitation returns null initially', () => {
+    expect(getCopiedCitation()).toBeNull();
+  });
+
+  it('getCopiedCitation returns the stored citation after copyCitation', () => {
+    copyCitation({ sourceXref: '@S1@', page: '3', text: 'excerpt', note: '', url: null }, 'Title p.3');
+    const c = getCopiedCitation();
+    expect(c.sourceXref).toBe('@S1@');
+    expect(c.page).toBe('3');
+    expect(c.text).toBe('excerpt');
+    expect(c.label).toBe('Title p.3');
+  });
+
+  it('clearCopiedCitation resets state to null', () => {
+    copyCitation({ sourceXref: '@S1@', page: null, text: '', note: '', url: null }, 'Title');
+    clearCopiedCitation();
+    expect(getCopiedCitation()).toBeNull();
+  });
+});
+
+describe('_buildSourcesModalContent — copy button per citation', () => {
+  const SOURCES = { '@S1@': { titl: 'Ellis Island Records' } };
+
+  beforeEach(() => { clearCopiedCitation(); });
+
+  it('renders a copy button for each citation', () => {
+    const html = _buildSourcesModalContent(
+      [{ sourceXref: '@S1@', page: '42' }],
+      SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 }
+    );
+    expect(html).toContain('citation-copy-btn');
+  });
+
+  it('copy button carries data-sour-xref of the citation', () => {
+    const html = _buildSourcesModalContent(
+      [{ sourceXref: '@S1@', page: '42' }],
+      SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 }
+    );
+    expect(html).toContain('data-sour-xref="@S1@"');
+  });
+
+  it('copy button carries data-page of the citation', () => {
+    const html = _buildSourcesModalContent(
+      [{ sourceXref: '@S1@', page: '42' }],
+      SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 }
+    );
+    expect(html).toContain('data-page="42"');
+  });
+
+  it('no copy buttons rendered when citations list is empty', () => {
+    const html = _buildSourcesModalContent([], SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 });
+    expect(html).not.toContain('citation-copy-btn');
+  });
+});
+
+describe('_buildSourcesModalContent — paste button visibility', () => {
+  const SOURCES = { '@S1@': { titl: 'Ellis Island Records' } };
+
+  beforeEach(() => { clearCopiedCitation(); });
+
+  it('paste button is absent (or hidden) when clipboard is empty', () => {
+    const html = _buildSourcesModalContent(
+      [{ sourceXref: '@S1@', page: null }], SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 }
+    );
+    // Either not rendered at all, or rendered with a hidden class
+    if (html.includes('citation-paste-btn')) {
+      expect(html).toMatch(/citation-paste-btn[^"]*hidden|hidden[^"]*citation-paste-btn/);
+    }
+  });
+
+  it('paste button is visible and shows source label when clipboard has a citation', () => {
+    copyCitation(
+      { sourceXref: '@S1@', page: '5', text: '', note: '', url: null },
+      'Ellis Island Records p. 5'
+    );
+    const html = _buildSourcesModalContent(
+      [{ sourceXref: '@S1@', page: null }], SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 }
+    );
+    expect(html).toContain('citation-paste-btn');
+    expect(html).not.toMatch(/class="[^"]*hidden[^"]*"\s*[^>]*citation-paste-btn|citation-paste-btn[^>]*class="[^"]*hidden/);
+    expect(html).toContain('Ellis Island Records');
+  });
+});

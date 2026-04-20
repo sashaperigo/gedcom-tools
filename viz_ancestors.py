@@ -1077,12 +1077,22 @@ header h1 { font-size: 16px; font-weight: 600; }
 .src-modal-edit-btn { background: none; border: none; color: #64748b; cursor: pointer;
   font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
 .src-modal-edit-btn:hover { color: #93c5fd; background: rgba(147,197,253,0.1); }
-.src-modal-add { margin-top: 14px; padding-top: 12px; border-top: 1px solid #1e3a52; }
+.citation-copy-btn { background: none; border: none; color: #64748b; cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; }
+.citation-copy-btn:hover { color: #6ee7b7; background: rgba(110,231,183,0.1); }
+.citation-copy-btn--copied { color: #6ee7b7 !important; }
+.src-modal-add { margin-top: 14px; padding-top: 12px; border-top: 1px solid #1e3a52;
+  display: flex; flex-wrap: wrap; gap: 8px; }
 .src-modal-add-btn { background: rgba(147,197,253,0.1); color: #93c5fd;
   border: 1px solid rgba(147,197,253,0.3); border-radius: 4px; padding: 6px 12px;
   font-size: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
 .src-modal-add-btn:hover { background: rgba(147,197,253,0.18);
   border-color: rgba(147,197,253,0.55); }
+.citation-paste-btn { background: rgba(110,231,183,0.08); color: #6ee7b7;
+  border-color: rgba(110,231,183,0.3); }
+.citation-paste-btn:hover { background: rgba(110,231,183,0.15) !important;
+  border-color: rgba(110,231,183,0.5) !important; }
+.citation-paste-btn.hidden { display: none; }
 /* ── Citation badge on fact rows ─────────────────────────── */
 .evt-src-badge { font-size: 10px; color: #475569; background: rgba(71,85,105,0.15);
   border: 1px solid rgba(71,85,105,0.3); border-radius: 3px; padding: 1px 5px;
