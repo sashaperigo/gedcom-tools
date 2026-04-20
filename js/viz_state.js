@@ -33,10 +33,22 @@ function _xrefFromUrl(search) {
   return null;
 }
 
-function _pushHistory(focusXref) {
-  if (typeof history === 'undefined') return;
+function _buildUrl(focusXref, expandedNodes) {
   const clean = focusXref.replace(/@/g, '');
-  history.pushState({ focusXref }, '', '?person=' + clean);
+  const expandedParam = _expandedToParam(expandedNodes);
+  return expandedParam
+    ? '?person=' + clean + '&expanded=' + expandedParam
+    : '?person=' + clean;
+}
+
+function _pushHistory(focusXref, expandedNodes) {
+  if (typeof history === 'undefined') return;
+  history.pushState({ focusXref }, '', _buildUrl(focusXref, expandedNodes));
+}
+
+function _replaceHistory(focusXref, expandedNodes) {
+  if (typeof history === 'undefined') return;
+  history.replaceState({ focusXref }, '', _buildUrl(focusXref, expandedNodes));
 }
 
 // ── public API ────────────────────────────────────────────────────────────
@@ -72,11 +84,16 @@ function initState(rootXref) {
 
 function setState(updates) {
   const prevFocusXref = _state.focusXref;
+  const prevExpanded = _state.expandedNodes;
   _state = Object.assign({}, _state, updates);
 
-  // Push to history only when focusXref actually changed
-  if ('focusXref' in updates && updates.focusXref !== prevFocusXref) {
-    _pushHistory(updates.focusXref);
+  const focusChanged = 'focusXref' in updates && updates.focusXref !== prevFocusXref;
+  const expandedChanged = 'expandedNodes' in updates;
+
+  if (focusChanged) {
+    _pushHistory(_state.focusXref, _state.expandedNodes);
+  } else if (expandedChanged) {
+    _replaceHistory(_state.focusXref, _state.expandedNodes);
   }
 
   _callbacks.forEach(cb => cb(_state));

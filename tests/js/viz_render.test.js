@@ -89,7 +89,7 @@ global.document = {
 
 // Stub globals that viz_state.js needs
 global.location = { search: '' };
-global.history = { pushState: vi.fn() };
+global.history = { pushState: vi.fn(), replaceState: vi.fn() };
 global.addEventListener = () => {};
 
 // Load state module

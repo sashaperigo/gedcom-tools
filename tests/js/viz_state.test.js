@@ -147,6 +147,48 @@ describe('setState', () => {
     expect(global.history.replaceState).toHaveBeenCalledOnce();
     expect(global.history.pushState).not.toHaveBeenCalled();
   });
+
+  it('URL from replaceState contains sorted expanded= param', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    mod.setState({ expandedNodes: new Set(['@I23@', '@I5@']) });
+    const [, , url] = global.history.replaceState.mock.calls[0];
+    expect(url).toContain('?person=I1');
+    expect(url).toContain('expanded=I23,I5');
+  });
+
+  it('expanded= param is omitted when expandedNodes is empty', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    mod.setState({ expandedNodes: new Set() });
+    const [, , url] = global.history.replaceState.mock.calls[0];
+    expect(url).not.toContain('expanded');
+  });
+
+  it('pushState URL contains both person= and expanded= when focusXref changes', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    mod.setState({ focusXref: '@I42@', expandedNodes: new Set(['@I5@']) });
+    const [, , url] = global.history.pushState.mock.calls[0];
+    expect(url).toContain('?person=I42');
+    expect(url).toContain('expanded=I5');
+  });
+
+  it('when both focusXref and expandedNodes change, only pushState is called', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    mod.setState({ focusXref: '@I42@', expandedNodes: new Set(['@I5@']) });
+    expect(global.history.pushState).toHaveBeenCalledOnce();
+    expect(global.history.replaceState).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call replaceState when only panelOpen changes', () => {
+    const mod = loadModule('');
+    mod.initState('@I1@');
+    mod.setState({ panelOpen: true });
+    expect(global.history.replaceState).not.toHaveBeenCalled();
+    expect(global.history.pushState).not.toHaveBeenCalled();
+  });
 });
 
 describe('popstate handler', () => {
