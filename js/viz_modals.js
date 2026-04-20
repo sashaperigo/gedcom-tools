@@ -1,6 +1,15 @@
 // Edit / add / delete modals: notes, events, aliases, names.
 // Pure helpers exported for testing (node require-compatible at the bottom).
 
+function closeIfFarFromPanel(event, panelId, closeFn) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const r = panel.getBoundingClientRect();
+  const dx = Math.max(r.left - event.clientX, 0, event.clientX - r.right);
+  const dy = Math.max(r.top - event.clientY, 0, event.clientY - r.bottom);
+  if (Math.sqrt(dx * dx + dy * dy) > 50) closeFn();
+}
+
 // ---------------------------------------------------------------------------
 // Event label lookup (B3)
 // ---------------------------------------------------------------------------
