@@ -39,6 +39,7 @@ from pathlib import Path
 import pytest
 
 from viz_ancestors import (
+    _CSS,
     _HTML_TEMPLATE,
     build_people_json,
     build_relatives_json,
@@ -968,7 +969,82 @@ class TestPanelTopOffset:
 
     def test_panel_css_uses_header_h_variable(self):
         """CSS for #detail-panel must contain var(--header-h."""
-        # Find the #detail-panel CSS block in the template
-        assert 'var(--header-h' in _HTML_TEMPLATE, (
+        assert 'var(--header-h' in _CSS, (
             "#detail-panel CSS must use var(--header-h, 45px) for top, not top: 0"
+        )
+
+
+# ---------------------------------------------------------------------------
+# External template and CSS files
+# ---------------------------------------------------------------------------
+
+_VIZ_DIR = Path(__file__).parent.parent
+
+class TestExternalTemplateFiles:
+    """
+    The HTML skeleton and CSS live in separate files (viz_ancestors.html /
+    viz_ancestors.css) that are loaded at import time into _HTML_TEMPLATE.
+    These tests verify the files exist, are non-empty, and that render_html
+    inlines their content correctly into the final page.
+    """
+
+    def test_html_template_file_exists(self):
+        """viz_ancestors.html must exist next to viz_ancestors.py."""
+        assert (_VIZ_DIR / 'viz_ancestors.html').exists(), (
+            "viz_ancestors.html not found — extract the HTML template from "
+            "viz_ancestors.py into this file"
+        )
+
+    def test_css_file_exists(self):
+        """viz_ancestors.css must exist next to viz_ancestors.py."""
+        assert (_VIZ_DIR / 'viz_ancestors.css').exists(), (
+            "viz_ancestors.css not found — extract the <style> block from "
+            "viz_ancestors.py into this file"
+        )
+
+    def test_html_template_file_is_non_empty(self):
+        html_file = _VIZ_DIR / 'viz_ancestors.html'
+        if html_file.exists():
+            assert html_file.stat().st_size > 0, "viz_ancestors.html is empty"
+
+    def test_css_file_is_non_empty(self):
+        css_file = _VIZ_DIR / 'viz_ancestors.css'
+        if css_file.exists():
+            assert css_file.stat().st_size > 0, "viz_ancestors.css is empty"
+
+    def test_rendered_html_contains_css_content(self, html):
+        """render_html output must include a rule from the CSS file."""
+        css_file = _VIZ_DIR / 'viz_ancestors.css'
+        if not css_file.exists():
+            pytest.skip("viz_ancestors.css not yet extracted")
+        # Pick a distinctive rule that must survive into the rendered page
+        sample = css_file.read_text(encoding='utf-8').split('\n')[0].strip()
+        assert sample and sample in html, (
+            f"CSS file first line {sample!r} not found in render_html output"
+        )
+
+    def test_rendered_html_contains_doctype(self, html):
+        """render_html must emit a full HTML5 page starting with <!DOCTYPE html>."""
+        assert html.lstrip().startswith('<!DOCTYPE html>'), (
+            "render_html output does not start with <!DOCTYPE html>"
+        )
+
+    def test_rendered_html_contains_style_block(self, html):
+        """render_html output must contain a <style> block with CSS."""
+        assert '<style>' in html, (
+            "render_html output has no <style> block — CSS was not inlined"
+        )
+
+    def test_rendered_html_has_root_name_in_title(self, html):
+        """The <title> tag must include the root person's name."""
+        assert 'Rose Smith' in html, (
+            "render_html did not substitute __ROOT_NAME__ with the root person's name"
+        )
+
+    def test_template_placeholder_substitution_complete(self, html):
+        """No __PLACEHOLDER__ tokens should survive into the rendered output."""
+        import re
+        leftover = re.findall(r'__[A-Z_]+__', html)
+        assert not leftover, (
+            f"Unsubstituted placeholders in render_html output: {leftover}"
         )

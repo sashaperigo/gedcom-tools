@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ancestors of __ROOT_NAME__</title>
+<style>
+__STYLES__
+</style>
+</head>
+<body>
+<header>
+  <h1>Ancestors of __ROOT_NAME__</h1>
+  <span class="hint">Pinch to zoom · Two-finger drag to pan · Click ▲ to expand ancestors</span>
+  <button id="home-btn" title="Return to root">&#x2302;</button>
+  <div id="search-container">
+    <input id="search-input" type="text" placeholder="Search people…" autocomplete="off" />
+    <ul id="search-results"></ul>
+  </div>
+</header>
+<div id="viewport">
+<div id="gen-labels"></div>
+<svg id="tree" xmlns="http://www.w3.org/2000/svg">
+  <g id="canvas"></g>
+</svg>
+</div>
+<div id="note-modal-overlay" onclick="closeIfFarFromPanel(event,'note-modal',closeNoteModal)">
+  <div id="note-modal">
+    <h3 id="note-modal-title">Edit Note</h3>
+    <div id="note-modal-shared-warning" style="display:none;background:rgba(251,113,83,0.15);border:1px solid rgba(251,113,83,0.4);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#fca5a5;">&#9888; This is a shared note &mdash; edits will apply to all profiles that contain it.</div>
+    <textarea id="note-modal-textarea" rows="6" onkeydown="if(event.key==='Escape')closeNoteModal()"></textarea>
+    <div class="note-modal-actions">
+      <button class="note-modal-cancel" onclick="closeNoteModal()">Cancel</button>
+      <button class="note-modal-save" onclick="submitNoteEdit()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="event-modal-overlay" onclick="closeIfFarFromPanel(event,'event-modal',closeEventModal)">
+  <div id="event-modal">
+    <div id="event-modal-header">
+      <h3 id="event-modal-title">Edit Event</h3>
+      <button id="event-modal-close" onclick="closeEventModal()" title="Close">&times;</button>
+    </div>
+    <div class="event-modal-field" id="event-modal-tag-row">
+      <label>Event Type</label>
+      <select id="event-modal-tag"
+              onchange="_eventModalAddTag=this.value;_updateEventModalFields(this.value);"
+              onkeydown="if(event.key==='Escape')closeEventModal()">
+        <option value="BIRT">Birth</option>
+        <option value="DEAT">Death</option>
+        <option value="BURI">Burial</option>
+        <option value="MARR">Marriage</option>
+        <option value="DIV">Divorce</option>
+        <option value="RESI">Residence</option>
+        <option value="OCCU">Occupation</option>
+        <option value="CHR">Christening</option>
+        <option value="BAPM">Baptism</option>
+        <option value="NATU">Naturalization</option>
+        <option value="IMMI">Immigration</option>
+        <option value="EMIG">Emigration</option>
+        <option value="EVEN">Event</option>
+        <option value="FACT">Fact</option>
+        <option value="NATI">Nationality</option>
+        <option value="RELI">Religion</option>
+        <option value="TITL">Title</option>
+        <option value="ADOP">Adoption</option>
+        <option value="EDUC">Education</option>
+        <option value="RETI">Retirement</option>
+        <option value="CONF">Confirmation</option>
+        <option value="PROB">Probate</option>
+      </select>
+    </div>
+    <div class="event-modal-field" id="event-modal-spouse-row" style="display:none">
+      <label>Spouse / Other Party</label>
+      <input type="text" id="event-modal-spouse-input" placeholder="Search by name\u2026"
+             autocomplete="off" onkeydown="if(event.key==='Escape')closeEventModal()">
+      <div id="event-modal-spouse-results"></div>
+    </div>
+    <div class="event-modal-field" id="event-modal-inline-row">
+      <label id="event-modal-inline-label">Value</label>
+      <input type="text" id="event-modal-inline" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field" id="event-modal-type-row">
+      <label>Type / Description</label>
+      <input type="text" id="event-modal-type" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Date</label>
+      <input type="text" id="event-modal-date" placeholder="e.g. 26 FEB 1785" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field" id="event-modal-place-row">
+      <label>Place</label>
+      <input type="text" id="event-modal-place" autocomplete="off"
+             oninput="_onPlaceInput(this.value)"
+             onblur="_schedulePlaceResultsClear()"
+             onkeydown="if(event.key==='Escape')closeEventModal()">
+      <div id="event-modal-place-results"></div>
+    </div>
+    <div class="event-modal-field" id="event-modal-addr-row">
+      <label>Address</label>
+      <input type="text" id="event-modal-addr" list="addr-suggestions"
+             placeholder="e.g. Church name or building"
+             onkeydown="if(event.key==='Escape')closeEventModal()">
+      <datalist id="addr-suggestions"></datalist>
+    </div>
+    <div class="event-modal-field" id="event-modal-age-row" style="display:none">
+      <label>Age at Death</label>
+      <input type="text" id="event-modal-age" placeholder="e.g. 72" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field" id="event-modal-cause-row" style="display:none">
+      <label>Cause of Death</label>
+      <input type="text" id="event-modal-cause" onkeydown="if(event.key==='Escape')closeEventModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Note</label>
+      <textarea id="event-modal-note" rows="3"
+                onkeydown="if(event.key==='Escape')closeEventModal()"></textarea>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>
+      <button class="event-modal-save" id="event-modal-save-btn" onclick="submitEventModal()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="alias-modal-overlay" onclick="closeIfFarFromPanel(event,'alias-modal',closeAliasModal)">
+  <div id="alias-modal">
+    <h3 id="alias-modal-title">Add Secondary Name</h3>
+    <div class="event-modal-field">
+      <label>Given Name(s)</label>
+      <input type="text" id="alias-modal-given" placeholder="e.g. Paul"
+             onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="alias-modal-surname" placeholder="e.g. Kemerli"
+             onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Name Type</label>
+      <select id="alias-modal-type" onkeydown="if(event.key==='Escape')closeAliasModal()">
+        <option value="AKA">AKA (Also Known As)</option>
+        <option value="Birth">Birth Name</option>
+        <option value="Immigrant">Immigrant Name</option>
+        <option value="Maiden">Maiden Name</option>
+        <option value="Married">Married Name</option>
+        <option value="Nickname">Nickname</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAliasModal()">Cancel</button>
+      <button class="event-modal-save" id="alias-modal-save-btn" onclick="submitAliasModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="add-godparent-modal-overlay" onclick="closeIfFarFromPanel(event,'add-godparent-modal',closeAddGodparentModal)">
+  <div id="add-godparent-modal">
+    <h3 id="add-godparent-modal-title">Add Godparent</h3>
+    <div class="event-modal-field">
+      <label>Search by name</label>
+      <input type="text" id="add-godparent-modal-search" placeholder="Type a name\u2026"
+             onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
+      <div id="add-godparent-modal-results"></div>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddGodparentModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddGodparentModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="add-person-modal-overlay" onclick="closeIfFarFromPanel(event,'add-person-modal',closeAddPersonModal)">
+  <div id="add-person-modal" onkeydown="if(event.key==='Escape')closeAddPersonModal()">
+    <h3 id="add-person-modal-title">Add Person</h3>
+    <div class="event-modal-field">
+      <label>Given name</label>
+      <input type="text" id="add-person-modal-given" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="add-person-modal-surname" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Sex</label>
+      <select id="add-person-modal-sex">
+        <option value="U">Unknown</option>
+        <option value="M">Male</option>
+        <option value="F">Female</option>
+      </select>
+    </div>
+    <div class="event-modal-field">
+      <label>Birth year</label>
+      <input type="text" id="add-person-modal-birth-year" inputmode="numeric" autocomplete="off">
+    </div>
+    <div class="event-modal-field" id="add-person-modal-other-parent-row" style="display:none">
+      <label>Other parent</label>
+      <select id="add-person-modal-other-parent"></select>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddPersonModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddPersonModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="change-parent-modal-overlay" onclick="closeIfFarFromPanel(event,'change-parent-modal',closeChangeParentModal)">
+  <div id="change-parent-modal">
+    <h3 id="change-parent-modal-title">Change Parent</h3>
+    <div class="event-modal-field">
+      <label>Search by name (blank = no parent)</label>
+      <input type="text" id="change-parent-modal-search" placeholder="Type a name\u2026"
+             onkeydown="if(event.key==='Escape')closeChangeParentModal()">
+      <div id="change-parent-modal-results"></div>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeChangeParentModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitChangeParentModal()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="sources-modal-overlay" onclick="closeIfFarFromPanel(event,'sources-modal',closeSourcesModal)">
+  <div id="sources-modal">
+    <div id="sources-modal-header">
+      <div id="sources-modal-title">Sources</div>
+      <button id="sources-modal-close" onclick="closeSourcesModal()" title="Close">&times;</button>
+    </div>
+    <div id="sources-modal-list"></div>
+  </div>
+</div>
+<div id="add-citation-modal-overlay" onclick="closeIfFarFromPanel(event,'add-citation-modal',closeAddCitationModal)">
+  <div id="add-citation-modal" onkeydown="if(event.key==='Escape')closeAddCitationModal()">
+    <h3 id="add-citation-modal-title">Add Citation</h3>
+    <div class="event-modal-field">
+      <label>Source</label>
+      <select id="add-citation-modal-source"></select>
+    </div>
+    <div class="event-modal-field">
+      <label>Page / reference</label>
+      <input type="text" id="add-citation-modal-page" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Quoted text (optional)</label>
+      <textarea id="add-citation-modal-text" rows="3"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>Note (optional)</label>
+      <textarea id="add-citation-modal-note" rows="2"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>URL (optional)</label>
+      <input type="url" id="add-citation-modal-url" autocomplete="off" placeholder="https://">
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeAddCitationModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitAddCitationModal()">Add</button>
+    </div>
+  </div>
+</div>
+<div id="edit-citation-modal-overlay" onclick="closeIfFarFromPanel(event,'edit-citation-modal',closeEditCitationModal)">
+  <div id="edit-citation-modal">
+    <h3 id="edit-citation-modal-title">Edit Citation</h3>
+    <div class="event-modal-field">
+      <label>Page / reference</label>
+      <input type="text" id="edit-citation-modal-page" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Quoted text (optional)</label>
+      <textarea id="edit-citation-modal-text" rows="3"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>Note (optional)</label>
+      <textarea id="edit-citation-modal-note" rows="2"></textarea>
+    </div>
+    <div class="event-modal-field">
+      <label>URL (optional)</label>
+      <input type="url" id="edit-citation-modal-url" autocomplete="off" placeholder="https://">
+    </div>
+    <div class="event-modal-actions">
+      <button id="edit-citation-view-source-btn" class="event-modal-cancel" style="display:none">View Source</button>
+      <button class="event-modal-cancel" onclick="closeEditCitationModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitEditCitationModal()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="edit-source-modal-overlay" onclick="closeIfFarFromPanel(event,'edit-source-modal',closeEditSourceModal)">
+  <div id="edit-source-modal" onkeydown="if(event.key==='Escape')closeEditSourceModal()">
+    <h3 id="edit-source-modal-title">Edit Source Record</h3>
+    <div id="edit-source-modal-warning"></div>
+    <div class="event-modal-field">
+      <label>Title</label>
+      <input type="text" id="edit-source-modal-titl" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Author (optional)</label>
+      <input type="text" id="edit-source-modal-auth" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Publication (optional)</label>
+      <input type="text" id="edit-source-modal-publ" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Repository (optional)</label>
+      <input type="text" id="edit-source-modal-repo" autocomplete="off">
+    </div>
+    <div class="event-modal-field">
+      <label>Note (optional)</label>
+      <textarea id="edit-source-modal-note" rows="2"></textarea>
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeEditSourceModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitEditSourceModal()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="name-modal-overlay" onclick="closeIfFarFromPanel(event,'name-modal',closeNameModal)">
+  <div id="name-modal">
+    <h3 id="name-modal-title">Edit Name</h3>
+    <div class="event-modal-field">
+      <label>Given Name(s)</label>
+      <input type="text" id="name-modal-given"
+             onkeydown="if(event.key==='Escape')closeNameModal();if(event.key==='Enter')submitNameModal()">
+    </div>
+    <div class="event-modal-field">
+      <label>Surname</label>
+      <input type="text" id="name-modal-surname"
+             onkeydown="if(event.key==='Escape')closeNameModal();if(event.key==='Enter')submitNameModal()">
+    </div>
+    <div class="event-modal-actions">
+      <button class="event-modal-cancel" onclick="closeNameModal()">Cancel</button>
+      <button class="event-modal-save" onclick="submitNameModal()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="detail-panel">
+  <div id="detail-header">
+    <div id="detail-accent-bar"></div>
+    <div id="detail-header-inner">
+      <h2 id="detail-name"></h2>
+      <div id="detail-aka"></div>
+      <div id="detail-lifespan-row"></div>
+      <div id="detail-nationalities"></div>
+    </div>
+    <div id="detail-header-btns">
+      <button id="panel-close-btn" title="Close">&#x2715;</button>
+      <button id="detail-set-root-btn" title="Center tree on this person">&#x2302;</button>
+    </div>
+  </div>
+  <div id="detail-body">
+    <div id="detail-notes"></div>
+    <div id="detail-timeline">
+      <div class="timeline-spine"></div>
+      <div id="detail-events"></div>
+    </div>
+    <div id="detail-also-lived"></div>
+    <div id="detail-facts"></div>
+    <div id="detail-family"></div>
+    <div id="detail-sources"></div>
+  </div>
+</div>
+<script>
+window.addEventListener('error', e => {
+  console.error('[UNCAUGHT ERROR]', e.message, 'at', e.filename + ':' + e.lineno);
+});
+window.addEventListener('unhandledrejection', e => {
+  console.error('[UNHANDLED REJECTION]', e.reason);
+});
+const PEOPLE = __PEOPLE_JSON__;
+const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
+const SOURCES = __SOURCES_JSON__;
+let RELATIVES = __RELATIVES_JSON__;
+let PARENTS = __PARENTS_JSON__;
+let CHILDREN = {};
+for (const [cx, [fa, mo]] of Object.entries(PARENTS)) {
+  for (const p of [fa, mo]) { if (p) { (CHILDREN[p] = CHILDREN[p] || []).push(cx); } }
+}
+function _applyFamilyMaps(fm) {
+  if (!fm) return;
+  if (fm.parents)   PARENTS   = fm.parents;
+  if (fm.children)  CHILDREN  = fm.children;
+  if (fm.relatives) RELATIVES = fm.relatives;
+}
+const ROOT_XREF = __ROOT_XREF_JSON__;
+const ADDR_BY_PLACE = __ADDR_BY_PLACE_JSON__;
+const ALL_PLACES = __ALL_PLACES_JSON__;
+</script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="/js/viz_design.js"></script>
+<script src="/js/viz_state.js"></script>
+<script src="/js/viz_api.js"></script>
+<script src="/js/viz_layout.js"></script>
+<script src="/js/viz_render.js"></script>
+<script src="/js/viz_panel.js"></script>
+<script src="/js/viz_search.js"></script>
+<script src="/js/viz_modals.js"></script>
+<script>
+function _updateHeaderH() {
+  const hdr = document.querySelector('header');
+  if (hdr) document.documentElement.style.setProperty('--header-h', hdr.offsetHeight + 'px');
+}
+window.addEventListener('resize', _updateHeaderH);
+
+document.addEventListener('DOMContentLoaded', function () {
+  _updateHeaderH();
+  console.log('[boot] DOMContentLoaded fired');
+  console.log('[boot] ROOT_XREF =', ROOT_XREF);
+  console.log('[boot] typeof initState =', typeof initState);
+  console.log('[boot] typeof initRenderer =', typeof initRenderer);
+  console.log('[boot] typeof initPanel =', typeof initPanel);
+  console.log('[boot] typeof computeLayout =', typeof computeLayout);
+  console.log('[boot] typeof render =', typeof render);
+  console.log('[boot] PEOPLE keys (first 3):', Object.keys(PEOPLE || {}).slice(0, 3));
+
+  try {
+    initState(ROOT_XREF);
+    console.log('[boot] initState OK, state =', JSON.stringify(getState()));
+  } catch(e) { console.error('[boot] initState FAILED:', e); }
+
+  try {
+    initPanel(document.getElementById('detail-panel'));
+    console.log('[boot] initPanel OK');
+  } catch(e) { console.error('[boot] initPanel FAILED:', e); }
+
+  const svgEl = document.getElementById('tree');
+  console.log('[boot] svgEl =', svgEl);
+  try {
+    if (svgEl) initRenderer(svgEl);
+    console.log('[boot] initRenderer OK');
+  } catch(e) { console.error('[boot] initRenderer FAILED:', e); }
+
+  onStateChange(function (state) { render(); });
+
+  const homeBtn = document.getElementById('home-btn');
+  if (homeBtn) homeBtn.addEventListener('click', () => setState({
+    focusXref: ROOT_XREF,
+    expandedNodes: new Set(),
+    expandedSiblingsXrefs: new Set(),
+    panelOpen: false,
+  }));
+
+  try {
+    render();
+    console.log('[boot] initial render OK');
+  } catch(e) { console.error('[boot] render FAILED:', e); }
+});
+</script>
+</body>
+</html>
+"""
+
