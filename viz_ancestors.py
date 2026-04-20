@@ -281,6 +281,9 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             elif lvl == 2 and tag == 'NOTE' and current_person_cite is not None:
                 current_person_cite['note'] = _ged_val(val)
                 current_cite_field = 'note'
+            elif lvl == 2 and tag == 'WWW' and current_person_cite is not None:
+                if current_person_cite.get('url') is None:
+                    current_person_cite['url'] = val
             elif lvl == 3 and tag == 'TEXT' and current_person_cite is not None:
                 current_person_cite['text'] = _ged_val(val)
                 current_cite_field = 'text'

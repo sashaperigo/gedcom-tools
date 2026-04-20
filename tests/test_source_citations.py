@@ -602,6 +602,26 @@ class TestIndiSourceCitationParsing:
         note = indis['@I1@']['source_citations'][0]['note']
         assert note == 'First line of note\nSecond line of note\nThird line of note'
 
+    def test_person_citation_url_from_direct_www(self, tmp_path):
+        """2 WWW directly under 1 SOUR (not inside DATA) should populate url field."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Some Source
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SOUR @S1@
+2 PAGE p. 8
+2 DATA
+3 TEXT Some quoted text
+2 QUAY 2
+2 WWW https://example.com/direct
+"""))
+        assert len(indis['@I1@']['source_citations']) == 1
+        cite = indis['@I1@']['source_citations'][0]
+        assert cite['url'] == 'https://example.com/direct'
+        assert cite['page'] == 'p. 8'
+        assert cite['text'] == 'Some quoted text'
+
 
 class TestBuildPeopleJsonIndiCitations:
 
