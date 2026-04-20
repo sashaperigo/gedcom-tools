@@ -356,8 +356,17 @@ describe('render — ancestor expand buttons', () => {
   let svg;
 
   beforeEach(() => {
-    global.PEOPLE = makeMinimalPeople();
-    global.PARENTS   = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    // @FATHER@ needs his own parents so the expand button renders (grey
+    // chevrons are hidden for ancestors without parents).
+    global.PEOPLE = {
+      ...makeMinimalPeople(),
+      '@PGF@': { name: 'Pat Grandfather', birth_year: 1840, death_year: 1910 },
+      '@PGM@': { name: 'Pat Grandmother', birth_year: 1842, death_year: 1915 },
+    };
+    global.PARENTS = {
+      '@FOCUS@':  ['@FATHER@', '@MOTHER@'],
+      '@FATHER@': ['@PGF@', '@PGM@'],
+    };
     global.CHILDREN  = {};
     global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
     resetState();
@@ -530,15 +539,20 @@ describe('render — ancestor expand buttons', () => {
     expect(ym).toBeLessThan(y2);
   });
 
-  it('expand button circle is gray when ancestor has no parents', () => {
-    // Default beforeEach: PARENTS has no entry for @FATHER@, so he has no parents
-    const treeRoot = svg.querySelector('#tree-root');
-    const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
-    const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+  it('expand button is NOT rendered when ancestor has no parents', () => {
+    // Override beforeEach: remove @FATHER@'s parents.
+    global.PEOPLE  = makeMinimalPeople();
+    global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+    loadRenderMod();
+    const svg2 = makeSvgEl();
+    renderMod.initRenderer(svg2);
+    const fatherG = svg2.querySelector('#tree-root')
+      .querySelectorAll('g[data-xref]')
+      .find(g => g._attrs['data-xref'] === '@FATHER@');
     const expandBtn = fatherG.children.find(
       c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
     );
-    expect(expandBtn._attrs['fill']).toBe('#4a4a6a');
+    expect(expandBtn).toBeUndefined();
   });
 
   it('up-chevron path when can expand, down-chevron path when expanded', () => {
@@ -652,7 +666,7 @@ describe('render — expand button click handler', () => {
     renderMod.initRenderer(svg);
   });
 
-  it('inert button on ancestor without parents has no click handler', () => {
+  it('no expand button is rendered on an ancestor without parents', () => {
     // Separate render where @FATHER@ has no parents.
     global.PEOPLE  = makeMinimalPeople();
     global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
@@ -668,12 +682,7 @@ describe('render — expand button click handler', () => {
     const expandBtn = fatherG.children.find(
       c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
     );
-    // Button is still rendered (grey), but clicking must not call setState.
-    expect(expandBtn._attrs['fill']).toBe('#4a4a6a');
-    spy.mockClear();
-    expandBtn.dispatchEvent('click', { stopPropagation: () => {} });
-    const expandCall = spy.mock.calls.find(([u]) => u && u.expandedNodes !== undefined);
-    expect(expandCall).toBeUndefined();
+    expect(expandBtn).toBeUndefined();
   });
 
   it('clicking an expand button adds the xref to expandedAncestors in state', () => {
@@ -856,7 +865,7 @@ describe('render — descendant umbrella edges', () => {
 // edge (male → left, female → right). Tri-state:
 //   hasSiblings && !isExpanded → green, points outward  (click to expand)
 //   hasSiblings &&  isExpanded → blue,  points inward   (click to collapse)
-//   !hasSiblings              → grey,  inert            (no click listener)
+//   !hasSiblings              → chevron NOT rendered
 // Clicking an expand adds the xref to BOTH expandedSiblingsXrefs AND
 // expandedNodes (auto-expand parents).
 
@@ -902,7 +911,7 @@ describe('render — ancestor sibling chevron', () => {
     expect(btn).toBeDefined();
   });
 
-  it('ancestor with no siblings has a grey sibling chevron', () => {
+  it('ancestor with no siblings does NOT render a sibling chevron', () => {
     global.RELATIVES = {
       '@FOCUS@':  { siblings: [], spouses: [] },
       '@FATHER@': { siblings: [], spouses: [] },
@@ -912,8 +921,7 @@ describe('render — ancestor sibling chevron', () => {
     const svg2 = makeSvgEl();
     renderMod.initRenderer(svg2);
     const btn = getSibBtn('@MOTHER@', svg2);
-    expect(btn).toBeDefined();
-    expect(btn._attrs['fill']).toBe('#4a4a6a');
+    expect(btn).toBeUndefined();
   });
 
   it('ancestor with siblings, not expanded → green fill', () => {
@@ -988,21 +996,16 @@ describe('render — ancestor sibling chevron', () => {
     expect('expandedNodes' in update).toBe(false);
   });
 
-  it('grey chevron has no click listener', () => {
+  it('no sibling chevron is rendered when ancestor has zero siblings', () => {
     global.RELATIVES = {
       '@FOCUS@':  { siblings: [], spouses: [] },
       '@FATHER@': { siblings: [], spouses: [] },
       '@MOTHER@': { siblings: [], spouses: [] },
     };
-    const spy = vi.fn();
-    global.setState = spy;
     loadRenderMod();
     const svg2 = makeSvgEl();
     renderMod.initRenderer(svg2);
-    const btn = getSibBtn('@MOTHER@', svg2);
-    spy.mockClear();
-    btn.dispatchEvent('click', { stopPropagation: () => {} });
-    const call = spy.mock.calls.find(([u]) => u && u.expandedSiblingsXrefs !== undefined);
-    expect(call).toBeUndefined();
+    expect(getSibBtn('@MOTHER@', svg2)).toBeUndefined();
+    expect(getSibBtn('@FATHER@', svg2)).toBeUndefined();
   });
 });

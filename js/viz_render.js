@@ -210,109 +210,100 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
   });
 
   // Expand button on ancestor nodes — floats above the top edge with a small gap.
-  // Three visual states:
-  //   !hasParents  → grey up-chevron, inert (no click listener)
+  // Only rendered when the ancestor has parents. Two visual states:
   //   can expand   → green up-chevron (click to reveal parents)
   //   can collapse → blue down-chevron (click to hide parents)
   if (isAncestor) {
-    const btnCx = w / 2;
-    const btnCy = -20;
     const parents = PARENTS[node.xref] || [null, null];
     const hasParents = parents.some(p => p !== null);
-    const isExpanded = expandedNodes.has(node.xref);
-    const canExpand   = hasParents && !isExpanded;
-    const canCollapse = hasParents &&  isExpanded;
-
-    const btnFill = canCollapse ? '#2a5a7a'
-                 : canExpand    ? '#2a7a4a'
-                 :                '#4a4a6a';
-
-    const chevronUp   = `M ${btnCx - 3.5} ${btnCy + 1.5} L ${btnCx} ${btnCy - 2} L ${btnCx + 3.5} ${btnCy + 1.5}`;
-    const chevronDown = `M ${btnCx - 3.5} ${btnCy - 1.5} L ${btnCx} ${btnCy + 2} L ${btnCx + 3.5} ${btnCy - 1.5}`;
-    const chevronD    = canCollapse ? chevronDown : chevronUp;
-
-    const btn = _svgEl('circle', {
-      cx: btnCx,
-      cy: btnCy,
-      r: 8,
-      fill: btnFill,
-      class: 'expand-btn',
-      cursor: hasParents ? 'pointer' : 'default',
-    });
-    const chevron = _svgEl('path', {
-      d: chevronD,
-      stroke: '#ffffff',
-      'stroke-width': 1.5,
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      fill: 'none',
-      'pointer-events': 'none',
-    });
     if (hasParents) {
+      const btnCx = w / 2;
+      const btnCy = -14;
+      const isExpanded = expandedNodes.has(node.xref);
+      const canCollapse = isExpanded;
+
+      const btnFill = canCollapse ? '#2a5a7a' : '#2a7a4a';
+
+      const chevronUp   = `M ${btnCx - 3.5} ${btnCy + 1.5} L ${btnCx} ${btnCy - 2} L ${btnCx + 3.5} ${btnCy + 1.5}`;
+      const chevronDown = `M ${btnCx - 3.5} ${btnCy - 1.5} L ${btnCx} ${btnCy + 2} L ${btnCx + 3.5} ${btnCy - 1.5}`;
+      const chevronD    = canCollapse ? chevronDown : chevronUp;
+
+      const btn = _svgEl('circle', {
+        cx: btnCx,
+        cy: btnCy,
+        r: 8,
+        fill: btnFill,
+        class: 'expand-btn',
+        cursor: 'pointer',
+      });
+      const chevron = _svgEl('path', {
+        d: chevronD,
+        stroke: '#ffffff',
+        'stroke-width': 1.5,
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        fill: 'none',
+        'pointer-events': 'none',
+      });
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         onExpandClick(node.xref);
       });
+      g.appendChild(btn);
+      g.appendChild(chevron);
     }
-    g.appendChild(btn);
-    g.appendChild(chevron);
   }
 
   // Sibling expand chevron — outward-facing horizontal chevron on the short
-  // edge of ancestor pills. Male → left, female → right.
-  // Tri-state (mirrors the parent chevron colours):
-  //   !hasSiblings → grey,  inert
+  // edge of ancestor pills. Male → left, female → right. Only rendered when
+  // the ancestor has siblings. Two visual states:
   //   can expand   → green, chevron points outward
   //   can collapse → blue,  chevron points inward
   if (isAncestor) {
-    const person2 = PEOPLE[node.xref] || {};
     const sibs = (RELATIVES[node.xref] && RELATIVES[node.xref].siblings) || [];
     const hasSiblings = sibs.length > 0;
-    const isSibExpanded = expandedSiblingsXrefs.has(node.xref);
-    const sibCanExpand   = hasSiblings && !isSibExpanded;
-    const sibCanCollapse = hasSiblings &&  isSibExpanded;
-    const side = person2.sex === 'F' ? 'right' : 'left';
-    const R = 8;
-    const GAP = 4;
-    const sibCx = side === 'right' ? (w + GAP + R) : -(GAP + R);
-    const sibCy = h / 2;
-
-    const sibFill = sibCanCollapse ? '#2a5a7a'
-                  : sibCanExpand   ? '#2a7a4a'
-                  :                  '#4a4a6a';
-
-    // Outward-pointing chevron (left-side: points left, right-side: points right)
-    // Inward when expanded (collapse indicator).
-    const pointRight = side === 'right' ? sibCanExpand : sibCanCollapse;
-    const chevronOut = pointRight
-      ? `M ${sibCx - 1.5} ${sibCy - 3.5} L ${sibCx + 2} ${sibCy} L ${sibCx - 1.5} ${sibCy + 3.5}`
-      : `M ${sibCx + 1.5} ${sibCy - 3.5} L ${sibCx - 2} ${sibCy} L ${sibCx + 1.5} ${sibCy + 3.5}`;
-
-    const sibBtn = _svgEl('circle', {
-      cx: sibCx,
-      cy: sibCy,
-      r: R,
-      fill: sibFill,
-      class: 'sibling-expand-btn',
-      cursor: hasSiblings ? 'pointer' : 'default',
-    });
-    const sibChevron = _svgEl('path', {
-      d: chevronOut,
-      stroke: '#ffffff',
-      'stroke-width': 1.5,
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      fill: 'none',
-      'pointer-events': 'none',
-    });
     if (hasSiblings) {
+      const person2 = PEOPLE[node.xref] || {};
+      const isSibExpanded = expandedSiblingsXrefs.has(node.xref);
+      const sibCanCollapse = isSibExpanded;
+      const side = person2.sex === 'F' ? 'right' : 'left';
+      const R = 8;
+      const GAP = 4;
+      const sibCx = side === 'right' ? (w + GAP + R) : -(GAP + R);
+      const sibCy = h / 2;
+
+      const sibFill = sibCanCollapse ? '#2a5a7a' : '#2a7a4a';
+
+      // Outward when can-expand; inward when expanded (collapse indicator).
+      const pointRight = side === 'right' ? !sibCanCollapse : sibCanCollapse;
+      const chevronOut = pointRight
+        ? `M ${sibCx - 1.5} ${sibCy - 3.5} L ${sibCx + 2} ${sibCy} L ${sibCx - 1.5} ${sibCy + 3.5}`
+        : `M ${sibCx + 1.5} ${sibCy - 3.5} L ${sibCx - 2} ${sibCy} L ${sibCx + 1.5} ${sibCy + 3.5}`;
+
+      const sibBtn = _svgEl('circle', {
+        cx: sibCx,
+        cy: sibCy,
+        r: R,
+        fill: sibFill,
+        class: 'sibling-expand-btn',
+        cursor: 'pointer',
+      });
+      const sibChevron = _svgEl('path', {
+        d: chevronOut,
+        stroke: '#ffffff',
+        'stroke-width': 1.5,
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        fill: 'none',
+        'pointer-events': 'none',
+      });
       sibBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         onSiblingExpandClick(node.xref);
       });
+      g.appendChild(sibBtn);
+      g.appendChild(sibChevron);
     }
-    g.appendChild(sibBtn);
-    g.appendChild(sibChevron);
   }
 
   return g;
