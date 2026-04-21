@@ -27,6 +27,12 @@ _NOTE_RE = re.compile(r'^0 (@[^@]+@) NOTE\b(?: (.*))?$')
 _TAG_RE  = re.compile(r'^(\d+) (\w+)(?: (.*))?$')
 _YEAR_RE = re.compile(r'\b(\d{4})\b')
 
+_BET_RE       = re.compile(r'^BET\s+(.+?)\s+AND\s+(.+)$')
+_DMY_RE       = re.compile(r'^(\d{1,2})\s+([A-Z]{3})\s+(\d{4})$')
+_MY_RE        = re.compile(r'^([A-Z]{3})\s+(\d{4})$')
+_YR_RE        = re.compile(r'^(\d{4})$')
+_AGE_PARSE_RE = re.compile(r'^(?:(\d+)Y)?\s*(?:(\d+)M)?\s*(?:(\d+)D)?$')
+
 _EVENT_TAGS = frozenset({
     'BIRT', 'DEAT', 'BURI', 'RESI', 'OCCU', 'CHR', 'BAPM',
     'NATU', 'IMMI', 'EVEN', 'FACT', 'NATI', 'RELI', 'TITL',
@@ -443,10 +449,7 @@ def _classify_death_age(age: str) -> str | None:
     s = age.strip().upper().lstrip('<>').strip()
     if s in _DEAT_AGE_KEYWORDS:
         return s
-    m = re.match(
-        r'^(?:(\d+)Y)?\s*(?:(\d+)M)?\s*(?:(\d+)D)?$',
-        s,
-    )
+    m = _AGE_PARSE_RE.match(s)
     if not m or not any(m.groups()):
         return None
     years  = int(m.group(1) or 0)
@@ -493,16 +496,16 @@ def _date_sort_key(date_str: str | None) -> tuple:
         elif s.startswith('AFT '):
             s = s[4:]
             adjust = 1
-    bet = re.match(r'^BET\s+(.+?)\s+AND\s+(.+)$', s)
+    bet = _BET_RE.match(s)
     if bet:
         s = bet.group(1)
-    dmy = re.match(r'^(\d{1,2})\s+([A-Z]{3})\s+(\d{4})$', s)
+    dmy = _DMY_RE.match(s)
     if dmy:
         return (int(dmy.group(3)), _MONTH_NUM.get(dmy.group(2), 0), int(dmy.group(1)), adjust)
-    my = re.match(r'^([A-Z]{3})\s+(\d{4})$', s)
+    my = _MY_RE.match(s)
     if my:
         return (int(my.group(2)), _MONTH_NUM.get(my.group(1), 0), 0, adjust)
-    yr = re.match(r'^(\d{4})$', s)
+    yr = _YR_RE.match(s)
     if yr:
         return (int(yr.group(1)), 0, 0, adjust)
     return (0, 0, 0, 0)
@@ -654,9 +657,9 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
         age_at_death = next(
-            (_classify_death_age(e['age']) for e in events
+            (cls for e in events
              if e['tag'] == 'DEAT' and e.get('age')
-             and _classify_death_age(e['age'])),
+             and (cls := _classify_death_age(e['age']))),
             None
         )
         normalised_notes = []
@@ -800,9 +803,9 @@ def build_all_places(indis: dict, fams: dict | None = None) -> list[str]:
             for marr in fam.get('marrs', []):
                 if marr.get('place'):
                     places.add(marr['place'])
-            div = fam.get('div')
-            if isinstance(div, dict) and div.get('place'):
-                places.add(div['place'])
+            for div in fam.get('divs', []):
+                if div.get('place'):
+                    places.add(div['place'])
     return sorted(places)
 
 
@@ -852,14 +855,23 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
             else:
                 parents[xref] = [None, None]
     parents_json        = _json_for_script(parents)
-    # Build families map for JS: {fam_xref: {husb, wife, chil: [...]}}
+    # Build families map for JS: {fam_xref: {husb, wife, chil, marr_year}}
     families_js = {}
     if fams:
         for fam_xref, fam in fams.items():
+            marr_year = None
+            for marr in fam.get('marrs', []):
+                date = marr.get('date')
+                if date:
+                    ym = _YEAR_RE.search(date)
+                    if ym:
+                        marr_year = int(ym.group(1))
+                        break
             families_js[fam_xref] = {
                 'husb': fam.get('husb'),
                 'wife': fam.get('wife'),
                 'chil': list(fam.get('chil', [])),
+                'marr_year': marr_year,
             }
     families_json       = _json_for_script(families_js)
     root_xref_json      = _json_for_script(root_xref or '')

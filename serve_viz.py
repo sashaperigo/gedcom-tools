@@ -99,18 +99,20 @@ def watch():
 # Commit: apply pending deletions to disk with validation
 # ---------------------------------------------------------------------------
 
+def _find_record_block(lines: list[str], xref: str, record_tag: str, label: str) -> tuple[int | None, int | None, str | None]:
+    start = next((i for i, ln in enumerate(lines) if ln.strip() == f'0 {xref} {record_tag}'), None)
+    if start is None:
+        return None, None, f'{label} {xref} not found'
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('0 ')), len(lines))
+    return start, end, None
+
+
 def _find_indi_block(lines: list[str], xref: str) -> tuple[int | None, int | None, str | None]:
-    """Return (indi_start, indi_end, err) for the individual's GEDCOM block."""
-    indi_start = next(
-        (i for i, l in enumerate(lines) if l.strip() == f'0 {xref} INDI'), None
-    )
-    if indi_start is None:
-        return None, None, f'Individual {xref} not found'
-    indi_end = next(
-        (i for i in range(indi_start + 1, len(lines)) if lines[i].startswith('0 ')),
-        len(lines),
-    )
-    return indi_start, indi_end, None
+    return _find_record_block(lines, xref, 'INDI', 'Individual')
+
+
+def _find_trlr_idx(lines: list[str]) -> int:
+    return next((i for i, ln in enumerate(lines) if ln.strip() == '0 TRLR'), len(lines))
 
 
 def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
@@ -343,30 +345,17 @@ def _chunk_note_line(text: str, first_tag: str, conc_tag: str) -> list[str]:
     return out
 
 
-def _encode_note_lines(text: str) -> list[str]:
-    """Encode text into GEDCOM '1 NOTE / 2 CONT / 2 CONC' lines.
-
-    Newlines in text become CONT lines (preserve line breaks).
-    Lines longer than 248 chars are split with CONC (no line break).
-    """
+def _encode_note_lines(text: str, base_level: int = 1) -> list[str]:
+    """Encode text into GEDCOM NOTE/CONT/CONC lines starting at base_level."""
     out = []
     for i, line in enumerate(text.split('\n')):
-        first_tag = '1 NOTE' if i == 0 else '2 CONT'
-        out.extend(_chunk_note_line(line, first_tag, '2 CONC'))
+        first_tag = f'{base_level} NOTE' if i == 0 else f'{base_level + 1} CONT'
+        out.extend(_chunk_note_line(line, first_tag, f'{base_level + 1} CONC'))
     return out
 
 
 def _encode_event_note_lines(text: str) -> list[str]:
-    """Encode text into GEDCOM '2 NOTE / 3 CONT / 3 CONC' lines (event sub-notes).
-
-    Newlines in text become CONT lines (preserve line breaks).
-    Lines longer than 248 chars are split with CONC (no line break).
-    """
-    out = []
-    for i, line in enumerate(text.split('\n')):
-        first_tag = '2 NOTE' if i == 0 else '3 CONT'
-        out.extend(_chunk_note_line(line, first_tag, '3 CONC'))
-    return out
+    return _encode_note_lines(text, base_level=2)
 
 
 def _write_gedcom_atomic(lines: list[str]) -> None:
@@ -415,8 +404,8 @@ def _edit_name(lines: list[str], xref: str, given_name: str, surname: str) -> tu
 
     # Keep any sub-tags that are not GIVN/SURN (e.g. NICK, NPFX, etc.)
     kept = [
-        l for l in lines[name_start + 1: name_end]
-        if not (_TAG_RE.match(l) and _TAG_RE.match(l).group(2) in ('GIVN', 'SURN'))
+        ln for ln in lines[name_start + 1: name_end]
+        if not ((m := _TAG_RE.match(ln)) and m.group(2) in ('GIVN', 'SURN'))
     ]
     new_block = [f'1 NAME {full_name}'] + kept
     if given_name:
@@ -429,6 +418,15 @@ def _edit_name(lines: list[str], xref: str, given_name: str, surname: str) -> tu
 # ---------------------------------------------------------------------------
 # Secondary NAME record helpers (alias add / edit / delete)
 # ---------------------------------------------------------------------------
+
+def _wrap_surname(name: str) -> str:
+    """Wrap the last word in slashes if no slashes are present: 'Given Surname' → 'Given /Surname/'."""
+    name = name.strip()
+    if name and '/' not in name:
+        parts = name.rsplit(' ', 1)
+        if len(parts) == 2:
+            return f'{parts[0]} /{parts[1]}/'
+    return name
 
 def _find_secondary_name_block(
     lines: list[str], xref: str, n: int
@@ -465,12 +463,7 @@ def _add_secondary_name(
     _, indi_end, err = _find_indi_block(lines, xref)
     if err:
         return lines, err
-    full_name = name.strip()
-    # Wrap surname in slashes if not already wrapped and looks like "Given Surname"
-    if full_name and '/' not in full_name:
-        parts = full_name.rsplit(' ', 1)
-        if len(parts) == 2:
-            full_name = f'{parts[0]} /{parts[1]}/'
+    full_name = _wrap_surname(name)
     new_block = [f'1 NAME {full_name}']
     if name_type:
         new_block.append(f'2 TYPE {name_type.strip()}')
@@ -484,11 +477,7 @@ def _edit_secondary_name(
     start, end, err = _find_secondary_name_block(lines, xref, n)
     if err:
         return lines, err
-    full_name = name.strip()
-    if full_name and '/' not in full_name:
-        parts = full_name.rsplit(' ', 1)
-        if len(parts) == 2:
-            full_name = f'{parts[0]} /{parts[1]}/'
+    full_name = _wrap_surname(name)
     new_block = [f'1 NAME {full_name}']
     if name_type:
         new_block.append(f'2 TYPE {name_type.strip()}')
@@ -511,10 +500,19 @@ def _get_sex(lines: list[str], xref: str) -> str | None:
     return None
 
 
+def _next_xref(lines: list[str], prefix: str) -> str:
+    """Scan all lines for @{prefix}n@ xrefs and return @{prefix}(max+1)@."""
+    pattern = re.compile(rf'@{prefix}(\d+)@')
+    max_n = 0
+    for line in lines:
+        for m in pattern.finditer(line):
+            max_n = max(max_n, int(m.group(1)))
+    return f'@{prefix}{max_n + 1}@'
+
+
 def _find_existing_fam(lines: list[str], xref1: str, xref2: str) -> str | None:
     """Return the FAM xref where HUSB/WIFE are xref1 & xref2 (either order), or None."""
-    import re as _re
-    _FAM_HDR_RE = _re.compile(r'^0 (@F\d+@) FAM$')
+    _FAM_HDR_RE = re.compile(r'^0 (@F\d+@) FAM$')
     fam_xref = None
     husb = wife = None
     in_fam = False
@@ -555,15 +553,7 @@ def _find_existing_fam(lines: list[str], xref1: str, xref2: str) -> str | None:
     return None
 
 
-def _next_fam_xref(lines: list[str]) -> str:
-    """Scan all lines for @FXXX@ references and return @F(max+1)@."""
-    import re as _re
-    pattern = _re.compile(r'@F(\d+)@')
-    max_n = 0
-    for line in lines:
-        for m in pattern.finditer(line):
-            max_n = max(max_n, int(m.group(1)))
-    return f'@F{max_n + 1}@'
+def _next_fam_xref(lines: list[str]) -> str: return _next_xref(lines, 'F')
 
 
 def _add_fams_to_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[str]:
@@ -596,9 +586,7 @@ def _create_fam_with_event(
     fam_xref: str, event_tag: str, fields: dict,
 ) -> list[str]:
     """Append a brand-new FAM record (with HUSB, WIFE, and one event) before TRLR."""
-    trlr_idx = next(
-        (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
-    )
+    trlr_idx = _find_trlr_idx(lines)
     # Find insertion point: after the last FAM block (before TRLR)
     insert_at = trlr_idx
     fam_block = [f'0 {fam_xref} FAM', f'1 HUSB {husb_xref}', f'1 WIFE {wife_xref}']
@@ -611,17 +599,7 @@ def _create_fam_with_event(
 
 
 def _find_fam_block(lines: list[str], fam_xref: str) -> tuple[int | None, int | None, str | None]:
-    """Return (fam_start, fam_end, err) for a FAM record."""
-    fam_start = next(
-        (i for i, l in enumerate(lines) if l.strip() == f'0 {fam_xref} FAM'), None
-    )
-    if fam_start is None:
-        return None, None, f'Family {fam_xref} not found'
-    fam_end = next(
-        (i for i in range(fam_start + 1, len(lines)) if lines[i].startswith('0 ')),
-        len(lines),
-    )
-    return fam_start, fam_end, None
+    return _find_record_block(lines, fam_xref, 'FAM', 'Family')
 
 
 def _find_fam_event_block(
@@ -770,28 +748,11 @@ def _insert_new_event(
 # Source record helpers
 # ---------------------------------------------------------------------------
 
-def _next_sour_xref(lines: list[str]) -> str:
-    """Scan all lines for @Sn@ references and return @S(max+1)@."""
-    pattern = re.compile(r'@S(\d+)@')
-    max_n = 0
-    for line in lines:
-        for m in pattern.finditer(line):
-            max_n = max(max_n, int(m.group(1)))
-    return f'@S{max_n + 1}@'
+def _next_sour_xref(lines: list[str]) -> str: return _next_xref(lines, 'S')
 
 
 def _find_sour_block(lines: list[str], sour_xref: str) -> tuple[int | None, int | None, str | None]:
-    """Return (sour_start, sour_end, err) for a SOUR record."""
-    sour_start = next(
-        (i for i, l in enumerate(lines) if l.strip() == f'0 {sour_xref} SOUR'), None
-    )
-    if sour_start is None:
-        return None, None, f'Source {sour_xref} not found'
-    sour_end = next(
-        (i for i in range(sour_start + 1, len(lines)) if lines[i].startswith('0 ')),
-        len(lines),
-    )
-    return sour_start, sour_end, None
+    return _find_record_block(lines, sour_xref, 'SOUR', 'Source')
 
 
 _SOUR_OPTIONAL_TAGS = ('AUTH', 'PUBL', 'REPO', 'NOTE')
@@ -810,14 +771,7 @@ def _build_sour_block(xref: str, titl: str, auth: str, publ: str, repo: str, not
 # Citation helpers
 # ---------------------------------------------------------------------------
 
-def _next_indi_xref(lines: list[str]) -> str:
-    """Scan all lines for @In@ references and return @I(max+1)@."""
-    pattern = re.compile(r'@I(\d+)@')
-    max_n = 0
-    for line in lines:
-        for m in pattern.finditer(line):
-            max_n = max(max_n, int(m.group(1)))
-    return f'@I{max_n + 1}@'
+def _next_indi_xref(lines: list[str]) -> str: return _next_xref(lines, 'I')
 
 
 def _find_fact_for_citation(
@@ -1115,9 +1069,7 @@ def _add_chil_to_fam(lines: list[str], fam_xref: str, chil_xref: str) -> list[st
 
 def _create_bare_fam(lines: list[str], fam_xref: str, husb_xref: str | None, wife_xref: str | None) -> list[str]:
     """Insert a new FAM record (no events) before TRLR."""
-    trlr_idx = next(
-        (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
-    )
+    trlr_idx = _find_trlr_idx(lines)
     fam_block = [f'0 {fam_xref} FAM']
     if husb_xref:
         fam_block.append(f'1 HUSB {husb_xref}')
@@ -1800,10 +1752,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
                 else:
                     # Look for an existing FAM that already pairs rel_xref with other_parent_xref
-                    shared_fams = [
-                        f for f in _get_fams_for_indi(lines, rel_xref)
-                        if f in _get_fams_for_indi(lines, other_parent_xref)
-                    ]
+                    other_parent_fams = set(_get_fams_for_indi(lines, other_parent_xref))
+                    shared_fams = [f for f in _get_fams_for_indi(lines, rel_xref) if f in other_parent_fams]
                     if shared_fams:
                         fam_xref = shared_fams[0]
                     else:
@@ -1824,8 +1774,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     fam_start, fam_end, ferr = _find_fam_block(lines, fam_xref)
                     if not ferr:
                         slot_occupied = any(
-                            _TAG_RE.match(l) and _TAG_RE.match(l).group(2) == slot
-                            for l in lines[fam_start:fam_end]
+                            (m := _TAG_RE.match(ln)) and m.group(2) == slot
+                            for ln in lines[fam_start:fam_end]
                         )
                         if slot_occupied:
                             self.send_error(400, f'Family {fam_xref} already has a {slot}')
@@ -1922,8 +1872,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # Decide target FAM
             target_fam = None
             if new_parent_xref and other_parent:
-                shared = [f for f in _get_fams_for_indi(lines, new_parent_xref)
-                          if f in _get_fams_for_indi(lines, other_parent)]
+                other_parent_fams = set(_get_fams_for_indi(lines, other_parent))
+                shared = [f for f in _get_fams_for_indi(lines, new_parent_xref) if f in other_parent_fams]
                 target_fam = shared[0] if shared else None
             if target_fam is None and (new_parent_xref or other_parent):
                 target_fam = _next_fam_xref(lines)
