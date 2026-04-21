@@ -295,7 +295,6 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
     document.getElementById('event-modal-title').textContent = 'Edit ' + _evtLabel(tag, evt.type) + ' \u2014 ' + _personName(xref);
     const placeVal = evt.place || '';
     document.getElementById('event-modal-inline').value = evt.inline_val || '';
-    document.getElementById('event-modal-type').value = evt.type || '';
     document.getElementById('event-modal-date').value = evt.date || '';
     document.getElementById('event-modal-place').value = placeVal;
     document.getElementById('event-modal-age').value = evt.age || '';
@@ -318,6 +317,8 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
         _eventModalSpouseXref = null;
     }
     _updateEventModalFields(tag);
+    // Set type AFTER _updateEventModalFields so its reset-from-preset logic doesn't wipe the prefill.
+    document.getElementById('event-modal-type').value = evt.type || '';
     document.getElementById('event-modal-overlay').classList.add('open');
     const focusId = _INLINE_TYPE_TAGS.has(tag) ? 'event-modal-inline' : 'event-modal-date';
     setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 50);
@@ -1308,10 +1309,15 @@ async function submitEditCitationModal() {
     closeEditCitationModal();
     try {
         const resp = await apiEditCitation(xref, factTag ? `${factTag}:${eventOcc}:${index}` : `SOUR:${index}`, page, text, note, url);
-        if (resp && resp.people) {
-            for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+        if (resp && resp.ok) {
+            if (resp.people) {
+                for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+            }
+            _refreshSourcesModalContent();
+            if (typeof renderPanel === 'function') renderPanel();
+        } else {
+            alert('Save failed: ' + ((resp && resp.error) || 'unknown'));
         }
-        if (typeof renderPanel !== 'undefined') renderPanel();
     } catch (e) {
         alert('Save failed: ' + e);
     }

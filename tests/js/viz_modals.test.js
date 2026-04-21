@@ -864,7 +864,7 @@ describe('showEditCitationModal', () => {
     it('includes event occurrence in citation key sent to API', async () => {
         if (!showEditCitationModal) return;
         const calls = [];
-        global.apiEditCitation = async (...args) => { calls.push(args); return {}; };
+        global.apiEditCitation = async (...args) => { calls.push(args); return { ok: true }; };
         global.renderPanel = () => {};
         const { submitEditCitationModal } = require('../../js/viz_modals.js');
         if (!submitEditCitationModal) return;
@@ -884,6 +884,59 @@ describe('showEditCitationModal', () => {
         showEditCitationModal('@I1@', 'BIRT', 0);
         await submitEditCitationModal();
         expect(global.PEOPLE['@I1@']).toEqual(updatedPerson);
+    });
+
+    it('shows updated text field when modal is reopened after a successful save', async () => {
+        if (!showEditCitationModal) return;
+        const updatedPerson = {
+            name: 'John Smith',
+            events: [{ tag: 'BIRT', event_idx: 0, citations: [{ sourceXref: '@S1@', page: 'p. 42', text: 'Updated transcript', note: '', url: '' }] }],
+        };
+        global.apiEditCitation = async () => ({ ok: true, people: { '@I1@': updatedPerson } });
+        global.renderPanel = () => {};
+        const { submitEditCitationModal } = require('../../js/viz_modals.js');
+        if (!submitEditCitationModal) return;
+        showEditCitationModal('@I1@', 'BIRT', 0);
+        textArea.value = 'Updated transcript';
+        await submitEditCitationModal();
+        // Reopen — should reflect the saved data from the API response
+        showEditCitationModal('@I1@', 'BIRT', 0);
+        expect(textArea.value).toBe('Updated transcript');
+    });
+
+    it('refreshes sources modal content after successful edit-citation save', async () => {
+        if (!showEditCitationModal) return;
+        const { openSourcesModal, submitEditCitationModal } = require('../../js/viz_modals.js');
+        if (!submitEditCitationModal || !openSourcesModal) return;
+
+        const sourcesOverlay = { classList: { _c: new Set(), add(c) { this._c.add(c); }, remove(c) { this._c.delete(c); }, contains(c) { return this._c.has(c); } } };
+        const sourcesTitle = { textContent: '' };
+        const sourcesList = { innerHTML: '' };
+
+        const origGet = global.document.getElementById.bind(global.document);
+        global.document.getElementById = (id) => {
+            if (id === 'sources-modal-overlay') return sourcesOverlay;
+            if (id === 'sources-modal-title') return sourcesTitle;
+            if (id === 'sources-modal-list') return sourcesList;
+            return origGet(id);
+        };
+
+        openSourcesModal('@I1@', 0);
+        const htmlBefore = sourcesList.innerHTML;
+
+        const updatedPerson = {
+            name: 'John Smith',
+            events: [{ tag: 'BIRT', event_idx: 0, date: '1900', citations: [{ sourceXref: '@S1@', page: 'p. 99', text: '', note: '', url: '' }] }],
+        };
+        global.apiEditCitation = async () => ({ ok: true, people: { '@I1@': updatedPerson } });
+        global.renderPanel = () => {};
+
+        showEditCitationModal('@I1@', 'BIRT', 0);
+        await submitEditCitationModal();
+
+        // The sources modal list must have been re-rendered with the new page value
+        expect(sourcesList.innerHTML).toContain('p. 99');
+        expect(sourcesList.innerHTML).not.toBe(htmlBefore);
     });
 
     it('pre-fills from the correct occurrence when multiple events share the same tag', () => {

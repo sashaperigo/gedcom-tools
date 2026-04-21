@@ -60,7 +60,7 @@ class TestEventCitationParsing:
 3 PAGE 47
 """))
         birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
-        assert birt['citations'] == [{'sour_xref': '@S1@', 'page': '47'}]
+        assert birt['citations'] == [{'sour_xref': '@S1@', 'page': '47', 'text': None, 'note': None}]
 
     def test_event_with_citation_no_page(self, tmp_path):
         """2 SOUR @S1@ without a 3 PAGE line stores page as None."""
@@ -74,7 +74,7 @@ class TestEventCitationParsing:
 2 SOUR @S1@
 """))
         deat = next(e for e in indis['@I1@']['events'] if e['tag'] == 'DEAT')
-        assert deat['citations'] == [{'sour_xref': '@S1@', 'page': None}]
+        assert deat['citations'] == [{'sour_xref': '@S1@', 'page': None, 'text': None, 'note': None}]
 
     def test_event_with_no_citations(self, tmp_path):
         """Events without any SOUR sub-records get an empty citations list."""
@@ -105,8 +105,8 @@ class TestEventCitationParsing:
 """))
         resi = next(e for e in indis['@I1@']['events'] if e['tag'] == 'RESI')
         assert len(resi['citations']) == 2
-        assert resi['citations'][0] == {'sour_xref': '@S1@', 'page': '12'}
-        assert resi['citations'][1] == {'sour_xref': '@S2@', 'page': '99'}
+        assert resi['citations'][0] == {'sour_xref': '@S1@', 'page': '12', 'text': None, 'note': None}
+        assert resi['citations'][1] == {'sour_xref': '@S2@', 'page': '99', 'text': None, 'note': None}
 
     def test_person_level_source_not_captured_as_event_citation(self, tmp_path):
         """1 SOUR @xref@ at person level must not appear in any event's citations."""
@@ -159,7 +159,89 @@ class TestEventCitationParsing:
 """))
         birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
         assert birt['note'] == 'Born at home'
-        assert birt['citations'] == [{'sour_xref': '@S1@', 'page': '3'}]
+        assert birt['citations'] == [{'sour_xref': '@S1@', 'page': '3', 'text': None, 'note': None}]
+
+    def test_event_citation_quoted_text_parsed(self, tmp_path):
+        """4 TEXT under 3 DATA under 2 SOUR on an event citation is parsed into the text field."""
+        indis, _, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 BIRT
+2 DATE 1 JAN 1900
+2 SOUR @S1@
+3 PAGE p. 42
+3 DATA
+4 TEXT Baptised at St. Mary's church
+"""))
+        birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
+        assert birt['citations'][0]['text'] == "Baptised at St. Mary's church"
+
+    def test_event_citation_note_parsed(self, tmp_path):
+        """3 NOTE under 2 SOUR on an event citation is stored in the note field."""
+        indis, _, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 BIRT
+2 DATE 1 JAN 1900
+2 SOUR @S1@
+3 PAGE p. 42
+3 NOTE Researcher note
+"""))
+        birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
+        assert birt['citations'][0]['note'] == 'Researcher note'
+
+    def test_event_citation_text_and_note_in_build_people_json(self, tmp_path):
+        """text and note from event citations must survive build_people_json normalisation."""
+        indis, _, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Parish Register
+0 @I1@ INDI
+1 NAME John /Smith/
+1 BIRT
+2 DATE 1 JAN 1900
+2 SOUR @S1@
+3 PAGE p. 42
+3 DATA
+4 TEXT Baptised at St. Mary's
+3 NOTE Researcher note
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        birt = next(e for e in people['@I1@']['events'] if e['tag'] == 'BIRT')
+        cite = birt['citations'][0]
+        assert cite['text'] == "Baptised at St. Mary's"
+        assert cite['note'] == 'Researcher note'
+
+    def test_fam_event_citation_quoted_text_parsed(self, tmp_path):
+        """4 TEXT under 3 DATA under 2 SOUR on a FAM event citation is parsed."""
+        _, fams, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Marriage Register
+0 @I1@ INDI
+1 NAME Anna /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE p. 12
+3 DATA
+4 TEXT They married at the local chapel
+3 NOTE Parish records confirm
+"""))
+        marr = fams['@F1@']['marrs'][0]
+        assert marr['citations'][0]['text'] == 'They married at the local chapel'
+        assert marr['citations'][0]['note'] == 'Parish records confirm'
 
     def test_event_citation_url_from_direct_www(self, tmp_path):
         """3 WWW directly under 2 SOUR (not inside DATA) should populate url field."""
@@ -222,7 +304,7 @@ class TestBuildPeopleJsonCitations:
 """))
         people = build_people_json({'@I1@'}, indis, sources=sources)
         birt = next(e for e in people['@I1@']['events'] if e['tag'] == 'BIRT')
-        assert birt['citations'] == [{'sourceXref': '@S1@', 'page': '101'}]
+        assert birt['citations'] == [{'sourceXref': '@S1@', 'page': '101', 'text': None, 'note': None}]
 
     def test_empty_citations_in_event_output(self, tmp_path):
         """Events with no citations export an empty list, not None."""
@@ -343,7 +425,7 @@ class TestFamEventCitations:
 3 PAGE p.47
 """))
         marr = fams['@F1@']['marrs'][0]
-        assert marr['citations'] == [{'sour_xref': '@S1@', 'page': 'p.47'}]
+        assert marr['citations'] == [{'sour_xref': '@S1@', 'page': 'p.47', 'text': None, 'note': None}]
 
     def test_marr_with_multiple_citations(self, tmp_path):
         """Multiple 2 SOUR sub-records under one MARR each become a separate citation."""
@@ -372,8 +454,8 @@ class TestFamEventCitations:
 """))
         marr = fams['@F1@']['marrs'][0]
         assert len(marr['citations']) == 2
-        assert marr['citations'][0] == {'sour_xref': '@S1@', 'page': '12'}
-        assert marr['citations'][1] == {'sour_xref': '@S2@', 'page': '99'}
+        assert marr['citations'][0] == {'sour_xref': '@S1@', 'page': '12', 'text': None, 'note': None}
+        assert marr['citations'][1] == {'sour_xref': '@S2@', 'page': '99', 'text': None, 'note': None}
 
     def test_div_event_has_citations(self, tmp_path):
         """1 DIV events under FAM get parsed with citations list."""
@@ -403,7 +485,7 @@ class TestFamEventCitations:
         div = fam['divs'][0]
         assert div['tag'] == 'DIV'
         assert div['date'] == '1910'
-        assert div['citations'] == [{'sour_xref': '@S1@', 'page': '7'}]
+        assert div['citations'] == [{'sour_xref': '@S1@', 'page': '7', 'text': None, 'note': None}]
 
     def test_marr_citation_isolated_from_div(self, tmp_path):
         """Citations under MARR do not bleed into a following DIV event, and vice versa."""
@@ -433,8 +515,8 @@ class TestFamEventCitations:
 3 PAGE 2
 """))
         fam = fams['@F1@']
-        assert fam['marrs'][0]['citations'] == [{'sour_xref': '@S1@', 'page': '1'}]
-        assert fam['divs'][0]['citations'] == [{'sour_xref': '@S2@', 'page': '2'}]
+        assert fam['marrs'][0]['citations'] == [{'sour_xref': '@S1@', 'page': '1', 'text': None, 'note': None}]
+        assert fam['divs'][0]['citations'] == [{'sour_xref': '@S2@', 'page': '2', 'text': None, 'note': None}]
 
     def test_fam_event_citation_url_from_direct_www(self, tmp_path):
         """3 WWW directly under 2 SOUR in FAM event should populate url field."""
@@ -489,7 +571,7 @@ class TestFamEventCitations:
         people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
         for xref in ('@I1@', '@I2@'):
             marr = next(e for e in people[xref]['events'] if e['tag'] == 'MARR')
-            assert marr['citations'] == [{'sourceXref': '@S1@', 'page': 'p.47'}]
+            assert marr['citations'] == [{'sourceXref': '@S1@', 'page': 'p.47', 'text': None, 'note': None}]
 
 
 # ---------------------------------------------------------------------------

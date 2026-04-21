@@ -147,7 +147,7 @@ class TestParseIndiLineEvents:
         st = _indi_state()
         _parse_indi_line(st, 1, 'BIRT', '', '', rec)
         _parse_indi_line(st, 2, 'SOUR', '@S1@', '@S1@', rec)
-        assert rec['events'][0]['citations'] == [{'sour_xref': '@S1@', 'page': None}]
+        assert rec['events'][0]['citations'] == [{'sour_xref': '@S1@', 'page': None, 'text': None, 'note': None}]
 
     def test_event_citation_page_stored(self):
         rec = _blank_indi()
@@ -286,7 +286,7 @@ class TestParseFamLine:
         st = _fam_state()
         _parse_fam_line(st, 1, 'MARR', '', '', rec)
         _parse_fam_line(st, 2, 'SOUR', '@S2@', '@S2@', rec)
-        assert rec['marrs'][0]['citations'] == [{'sour_xref': '@S2@', 'page': None}]
+        assert rec['marrs'][0]['citations'] == [{'sour_xref': '@S2@', 'page': None, 'text': None, 'note': None}]
 
     def test_marr_citation_page_stored(self):
         rec = _blank_fam()

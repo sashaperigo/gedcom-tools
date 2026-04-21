@@ -510,7 +510,7 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
 
     // Extra gap between different FAM groups makes the visual separation
     // obvious (so a viewer can tell which kids belong to which marriage).
-    const INTER_FAM_GAP = H_GAP * 4;
+    const INTER_FAM_GAP = H_GAP * 8;
     const totalWidth = allGroups.reduce((w, g, i) => {
         if (i === 0) return g.width;
         const gap = allGroups[i - 1].famXref === g.famXref ? H_GAP : INTER_FAM_GAP;

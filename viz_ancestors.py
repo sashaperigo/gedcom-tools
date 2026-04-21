@@ -127,14 +127,28 @@ def _parse_fam_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec
         elif tag == 'NOTE':
             current_evt['note'] = val
         elif tag == 'SOUR' and val.startswith('@'):
-            current_evt['citations'].append({'sour_xref': val, 'page': None})
+            current_evt['citations'].append({'sour_xref': val, 'page': None, 'text': None, 'note': None})
+            state['current_evt_cite_field'] = None
     elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
         current_evt['citations'][-1]['page'] = val
+    elif lvl == 3 and tag == 'NOTE' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['note'] = _ged_val(val)
+        state['current_evt_cite_field'] = 'note'
+    elif lvl == 4 and tag == 'TEXT' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['text'] = _ged_val(val)
+        state['current_evt_cite_field'] = 'text'
+    elif lvl == 4 and tag in ('CONT', 'CONC') and current_evt is not None and current_evt.get('citations') and state.get('current_evt_cite_field') == 'note':
+        sep = '\n' if tag == 'CONT' else ''
+        current_evt['citations'][-1]['note'] = (current_evt['citations'][-1].get('note') or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
+    elif lvl == 5 and tag in ('CONT', 'CONC') and current_evt is not None and current_evt.get('citations') and state.get('current_evt_cite_field') == 'text':
+        sep = '\n' if tag == 'CONT' else ''
+        current_evt['citations'][-1]['text'] = (current_evt['citations'][-1].get('text') or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
     elif lvl in (3, 4) and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
         if not current_evt['citations'][-1].get('url'):
             current_evt['citations'][-1]['url'] = val
     elif lvl == 1:
         state['current_evt'] = None
+        state['current_evt_cite_field'] = None
 
 
 _INLINE_TYPE_TAGS = frozenset({'OCCU', 'TITL', 'NATI', 'RELI', 'EDUC', 'NCHI', 'DSCR'})
@@ -185,6 +199,7 @@ def _parse_indi_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, re
         rec['events'].append(evt)
         state['current_evt']  = evt
         state['current_note'] = None
+        state['current_evt_cite_field'] = None
 
     elif lvl == 2 and current_evt is not None:
         if tag == 'DATE':
@@ -210,10 +225,27 @@ def _parse_indi_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, re
         elif tag == 'AGE':
             current_evt['age'] = val
         elif tag == 'SOUR' and val.startswith('@'):
-            current_evt['citations'].append({'sour_xref': val, 'page': None})
+            current_evt['citations'].append({'sour_xref': val, 'page': None, 'text': None, 'note': None})
+            state['current_evt_cite_field'] = None
 
     elif lvl == 3 and tag == 'PAGE' and current_evt is not None and current_evt.get('citations'):
         current_evt['citations'][-1]['page'] = val
+
+    elif lvl == 3 and tag == 'NOTE' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['note'] = _ged_val(val)
+        state['current_evt_cite_field'] = 'note'
+
+    elif lvl == 4 and tag == 'TEXT' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['text'] = _ged_val(val)
+        state['current_evt_cite_field'] = 'text'
+
+    elif lvl == 4 and tag in ('CONT', 'CONC') and current_evt is not None and current_evt.get('citations') and state.get('current_evt_cite_field') == 'note':
+        sep = '\n' if tag == 'CONT' else ''
+        current_evt['citations'][-1]['note'] = (current_evt['citations'][-1].get('note') or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
+
+    elif lvl == 5 and tag in ('CONT', 'CONC') and current_evt is not None and current_evt.get('citations') and state.get('current_evt_cite_field') == 'text':
+        sep = '\n' if tag == 'CONT' else ''
+        current_evt['citations'][-1]['text'] = (current_evt['citations'][-1].get('text') or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
 
     elif lvl in (3, 4) and tag == 'WWW' and current_evt is not None and current_evt.get('citations'):
         if not current_evt['citations'][-1].get('url'):
@@ -345,6 +377,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 'current_evt': None, 'current_note': None,
                 'current_sour_xref': None, 'current_person_cite': None,
                 'current_cite_field': None, 'current_asso': None,
+                'current_evt_cite_field': None,
                 'secondary_name_n': 0, 'shared_notes': shared_notes,
             }
             continue
@@ -354,7 +387,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             fams[xref] = {'husb': None, 'wife': None, 'chil': []}
             ctx    = ('fam', xref)
-            fam_st = {'current_evt': None}
+            fam_st = {'current_evt': None, 'current_evt_cite_field': None}
             continue
 
         m = _SOUR_RE.match(line)
