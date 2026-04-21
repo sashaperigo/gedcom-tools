@@ -478,13 +478,25 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
         if (otherNode) { visibleFamXref = f; break; }
     }
 
-    // Build groups (one per child, with their visible spouses) across all
-    // FAMs, tagged with which FAM they came from. Pack left→right sorted by
-    // birth year.
+    // Build groups (one per child, with their visible spouses) FAM-by-FAM so
+    // siblings from the same FAM stay contiguous in the horizontal order.
+    // Within a FAM, sort by birth year. Across FAMs, order by earliest birth
+    // year per FAM. Never interleave FAMs, so each per-FAM umbrella crossbar
+    // spans a distinct horizontal range.
+    const famOrder = personFams.slice().sort((a, b) => {
+        const ya = Math.min(...FAMILIES[a].chil.map(c => (typeof PEOPLE !== 'undefined' && PEOPLE[c]?.birth_year) || 9999));
+        const yb = Math.min(...FAMILIES[b].chil.map(c => (typeof PEOPLE !== 'undefined' && PEOPLE[c]?.birth_year) || 9999));
+        return ya - yb;
+    });
     const allGroups = [];
-    for (const famXref of personFams) {
+    for (const famXref of famOrder) {
         const fam = FAMILIES[famXref];
-        for (const childXref of fam.chil) {
+        const kidsSorted = fam.chil.slice().sort((a, b) => {
+            const ya = (typeof PEOPLE !== 'undefined' && PEOPLE[a]?.birth_year) || 9999;
+            const yb = (typeof PEOPLE !== 'undefined' && PEOPLE[b]?.birth_year) || 9999;
+            return ya - yb;
+        });
+        for (const childXref of kidsSorted) {
             const childSpouses = _visibleSpousesFor(
                 childXref,
                 (typeof RELATIVES !== 'undefined' && RELATIVES[childXref]?.spouses) || [],
@@ -492,13 +504,18 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
                 focusXref,
             );
             const width = NODE_W + childSpouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
-            const birth = (typeof PEOPLE !== 'undefined' && PEOPLE[childXref]?.birth_year) || 9999;
-            allGroups.push({ famXref, childXref, childSpouses, width, birth });
+            allGroups.push({ famXref, childXref, childSpouses, width });
         }
     }
-    allGroups.sort((a, b) => a.birth - b.birth);
 
-    const totalWidth = allGroups.reduce((w, g, i) => w + g.width + (i > 0 ? H_GAP : 0), 0);
+    // Extra gap between different FAM groups makes the visual separation
+    // obvious (so a viewer can tell which kids belong to which marriage).
+    const INTER_FAM_GAP = H_GAP * 4;
+    const totalWidth = allGroups.reduce((w, g, i) => {
+        if (i === 0) return g.width;
+        const gap = allGroups[i - 1].famXref === g.famXref ? H_GAP : INTER_FAM_GAP;
+        return w + gap + g.width;
+    }, 0);
 
     // Anchor x: marriage-line midpoint if a visible FAM exists, else person center.
     let anchorX = personCenter;
@@ -543,7 +560,12 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     const generation = Math.round(childY / ROW_HEIGHT);
     const childCentersByFam = new Map(); // famXref → [cx, ...]
     let cursor = startX;
-    for (const g of allGroups) {
+    for (let i = 0; i < allGroups.length; i++) {
+        const g = allGroups[i];
+        if (i > 0) {
+            const gap = allGroups[i - 1].famXref === g.famXref ? H_GAP : INTER_FAM_GAP;
+            cursor += gap;
+        }
         const childX = cursor;
         nodes.push({ xref: g.childXref, x: childX, y: childY, generation, role: 'descendant' });
         const childCenter = childX + NODE_W / 2;
@@ -563,7 +585,7 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
             });
         });
 
-        cursor += g.width + H_GAP;
+        cursor += g.width;
     }
 
     // Per-FAM umbrellas.

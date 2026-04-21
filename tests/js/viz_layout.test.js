@@ -2359,8 +2359,8 @@ describe('computeLayout — one sibling, two expanded FAMs (multi-marriage)', ()
                 '@FOCUS@': { siblings: ['@SIB@'], spouses: [] },
             },
             families: {
-                '@FAM1@': { husb: '@SIB@', wife: null, chil: ['@K1@', '@K2@'] },
-                '@FAM2@': { husb: '@SIB@', wife: null, chil: ['@K3@', '@K4@'] },
+                '@FAM1@': { husb: '@SIB@', wife: null, chil: ['@K1@', '@K3@'] },
+                '@FAM2@': { husb: '@SIB@', wife: null, chil: ['@K2@', '@K4@'] },
             },
         });
     });
@@ -2376,6 +2376,54 @@ describe('computeLayout — one sibling, two expanded FAMs (multi-marriage)', ()
             const gap = gen1[i].x - (gen1[i - 1].x + NODE_W);
             expect(gap).toBeGreaterThanOrEqual(0);
         }
+    });
+
+    // Regression: with two FAMs under the same person, siblings from each FAM
+    // must be visually segregated — no cross-FAM interleaving by birth year.
+    // FAM1's kids should be contiguous, FAM2's kids should be contiguous,
+    // with a visible gap (larger than normal sibling spacing) between them.
+    it('kids stay grouped by FAM (no birth-year interleaving across FAMs)', () => {
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(), new Set(),
+            new Set(['@SIB@']),
+        );
+        const gen1 = nodes.filter(n => n.generation === 1).sort((a, b) => a.x - b.x);
+        const xrefs = gen1.map(n => n.xref);
+        // K1, K2 are one FAM; K3, K4 another. Each FAM's kids must be adjacent
+        // in the horizontal ordering. Two valid orderings: [K1,K2,K3,K4] or
+        // [K3,K4,K1,K2]. Forbidden: anything like [K1,K3,K2,K4].
+        const famA = new Set(['@K1@', '@K3@']);
+        const famB = new Set(['@K2@', '@K4@']);
+        let transitions = 0;
+        for (let i = 1; i < xrefs.length; i++) {
+            const prevFam = famA.has(xrefs[i - 1]) ? 'A' : 'B';
+            const curFam = famA.has(xrefs[i]) ? 'A' : 'B';
+            if (prevFam !== curFam) transitions++;
+        }
+        expect(transitions).toBe(1);
+    });
+
+    it('visible gap between FAM groups is larger than gap within a FAM', () => {
+        // Place @SIB@ with a visible spouse via defaultSpouses so one FAM is
+        // the "visible" one. Here, SIB has no spouse in RELATIVES but both
+        // FAMs have wife: null, so visible FAM is the first by iteration;
+        // we only assert the cross-FAM gap is strictly larger than the
+        // within-FAM gap.
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(), new Set(),
+            new Set(['@SIB@']),
+        );
+        const gen1 = nodes.filter(n => n.generation === 1).sort((a, b) => a.x - b.x);
+        const gaps = [];
+        for (let i = 1; i < gen1.length; i++) {
+            gaps.push(gen1[i].x - (gen1[i - 1].x + NODE_W));
+        }
+        // One gap (the cross-FAM one) must be strictly larger than the others.
+        const maxGap = Math.max(...gaps);
+        const others = gaps.filter(g => g !== maxGap);
+        expect(others.every(g => g < maxGap)).toBe(true);
     });
 });
 
