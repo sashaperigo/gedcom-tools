@@ -2137,3 +2137,293 @@ describe('computeLayout — single sibling with many expanded kids: pill itself 
         expect(sib.x).toBe(-FOCUS_TO_SIB);
     });
 });
+
+// Regression for the Ana-Maria-vs-Andrea collision from user screenshot:
+// an ancestor-sibling at gen -2 whose expanded-FAM children land on gen -1
+// must not overlap nodes already placed on gen -1 (like the focus parent's
+// own ancestor-siblings).
+describe('computeLayout — cross-generation: great-aunt\'s kids vs aunt+spouse', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1995, sex: 'M' },
+                '@DAD@': { birth_year: 1965, sex: 'M' },
+                '@MOM@': { birth_year: 1963, sex: 'F' },
+                '@AUNT@': { birth_year: 1966, sex: 'F' },
+                '@AUNT_SP@': { birth_year: 1964, sex: 'M' },
+                '@GF@': { birth_year: 1926, sex: 'M' },
+                '@GM@': { birth_year: 1941, sex: 'F' },
+                '@GA@': { birth_year: 1938, sex: 'F' },        // great-aunt
+                '@GA_SP@': { birth_year: 1932, sex: 'M' },
+                '@CUZ1@': { birth_year: 1958, sex: 'M' },      // great-aunt's kids at gen -1
+                '@CUZ2@': { birth_year: 1960, sex: 'M' },
+                '@CUZ3@': { birth_year: 1963, sex: 'F' },
+            },
+            parents: {
+                '@FOCUS@': ['@DAD@', '@MOM@'],
+                '@MOM@': ['@GF@', '@GM@'],
+            },
+            relatives: {
+                '@MOM@': { siblings: ['@AUNT@'], spouses: ['@DAD@'] },
+                '@AUNT@': { siblings: [], spouses: ['@AUNT_SP@'] },
+                '@GM@': { siblings: ['@GA@'], spouses: ['@GF@'] },
+                '@GA@': { siblings: [], spouses: ['@GA_SP@'] },
+            },
+            families: {
+                '@GA_FAM@': { husb: '@GA_SP@', wife: '@GA@', chil: ['@CUZ1@', '@CUZ2@', '@CUZ3@'] },
+            },
+        });
+    });
+
+    it('no two gen -1 nodes overlap when both @MOM@ siblings and great-aunt FAM are expanded', () => {
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(['@MOM@']),
+            new Set(['@MOM@', '@GM@']),
+            new Set(['@GA_FAM@']),
+        );
+        const gen1 = nodes.filter(n => n.generation === -1).sort((a, b) => a.x - b.x);
+        for (let i = 1; i < gen1.length; i++) {
+            const gap = gen1[i].x - (gen1[i - 1].x + NODE_W);
+            expect(gap, `${gen1[i - 1].xref} (x=${gen1[i - 1].x}) → ${gen1[i].xref} (x=${gen1[i].x})`)
+                .toBeGreaterThanOrEqual(0);
+        }
+    });
+});
+
+// Mirror of Ana-Maria case on the father's side: great-uncle (father's
+// father's brother) with expanded kids collides with uncle+spouse when both
+// are on gen -1.
+describe('computeLayout — cross-generation mirror: father-side great-uncle vs uncle+spouse', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1995, sex: 'M' },
+                '@DAD@': { birth_year: 1965, sex: 'M' },
+                '@MOM@': { birth_year: 1967, sex: 'F' },
+                '@UNCLE@': { birth_year: 1963, sex: 'M' },
+                '@UNCLE_SP@': { birth_year: 1965, sex: 'F' },
+                '@PGF@': { birth_year: 1935, sex: 'M' },
+                '@PGM@': { birth_year: 1937, sex: 'F' },
+                '@GU@': { birth_year: 1930, sex: 'M' }, // great-uncle (PGF's brother)
+                '@GU_SP@': { birth_year: 1932, sex: 'F' },
+                '@CUZ1@': { birth_year: 1958, sex: 'M' },
+                '@CUZ2@': { birth_year: 1960, sex: 'F' },
+                '@CUZ3@': { birth_year: 1962, sex: 'M' },
+            },
+            parents: {
+                '@FOCUS@': ['@DAD@', '@MOM@'],
+                '@DAD@': ['@PGF@', '@PGM@'],
+            },
+            relatives: {
+                '@DAD@': { siblings: ['@UNCLE@'], spouses: ['@MOM@'] },
+                '@UNCLE@': { siblings: [], spouses: ['@UNCLE_SP@'] },
+                '@PGF@': { siblings: ['@GU@'], spouses: ['@PGM@'] },
+                '@GU@': { siblings: [], spouses: ['@GU_SP@'] },
+            },
+            families: {
+                '@GU_FAM@': { husb: '@GU@', wife: '@GU_SP@', chil: ['@CUZ1@', '@CUZ2@', '@CUZ3@'] },
+            },
+        });
+    });
+
+    it('no two gen -1 nodes overlap (father-side mirror)', () => {
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(['@DAD@']),
+            new Set(['@DAD@', '@PGF@']),
+            new Set(['@GU_FAM@']),
+        );
+        const gen1 = nodes.filter(n => n.generation === -1).sort((a, b) => a.x - b.x);
+        for (let i = 1; i < gen1.length; i++) {
+            const gap = gen1[i].x - (gen1[i - 1].x + NODE_W);
+            expect(gap, `${gen1[i - 1].xref} (x=${gen1[i - 1].x}) → ${gen1[i].xref} (x=${gen1[i].x})`)
+                .toBeGreaterThanOrEqual(0);
+        }
+    });
+});
+
+// Aunt (ancestor-sibling at gen -1) with expanded FAM: her kids land at
+// gen 0 — the FOCUS row. They must not collide with focus, focus's siblings,
+// focus's spouse, or focus's spouse's siblings.
+describe('computeLayout — aunt\'s kids on focus row vs focus+spouse+siblings', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1995, sex: 'F' },
+                '@FSIB@': { birth_year: 1997, sex: 'F' }, // focus sibling
+                '@SPOUSE@': { birth_year: 1994, sex: 'M' },
+                '@MOM@': { birth_year: 1965, sex: 'F' },
+                '@AUNT@': { birth_year: 1963, sex: 'F' }, // MOM's sister
+                '@AUNT_SP@': { birth_year: 1961, sex: 'M' },
+                '@CUZ1@': { birth_year: 1990, sex: 'F' },
+                '@CUZ2@': { birth_year: 1992, sex: 'M' },
+                '@CUZ3@': { birth_year: 1994, sex: 'F' },
+            },
+            parents: {
+                '@FOCUS@': [null, '@MOM@'],
+                '@FSIB@': [null, '@MOM@'],
+            },
+            relatives: {
+                '@FOCUS@': { siblings: ['@FSIB@'], spouses: ['@SPOUSE@'] },
+                '@MOM@': { siblings: ['@AUNT@'], spouses: [] },
+                '@AUNT@': { siblings: [], spouses: ['@AUNT_SP@'] },
+            },
+            families: {
+                '@AUNT_FAM@': { husb: '@AUNT_SP@', wife: '@AUNT@', chil: ['@CUZ1@', '@CUZ2@', '@CUZ3@'] },
+            },
+        });
+    });
+
+    it('no two gen 0 nodes overlap when aunt\'s FAM is expanded', () => {
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(),
+            new Set(['@MOM@']),
+            new Set(['@AUNT_FAM@']),
+        );
+        const gen0 = nodes.filter(n => n.generation === 0).sort((a, b) => a.x - b.x);
+        for (let i = 1; i < gen0.length; i++) {
+            const gap = gen0[i].x - (gen0[i - 1].x + NODE_W);
+            expect(gap, `${gen0[i - 1].xref} (x=${gen0[i - 1].x}) → ${gen0[i].xref} (x=${gen0[i].x})`)
+                .toBeGreaterThanOrEqual(0);
+        }
+    });
+});
+
+// Nested cousin subtrees: sibling A's child has 3 kids, sibling B has 3 kids.
+// Grand-cousin row at gen +2 must not overlap between the two sibling
+// subtrees, even when the intermediate cousin row at gen +1 already clears.
+describe('computeLayout — nested: sibling-A\'s grandkids vs sibling-B\'s kids', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 2000, sex: 'F' },
+                '@SIB_A@': { birth_year: 1990, sex: 'F' },
+                '@SIB_B@': { birth_year: 1995, sex: 'F' },
+                '@A_KID1@': { birth_year: 2015, sex: 'F' },
+                '@A_KID2@': { birth_year: 2017, sex: 'M' },
+                '@A_GK1@': { birth_year: 2040, sex: 'F' },
+                '@A_GK2@': { birth_year: 2042, sex: 'M' },
+                '@A_GK3@': { birth_year: 2044, sex: 'F' },
+                '@B_KID1@': { birth_year: 2016, sex: 'M' },
+                '@B_KID2@': { birth_year: 2018, sex: 'F' },
+                '@B_KID3@': { birth_year: 2020, sex: 'M' },
+            },
+            relatives: {
+                '@FOCUS@': { siblings: ['@SIB_A@', '@SIB_B@'], spouses: [] },
+            },
+            families: {
+                '@FAM_A@': { husb: null, wife: '@SIB_A@', chil: ['@A_KID1@', '@A_KID2@'] },
+                '@FAM_A2@': { husb: null, wife: '@A_KID2@', chil: ['@A_GK1@', '@A_GK2@', '@A_GK3@'] },
+                '@FAM_B@': { husb: null, wife: '@SIB_B@', chil: ['@B_KID1@', '@B_KID2@', '@B_KID3@'] },
+            },
+        });
+    });
+
+    it('no two nodes overlap at gen +1 or +2 across both sibling subtrees', () => {
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(),
+            new Set(),
+            new Set(['@FAM_A@', '@FAM_A2@', '@FAM_B@']),
+        );
+        for (const gen of [1, 2]) {
+            const row = nodes.filter(n => n.generation === gen).sort((a, b) => a.x - b.x);
+            for (let i = 1; i < row.length; i++) {
+                const gap = row[i].x - (row[i - 1].x + NODE_W);
+                expect(gap, `gen ${gen}: ${row[i - 1].xref} (x=${row[i - 1].x}) → ${row[i].xref} (x=${row[i].x})`)
+                    .toBeGreaterThanOrEqual(0);
+            }
+        }
+    });
+});
+
+// Same-person, two expanded FAMs (will matter for Stage B / multi-spouse).
+// Even pre-Stage-B, the layout should not crash or overlap when a person
+// is a parent in two FAMs both in expandedChildrenFams.
+describe('computeLayout — one sibling, two expanded FAMs (multi-marriage)', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1995 },
+                '@SIB@': { birth_year: 1990, sex: 'M' },
+                '@K1@': { birth_year: 2015 },
+                '@K2@': { birth_year: 2017 },
+                '@K3@': { birth_year: 2019 },
+                '@K4@': { birth_year: 2021 },
+            },
+            relatives: {
+                '@FOCUS@': { siblings: ['@SIB@'], spouses: [] },
+            },
+            families: {
+                '@FAM1@': { husb: '@SIB@', wife: null, chil: ['@K1@', '@K2@'] },
+                '@FAM2@': { husb: '@SIB@', wife: null, chil: ['@K3@', '@K4@'] },
+            },
+        });
+    });
+
+    it('kids from both FAMs land at gen +1 without overlap', () => {
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(), new Set(),
+            new Set(['@FAM1@', '@FAM2@']),
+        );
+        const gen1 = nodes.filter(n => n.generation === 1).sort((a, b) => a.x - b.x);
+        for (let i = 1; i < gen1.length; i++) {
+            const gap = gen1[i].x - (gen1[i - 1].x + NODE_W);
+            expect(gap).toBeGreaterThanOrEqual(0);
+        }
+    });
+});
+
+// Deep cross-generation: great-great-aunt (gen -3) with expanded FAM
+// dropping kids to gen -2 where great-aunt already sits.
+describe('computeLayout — deep cross-gen: g-g-aunt FAM vs g-aunt', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 2000 },
+                '@MOM@': { birth_year: 1970, sex: 'F' },
+                '@GM@': { birth_year: 1945, sex: 'F' },
+                '@GA@': { birth_year: 1940, sex: 'F' }, // GM's sister (great-aunt)
+                '@GA_SP@': { birth_year: 1938, sex: 'M' },
+                '@GGM@': { birth_year: 1920, sex: 'F' }, // GM's mother
+                '@GGA@': { birth_year: 1915, sex: 'F' }, // GGM's sister (g-g-aunt)
+                '@GGA_SP@': { birth_year: 1913, sex: 'M' },
+                '@GA_COUSIN1@': { birth_year: 1935, sex: 'F' }, // GGA's kids at gen -2
+                '@GA_COUSIN2@': { birth_year: 1937, sex: 'M' },
+                '@GA_COUSIN3@': { birth_year: 1939, sex: 'F' },
+            },
+            parents: {
+                '@FOCUS@': [null, '@MOM@'],
+                '@MOM@': [null, '@GM@'],
+                '@GM@': [null, '@GGM@'],
+            },
+            relatives: {
+                '@GM@': { siblings: ['@GA@'], spouses: [] },
+                '@GA@': { siblings: [], spouses: ['@GA_SP@'] },
+                '@GGM@': { siblings: ['@GGA@'], spouses: [] },
+                '@GGA@': { siblings: [], spouses: ['@GGA_SP@'] },
+            },
+            families: {
+                '@GGA_FAM@': { husb: '@GGA_SP@', wife: '@GGA@', chil: ['@GA_COUSIN1@', '@GA_COUSIN2@', '@GA_COUSIN3@'] },
+            },
+        });
+    });
+
+    it('gen -2 nodes do not overlap when GGA\'s FAM is expanded and GM\'s siblings are shown', () => {
+        const { nodes } = computeLayout(
+            '@FOCUS@',
+            new Set(['@MOM@', '@GM@']),
+            new Set(['@GM@', '@GGM@']),
+            new Set(['@GGA_FAM@']),
+        );
+        const gen2 = nodes.filter(n => n.generation === -2).sort((a, b) => a.x - b.x);
+        for (let i = 1; i < gen2.length; i++) {
+            const gap = gen2[i].x - (gen2[i - 1].x + NODE_W);
+            expect(gap, `${gen2[i - 1].xref} (x=${gen2[i - 1].x}) → ${gen2[i].xref} (x=${gen2[i].x})`)
+                .toBeGreaterThanOrEqual(0);
+        }
+    });
+});

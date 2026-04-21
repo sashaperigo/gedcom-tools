@@ -401,7 +401,42 @@ function _placeChildrenOfFam(famXref, nodes, edges) {
     // Sort children by birth year and pack them centered under anchorX.
     const sorted = _sortByBirthYear(chilXrefs);
     const totalWidth = sorted.length * NODE_W + (sorted.length - 1) * H_GAP;
-    const startX = anchorX - totalWidth / 2;
+    let startX = anchorX - totalWidth / 2;
+
+    // Collision avoidance: if another FAM (or prior phase) has already placed
+    // nodes on childY that would overlap, shift this group to clear them.
+    // We push whichever direction requires the smaller shift.
+    const existingAtChildY = nodes.filter(n => n.y === childY);
+    const groupOverlaps = (start) => existingAtChildY.some(n =>
+        n.x < start + totalWidth && n.x + NODE_W > start
+    );
+    if (groupOverlaps(startX)) {
+        // Right-push: land past the rightmost right-edge of any overlapping node.
+        const maxRight = existingAtChildY
+            .filter(n => n.x < startX + totalWidth && n.x + NODE_W > startX)
+            .reduce((m, n) => Math.max(m, n.x + NODE_W), -Infinity);
+        // Left-push: land before the leftmost left-edge of any overlapping node.
+        const minLeft = existingAtChildY
+            .filter(n => n.x < startX + totalWidth && n.x + NODE_W > startX)
+            .reduce((m, n) => Math.min(m, n.x), Infinity);
+        const pushedRightStart = maxRight > -Infinity ? maxRight + H_GAP : startX;
+        const pushedLeftStart = minLeft < Infinity ? minLeft - H_GAP - totalWidth : startX;
+        const rightShift = Math.abs(pushedRightStart - startX);
+        const leftShift = Math.abs(pushedLeftStart - startX);
+        // Prefer right-push (children usually add to the right of existing subtrees);
+        // fall back to left-push if it avoids collision with smaller distance.
+        startX = (leftShift < rightShift && !groupOverlaps(pushedLeftStart)) ?
+            pushedLeftStart :
+            pushedRightStart;
+        // If right-push still overlaps (e.g., another group is even further
+        // right), widen by iterating once more.
+        if (groupOverlaps(startX)) {
+            const maxRight2 = existingAtChildY
+                .filter(n => n.x < startX + totalWidth && n.x + NODE_W > startX)
+                .reduce((m, n) => Math.max(m, n.x + NODE_W), -Infinity);
+            if (maxRight2 > -Infinity) startX = maxRight2 + H_GAP;
+        }
+    }
 
     const generation = Math.round(childY / ROW_HEIGHT);
     const childCenters = [];
@@ -424,6 +459,12 @@ function _placeChildrenOfFam(famXref, nodes, edges) {
         :
         parentY + NODE_H; // bottom of single parent
 
+    // If the group was shifted away from the parents' midpoint, the anchor
+    // drop stays above the parents and the umbrella's crossbar continues to
+    // the shifted group — producing an L-shape rather than a straight drop.
+    const umbrellaAnchorX = childCenters.length > 0 ?
+        Math.min(Math.max(anchorX, Math.min(...childCenters)), Math.max(...childCenters)) :
+        anchorX;
     edges.push({
         x1: anchorX,
         y1: anchorTopY,
@@ -431,6 +472,15 @@ function _placeChildrenOfFam(famXref, nodes, edges) {
         y2: umbrellaY,
         type: 'descendant',
     });
+    if (umbrellaAnchorX !== anchorX) {
+        edges.push({
+            x1: anchorX,
+            y1: umbrellaY,
+            x2: umbrellaAnchorX,
+            y2: umbrellaY,
+            type: 'descendant',
+        });
+    }
 
     if (childCenters.length > 1) {
         edges.push({
@@ -637,16 +687,46 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
     const extraRight = (sx) => Math.max(0, _descendantHalfwidth(sx, 'right', expandedChildrenFams) - NODE_W / 2);
     const extraLeft = (sx) => Math.max(0, _descendantHalfwidth(sx, 'left', expandedChildrenFams) - NODE_W / 2);
 
+    // If a sibling has an expanded FAM, its children will be placed on the
+    // child row (ancY + ROW_HEIGHT) centered under that sibling. Those
+    // children must not collide with nodes already placed on that child row
+    // by earlier phases (e.g., the focus parent's own ancestor-siblings at
+    // a shallower generation).
+    //
+    // For the toRight fan: the rightmost-relevant child-row node (left
+    // barrier) is the one with the max x+NODE_W; since siblings are placed
+    // left-to-right and any same-call previous siblings are to our LEFT,
+    // using the max across ALL childY nodes is correct.
+    //
+    // Mirror reasoning for toLeft fan: the min x (right barrier) across ALL
+    // childY nodes.
+    const childY = ancY + ROW_HEIGHT;
+    let childRowLeftBarrier = -Infinity;
+    let childRowRightBarrier = Infinity;
+    nodes.forEach(n => {
+        if (n.y !== childY) return;
+        if (n.x + NODE_W > childRowLeftBarrier) childRowLeftBarrier = n.x + NODE_W;
+        if (n.x < childRowRightBarrier) childRowRightBarrier = n.x;
+    });
+
     if (toRight) {
         // Siblings fan right of ancestor, chronological L→R (oldest closest to ancestor).
         let cursor = ancX + NODE_W + CHEVRON_CLEARANCE;
         sorted.forEach((sibXref, i) => {
             if (i > 0) {
-                // Previous sibling's descendants may poke right of its pill; current
-                // sibling's descendants may poke left of its pill. Add both + H_GAP.
                 cursor += H_GAP + extraLeft(sibXref);
             } else {
                 cursor += extraLeft(sibXref);
+            }
+            // Cross-row barrier: if this sibling has an expanded FAM with kids
+            // that will land on childY, make sure the leftmost kid clears the
+            // left barrier from pre-existing child-row nodes.
+            if (childRowLeftBarrier > -Infinity) {
+                const halfLeft = _descendantHalfwidth(sibXref, 'left', expandedChildrenFams);
+                if (halfLeft > NODE_W / 2) {
+                    const minSibX = childRowLeftBarrier + H_GAP + halfLeft - NODE_W / 2;
+                    if (minSibX > cursor) cursor = minSibX;
+                }
             }
             const sibX = cursor;
             nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
@@ -658,7 +738,6 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                 edges.push({ x1: cursor, y1: midY, x2: spX, y2: midY, type: 'marriage' });
                 cursor = spX + NODE_W;
             });
-            // Descendants of this sibling may extend past the group's right edge.
             cursor = Math.max(cursor, sibX + NODE_W / 2 + _descendantHalfwidth(sibXref, 'right', expandedChildrenFams));
         });
     } else {
@@ -670,6 +749,13 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                 rightEdge -= H_GAP + extraRight(sibXref);
             } else {
                 rightEdge -= extraRight(sibXref);
+            }
+            if (childRowRightBarrier < Infinity) {
+                const halfRight = _descendantHalfwidth(sibXref, 'right', expandedChildrenFams);
+                if (halfRight > NODE_W / 2) {
+                    const maxSibRight = childRowRightBarrier - H_GAP - halfRight + NODE_W / 2;
+                    if (maxSibRight < rightEdge) rightEdge = maxSibRight;
+                }
             }
             const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
             const sibX = rightEdge - NODE_W;
