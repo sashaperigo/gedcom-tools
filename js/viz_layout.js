@@ -135,30 +135,36 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     const olderSibs = sortedSibs.filter(x => (PEOPLE[x]?.birth_year ?? 9999) < focusBY);
     const youngerSibs = sortedSibs.filter(x => (PEOPLE[x]?.birth_year ?? 9999) >= focusBY);
 
-    // Older siblings: packed leftward. Closest older sib center = -(FOCUS_TO_SIB).
-    // Variable inter-sibling gaps based on each sibling's expanded-descendant
-    // subtree width so cousin rows don't collide.
+    // Determine spouse placement up front so older siblings can be packed past the left spouse.
+    const allSpouseXrefs = _visibleSpousesFor(focusXref, RELATIVES[focusXref]?.spouses ?? [], visibleSpouseFams, focusXref);
+    const leftSpouseXref = allSpouseXrefs.length >= 2 ? allSpouseXrefs[1] : null;
+    const rightSpouseXrefs = leftSpouseXref ?
+        [allSpouseXrefs[0], ...allSpouseXrefs.slice(2)] :
+        allSpouseXrefs;
+    const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+    const leftSpouseX = -firstSpouseX;
+    let rightmostSpouseAreaX = null;
+    const leftmostSpouseAreaX = leftSpouseXref ? leftSpouseX : null;
+
+    // Older siblings: packed leftward. If there's a left spouse, siblings start left of it;
+    // otherwise closest older sib center = -(FOCUS_TO_SIB).
+    const olderSibsAnchor = leftmostSpouseAreaX !== null ?
+        leftmostSpouseAreaX - NODE_W / 2 - H_GAP - NODE_W / 2 :
+        -FOCUS_TO_SIB;
     if (olderSibs.length > 0) {
         nodes.push(..._packRowWithDescendants(
             olderSibs.map(xref => ({ xref })),
             0,
             'sibling',
             expandedChildrenFams,
-            { type: 'lastLeftEdge', value: -FOCUS_TO_SIB },
+            { type: 'lastLeftEdge', value: olderSibsAnchor },
         ));
     }
 
     // Focus node at x=0
     nodes.push({ xref: focusXref, x: 0, y: 0, generation: 0, role: 'focus' });
 
-    // Spouses: placed immediately after focus (before younger siblings).
-    // firstSpouseX = NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 (= 80 + 60 + 70 = 210)
-    const spouseXrefs = _visibleSpousesFor(focusXref, RELATIVES[focusXref]?.spouses ?? [], visibleSpouseFams, focusXref);
-    const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
-    // Track the rightmost center x placed (spouse or spouse sibling) to position younger sibs after.
-    let rightmostSpouseAreaX = null;
-
-    spouseXrefs.forEach((spouseXref, si) => {
+    rightSpouseXrefs.forEach((spouseXref, si) => {
         const thisSpouseX = firstSpouseX + si * SLOT;
         rightmostSpouseAreaX = thisSpouseX;
         nodes.push({
@@ -169,7 +175,6 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             role: 'spouse',
         });
 
-        // Marriage edge: focus right edge → first spouse; prev spouse right → next spouse.
         const edgeX1 = si === 0 ?
             NODE_W_FOCUS / 2 :
             firstSpouseX + (si - 1) * SLOT + NODE_W / 2;
@@ -181,7 +186,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             type: 'marriage',
         });
 
-        // Spouse's siblings (if expanded and this is the primary spouse)
+        // Spouse's siblings (if expanded and this is the first right-side spouse)
         if (si === 0 && expandedSiblingsXrefs.has(spouseXref)) {
             const spouseSibs = _sortByBirthYear(RELATIVES[spouseXref]?.siblings ?? []);
             if (spouseSibs.length > 0) {
@@ -196,6 +201,23 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             }
         }
     });
+
+    if (leftSpouseXref) {
+        nodes.push({
+            xref: leftSpouseXref,
+            x: leftSpouseX,
+            y: 0,
+            generation: 0,
+            role: 'spouse',
+        });
+        edges.push({
+            x1: leftSpouseX + NODE_W,
+            y1: NODE_H / 2,
+            x2: -NODE_W_FOCUS / 2,
+            y2: NODE_H / 2,
+            type: 'marriage',
+        });
+    }
 
     // Younger siblings: packed after the rightmost spouse/spouse-sibling (or at FOCUS_TO_SIB if no spouses).
     const youngerSibStartX = rightmostSpouseAreaX !== null ?
@@ -318,7 +340,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         // Anchor: midpoint between focus center and first spouse center if present,
         // else focus center. This is where the umbrella hangs from.
         const focusCenterX = NODE_W_FOCUS / 2;
-        const anchorX = spouseXrefs.length > 0 ?
+        const anchorX = rightSpouseXrefs.length > 0 ?
             (focusCenterX + (firstSpouseX + NODE_W / 2)) / 2 :
             focusCenterX;
 
@@ -372,7 +394,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         // Drop from anchor down to umbrella bar. When focus has a spouse, start at the
         // marriage-line center (NODE_H/2) so it meets the marriage edge perpendicularly
         // with no gap. No spouse → start at NODE_H_FOCUS (the bottom of the focus node).
-        const anchorTopY = spouseXrefs.length > 0 ? NODE_H / 2 : NODE_H_FOCUS;
+        const anchorTopY = rightSpouseXrefs.length > 0 ? NODE_H / 2 : NODE_H_FOCUS;
         edges.push({
             x1: anchorX,
             y1: anchorTopY,

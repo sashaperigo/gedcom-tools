@@ -306,7 +306,7 @@ describe('computeLayout — focus with spouse', () => {
 // ── Test 5c: Multi-spouse marriage edges ───────────────────────────────────
 
 describe('computeLayout — multi-spouse marriage edges', () => {
-    it('second spouse marriage edge starts at right edge of first spouse', () => {
+    it('with 2 spouses, one marriage edge on each side of focus', () => {
         resetGlobals({
             people: {
                 '@FOCUS@': { birth_year: 1900 },
@@ -322,12 +322,14 @@ describe('computeLayout — multi-spouse marriage edges', () => {
         const sp2 = nodes.find(n => n.xref === '@SPOUSE2@');
         const marriageEdges = edges.filter(e => e.type === 'marriage');
         expect(marriageEdges).toHaveLength(2);
-        // First edge: focus right edge (NODE_W_FOCUS/2) → spouse1 center
+        // Right-side edge: focus right edge → sp1 (primary spouse stays on right)
         expect(marriageEdges[0].x1).toBe(NODE_W_FOCUS / 2);
         expect(marriageEdges[0].x2).toBe(sp1.x);
-        // Second edge: spouse1 right edge center (sp1.x + NODE_W/2) → spouse2 center
-        expect(marriageEdges[1].x1).toBe(sp1.x + NODE_W / 2);
-        expect(marriageEdges[1].x2).toBe(sp2.x);
+        expect(sp1.x).toBeGreaterThan(0);
+        // Left-side edge: sp2 right edge → focus left edge
+        expect(marriageEdges[1].x1).toBe(sp2.x + NODE_W);
+        expect(marriageEdges[1].x2).toBe(-NODE_W_FOCUS / 2);
+        expect(sp2.x).toBeLessThan(0);
     });
 });
 
@@ -436,7 +438,7 @@ describe('computeLayout — spouse before younger siblings', () => {
         expect(younger.x).toBeGreaterThan(spouse.x);
     });
 
-    it('second spouse marriage edge x1 is firstSpouseX + NODE_W/2', () => {
+    it('with 2 spouses, second spouse is placed to the left of focus', () => {
         resetGlobals({
             people: {
                 '@FOCUS@': { birth_year: 1900 },
@@ -447,10 +449,10 @@ describe('computeLayout — spouse before younger siblings', () => {
                 '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@', '@SPOUSE2@'] },
             },
         });
-        const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
+        const sp2 = nodes.find(n => n.xref === '@SPOUSE2@');
         const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
-        const marriageEdges = edges.filter(e => e.type === 'marriage');
-        expect(marriageEdges[1].x1).toBe(firstSpouseX + NODE_W / 2);
+        expect(sp2.x).toBe(-firstSpouseX);
     });
 });
 
@@ -2464,6 +2466,26 @@ describe('computeLayout — multi-spouse filtering', () => {
         const spouseNodes = nodes.filter(n => n.role === 'spouse');
         expect(spouseNodes).toHaveLength(1);
         expect(spouseNodes[0].xref).toBe('@SP_B@');
+    });
+
+    it('when both spouses visible, one is placed left of focus and one right', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set(['@F_A@', '@F_B@']));
+        const spouseNodes = nodes.filter(n => n.role === 'spouse');
+        expect(spouseNodes).toHaveLength(2);
+        const xs = spouseNodes.map(n => n.x).sort((a, b) => a - b);
+        expect(xs[0]).toBeLessThan(0);
+        expect(xs[1]).toBeGreaterThan(0);
+    });
+
+    it('when both spouses visible, there is a marriage edge on both sides of focus', () => {
+        const { edges } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set(['@F_A@', '@F_B@']));
+        const marriages = edges.filter(e => e.type === 'marriage');
+        // One edge whose right endpoint is at focus's left edge, one whose left endpoint is at focus's right edge.
+        const { NODE_W_FOCUS } = DESIGN;
+        const leftSideEdge = marriages.find(e => Math.abs(e.x2 - (-NODE_W_FOCUS / 2)) < 0.5 || Math.abs(e.x1 - (-NODE_W_FOCUS / 2)) < 0.5);
+        const rightSideEdge = marriages.find(e => Math.abs(e.x1 - (NODE_W_FOCUS / 2)) < 0.5 || Math.abs(e.x2 - (NODE_W_FOCUS / 2)) < 0.5);
+        expect(leftSideEdge).toBeDefined();
+        expect(rightSideEdge).toBeDefined();
     });
 
     it('person with 1 FAM always shows their spouse regardless of set', () => {

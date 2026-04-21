@@ -1673,6 +1673,8 @@ describe('spouse-menu modal', () => {
     let setStateSpy;
     const { openSpouseMenuModal, closeSpouseMenuModal, toggleSpouseMenuFam, _buildSpouseMenuRows } =
         require('../../js/viz_modals.js');
+    const { primaryFamFor } = require('../../js/viz_primary_spouse.js');
+    global.primaryFamFor = primaryFamFor;
 
     beforeEach(() => {
         overlay = { classList: { list: [], add(c) { this.list.push(c); }, remove(c) { this.list = this.list.filter(x => x !== c); }, contains(c) { return this.list.includes(c); } } };
@@ -1759,5 +1761,17 @@ describe('spouse-menu modal', () => {
         toggleSpouseMenuFam('@FAM1@');
         const update = setStateSpy.mock.calls[0][0];
         expect(update.visibleSpouseFams.has('@FAM1@')).toBe(false);
+    });
+
+    it('when visibleSpouseFams is empty, pre-checks the primary FAM (earliest marr_year)', () => {
+        // FAM1 marr_year 1920, FAM2 marr_year 1935 → primary = FAM1
+        global.getState = () => ({ visibleSpouseFams: new Set(), focusXref: '@F@' });
+        openSpouseMenuModal('@F@');
+        const fam1Idx = list.innerHTML.indexOf('@FAM1@');
+        const fam2Idx = list.innerHTML.indexOf('@FAM2@');
+        const fam1Row = list.innerHTML.slice(fam1Idx, fam2Idx);
+        const fam2Row = list.innerHTML.slice(fam2Idx);
+        expect(fam1Row).toContain('checked');
+        expect(fam2Row).not.toContain('checked');
     });
 });

@@ -1731,15 +1731,25 @@ function _famsForPerson(xref) {
     return out;
 }
 
-function _buildSpouseMenuRows(xref, visibleSpouseFams) {
+function _buildSpouseMenuRows(xref, visibleSpouseFams, focusXref) {
     const fams = _famsForPerson(xref);
     const visible = visibleSpouseFams || new Set();
+    const anyVisible = fams.some(f => visible.has(f));
+    let effectiveChecked;
+    if (anyVisible) {
+        effectiveChecked = new Set(fams.filter(f => visible.has(f)));
+    } else if (typeof primaryFamFor === 'function') {
+        const p = primaryFamFor(xref, focusXref);
+        effectiveChecked = p ? new Set([p]) : new Set();
+    } else {
+        effectiveChecked = new Set(fams.slice(0, 1));
+    }
     return fams.map(f => {
         const fam = FAMILIES[f];
         const other = fam.husb === xref ? fam.wife : fam.husb;
         const otherName = (other && PEOPLE[other] && PEOPLE[other].name) || (other || '(unknown)');
         const year = fam.marr_year ? ` (${fam.marr_year})` : '';
-        const checked = visible.has(f) ? ' checked' : '';
+        const checked = effectiveChecked.has(f) ? ' checked' : '';
         const fQ = escHtml(f);
         return (
             `<label class="spouse-menu-row" data-fam="${fQ}">` +
@@ -1750,7 +1760,10 @@ function _buildSpouseMenuRows(xref, visibleSpouseFams) {
     }).join('');
 }
 
+let _spouseMenuXref = null;
+
 function openSpouseMenuModal(xref) {
+    _spouseMenuXref = xref;
     const overlay = document.getElementById('spouse-menu-modal-overlay');
     const list = document.getElementById('spouse-menu-modal-list');
     const title = document.getElementById('spouse-menu-modal-title');
@@ -1758,11 +1771,12 @@ function openSpouseMenuModal(xref) {
     if (title) title.textContent = 'Spouses — ' + name;
     const state = (typeof getState === 'function') ? getState() : {};
     const visible = state.visibleSpouseFams || new Set();
-    if (list) list.innerHTML = _buildSpouseMenuRows(xref, visible);
+    if (list) list.innerHTML = _buildSpouseMenuRows(xref, visible, state.focusXref);
     if (overlay) overlay.classList.add('open');
 }
 
 function closeSpouseMenuModal() {
+    _spouseMenuXref = null;
     const overlay = document.getElementById('spouse-menu-modal-overlay');
     if (overlay) overlay.classList.remove('open');
 }
@@ -1771,6 +1785,18 @@ function toggleSpouseMenuFam(famXref) {
     const state = (typeof getState === 'function') ? getState() : {};
     const cur = state.visibleSpouseFams || new Set();
     const next = new Set(cur);
+    // If none of the opened person's FAMs are in the set yet, the primary was
+    // implicitly visible. When enabling any FAM, seed with the primary too so
+    // the currently-shown spouse stays visible.
+    const xref = _spouseMenuXref;
+    if (xref && typeof FAMILIES !== 'undefined' && FAMILIES) {
+        const personFams = _famsForPerson(xref);
+        const anyPersonFamInSet = personFams.some(f => cur.has(f));
+        if (!anyPersonFamInSet && !cur.has(famXref) && typeof primaryFamFor === 'function') {
+            const primary = primaryFamFor(xref, state.focusXref);
+            if (primary && primary !== famXref) next.add(primary);
+        }
+    }
     if (next.has(famXref)) next.delete(famXref);
     else next.add(famXref);
     setState({ visibleSpouseFams: next });
