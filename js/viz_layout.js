@@ -91,12 +91,15 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     const youngerSibs = sortedSibs.filter(x => (PEOPLE[x]?.birth_year ?? 9999) >= focusBY);
 
     // Older siblings: packed leftward. Closest older sib center = -(FOCUS_TO_SIB).
+    // Variable inter-sibling gaps based on each sibling's expanded-descendant
+    // subtree width so cousin rows don't collide.
     if (olderSibs.length > 0) {
-        nodes.push(..._packRow(
+        nodes.push(..._packRowWithDescendants(
             olderSibs.map(xref => ({ xref })),
-            -(FOCUS_TO_SIB + (olderSibs.length - 1) * SLOT),
             0,
             'sibling',
+            expandedChildrenFams,
+            { type: 'lastLeftEdge', value: -FOCUS_TO_SIB },
         ));
     }
 
@@ -154,11 +157,12 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         rightmostSpouseAreaX + NODE_W / 2 + H_GAP + NODE_W / 2 :
         FOCUS_TO_SIB;
     if (youngerSibs.length > 0) {
-        nodes.push(..._packRow(
+        nodes.push(..._packRowWithDescendants(
             youngerSibs.map(xref => ({ xref })),
-            youngerSibStartX,
             0,
             'sibling',
+            expandedChildrenFams,
+            { type: 'firstLeftEdge', value: youngerSibStartX },
         ));
     }
 
@@ -213,18 +217,18 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 
             // Place siblings BEFORE parents so _placeAncestors can emit an umbrella
             // spanning each ancestor + its siblings.
-            _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges);
-            _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges);
+            _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges);
+            _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges);
 
-            _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, nodes, edges);
-            _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, nodes, edges);
+            _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
+            _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
         } else {
             // Single parent: centered on the sibling group.
             const singleParent = fatherXref || motherXref;
             const singleParentX = focusGroupCenterX - NODE_W / 2;
             nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-            _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges);
-            _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, nodes, edges);
+            _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges);
+            _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
         }
 
         // Umbrella anchor drop (mirrors the descendant umbrella).
@@ -453,7 +457,7 @@ function _placeChildrenOfFam(famXref, nodes, edges) {
 // Recursive ancestor placement
 // ---------------------------------------------------------------------------
 
-function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSiblingsXrefs, nodes, edges) {
+function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges) {
     const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
     const SLOT = NODE_W + H_GAP;
 
@@ -507,11 +511,11 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSibl
 
         // Place siblings of f/m BEFORE recursing deeper so their subtree umbrellas
         // can span the right groups.
-        _placeAncestorSiblings(fatherXref, fatherX, nextY, expandedSiblingsXrefs, expandedAncestors, nodes, edges);
-        _placeAncestorSiblings(motherXref, motherX, nextY, expandedSiblingsXrefs, expandedAncestors, nodes, edges);
+        _placeAncestorSiblings(fatherXref, fatherX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges);
+        _placeAncestorSiblings(motherXref, motherX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges);
 
-        _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
-        _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+        _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
+        _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
     } else {
         const singleParent = fatherXref || motherXref;
         const singleX = groupCenterX - NODE_W / 2;
@@ -520,8 +524,8 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSibl
         // Single parent → umbrella / straight drop from parent bottom to child top.
         _emitChildUmbrella(xref, x, y, nextY + NODE_H, nodes, edges);
 
-        _placeAncestorSiblings(singleParent, singleX, nextY, expandedSiblingsXrefs, expandedAncestors, nodes, edges);
-        _placeAncestors(singleParent, singleX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, nodes, edges);
+        _placeAncestorSiblings(singleParent, singleX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges);
+        _placeAncestors(singleParent, singleX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
     }
 }
 
@@ -615,7 +619,7 @@ function _emitChildUmbrella(xref, x, y, anchorY, nodes, edges) {
 // so the r=8 sibling-expand chevron fits between them without overlap.
 // Grouping is handled by the parent umbrella (_emitChildUmbrella); no bracket
 // edge is emitted from here.
-function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effectiveExpandedAncestors, nodes, edges) {
+function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges) {
     if (!expandedSiblingsXrefs || !expandedSiblingsXrefs.has(ancXref)) return;
     const sibs = RELATIVES[ancXref]?.siblings ?? [];
     if (sibs.length === 0) return;
@@ -627,11 +631,23 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
     const midY = ancY + NODE_H / 2;
     const toRight = _hasRightChevron(ancXref); // female with siblings
 
+    // Extra padding beyond pill edge to reserve space for a sibling's expanded-
+    // descendant subtree poking out past the pill. Only a sibling's OWN pill
+    // carries this (descendants hang under the sibling, not spouses).
+    const extraRight = (sx) => Math.max(0, _descendantHalfwidth(sx, 'right', expandedChildrenFams) - NODE_W / 2);
+    const extraLeft = (sx) => Math.max(0, _descendantHalfwidth(sx, 'left', expandedChildrenFams) - NODE_W / 2);
+
     if (toRight) {
         // Siblings fan right of ancestor, chronological L→R (oldest closest to ancestor).
         let cursor = ancX + NODE_W + CHEVRON_CLEARANCE;
         sorted.forEach((sibXref, i) => {
-            if (i > 0) cursor += H_GAP;
+            if (i > 0) {
+                // Previous sibling's descendants may poke right of its pill; current
+                // sibling's descendants may poke left of its pill. Add both + H_GAP.
+                cursor += H_GAP + extraLeft(sibXref);
+            } else {
+                cursor += extraLeft(sibXref);
+            }
             const sibX = cursor;
             nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
             cursor = sibX + NODE_W;
@@ -642,17 +658,20 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                 edges.push({ x1: cursor, y1: midY, x2: spX, y2: midY, type: 'marriage' });
                 cursor = spX + NODE_W;
             });
+            // Descendants of this sibling may extend past the group's right edge.
+            cursor = Math.max(cursor, sibX + NODE_W / 2 + _descendantHalfwidth(sibXref, 'right', expandedChildrenFams));
         });
     } else {
         // Siblings fan left of ancestor, chronological L→R (youngest closest to ancestor).
-        // Iterate siblings innermost-first (youngest first) so we walk leftward from
-        // the ancestor. Reverse `sorted` (which is asc by birth year) to get desc.
         const reversed = [...sorted].reverse();
-        let rightEdge = ancX - CHEVRON_CLEARANCE; // right edge of next group placed
+        let rightEdge = ancX - CHEVRON_CLEARANCE;
         reversed.forEach((sibXref, i) => {
-            if (i > 0) rightEdge -= H_GAP;
+            if (i > 0) {
+                rightEdge -= H_GAP + extraRight(sibXref);
+            } else {
+                rightEdge -= extraRight(sibXref);
+            }
             const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
-            // Sibling occupies the rightmost slot of its own group; spouses fan further left.
             const sibX = rightEdge - NODE_W;
             nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
             let cursorLeft = sibX;
@@ -662,7 +681,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                 edges.push({ x1: spX + NODE_W, y1: midY, x2: cursorLeft, y2: midY, type: 'marriage' });
                 cursorLeft = spX;
             });
-            rightEdge = cursorLeft;
+            rightEdge = Math.min(cursorLeft, sibX + NODE_W / 2 - _descendantHalfwidth(sibXref, 'left', expandedChildrenFams));
         });
     }
 }
@@ -854,6 +873,86 @@ function _requiredSeparation(fatherXref, motherXref, expandedAncestors, expanded
         sep = Math.max(sep, rf[d] + lm[d] + gap);
     }
     return sep;
+}
+
+// ---------------------------------------------------------------------------
+// Descendant-aware sibling packing
+// ---------------------------------------------------------------------------
+
+// How far the xref's own subtree (the pill itself plus expanded children,
+// grandchildren, etc.) extends horizontally from xref's CENTER on `side`
+// ('left' | 'right'). Descendant placement mirrors _placeChildrenOfFam:
+// children are centered under the xref at (NODE_W + H_GAP) slots, and each
+// child can itself have an expanded FAM.
+//
+// Used by sibling-row packing so that two adjacent siblings who both expand
+// their kids leave enough horizontal room for their cousin subtrees.
+function _descendantHalfwidth(xref, side, expandedChildrenFams, visited) {
+    const { NODE_W, H_GAP } = DESIGN;
+    if (!expandedChildrenFams || expandedChildrenFams.size === 0) return NODE_W / 2;
+    if (typeof FAMILIES === 'undefined' || !FAMILIES) return NODE_W / 2;
+    if (!visited) visited = new Set();
+    if (visited.has(xref)) return NODE_W / 2;
+    visited.add(xref);
+
+    let extent = NODE_W / 2;
+    for (const famXref of expandedChildrenFams) {
+        const fam = FAMILIES[famXref];
+        if (!fam) continue;
+        if (fam.husb !== xref && fam.wife !== xref) continue;
+        const chil = fam.chil || [];
+        if (chil.length === 0) continue;
+        const sorted = _sortByBirthYear(chil);
+        // Children packed centered under xref at NODE_W + H_GAP slots.
+        const totalWidth = sorted.length * NODE_W + (sorted.length - 1) * H_GAP;
+        const groupStart = -totalWidth / 2; // relative to xref center
+        sorted.forEach((cx, i) => {
+            const childCenterOffset = groupStart + i * (NODE_W + H_GAP) + NODE_W / 2;
+            const childHalf = _descendantHalfwidth(cx, side, expandedChildrenFams, visited);
+            const reach = side === 'right' ?
+                childCenterOffset + childHalf :
+                -childCenterOffset + childHalf;
+            if (reach > extent) extent = reach;
+        });
+    }
+    visited.delete(xref);
+    return extent;
+}
+
+// Pack `items` left-to-right on row `y`, computing inter-pair gaps from each
+// neighbor's descendant subtree halfwidth so that cousin rows don't collide.
+// The gap between two sibling centers is:
+//   leftSib.rightHalf + rightSib.leftHalf + H_GAP
+// where *Half is max(NODE_W/2, descendant-subtree extent on that side).
+//
+// `anchor` describes how to position the final row:
+//   { type: 'leftEdgeCenter', value: cx }  — first node's CENTER at cx
+//   { type: 'rightEdgeCenter', value: cx } — last node's CENTER at cx
+//   { type: 'leftEdgeX', value: x }        — first node's LEFT EDGE at x
+function _packRowWithDescendants(items, y, role, expandedChildrenFams, anchor) {
+    const { NODE_W, H_GAP, ROW_HEIGHT } = DESIGN;
+    const xs = [];
+    items.forEach((it, i) => {
+        if (i === 0) {
+            xs.push(0);
+        } else {
+            const prevRight = _descendantHalfwidth(items[i - 1].xref, 'right', expandedChildrenFams);
+            const currLeft = _descendantHalfwidth(it.xref, 'left', expandedChildrenFams);
+            const prevCenter = xs[i - 1] + NODE_W / 2;
+            const currCenter = prevCenter + prevRight + currLeft + H_GAP;
+            xs.push(currCenter - NODE_W / 2);
+        }
+    });
+    let shift = 0;
+    if (anchor.type === 'firstLeftEdge') shift = anchor.value - xs[0];
+    else if (anchor.type === 'lastLeftEdge') shift = anchor.value - xs[xs.length - 1];
+    return items.map((it, i) => ({
+        xref: it.xref,
+        x: xs[i] + shift,
+        y,
+        generation: Math.round(y / ROW_HEIGHT),
+        role,
+    }));
 }
 
 // ---------------------------------------------------------------------------

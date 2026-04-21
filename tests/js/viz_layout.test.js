@@ -2001,3 +2001,139 @@ describe('computeLayout — expandedChildrenFams: aunt\'s kids (cousins)', () =>
         expect(c1.generation).toBe(0);
     });
 });
+
+// ── Stage A: cousin spacing via descendant-aware contours ──────────────────
+
+// Regression for cousin-overlap bug: when two siblings on the same row both
+// expand their children, the default SLOT-based packing lets the cousins run
+// into each other. Packing must reserve enough horizontal space for each
+// sibling's descendant subtree.
+
+describe('computeLayout — two focus-siblings with expanded kids: no cousin overlap', () => {
+    beforeEach(() => {
+        // FOCUS has two older sisters, SIB_A and SIB_B.
+        // SIB_A has 3 children (A1..A3), SIB_B has 3 children (B1..B3).
+        // Both sibling FAMs are expanded. Cousin rows must not overlap.
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1900 },
+                '@SIB_A@': { birth_year: 1895 },
+                '@SIB_B@': { birth_year: 1896 },
+                '@A1@': { birth_year: 1920 },
+                '@A2@': { birth_year: 1922 },
+                '@A3@': { birth_year: 1924 },
+                '@B1@': { birth_year: 1921 },
+                '@B2@': { birth_year: 1923 },
+                '@B3@': { birth_year: 1925 },
+            },
+            relatives: {
+                '@FOCUS@': { siblings: ['@SIB_A@', '@SIB_B@'], spouses: [] },
+            },
+            families: {
+                '@FAM_A@': { husb: '@SIB_A@', wife: null, chil: ['@A1@', '@A2@', '@A3@'] },
+                '@FAM_B@': { husb: '@SIB_B@', wife: null, chil: ['@B1@', '@B2@', '@B3@'] },
+            },
+        });
+    });
+
+    it('sibling pills themselves do not overlap', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FAM_A@', '@FAM_B@']));
+        const a = nodes.find(n => n.xref === '@SIB_A@');
+        const b = nodes.find(n => n.xref === '@SIB_B@');
+        expect(a).toBeDefined();
+        expect(b).toBeDefined();
+        const [left, right] = a.x < b.x ? [a, b] : [b, a];
+        expect(right.x - (left.x + NODE_W)).toBeGreaterThanOrEqual(H_GAP);
+    });
+
+    it('rightmost child of left sibling does not overlap leftmost child of right sibling', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FAM_A@', '@FAM_B@']));
+        // SIB_A is placed left of SIB_B by birth-year sort (1895 < 1896).
+        const a3 = nodes.find(n => n.xref === '@A3@'); // rightmost child of SIB_A
+        const b1 = nodes.find(n => n.xref === '@B1@'); // leftmost child of SIB_B
+        expect(a3).toBeDefined();
+        expect(b1).toBeDefined();
+        expect(b1.x - (a3.x + NODE_W)).toBeGreaterThanOrEqual(H_GAP);
+    });
+});
+
+describe('computeLayout — two ancestor-siblings with expanded kids: no cousin overlap', () => {
+    beforeEach(() => {
+        // Focus's mother has two sisters (aunts). Each aunt has 3 kids.
+        // Mother's siblings are expanded; both aunts' FAMs are expanded.
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1900 },
+                '@MOTHER@': { birth_year: 1875, sex: 'F' },
+                '@AUNT_A@': { birth_year: 1870, sex: 'F' },
+                '@AUNT_B@': { birth_year: 1872, sex: 'F' },
+                '@CA1@': { birth_year: 1895 },
+                '@CA2@': { birth_year: 1897 },
+                '@CA3@': { birth_year: 1899 },
+                '@CB1@': { birth_year: 1896 },
+                '@CB2@': { birth_year: 1898 },
+                '@CB3@': { birth_year: 1900 },
+            },
+            parents: {
+                '@FOCUS@': [null, '@MOTHER@'],
+            },
+            relatives: {
+                '@MOTHER@': { siblings: ['@AUNT_A@', '@AUNT_B@'], spouses: [] },
+            },
+            families: {
+                '@FAM_A@': { husb: null, wife: '@AUNT_A@', chil: ['@CA1@', '@CA2@', '@CA3@'] },
+                '@FAM_B@': { husb: null, wife: '@AUNT_B@', chil: ['@CB1@', '@CB2@', '@CB3@'] },
+            },
+        });
+    });
+
+    it('aunt pills themselves do not overlap', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@FAM_A@', '@FAM_B@']));
+        const a = nodes.find(n => n.xref === '@AUNT_A@');
+        const b = nodes.find(n => n.xref === '@AUNT_B@');
+        expect(a).toBeDefined();
+        expect(b).toBeDefined();
+        const [left, right] = a.x < b.x ? [a, b] : [b, a];
+        expect(right.x - (left.x + NODE_W)).toBeGreaterThanOrEqual(H_GAP);
+    });
+
+    it('no two cousins on focus row overlap', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@FAM_A@', '@FAM_B@']));
+        const cousins = nodes.filter(n => /^@C[AB]\d@$/.test(n.xref));
+        expect(cousins.length).toBe(6);
+        const sorted = cousins.slice().sort((x, y) => x.x - y.x);
+        for (let i = 1; i < sorted.length; i++) {
+            const gap = sorted[i].x - (sorted[i - 1].x + NODE_W);
+            expect(gap, `${sorted[i - 1].xref} → ${sorted[i].xref}`).toBeGreaterThanOrEqual(0);
+        }
+    });
+});
+
+describe('computeLayout — single sibling with many expanded kids: pill itself stays adjacent to focus', () => {
+    beforeEach(() => {
+        // Regression: when a single sibling has many expanded kids, the sibling pill
+        // itself must still sit adjacent to focus (not get pushed away). Only the
+        // children get spaced out — the sibling pill is placed at the default slot.
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1900 },
+                '@SIB@': { birth_year: 1895 },
+                '@K1@': { birth_year: 1920 },
+                '@K2@': { birth_year: 1922 },
+                '@K3@': { birth_year: 1924 },
+            },
+            relatives: {
+                '@FOCUS@': { siblings: ['@SIB@'], spouses: [] },
+            },
+            families: {
+                '@FAM@': { husb: '@SIB@', wife: null, chil: ['@K1@', '@K2@', '@K3@'] },
+            },
+        });
+    });
+
+    it('lone older sibling with 3 expanded kids sits at x = -FOCUS_TO_SIB (not pushed further left)', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FAM@']));
+        const sib = nodes.find(n => n.xref === '@SIB@');
+        expect(sib.x).toBe(-FOCUS_TO_SIB);
+    });
+});
