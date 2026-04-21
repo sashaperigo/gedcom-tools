@@ -263,6 +263,34 @@ class TestBuildAllPlaces:
         result = build_all_places(indis, fams=fams)
         assert result.count('Athens, Greece') == 1
 
+    def test_fam_div_place_included(self):
+        # Regression: build_all_places previously used fam.get('div') (singular)
+        # instead of iterating fam.get('divs', []).  Divorce places were silently
+        # excluded from autocomplete.
+        indis = {}
+        fams = {
+            '@F1@': {'marrs': [], 'divs': [{'date': '1930', 'place': 'Vienna, Austria'}]},
+        }
+        result = build_all_places(indis, fams=fams)
+        assert 'Vienna, Austria' in result
+
+    def test_fam_div_without_place_excluded(self):
+        indis = {}
+        fams = {'@F1@': {'marrs': [], 'divs': [{'date': '1930'}]}}
+        assert build_all_places(indis, fams=fams) == []
+
+    def test_fam_marr_and_div_places_both_included(self):
+        indis = {}
+        fams = {
+            '@F1@': {
+                'marrs': [{'place': 'London, England'}],
+                'divs':  [{'place': 'Paris, France'}],
+            }
+        }
+        result = build_all_places(indis, fams=fams)
+        assert 'London, England' in result
+        assert 'Paris, France' in result
+
 
 # ---------------------------------------------------------------------------
 # Note citation parsing
