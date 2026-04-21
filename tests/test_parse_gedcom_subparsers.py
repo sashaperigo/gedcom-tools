@@ -10,7 +10,6 @@ Tests drive the API: sub-parsers receive (state, lvl, tag, val, raw_val, record)
 and mutate record + state in place.
 """
 
-import pytest
 
 from viz_ancestors import _parse_indi_line, _parse_fam_line, _parse_sour_line
 

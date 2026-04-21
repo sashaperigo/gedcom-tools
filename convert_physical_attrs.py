@@ -28,6 +28,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 
 from gedcom_io import level_tag as _level_tag, write_lines

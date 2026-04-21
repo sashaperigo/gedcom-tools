@@ -169,7 +169,9 @@ class TestEdgeCases:
         assert Path(tmp_copy).read_text(encoding='utf-8') == original
 
     def test_dry_run_stats_match_real(self, tmp_copy):
-        import shutil, tempfile, os
+        import shutil
+        import tempfile
+        import os
         dry = convert_physical_attrs(tmp_copy, dry_run=True)
         with tempfile.NamedTemporaryFile(suffix='.ged', delete=False) as t:
             real_copy = t.name

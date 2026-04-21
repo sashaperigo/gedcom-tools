@@ -1220,7 +1220,7 @@ class _ReviewHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, fmt, *args):
+    def log_message(self, _fmt, *_args):
         pass  # suppress access logs
 
 
@@ -1282,7 +1282,7 @@ def run_web_review(
     url = f'http://localhost:{port}/'
     print(f'\n  Opening merge review UI at {url}')
     print(f'  Progress auto-saves to: {session_path or "(no session file)"}')
-    print(f'  Close your browser or press Ctrl+C to pause and save.\n')
+    print('  Close your browser or press Ctrl+C to pause and save.\n')
     webbrowser.open(url)
 
     try:

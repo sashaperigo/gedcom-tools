@@ -148,7 +148,7 @@ def add_unaccented_names(
                             print(f'  {current_xref}: {name_val!r}  →  {unaccented!r}')
                         else:
                             lines_out.append(f'1 NAME {unaccented}\n')
-                            lines_out.append(f'2 TYPE AKA\n')
+                            lines_out.append('2 TYPE AKA\n')
                         # Update in-memory set to prevent duplicate AKAs within same run
                         indi_names.setdefault(current_xref, set()).add(unaccented)
                         names_added += 1

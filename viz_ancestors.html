@@ -6,7 +6,7 @@
     <title>Ancestors of __ROOT_NAME__</title>
     <style>
         __STYLES__
-</style>
+    </style>
 </head>
 
 <body>
@@ -80,7 +80,7 @@
             </div>
             <div class="event-modal-field" id="event-modal-spouse-row" style="display:none">
                 <label>Spouse / Other Party</label>
-                <input type="text" id="event-modal-spouse-input" placeholder="Search by name\u2026" autocomplete="off" onkeydown="if(event.key==='Escape')closeEventModal()">
+                <input type="text" id="event-modal-spouse-input" placeholder="Search by name…" autocomplete="off" onkeydown="if(event.key==='Escape')closeEventModal()">
                 <div id="event-modal-spouse-results"></div>
             </div>
             <div class="event-modal-field" id="event-modal-inline-row">
@@ -157,7 +157,7 @@
             <h3 id="add-godparent-modal-title">Add Godparent</h3>
             <div class="event-modal-field">
                 <label>Search by name</label>
-                <input type="text" id="add-godparent-modal-search" placeholder="Type a name\u2026" onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
+                <input type="text" id="add-godparent-modal-search" placeholder="Type a name…" onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
                 <div id="add-godparent-modal-results"></div>
             </div>
             <div class="event-modal-actions">
@@ -204,7 +204,7 @@
             <h3 id="change-parent-modal-title">Change Parent</h3>
             <div class="event-modal-field">
                 <label>Search by name (blank = no parent)</label>
-                <input type="text" id="change-parent-modal-search" placeholder="Type a name\u2026" onkeydown="if(event.key==='Escape')closeChangeParentModal()">
+                <input type="text" id="change-parent-modal-search" placeholder="Type a name…" onkeydown="if(event.key==='Escape')closeChangeParentModal()">
                 <div id="change-parent-modal-results"></div>
             </div>
             <div class="event-modal-actions">
@@ -399,41 +399,19 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         _updateHeaderH();
-        console.log('[boot] DOMContentLoaded fired');
-        console.log('[boot] ROOT_XREF =', ROOT_XREF);
-        console.log('[boot] typeof initState =', typeof initState);
-        console.log('[boot] typeof initRenderer =', typeof initRenderer);
-        console.log('[boot] typeof initPanel =', typeof initPanel);
-        console.log('[boot] typeof computeLayout =', typeof computeLayout);
-        console.log('[boot] typeof render =', typeof render);
-        console.log('[boot] PEOPLE keys (first 3):', Object.keys(PEOPLE || {}).slice(0, 3));
 
-        try {
-            initState(ROOT_XREF);
-            console.log('[boot] initState OK, state =', JSON.stringify(getState()));
-        } catch (e) { console.error('[boot] initState FAILED:', e); }
-
-        try {
-            initPanel(document.getElementById('detail-panel'));
-            console.log('[boot] initPanel OK');
-        } catch (e) { console.error('[boot] initPanel FAILED:', e); }
+        initState(ROOT_XREF);
+        initPanel(document.getElementById('detail-panel'));
 
         const svgEl = document.getElementById('tree');
-        console.log('[boot] svgEl =', svgEl);
-        try {
-            if (svgEl) initRenderer(svgEl);
-            console.log('[boot] initRenderer OK');
-        } catch (e) { console.error('[boot] initRenderer FAILED:', e); }
+        if (svgEl) initRenderer(svgEl);
 
-        onStateChange(function(state) { render(); });
+        onStateChange(() => render());
 
         const homeBtn = document.getElementById('home-btn');
         if (homeBtn) homeBtn.addEventListener('click', () => resetToRoot(ROOT_XREF));
 
-        try {
-            render();
-            console.log('[boot] initial render OK');
-        } catch (e) { console.error('[boot] render FAILED:', e); }
+        render();
     });
     </script>
 </body>

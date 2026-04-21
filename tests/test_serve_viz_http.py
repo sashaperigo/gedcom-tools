@@ -108,7 +108,8 @@ class TestGetHandler:
     def test_root_path_returns_200(self, live_server):
         ged, post, get, server = live_server
         # Patch OUT to a real temp file so SimpleHTTPRequestHandler can serve it
-        import tempfile, pathlib
+        import tempfile
+        import pathlib
         with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w') as f:
             f.write('<html>test</html>')
             out_path = pathlib.Path(f.name)
@@ -1112,7 +1113,7 @@ class TestEditCitationEndpoint:
         """Editing a citation that had multi-line TEXT down to one line must not
         leave orphan CONT lines behind."""
         ged, post, _, _ = live_server
-        sour_xref = self._setup_citation(post)
+        self._setup_citation(post)
         post('/api/edit_citation', {
             'xref': '@I1@', 'citation_key': 'BIRT:0:0',
             'page': 'p. 1', 'text': 'First\nSecond\nThird', 'note': '',
@@ -1485,7 +1486,7 @@ class TestAddPersonEndpoint:
 
     def test_birth_year_written(self, live_server):
         ged, post, _, _ = live_server
-        resp = post('/api/add_person', {
+        post('/api/add_person', {
             'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
             'birth_year': '1975',
             'rel_type': 'spouse_of', 'rel_xref': '@I3@',
@@ -1503,7 +1504,7 @@ class TestAddPersonEndpoint:
         xref = resp['xref']
         text = _ged_text(ged)
         # A FAM record should reference both
-        assert f'@F' in text
+        assert '@F' in text
         assert f'1 HUSB {xref}' in text or f'1 WIFE {xref}' in text
 
     def test_sibling_of_adds_to_same_fam(self, live_server):
@@ -2099,7 +2100,6 @@ class TestEditSourceRecordContinuationLines:
                 # The preceding level-1 line should be a text-value tag, not be absent
                 prev_l1 = None
                 for j in range(i - 1, -1, -1):
-                    m = ln.strip()
                     import re
                     pm = re.match(r'^(\d+)\s', lines[j])
                     if pm:
@@ -2143,12 +2143,13 @@ class TestCitationSerialisationContract:
         """citations[n].sourceXref exists and citations[n].sour_xref does not."""
         import viz_ancestors
         ged = tmp_path / 'contract.ged'
-        import shutil, pathlib
+        import shutil
+        import pathlib
         shutil.copy(
             str(pathlib.Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'),
             str(ged),
         )
-        expected_title = self._setup_ged_with_citation(ged)
+        self._setup_ged_with_citation(ged)
         indis, fams, sources = viz_ancestors.parse_gedcom(str(ged))
         people = viz_ancestors.build_people_json(set(indis.keys()), indis, fams, sources)
         birt_events = [e for e in people['@I2@']['events'] if e['tag'] == 'BIRT']
@@ -2166,9 +2167,9 @@ class TestCitationSerialisationContract:
     def test_source_title_resolves_via_sourceXref(self, tmp_path):
         """SOURCES[citation.sourceXref].titl returns the expected title."""
         import viz_ancestors
-        import json as _json
         ged = tmp_path / 'contract2.ged'
-        import shutil, pathlib
+        import shutil
+        import pathlib
         shutil.copy(
             str(pathlib.Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'),
             str(ged),
@@ -2196,15 +2197,17 @@ class TestCitationSerialisationContract:
         then verify SOURCES[citation.sourceXref].titl is non-empty.
         """
         import viz_ancestors
-        import json as _json, re as _re
+        import json as _json
+        import re as _re
         ged = tmp_path / 'contract3.ged'
-        import shutil, pathlib
+        import shutil
+        import pathlib
         shutil.copy(
             str(pathlib.Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'),
             str(ged),
         )
         expected_title = self._setup_ged_with_citation(ged)
-        result = viz_ancestors.viz_ancestors(
+        viz_ancestors.viz_ancestors(
             str(ged), '@I2@',
             str(tmp_path / 'out.html'),
         )
@@ -2250,7 +2253,7 @@ class TestAddPersonParentOf:
         # WIFE link added to @F6@
         assert f'1 WIFE {new_xref}' in result
         # New INDI has FAMS back-link to @F6@
-        assert f'1 FAMS @F6@' in result.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '1 FAMS @F6@' in result.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
 
     def test_parent_of_returns_400_when_slot_occupied(self, live_server):
         """Adding a second WIFE to a family that already has one should return 400."""

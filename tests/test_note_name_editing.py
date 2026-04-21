@@ -367,7 +367,6 @@ class TestAddNote:
 
     def test_long_line_conc_value_no_loss(self):
         # The full text must round-trip through the NOTE/CONC representation
-        from serve_viz import _NOTE_LINE_MAX
         word = 'ab ' * 90  # well over limit, with word boundaries
         encoded = _encode_note_lines(word.strip())
         reconstructed = encoded[0][len('1 NOTE '):]

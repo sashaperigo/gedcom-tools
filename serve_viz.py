@@ -863,7 +863,7 @@ def _find_citation_block(
     # Person-level: 'SOUR:N' (INDI only — FAM has no level-1 SOUR concept here)
     if parts[0] == 'SOUR' and len(parts) == 2:
         if is_fam:
-            return None, None, None, f'Person-level citations not supported on FAM records'
+            return None, None, None, 'Person-level citations not supported on FAM records'
         try:
             cite_n = int(parts[1])
         except ValueError:
@@ -1694,7 +1694,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(400, 'rel_xref is required')
                 return
             if rel_type not in ('child_of', 'parent_of', 'spouse_of', 'sibling_of'):
-                self.send_error(400, f'rel_type must be one of child_of, parent_of, spouse_of, sibling_of')
+                self.send_error(400, 'rel_type must be one of child_of, parent_of, spouse_of, sibling_of')
                 return
 
             lines = GED.read_text(encoding='utf-8').splitlines()
@@ -1952,7 +1952,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # Also add reciprocal Godchild ASSO on the godparent's record
                 gp_start, gp_end, gp_err = _find_indi_block(new_lines, godparent_xref)
                 if gp_err is None:
-                    new_lines = new_lines[:gp_end] + [f'1 ASSO {xref}', f'2 RELA Godchild'] + new_lines[gp_end:]
+                    new_lines = new_lines[:gp_end] + [f'1 ASSO {xref}', '2 RELA Godchild'] + new_lines[gp_end:]
                 _write_gedcom_atomic(new_lines)
                 print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})")
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
@@ -2059,7 +2059,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         super().end_headers()
 
-    def log_message(self, fmt, *args):
+    def log_message(self, _fmt, *_args):
         pass
 
 
@@ -2067,7 +2067,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 # Graceful shutdown: commit on Ctrl-C
 # ---------------------------------------------------------------------------
 
-def _shutdown_handler(sig, frame):
+def _shutdown_handler(_sig, _frame):
     sys.exit(0)
 
 

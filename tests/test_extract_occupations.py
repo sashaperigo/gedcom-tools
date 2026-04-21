@@ -353,7 +353,9 @@ class TestEdgeCases:
     def test_dry_run_stats_match_real(self, tmp_copy):
         dry = extract_occupations(tmp_copy, dry_run=True)
         # tmp_copy is now modified by real run in a different tmp_path, so copy again
-        import shutil, tempfile, os
+        import shutil
+        import tempfile
+        import os
         with tempfile.NamedTemporaryFile(suffix='.ged', delete=False) as t:
             real_copy = t.name
         try:

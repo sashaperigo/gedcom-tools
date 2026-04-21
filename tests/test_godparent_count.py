@@ -7,7 +7,6 @@ Tests cover all specified violation cases from the task spec.
 import textwrap
 from pathlib import Path
 
-import pytest
 
 from gedcom_linter import scan_godparent_count
 

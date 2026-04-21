@@ -5887,11 +5887,11 @@ def main():
                     name = name_map.get(xref, xref)
                     reasons = []
                     if total > 2:
-                        reasons.append(f'expected at most 2 total')
+                        reasons.append('expected at most 2 total')
                     if m_count > 1:
-                        reasons.append(f'expected at most 1 male godparent')
+                        reasons.append('expected at most 1 male godparent')
                     if f_count > 1:
-                        reasons.append(f'expected at most 1 female godparent')
+                        reasons.append('expected at most 1 female godparent')
                     reason_str = ', '.join(reasons)
                     print(f'  {xref} {name}: {total} godparents ({m_count}M, {f_count}F) — {reason_str}')
                 if len(godparent_issues) > 20:
