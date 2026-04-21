@@ -332,10 +332,9 @@ def scan_duplicate_sources(path: str):
         lines = f.readlines()
 
     violations = []
-    seen: dict = {}
+    seen: defaultdict = defaultdict(set)
 
     for start_i, _end_i, key, children_t in _iter_sour_blocks_with_context(lines):
-        seen.setdefault(key, set())
         if children_t in seen[key]:
             violations.append((start_i + 1, key[2]))
         else:
@@ -352,11 +351,10 @@ def fix_duplicate_sources(path: str, dry_run: bool = False):
     with open(path, encoding='utf-8') as f:
         lines = f.readlines()
 
-    seen: dict = {}
+    seen: defaultdict = defaultdict(set)
     remove_ranges = []  # list of (start_idx, end_idx) to drop
 
     for start_i, end_i, key, children_t in _iter_sour_blocks_with_context(lines):
-        seen.setdefault(key, set())
         if children_t in seen[key]:
             if dry_run:
                 print(f'  line {start_i + 1}: duplicate {key[2]} under {key[1]}')
@@ -368,7 +366,7 @@ def fix_duplicate_sources(path: str, dry_run: bool = False):
         drop = set()
         for start, end in remove_ranges:
             drop.update(range(start, end))
-        lines_out = [l for idx, l in enumerate(lines) if idx not in drop]
+        lines_out = [line for idx, line in enumerate(lines) if idx not in drop]
         tmp = path + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as f:
             f.writelines(lines_out)
@@ -604,75 +602,13 @@ def scan_long_lines(path: str, max_len: int = GEDCOM_MAX_LINE):
     return violations
 
 
-def scan_addr_under_plac(path: str) -> list[tuple[int, int]]:
+def _scan_tag_under_parent(
+    path: str, child_tag: str, parent_tag: str, track_sour: bool = False
+) -> list[tuple[int, int]]:
     """
-    Return list of (lineno, level) for ADDR lines that are direct children of
-    PLAC lines (i.e., ADDR at level N+1 immediately following PLAC at level N).
-
-    GEDCOM 5.5.1 does not define ADDR as a subordinate of PLAC. ADDR belongs
-    as a sibling of PLAC (both children of the parent event), not nested under it.
-    """
-    violations: list[tuple[int, int]] = []
-    prev_level: int | None = None
-    prev_tag: str | None = None
-    with open(path, encoding='utf-8') as f:
-        for lineno, raw in enumerate(f, 1):
-            line = raw.rstrip('\n')
-            m = re.match(r'^(\d+) ([A-Z_]+)', line)
-            if not m:
-                continue
-            curr_level = int(m.group(1))
-            curr_tag = m.group(2)
-            if curr_tag == 'ADDR' and prev_tag == 'PLAC' and curr_level == prev_level + 1:
-                violations.append((lineno, curr_level))
-            prev_level = curr_level
-            prev_tag = curr_tag
-    return violations
-
-
-def scan_note_under_plac(path: str) -> list[tuple[int, int]]:
-    """
-    Return list of (lineno, level) for NOTE lines that are direct children of
-    PLAC lines (i.e., NOTE at level N+1 immediately following PLAC at level N),
-    outside of any SOUR block.
-
-    Venue names (church, cemetery, etc.) stored as NOTE children of PLAC should
-    instead be ADDR siblings of PLAC, per the project convention.
-    """
-    violations: list[tuple[int, int]] = []
-    prev_level: int | None = None
-    prev_tag: str | None = None
-    in_sour_depth: int | None = None  # level at which SOUR opened, or None
-    with open(path, encoding='utf-8') as f:
-        for lineno, raw in enumerate(f, 1):
-            line = raw.rstrip('\n')
-            m = re.match(r'^(\d+) ([A-Z_]+)', line)
-            if not m:
-                continue
-            curr_level = int(m.group(1))
-            curr_tag = m.group(2)
-            # Track SOUR entry/exit
-            if curr_tag == 'SOUR' and prev_level is not None and curr_level > 0:
-                in_sour_depth = curr_level
-            elif in_sour_depth is not None and curr_level <= in_sour_depth:
-                in_sour_depth = None
-            if (curr_tag == 'NOTE' and prev_tag == 'PLAC'
-                    and curr_level == prev_level + 1
-                    and in_sour_depth is None):
-                violations.append((lineno, curr_level))
-            prev_level = curr_level
-            prev_tag = curr_tag
-    return violations
-
-
-def scan_note_under_addr(path: str) -> list[tuple[int, int]]:
-    """
-    Return list of (lineno, level) for NOTE lines that are direct children of
-    ADDR lines (i.e., NOTE at level N+1 immediately following ADDR at level N),
-    outside of any SOUR block.
-
-    These should be restructured so the venue name appears on the ADDR line
-    and the street address becomes a CONT continuation.
+    Return (lineno, level) for every line where ``child_tag`` at level N+1
+    immediately follows ``parent_tag`` at level N.  When ``track_sour`` is
+    True, matches inside a SOUR citation block are excluded.
     """
     violations: list[tuple[int, int]] = []
     prev_level: int | None = None
@@ -686,17 +622,53 @@ def scan_note_under_addr(path: str) -> list[tuple[int, int]]:
                 continue
             curr_level = int(m.group(1))
             curr_tag = m.group(2)
-            if curr_tag == 'SOUR' and prev_level is not None and curr_level > 0:
-                in_sour_depth = curr_level
-            elif in_sour_depth is not None and curr_level <= in_sour_depth:
-                in_sour_depth = None
-            if (curr_tag == 'NOTE' and prev_tag == 'ADDR'
+            if track_sour:
+                if curr_tag == 'SOUR' and prev_level is not None and curr_level > 0:
+                    in_sour_depth = curr_level
+                elif in_sour_depth is not None and curr_level <= in_sour_depth:
+                    in_sour_depth = None
+            if (curr_tag == child_tag and prev_tag == parent_tag
                     and curr_level == prev_level + 1
-                    and in_sour_depth is None):
+                    and (not track_sour or in_sour_depth is None)):
                 violations.append((lineno, curr_level))
             prev_level = curr_level
             prev_tag = curr_tag
     return violations
+
+
+def scan_addr_under_plac(path: str) -> list[tuple[int, int]]:
+    """
+    Return list of (lineno, level) for ADDR lines that are direct children of
+    PLAC lines (i.e., ADDR at level N+1 immediately following PLAC at level N).
+
+    GEDCOM 5.5.1 does not define ADDR as a subordinate of PLAC. ADDR belongs
+    as a sibling of PLAC (both children of the parent event), not nested under it.
+    """
+    return _scan_tag_under_parent(path, 'ADDR', 'PLAC')
+
+
+def scan_note_under_plac(path: str) -> list[tuple[int, int]]:
+    """
+    Return list of (lineno, level) for NOTE lines that are direct children of
+    PLAC lines (i.e., NOTE at level N+1 immediately following PLAC at level N),
+    outside of any SOUR block.
+
+    Venue names (church, cemetery, etc.) stored as NOTE children of PLAC should
+    instead be ADDR siblings of PLAC, per the project convention.
+    """
+    return _scan_tag_under_parent(path, 'NOTE', 'PLAC', track_sour=True)
+
+
+def scan_note_under_addr(path: str) -> list[tuple[int, int]]:
+    """
+    Return list of (lineno, level) for NOTE lines that are direct children of
+    ADDR lines (i.e., NOTE at level N+1 immediately following ADDR at level N),
+    outside of any SOUR block.
+
+    These should be restructured so the venue name appears on the ADDR line
+    and the street address becomes a CONT continuation.
+    """
+    return _scan_tag_under_parent(path, 'NOTE', 'ADDR', track_sour=True)
 
 
 def _fix_misplaced_tag(
@@ -1551,7 +1523,6 @@ def fix_record_order(path: str, dry_run: bool = False) -> int:
             for _, ls in head + sorted_middle + trlr:
                 for line in ls:
                     f.write(line if line.endswith('\n') else line + '\n')
-        import os
         os.replace(tmp, path)
 
     return moved
@@ -1699,6 +1670,10 @@ def fix_merge_sources(path: str, keep_xref: str, remove_xref: str,
     return updated
 
 
+_EVENT_SORT_FIRST_TAGS = frozenset({'BIRT', 'CHR', 'BAPM', 'ADOP'})
+_EVENT_SORT_LAST_TAGS  = frozenset({'DEAT', 'BURI', 'PROB', 'WILL'})
+
+
 def _event_sort_key(ev) -> tuple:
     """Sort key for a GEDCOM EventRecord.
 
@@ -1707,9 +1682,7 @@ def _event_sort_key(ev) -> tuple:
     All other events are sorted chronologically by date within the middle group.
     Events with no date sort to the end of their group (year 9999).
     """
-    FIRST_TAGS = {'BIRT', 'CHR', 'BAPM', 'ADOP'}
-    LAST_TAGS  = {'DEAT', 'BURI', 'PROB', 'WILL'}
-    group = 0 if ev.tag in FIRST_TAGS else (2 if ev.tag in LAST_TAGS else 1)
+    group = 0 if ev.tag in _EVENT_SORT_FIRST_TAGS else (2 if ev.tag in _EVENT_SORT_LAST_TAGS else 1)
     year  = (ev.date.year  or 9999) if ev.date else 9999
     month = (ev.date.month or 0)    if ev.date else 0
     day   = (ev.date.day   or 0)    if ev.date else 0
@@ -4813,6 +4786,31 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+def _build_name_map(path: str) -> dict[str, str]:
+    """Return {xref: display_name} for all INDI records in *path*."""
+    name_map: dict[str, str] = {}
+    cur_xref: str | None = None
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.rstrip('\n')
+            m0 = re.match(r'^0 (@[^@]+@) INDI', line)
+            if m0:
+                cur_xref = m0.group(1)
+                continue
+            if cur_xref and line.startswith('0 '):
+                cur_xref = None
+                continue
+            if cur_xref:
+                mn = re.match(r'^1 NAME (.+)', line)
+                if mn and cur_xref not in name_map:
+                    name_map[cur_xref] = mn.group(1).strip().replace('/', '').strip()
+    return name_map
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -5880,31 +5878,13 @@ def main():
 
             # ── New content-quality checks ───────────────────────────────────
 
-            # Build name map for godparent output (xref → display name)
-            _name_map: dict[str, str] = {}
-            _cur_xref_nm: str | None = None
-            with open(args.gedfile, encoding='utf-8') as _f:
-                for _raw in _f:
-                    _l = _raw.rstrip('\n')
-                    _m0 = re.match(r'^0 (@[^@]+@) INDI', _l)
-                    if _m0:
-                        _cur_xref_nm = _m0.group(1)
-                        continue
-                    if _cur_xref_nm and _l.startswith('0 '):
-                        _cur_xref_nm = None
-                        continue
-                    if _cur_xref_nm:
-                        _mn = re.match(r'^1 NAME (.+)', _l)
-                        if _mn and _cur_xref_nm not in _name_map:
-                            raw_name = _mn.group(1).strip()
-                            display = raw_name.replace('/', '').strip()
-                            _name_map[_cur_xref_nm] = display
+            name_map = _build_name_map(args.gedfile)
 
             godparent_issues = scan_godparent_count(args.gedfile)
             if godparent_issues:
                 print(f'\n{_WARN} {len(godparent_issues)} individual(s) with unusual godparent count:')
                 for xref, total, m_count, f_count in godparent_issues[:20]:
-                    name = _name_map.get(xref, xref)
+                    name = name_map.get(xref, xref)
                     reasons = []
                     if total > 2:
                         reasons.append(f'expected at most 2 total')
