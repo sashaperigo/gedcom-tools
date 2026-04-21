@@ -21,7 +21,7 @@ var DESIGN = {
     NODE_W_FOCUS: 116, // focused node width
     NODE_H: 64, // normal node height
     NODE_H_FOCUS: 70, // focused node height
-    ROW_HEIGHT: 116, // vertical distance between generation rows (gap stays 52px)
+    ROW_HEIGHT: 148, // vertical distance between generation rows (gap stays 84px)
     H_GAP: 12, // gap between sibling nodes
     MARRIAGE_GAP: 60, // gap between last sibling and spouse
     FAMILY_GAP: 40, // padding between two separate family subtrees at depth >= 1

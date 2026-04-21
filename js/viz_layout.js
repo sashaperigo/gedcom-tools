@@ -547,16 +547,18 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
                 merged.push([l, r]);
             }
         }
-        // Free gaps with H_GAP enforced as clearance from any pill edge.
+        // Free gaps with CHEVRON_CLEARANCE enforced as clearance from any pill edge,
+        // so children groups from different family expansions get the same visual
+        // separation as sibling groups do from their anchor nodes.
         const gaps = [];
         let prevRight = -Infinity;
         for (const [l, r] of merged) {
-            const gapL = prevRight === -Infinity ? -Infinity : prevRight + H_GAP;
-            const gapR = l - H_GAP;
+            const gapL = prevRight === -Infinity ? -Infinity : prevRight + CHEVRON_CLEARANCE;
+            const gapR = l - CHEVRON_CLEARANCE;
             if (gapR - gapL >= totalWidth) gaps.push([gapL, gapR]);
             prevRight = r;
         }
-        gaps.push([prevRight === -Infinity ? -Infinity : prevRight + H_GAP, Infinity]);
+        gaps.push([prevRight === -Infinity ? -Infinity : prevRight + CHEVRON_CLEARANCE, Infinity]);
 
         // Pick the gap whose closest point to anchorX is nearest; clamp startX
         // so the span stays entirely inside the gap.
