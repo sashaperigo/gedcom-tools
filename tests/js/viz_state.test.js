@@ -718,3 +718,63 @@ describe('getState includes expandedChildrenFams', () => {
         expect(s.expandedChildrenFams).toEqual(new Set());
     });
 });
+
+describe('resetToRoot', () => {
+    it('clears expandedChildrenFams from URL (c= param absent after reset)', () => {
+        const mod = loadModule('?p=G&c=c+n');
+        mod.initState('@I1@');
+        mod.resetToRoot('@I1@');
+        const [, , url] = global.history.pushState.mock.calls.at(-1);
+        expect(url).not.toContain('c=');
+    });
+
+    it('clears expandedNodes and expandedSiblingsXrefs from URL', () => {
+        const mod = loadModule('?p=G&e=5&s=8&c=c');
+        mod.initState('@I1@');
+        mod.resetToRoot('@I1@');
+        const [, , url] = global.history.pushState.mock.calls.at(-1);
+        expect(url).not.toContain('e=');
+        expect(url).not.toContain('s=');
+        expect(url).not.toContain('c=');
+    });
+
+    it('restores focusXref to root', () => {
+        const mod = loadModule('?p=G');
+        mod.initState('@I1@');
+        mod.resetToRoot('@I1@');
+        expect(mod.getState().focusXref).toBe('@I1@');
+    });
+
+    it('URL is just ?p=<rootToken> after reset', () => {
+        const mod = loadModule('?p=G&e=5&s=8&c=c');
+        mod.initState('@I1@');
+        mod.resetToRoot('@I1@');
+        const [, , url] = global.history.pushState.mock.calls.at(-1);
+        expect(url).toBe('?p=1');
+    });
+
+    it('resets state even when already at root (URL still gets rewritten)', () => {
+        const mod = loadModule('?p=1&c=c');
+        mod.initState('@I1@');
+        global.history.replaceState.mockClear();
+        global.history.pushState.mockClear();
+        mod.resetToRoot('@I1@');
+        const calls = [
+            ...global.history.pushState.mock.calls,
+            ...global.history.replaceState.mock.calls,
+        ];
+        expect(calls.length).toBeGreaterThan(0);
+        const [, , url] = calls[calls.length - 1];
+        expect(url).toBe('?p=1');
+    });
+
+    it('getState reflects empty sets after reset', () => {
+        const mod = loadModule('?p=G&e=5&s=8&c=c');
+        mod.initState('@I1@');
+        mod.resetToRoot('@I1@');
+        const s = mod.getState();
+        expect(s.expandedNodes).toEqual(new Set());
+        expect(s.expandedSiblingsXrefs).toEqual(new Set());
+        expect(s.expandedChildrenFams).toEqual(new Set());
+    });
+});

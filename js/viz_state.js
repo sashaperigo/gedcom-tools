@@ -256,6 +256,19 @@ function setState(updates) {
     _callbacks.forEach(cb => cb(_state));
 }
 
+function resetToRoot(rootXref) {
+    _state = {
+        focusXref: rootXref,
+        expandedNodes: new Set(),
+        expandedSiblingsXrefs: new Set(),
+        expandedChildrenFams: new Set(),
+        panelOpen: false,
+        panelXref: null,
+    };
+    _pushHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenFams);
+    _callbacks.forEach(cb => cb(_state));
+}
+
 function onStateChange(callback) {
     _callbacks.push(callback);
 }
@@ -267,6 +280,7 @@ function getState() {
 if (typeof module !== 'undefined') module.exports = {
     initState,
     setState,
+    resetToRoot,
     onStateChange,
     getState,
     _toBase62,

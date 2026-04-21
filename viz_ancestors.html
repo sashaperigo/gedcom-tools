@@ -28,7 +28,7 @@
     <div id="note-modal-overlay" onclick="closeIfFarFromPanel(event,'note-modal',closeNoteModal)">
         <div id="note-modal">
             <h3 id="note-modal-title">Edit Note</h3>
-            <div id="note-modal-shared-warning" style="display:none;background:rgba(251,113,83,0.15);border:1px solid rgba(251,113,83,0.4);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#fca5a5;">&#9888; This is a shared note &mdash; edits will apply to all profiles that contain it.</div>
+            <div id="note-modal-shared-warning">&#9888; This is a shared note &mdash; edits will apply to all profiles that contain it.</div>
             <textarea id="note-modal-textarea" rows="6" onkeydown="if(event.key==='Escape')closeNoteModal()"></textarea>
             <div class="note-modal-actions">
                 <button class="note-modal-cancel" onclick="closeNoteModal()">Cancel</button>
@@ -418,12 +418,7 @@
         onStateChange(function(state) { render(); });
 
         const homeBtn = document.getElementById('home-btn');
-        if (homeBtn) homeBtn.addEventListener('click', () => setState({
-            focusXref: ROOT_XREF,
-            expandedNodes: new Set(),
-            expandedSiblingsXrefs: new Set(),
-            panelOpen: false,
-        }));
+        if (homeBtn) homeBtn.addEventListener('click', () => resetToRoot(ROOT_XREF));
 
         try {
             render();
