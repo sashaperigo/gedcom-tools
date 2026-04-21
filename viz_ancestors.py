@@ -707,7 +707,7 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                 appended = False
                 for marr_idx, marr in enumerate(marrs):
                     # Skip bare duplicate MARR entries (no sub-tags) that can appear after a merge
-                    if not any(marr.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
+                    if not any(marr.get(f) for f in ('date', 'place', 'addr', 'note', 'type', 'citations')):
                         continue
                     marr_cites = [_normalize_citation(c) for c in marr.get('citations', [])]
                     # MARR events live in FAM blocks; event_idx=None marks them as non-editable via INDI

@@ -973,6 +973,30 @@ def _find_citation_block(
     return None, None, None, f'Citation {cite_n} not found in {fact_tag}[{fact_n}] of {xref}'
 
 
+def _citation_already_exists(lines: list[str], insert_pos: int, sour_xref: str, page: str, cite_level: int) -> bool:
+    """
+    Return True if sour_xref+page already appears as a citation in the block
+    that ends at insert_pos.  Scans backward until a level-0 record boundary.
+    """
+    sour_prefix = f'{cite_level} SOUR {sour_xref}'
+    page_line   = f'{cite_level + 1} PAGE {page.strip()}' if (page and page.strip()) else None
+    i = insert_pos - 1
+    while i >= 0:
+        raw = lines[i].rstrip()
+        if raw.startswith('0 '):
+            break
+        if raw == sour_prefix or raw.startswith(sour_prefix + ' '):
+            # Matching source found — now check whether the page also matches.
+            next_line = lines[i + 1].rstrip() if (i + 1 < insert_pos) else ''
+            has_page = next_line.startswith(f'{cite_level + 1} PAGE ')
+            if page_line is None and not has_page:
+                return True   # both have no page → exact duplicate
+            if page_line is not None and next_line == page_line:
+                return True   # same source and same page → exact duplicate
+        i -= 1
+    return False
+
+
 def _build_citation_lines(sour_xref: str, page: str, text: str, note: str, base_level: int, url: str = '') -> list[str]:
     """
     Build the citation block lines at base_level.
@@ -1570,7 +1594,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             lines     = GED.read_text(encoding='utf-8').splitlines()
             is_fam    = xref.startswith('@F')
 
-            # Determine insertion point and citation level
+            # Determine insertion point, citation level, and check for duplicates.
             if not fact_key or fact_key == 'null' or str(fact_key).startswith('SOUR:'):
                 # Person-level citation at level 1 (INDI only — FAM has no level-1 SOUR semantics here)
                 if is_fam:
@@ -1580,8 +1604,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if err:
                     self.send_error(400, err)
                     return
-                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
-                new_lines  = lines[:indi_end] + cite_lines + lines[indi_end:]
+                if _citation_already_exists(lines, indi_end, sour_xref, page, cite_level=1):
+                    insert_pos, new_lines = None, lines
+                else:
+                    cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
+                    new_lines  = lines[:indi_end] + cite_lines + lines[indi_end:]
             elif str(fact_key).startswith('SNOTE:'):
                 # Shared note citation — insert 1 SOUR at end of 0 @note_xref@ NOTE record
                 note_xref = fact_key.split(':', 1)[1]
@@ -1589,8 +1616,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if err:
                     self.send_error(400, err)
                     return
-                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
-                new_lines  = lines[:snote_end] + cite_lines + lines[snote_end:]
+                if _citation_already_exists(lines, snote_end, sour_xref, page, cite_level=1):
+                    new_lines = lines
+                else:
+                    cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
+                    new_lines  = lines[:snote_end] + cite_lines + lines[snote_end:]
             else:
                 insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
                 if err and is_fam and fact_key:
@@ -1602,10 +1632,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if err:
                     self.send_error(400, err)
                     return
-                cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=2, url=url)
-                new_lines  = lines[:insert_pos] + cite_lines + lines[insert_pos:]
+                if _citation_already_exists(lines, insert_pos, sour_xref, page, cite_level=2):
+                    new_lines = lines
+                else:
+                    cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=2, url=url)
+                    new_lines  = lines[:insert_pos] + cite_lines + lines[insert_pos:]
 
-            _write_gedcom_atomic(new_lines)
+            if new_lines is not lines:
+                _write_gedcom_atomic(new_lines)
             print(f"[citation-add] {xref} {fact_key} → {sour_xref}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
             indis, fams, sources = parse_gedcom(str(GED))

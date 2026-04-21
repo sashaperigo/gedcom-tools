@@ -8,12 +8,17 @@ Covers:
 """
 
 import os
+import sys
 from pathlib import Path
 
 
 os.environ.setdefault('GED_FILE', str(Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged'))
 
 from viz_ancestors import parse_gedcom, build_people_json, render_html
+
+# serve_viz.py is not a package; import it directly so we can test helpers.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from serve_viz import _citation_already_exists
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +578,32 @@ class TestFamEventCitations:
             marr = next(e for e in people[xref]['events'] if e['tag'] == 'MARR')
             assert marr['citations'] == [{'sourceXref': '@S1@', 'page': 'p.47', 'text': None, 'note': None}]
 
+    def test_marr_with_only_citation_not_skipped_by_build_people_json(self, tmp_path):
+        """A MARR with only a SOUR citation (no date/place/note/type) must not be dropped."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Marriage Register
+0 @I1@ INDI
+1 NAME Anna /Smith/
+1 SEX F
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Bob /Jones/
+1 SEX M
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I2@
+1 WIFE @I1@
+1 MARR
+2 SOUR @S1@
+3 PAGE p.12
+"""))
+        people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
+        for xref in ('@I1@', '@I2@'):
+            marr_events = [e for e in people[xref]['events'] if e['tag'] == 'MARR']
+            assert len(marr_events) == 1, f"{xref} MARR dropped — citation-only MARR must not be filtered"
+            assert marr_events[0]['citations'] == [{'sourceXref': '@S1@', 'page': 'p.12', 'text': None, 'note': None}]
+
 
 # ---------------------------------------------------------------------------
 # TestIndiSourceCitationParsing — person-level SOUR with full citation data
@@ -823,3 +854,84 @@ class TestBuildPeopleJsonIndiCitations:
 """))
         people = build_people_json({'@I1@'}, indis, sources=sources)
         assert people['@I1@']['sources'] == []
+
+
+# ---------------------------------------------------------------------------
+# TestCitationAlreadyExists — deduplication helper in serve_viz.py
+# ---------------------------------------------------------------------------
+
+class TestCitationAlreadyExists:
+
+    def _lines(self, body: str) -> list[str]:
+        """Wrap body in a minimal FAM record and return as a list of line strings."""
+        header = '0 @F1@ FAM\n'
+        return (header + body).splitlines(keepends=True)
+
+    def test_exact_duplicate_with_page_detected(self):
+        """Same sour_xref + page already present → True."""
+        lines = self._lines(
+            '1 MARR\n'
+            '2 SOUR @S1@\n'
+            '3 PAGE p.47\n'
+        )
+        insert_pos = len(lines)
+        assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.47', cite_level=2) is True
+
+    def test_different_page_not_duplicate(self):
+        """Same sour_xref but different page → False."""
+        lines = self._lines(
+            '1 MARR\n'
+            '2 SOUR @S1@\n'
+            '3 PAGE p.47\n'
+        )
+        insert_pos = len(lines)
+        assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.99', cite_level=2) is False
+
+    def test_different_sour_xref_not_duplicate(self):
+        """Different sour_xref → False even if page matches."""
+        lines = self._lines(
+            '1 MARR\n'
+            '2 SOUR @S1@\n'
+            '3 PAGE p.47\n'
+        )
+        insert_pos = len(lines)
+        assert _citation_already_exists(lines, insert_pos, '@S2@', 'p.47', cite_level=2) is False
+
+    def test_no_page_exact_duplicate(self):
+        """Matching sour_xref with no PAGE on either side → True."""
+        lines = self._lines(
+            '1 MARR\n'
+            '2 SOUR @S1@\n'
+        )
+        insert_pos = len(lines)
+        assert _citation_already_exists(lines, insert_pos, '@S1@', '', cite_level=2) is True
+
+    def test_existing_has_page_new_has_none_not_duplicate(self):
+        """Existing citation has PAGE but new one has no page → not an exact duplicate."""
+        lines = self._lines(
+            '1 MARR\n'
+            '2 SOUR @S1@\n'
+            '3 PAGE p.47\n'
+        )
+        insert_pos = len(lines)
+        assert _citation_already_exists(lines, insert_pos, '@S1@', '', cite_level=2) is False
+
+    def test_empty_record_returns_false(self):
+        """No citations at all → False."""
+        lines = self._lines('1 MARR\n2 DATE 1900\n')
+        insert_pos = len(lines)
+        assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.1', cite_level=2) is False
+
+    def test_stops_at_level_zero_boundary(self):
+        """Scan stops at a level-0 record and does not cross into a prior record."""
+        lines = [
+            '0 @F0@ FAM\n',
+            '1 MARR\n',
+            '2 SOUR @S1@\n',
+            '3 PAGE p.47\n',
+            '0 @F1@ FAM\n',
+            '1 MARR\n',
+        ]
+        insert_pos = len(lines)
+        # @S1@ exists in @F0@ but insert_pos is inside @F1@; must not find it.
+        assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.47', cite_level=2) is False
