@@ -554,7 +554,10 @@ function render() {
         const sibs = new Set(current.expandedSiblingsXrefs || new Set());
         if (sibs.has(xref)) {
             sibs.delete(xref);
-            setState({ expandedSiblingsXrefs: sibs });
+            const siblingXrefs = (RELATIVES[xref] && RELATIVES[xref].siblings) || [];
+            const childrenPersons = new Set(current.expandedChildrenPersons || new Set());
+            for (const s of siblingXrefs) childrenPersons.delete(s);
+            setState({ expandedSiblingsXrefs: sibs, expandedChildrenPersons: childrenPersons });
         } else {
             sibs.add(xref);
             const parents = new Set(current.expandedNodes || new Set());
