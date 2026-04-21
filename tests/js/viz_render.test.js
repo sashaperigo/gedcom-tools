@@ -1028,7 +1028,7 @@ describe('render — ancestor sibling chevron', () => {
         expect(update.expandedNodes.has('@MOTHER@')).toBe(true);
     });
 
-    it('clicking a blue chevron removes xref from expandedSiblingsXrefs only', () => {
+    it('clicking a blue chevron removes xref from expandedSiblingsXrefs and updates expandedChildrenPersons', () => {
         stateMod.setState({ expandedSiblingsXrefs: new Set(['@MOTHER@']), expandedNodes: new Set(['@MOTHER@']) });
         const spy = vi.fn();
         global.setState = spy;
@@ -1045,6 +1045,49 @@ describe('render — ancestor sibling chevron', () => {
         expect(update.expandedSiblingsXrefs.has('@MOTHER@')).toBe(false);
         // expandedNodes should NOT be touched on collapse.
         expect('expandedNodes' in update).toBe(false);
+        // expandedChildrenPersons IS always included in the collapse update.
+        expect('expandedChildrenPersons' in update).toBe(true);
+    });
+
+    it('collapse clears siblings of the ancestor from expandedChildrenPersons', () => {
+        // @M_SIB@ was expanded while @MOTHER@'s sibling branch was open
+        stateMod.setState({
+            expandedSiblingsXrefs: new Set(['@MOTHER@']),
+            expandedChildrenPersons: new Set(['@M_SIB@']),
+        });
+        const spy = vi.fn();
+        global.setState = spy;
+        loadRenderMod();
+        const svg2 = makeSvgEl();
+        renderMod.initRenderer(svg2);
+        const btn = getSibBtn('@MOTHER@', svg2);
+        spy.mockClear();
+        btn.dispatchEvent('click', { stopPropagation: () => {} });
+
+        const call = spy.mock.calls.find(([u]) => u && u.expandedSiblingsXrefs !== undefined);
+        expect(call).toBeDefined();
+        expect(call[0].expandedChildrenPersons.has('@M_SIB@')).toBe(false);
+    });
+
+    it('collapse does not clear unrelated xrefs from expandedChildrenPersons', () => {
+        stateMod.setState({
+            expandedSiblingsXrefs: new Set(['@MOTHER@']),
+            expandedChildrenPersons: new Set(['@M_SIB@', '@UNRELATED@']),
+        });
+        const spy = vi.fn();
+        global.setState = spy;
+        loadRenderMod();
+        const svg2 = makeSvgEl();
+        renderMod.initRenderer(svg2);
+        const btn = getSibBtn('@MOTHER@', svg2);
+        spy.mockClear();
+        btn.dispatchEvent('click', { stopPropagation: () => {} });
+
+        const call = spy.mock.calls.find(([u]) => u && u.expandedSiblingsXrefs !== undefined);
+        expect(call).toBeDefined();
+        const update = call[0];
+        expect(update.expandedChildrenPersons.has('@M_SIB@')).toBe(false);
+        expect(update.expandedChildrenPersons.has('@UNRELATED@')).toBe(true);
     });
 
     it('no sibling chevron is rendered when ancestor has zero siblings', () => {
