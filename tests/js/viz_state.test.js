@@ -719,6 +719,61 @@ describe('getState includes expandedChildrenFams', () => {
     });
 });
 
+describe('visibleSpouseFams — serialization and URL round-trip', () => {
+    it('initial state has empty visibleSpouseFams', () => {
+        const mod = loadModule('');
+        mod.initState('@I1@');
+        expect(mod.getState().visibleSpouseFams).toEqual(new Set());
+    });
+
+    it('initState reads m= param and decodes FAM xrefs', () => {
+        const mod = loadModule('?p=1&m=5+c');
+        mod.initState('@I1@');
+        expect(mod.getState().visibleSpouseFams).toEqual(new Set(['@F5@', '@F12@']));
+    });
+
+    it('setState with visibleSpouseFams calls replaceState and emits m= param', () => {
+        const mod = loadModule('');
+        mod.initState('@I1@');
+        mod.setState({ visibleSpouseFams: new Set(['@F5@', '@F23@']) });
+        const [, , url] = global.history.replaceState.mock.calls[0];
+        expect(url).toContain('m=5+n');
+    });
+
+    it('m= param omitted when visibleSpouseFams is empty', () => {
+        const mod = loadModule('');
+        mod.initState('@I1@');
+        mod.setState({ visibleSpouseFams: new Set() });
+        const [, , url] = global.history.replaceState.mock.calls[0];
+        expect(url).not.toContain('m=');
+    });
+
+    it('popstate restores visibleSpouseFams from event.state', () => {
+        const mod = loadModule('');
+        mod.initState('@I1@');
+        const listeners = global._popstateListeners;
+        listeners[0]({ state: { focusXref: '@I5@', visibleSpouseFamsXrefs: '7+8' } });
+        expect(mod.getState().visibleSpouseFams).toEqual(new Set(['@F7@', '@F8@']));
+    });
+
+    it('popstate restores visibleSpouseFams from raw URL when state is null', () => {
+        const mod = loadModule('');
+        mod.initState('@I1@');
+        vi.stubGlobal('location', makeURL('?p=5&m=c+n'));
+        const listeners = global._popstateListeners;
+        listeners[0]({ state: null });
+        expect(mod.getState().visibleSpouseFams).toEqual(new Set(['@F12@', '@F23@']));
+    });
+
+    it('replaceState state object contains visibleSpouseFamsXrefs', () => {
+        const mod = loadModule('');
+        mod.initState('@I1@');
+        mod.setState({ visibleSpouseFams: new Set(['@F5@', '@F12@']) });
+        const [stateObj] = global.history.replaceState.mock.calls[0];
+        expect(stateObj).toHaveProperty('visibleSpouseFamsXrefs', '5+c');
+    });
+});
+
 describe('resetToRoot', () => {
     it('clears expandedChildrenFams from URL (c= param absent after reset)', () => {
         const mod = loadModule('?p=G&c=c+n');
@@ -776,5 +831,14 @@ describe('resetToRoot', () => {
         expect(s.expandedNodes).toEqual(new Set());
         expect(s.expandedSiblingsXrefs).toEqual(new Set());
         expect(s.expandedChildrenFams).toEqual(new Set());
+    });
+
+    it('clears visibleSpouseFams too', () => {
+        const mod = loadModule('?p=G&m=5+c');
+        mod.initState('@I1@');
+        mod.resetToRoot('@I1@');
+        const [, , url] = global.history.pushState.mock.calls.at(-1);
+        expect(url).not.toContain('m=');
+        expect(mod.getState().visibleSpouseFams).toEqual(new Set());
     });
 });

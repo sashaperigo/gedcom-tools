@@ -15,6 +15,50 @@
  * Sort an array of xrefs by birth_year ascending.
  * Unknown birth_year (missing or undefined) sorts last (treated as 9999).
  */
+/**
+ * Filter a person's spouse list down to those the user wants visible.
+ * If any of the person's FAMs are in visibleSpouseFams, return spouses from
+ * exactly those FAMs (deduplicated, in defaultSpouses order where possible).
+ * Otherwise return a single-element list: the other parent of primaryFamFor.
+ * People with 0 or 1 FAM get defaultSpouses unchanged.
+ *
+ * @param {string} personXref
+ * @param {string[]} defaultSpouses — RELATIVES[personXref].spouses
+ * @param {Set<string>} visibleSpouseFams
+ * @param {string} focusXref
+ * @returns {string[]}
+ */
+function _visibleSpousesFor(personXref, defaultSpouses, visibleSpouseFams, focusXref) {
+    if (!defaultSpouses || defaultSpouses.length <= 1) return defaultSpouses || [];
+    if (typeof FAMILIES === 'undefined' || !FAMILIES) return defaultSpouses;
+
+    const personFams = Object.keys(FAMILIES).filter(f =>
+        FAMILIES[f].husb === personXref || FAMILIES[f].wife === personXref
+    );
+    if (personFams.length <= 1) return defaultSpouses;
+
+    const visibleSet = visibleSpouseFams || new Set();
+    const enabled = personFams.filter(f => visibleSet.has(f));
+
+    let chosenFams;
+    if (enabled.length > 0) {
+        chosenFams = enabled;
+    } else if (typeof primaryFamFor === 'function') {
+        const prim = primaryFamFor(personXref, focusXref);
+        chosenFams = prim ? [prim] : personFams.slice(0, 1);
+    } else {
+        chosenFams = personFams.slice(0, 1);
+    }
+
+    const chosenOthers = new Set();
+    for (const f of chosenFams) {
+        const fam = FAMILIES[f];
+        const other = fam.husb === personXref ? fam.wife : fam.husb;
+        if (other) chosenOthers.add(other);
+    }
+    return defaultSpouses.filter(s => chosenOthers.has(s));
+}
+
 function _sortByBirthYear(xrefs) {
     return [...xrefs].sort((a, b) => {
         const ay = PEOPLE[a]?.birth_year ?? 9999;
@@ -62,8 +106,9 @@ function _packRow(items, startX, y, role) {
  * Edge: { x1, y1, x2, y2, type }
  *   type: 'ancestor' | 'descendant' | 'marriage'
  */
-function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams) {
+function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams) {
     expandedChildrenFams = expandedChildrenFams || new Set();
+    visibleSpouseFams = visibleSpouseFams || new Set();
     const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
     const SLOT = NODE_W + H_GAP;
 
@@ -108,7 +153,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 
     // Spouses: placed immediately after focus (before younger siblings).
     // firstSpouseX = NODE_W_FOCUS/2 + MARRIAGE_GAP + NODE_W/2 (= 80 + 60 + 70 = 210)
-    const spouseXrefs = RELATIVES[focusXref]?.spouses ?? [];
+    const spouseXrefs = _visibleSpousesFor(focusXref, RELATIVES[focusXref]?.spouses ?? [], visibleSpouseFams, focusXref);
     const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
     // Track the rightmost center x placed (spouse or spouse sibling) to position younger sibs after.
     let rightmostSpouseAreaX = null;
@@ -217,18 +262,18 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 
             // Place siblings BEFORE parents so _placeAncestors can emit an umbrella
             // spanning each ancestor + its siblings.
-            _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges);
-            _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges);
+            _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
+            _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
 
-            _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
-            _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
+            _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
+            _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
         } else {
             // Single parent: centered on the sibling group.
             const singleParent = fatherXref || motherXref;
             const singleParentX = focusGroupCenterX - NODE_W / 2;
             nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-            _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges);
-            _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
+            _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
+            _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
         }
 
         // Umbrella anchor drop (mirrors the descendant umbrella).
@@ -282,7 +327,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         // MARRIAGE_GAP is reserved for the focus couple (where children hang below).
         const CHILD_MARRIAGE_GAP = H_GAP;
         const groups = childXrefs.map(childXref => {
-            const childSpouses = RELATIVES[childXref]?.spouses ?? [];
+            const childSpouses = _visibleSpousesFor(childXref, RELATIVES[childXref]?.spouses ?? [], visibleSpouseFams, focusXref);
             const width = NODE_W + childSpouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
             return { childXref, childSpouses, width };
         });
@@ -507,7 +552,8 @@ function _placeChildrenOfFam(famXref, nodes, edges) {
 // Recursive ancestor placement
 // ---------------------------------------------------------------------------
 
-function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges) {
+function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref) {
+    visibleSpouseFams = visibleSpouseFams || new Set();
     const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
     const SLOT = NODE_W + H_GAP;
 
@@ -561,11 +607,11 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSibl
 
         // Place siblings of f/m BEFORE recursing deeper so their subtree umbrellas
         // can span the right groups.
-        _placeAncestorSiblings(fatherXref, fatherX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges);
-        _placeAncestorSiblings(motherXref, motherX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges);
+        _placeAncestorSiblings(fatherXref, fatherX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestorSiblings(motherXref, motherX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
 
-        _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
-        _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
+        _placeAncestors(fatherXref, fatherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestors(motherXref, motherX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
     } else {
         const singleParent = fatherXref || motherXref;
         const singleX = groupCenterX - NODE_W / 2;
@@ -574,8 +620,8 @@ function _placeAncestors(xref, x, y, generation, expandedAncestors, expandedSibl
         // Single parent → umbrella / straight drop from parent bottom to child top.
         _emitChildUmbrella(xref, x, y, nextY + NODE_H, nodes, edges);
 
-        _placeAncestorSiblings(singleParent, singleX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges);
-        _placeAncestors(singleParent, singleX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges);
+        _placeAncestorSiblings(singleParent, singleX, nextY, expandedSiblingsXrefs, expandedAncestors, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestors(singleParent, singleX, nextY, nextGen, expandedAncestors, expandedSiblingsXrefs, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref);
     }
 }
 
@@ -669,7 +715,8 @@ function _emitChildUmbrella(xref, x, y, anchorY, nodes, edges) {
 // so the r=8 sibling-expand chevron fits between them without overlap.
 // Grouping is handled by the parent umbrella (_emitChildUmbrella); no bracket
 // edge is emitted from here.
-function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges) {
+function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenFams, nodes, edges, visibleSpouseFams, focusXref) {
+    visibleSpouseFams = visibleSpouseFams || new Set();
     if (!expandedSiblingsXrefs || !expandedSiblingsXrefs.has(ancXref)) return;
     const sibs = RELATIVES[ancXref]?.siblings ?? [];
     if (sibs.length === 0) return;
@@ -731,7 +778,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
             const sibX = cursor;
             nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
             cursor = sibX + NODE_W;
-            const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
+            const sibSpouses = _visibleSpousesFor(sibXref, RELATIVES[sibXref]?.spouses ?? [], visibleSpouseFams, focusXref);
             sibSpouses.forEach(spXref => {
                 const spX = cursor + SIB_MARRIAGE_GAP;
                 nodes.push({ xref: spXref, x: spX, y: ancY, generation, role: 'ancestor_sibling_spouse' });
@@ -757,7 +804,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                     if (maxSibRight < rightEdge) rightEdge = maxSibRight;
                 }
             }
-            const sibSpouses = RELATIVES[sibXref]?.spouses ?? [];
+            const sibSpouses = _visibleSpousesFor(sibXref, RELATIVES[sibXref]?.spouses ?? [], visibleSpouseFams, focusXref);
             const sibX = rightEdge - NODE_W;
             nodes.push({ xref: sibXref, x: sibX, y: ancY, generation, role: 'ancestor_sibling' });
             let cursorLeft = sibX;

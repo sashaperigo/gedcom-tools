@@ -493,8 +493,9 @@ function render() {
     const expandedNodes = state.expandedNodes || new Set();
     const expandedSiblingsXrefs = state.expandedSiblingsXrefs || new Set();
     const expandedChildrenFams = state.expandedChildrenFams || new Set();
+    const visibleSpouseFams = state.visibleSpouseFams || new Set();
 
-    const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams);
+    const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams);
 
     // Clear tree-root contents
     _treeRoot.innerHTML = '';

@@ -2427,3 +2427,59 @@ describe('computeLayout — deep cross-gen: g-g-aunt FAM vs g-aunt', () => {
         }
     });
 });
+
+describe('computeLayout — multi-spouse filtering', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1990 },
+                '@SP_A@': { birth_year: 1991 },
+                '@SP_B@': { birth_year: 1992 },
+            },
+            parents: { '@FOCUS@': [null, null] },
+            children: {},
+            relatives: { '@FOCUS@': { spouses: ['@SP_A@', '@SP_B@'] } },
+            families: {
+                '@F_A@': { husb: '@FOCUS@', wife: '@SP_A@', chil: [], marr_year: 2010 },
+                '@F_B@': { husb: '@FOCUS@', wife: '@SP_B@', chil: [], marr_year: 2020 },
+            },
+        });
+    });
+
+    it('default (empty visibleSpouseFams) shows only the primary spouse', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set());
+        const spouseNodes = nodes.filter(n => n.role === 'spouse');
+        expect(spouseNodes).toHaveLength(1);
+        expect(spouseNodes[0].xref).toBe('@SP_A@');
+    });
+
+    it('with both FAMs in visibleSpouseFams, both spouses render', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set(['@F_A@', '@F_B@']));
+        const spouseNodes = nodes.filter(n => n.role === 'spouse');
+        expect(spouseNodes.map(n => n.xref).sort()).toEqual(['@SP_A@', '@SP_B@']);
+    });
+
+    it('with only non-primary FAM in visibleSpouseFams, only that spouse renders', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set(['@F_B@']));
+        const spouseNodes = nodes.filter(n => n.role === 'spouse');
+        expect(spouseNodes).toHaveLength(1);
+        expect(spouseNodes[0].xref).toBe('@SP_B@');
+    });
+
+    it('person with 1 FAM always shows their spouse regardless of set', () => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1990 },
+                '@SP_A@': { birth_year: 1991 },
+            },
+            parents: { '@FOCUS@': [null, null] },
+            children: {},
+            relatives: { '@FOCUS@': { spouses: ['@SP_A@'] } },
+            families: {
+                '@F_A@': { husb: '@FOCUS@', wife: '@SP_A@', chil: [], marr_year: 2010 },
+            },
+        });
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set());
+        expect(nodes.filter(n => n.role === 'spouse')).toHaveLength(1);
+    });
+});
