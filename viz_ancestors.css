@@ -819,6 +819,17 @@ header h1 {
 }
 
 /* Note modal */
+#note-modal-shared-warning {
+    display: none;
+    background: rgba(251, 113, 83, 0.15);
+    border: 1px solid rgba(251, 113, 83, 0.4);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #fca5a5;
+}
+
 #note-modal textarea {
     width: 100%;
     background: var(--bg-app);
