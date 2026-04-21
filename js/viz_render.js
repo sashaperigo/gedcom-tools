@@ -31,22 +31,13 @@ function _svgEl(tag, attrs) {
 // Edge rendering
 // ---------------------------------------------------------------------------
 
-const EDGE_STYLES = {
-    ancestor: { stroke: '#44447a', width: 1 },
-    descendant: { stroke: '#2c2c54', width: 1 },
-    marriage: { stroke: '#3a6a3a', width: 1.5 },
-};
-
 function _renderEdge(edge) {
-    const style = EDGE_STYLES[edge.type] || EDGE_STYLES.ancestor;
     return _svgEl('line', {
         x1: edge.x1,
         y1: edge.y1,
         x2: edge.x2,
         y2: edge.y2,
-        stroke: style.stroke,
-        'stroke-width': style.width,
-        fill: 'none',
+        class: `edge-${edge.type}`,
     });
 }
 
@@ -63,7 +54,7 @@ function _drawDiedYoungBadge(g, w, ageAtDeath) {
     const titleText = ageAtDeath === 'STILLBORN' ? 'Stillborn' :
         ageAtDeath === 'INFANT' ? 'Died in infancy' :
         'Died in childhood';
-    const circle = _svgEl('circle', { cx, cy, r: 8, fill: '#fbbf24', 'pointer-events': 'all' });
+    const circle = _svgEl('circle', { cx, cy, r: 8, class: 'badge-died-young', 'pointer-events': 'all' });
     const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
     titleEl.textContent = titleText;
     circle.appendChild(titleEl);
@@ -72,7 +63,7 @@ function _drawDiedYoungBadge(g, w, ageAtDeath) {
         x: cx,
         y: cy + 3,
         'text-anchor': 'middle',
-        fill: '#1c1917',
+        class: 'badge-died-young-text',
         'font-size': 9,
         'font-weight': 700,
         'font-family': 'system-ui, sans-serif',
@@ -104,7 +95,6 @@ function _drawSpouseMenuBadge(g, xref) {
     const cx = 11, cy = 11;
     const circle = _svgEl('circle', {
         cx, cy, r: 8,
-        fill: '#4a5568',
         class: 'spouse-menu-btn',
         'data-xref': xref,
         cursor: 'pointer',
@@ -118,7 +108,7 @@ function _drawSpouseMenuBadge(g, xref) {
         const line = _svgEl('line', {
             x1: cx - 3, y1: cy + i * 2.5,
             x2: cx + 3, y2: cy + i * 2.5,
-            stroke: '#ffffff',
+            class: 'badge-spouse-menu-icon',
             'stroke-width': 1.2,
             'stroke-linecap': 'round',
             'pointer-events': 'none',
@@ -195,9 +185,7 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         stroke = ACCENT_SPOUSE;
         strokeWidth = 1;
     } else if (isSpouseSib) {
-        fill = '#0e0e22';
-        stroke = '#22224a';
-        strokeWidth = 1;
+        strokeWidth = 1; // fill/stroke handled by CSS .node-spouse-sib
     } else {
         // ancestor, sibling, descendant
         fill = BG_NODE;
@@ -235,17 +223,15 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         cursor: 'pointer',
     });
 
-    // Background rect
-    const rect = _svgEl('rect', {
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
-        rx: NODE_RADIUS,
-        fill,
-        stroke,
-        'stroke-width': strokeWidth,
-    });
+    // Background rect — spouse-sib colors come from CSS; all others use DESIGN attrs
+    const rectAttrs = { x: 0, y: 0, width: w, height: h, rx: NODE_RADIUS, 'stroke-width': strokeWidth };
+    if (isSpouseSib) {
+        rectAttrs.class = 'node-spouse-sib';
+    } else {
+        rectAttrs.fill = fill;
+        rectAttrs.stroke = stroke;
+    }
+    const rect = _svgEl('rect', rectAttrs);
     g.appendChild(rect);
 
     // Name text — wraps to two lines when the name has whitespace. Line 1 sits
@@ -326,8 +312,6 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
             const isExpanded = expandedNodes.has(node.xref);
             const canCollapse = isExpanded;
 
-            const btnFill = canCollapse ? '#2a5a7a' : '#2a7a4a';
-
             const chevronUp = `M ${btnCx - 3.5} ${btnCy + 1.5} L ${btnCx} ${btnCy - 2} L ${btnCx + 3.5} ${btnCy + 1.5}`;
             const chevronDown = `M ${btnCx - 3.5} ${btnCy - 1.5} L ${btnCx} ${btnCy + 2} L ${btnCx + 3.5} ${btnCy - 1.5}`;
             const chevronD = canCollapse ? chevronDown : chevronUp;
@@ -336,13 +320,12 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
                 cx: btnCx,
                 cy: btnCy,
                 r: 8,
-                fill: btnFill,
-                class: 'expand-btn',
+                class: `expand-btn ${canCollapse ? 'btn-collapse' : 'btn-expand'}`,
                 cursor: 'pointer',
             });
             const chevron = _svgEl('path', {
                 d: chevronD,
-                stroke: '#ffffff',
+                class: 'btn-chevron',
                 'stroke-width': 1.5,
                 'stroke-linecap': 'round',
                 'stroke-linejoin': 'round',
@@ -376,8 +359,6 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
             const sibCx = side === 'right' ? (w + GAP + R) : -(GAP + R);
             const sibCy = h / 2;
 
-            const sibFill = sibCanCollapse ? '#2a5a7a' : '#2a7a4a';
-
             // Outward when can-expand; inward when expanded (collapse indicator).
             const pointRight = side === 'right' ? !sibCanCollapse : sibCanCollapse;
             const chevronOut = pointRight ?
@@ -388,13 +369,12 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
                 cx: sibCx,
                 cy: sibCy,
                 r: R,
-                fill: sibFill,
-                class: 'sibling-expand-btn',
+                class: `sibling-expand-btn ${sibCanCollapse ? 'btn-collapse' : 'btn-expand'}`,
                 cursor: 'pointer',
             });
             const sibChevron = _svgEl('path', {
                 d: chevronOut,
-                stroke: '#ffffff',
+                class: 'btn-chevron',
                 'stroke-width': 1.5,
                 'stroke-linecap': 'round',
                 'stroke-linejoin': 'round',
@@ -446,7 +426,6 @@ function _drawChildrenExpandBadge(g, node, isExpanded, onChildrenExpandClick) {
     const cx = NODE_W / 2;
     const cy = NODE_H + GAP + R;
 
-    const fill = isExpanded ? '#2a5a7a' : '#2a7a4a';
     const chevronDown = `M ${cx - 3.5} ${cy - 1.5} L ${cx} ${cy + 2} L ${cx + 3.5} ${cy - 1.5}`;
     const chevronUp = `M ${cx - 3.5} ${cy + 1.5} L ${cx} ${cy - 2} L ${cx + 3.5} ${cy + 1.5}`;
     const d = isExpanded ? chevronUp : chevronDown;
@@ -455,14 +434,13 @@ function _drawChildrenExpandBadge(g, node, isExpanded, onChildrenExpandClick) {
         cx,
         cy,
         r: R,
-        fill,
-        class: 'children-expand-btn',
+        class: `children-expand-btn ${isExpanded ? 'btn-collapse' : 'btn-expand'}`,
         cursor: 'pointer',
         'data-xref': node.xref,
     });
     const chev = _svgEl('path', {
         d,
-        stroke: '#ffffff',
+        class: 'btn-chevron',
         'stroke-width': 1.5,
         'stroke-linecap': 'round',
         'stroke-linejoin': 'round',

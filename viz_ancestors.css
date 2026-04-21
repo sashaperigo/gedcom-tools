@@ -1874,3 +1874,20 @@ header h1 {
     border-top: none;
     padding-top: 0;
 }
+
+/* ── SVG tree element colors ────────────────────────────── */
+.edge-ancestor   { stroke: #44447a; stroke-width: 1; }
+.edge-descendant { stroke: #2c2c54; stroke-width: 1; }
+.edge-marriage   { stroke: #3a6a3a; stroke-width: 1.5; }
+
+.btn-expand   { fill: #2a7a4a; }
+.btn-collapse { fill: #2a5a7a; }
+.btn-chevron  { stroke: #ffffff; }
+
+.badge-died-young      { fill: #fbbf24; }
+.badge-died-young-text { fill: #1c1917; }
+
+.spouse-menu-btn        { fill: #4a5568; }
+.badge-spouse-menu-icon { stroke: #ffffff; }
+
+.node-spouse-sib { fill: #0e0e22; stroke: #22224a; }
