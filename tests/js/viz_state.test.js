@@ -558,74 +558,74 @@ describe('popstate with siblings', () => {
     });
 });
 
-// ── Children expansion state (FAM xrefs) ────────────────────────────────────
-// Uses FAM xrefs like @F42@ rather than INDI xrefs.
-// Token values for test FAM IDs (base62 of numeric suffix):
-//   @F5@ → '5'   @F7@ → '7'   @F8@ → '8'
-//   @F12@ → 'c'   @F23@ → 'n'   @F42@ → 'G'
+// ── Children expansion state (person xrefs) ─────────────────────────────────
+// Uses INDI xrefs like @I42@.
+// Token values for test INDI IDs (base62 of numeric suffix):
+//   @I5@ → '5'   @I7@ → '7'   @I8@ → '8'
+//   @I12@ → 'c'  @I23@ → 'n'  @I42@ → 'G'
 
-describe('children (fams) param serialization', () => {
-    it('_childrenFamsToParam returns null for empty Set', () => {
+describe('children (persons) param serialization', () => {
+    it('_childrenPersonsToParam returns null for empty Set', () => {
         const mod = loadModule('');
-        expect(mod._childrenFamsToParam(new Set())).toBeNull();
+        expect(mod._childrenPersonsToParam(new Set())).toBeNull();
     });
 
-    it('_childrenFamsToParam returns sorted +-joined tokens', () => {
+    it('_childrenPersonsToParam returns sorted +-joined tokens', () => {
         const mod = loadModule('');
-        expect(mod._childrenFamsToParam(new Set(['@F23@', '@F5@', '@F12@']))).toBe('5+c+n');
+        expect(mod._childrenPersonsToParam(new Set(['@I23@', '@I5@', '@I12@']))).toBe('5+c+n');
     });
 
-    it('_childrenFamsFromParam returns empty Set when no c param', () => {
+    it('_childrenPersonsFromParam returns empty Set when no c param', () => {
         const mod = loadModule('');
-        expect(mod._childrenFamsFromParam('')).toEqual(new Set());
+        expect(mod._childrenPersonsFromParam('')).toEqual(new Set());
     });
 
-    it('_childrenFamsFromParam parses multiple compact xrefs with + separator', () => {
+    it('_childrenPersonsFromParam parses multiple compact xrefs with + separator', () => {
         const mod = loadModule('');
-        expect(mod._childrenFamsFromParam('?c=5+c')).toEqual(new Set(['@F5@', '@F12@']));
+        expect(mod._childrenPersonsFromParam('?c=5+c')).toEqual(new Set(['@I5@', '@I12@']));
     });
 
-    it('_childrenFamsFromParam decodes FAM xrefs (not INDI)', () => {
+    it('_childrenPersonsFromParam decodes INDI xrefs (not FAM)', () => {
         const mod = loadModule('');
-        expect(mod._childrenFamsFromParam('?c=G')).toEqual(new Set(['@F42@']));
+        expect(mod._childrenPersonsFromParam('?c=G')).toEqual(new Set(['@I42@']));
     });
 
-    it('_childrenFamsFromParam ignores ?e= and ?s= params', () => {
+    it('_childrenPersonsFromParam ignores ?e= and ?s= params', () => {
         const mod = loadModule('');
-        expect(mod._childrenFamsFromParam('?e=5&s=c')).toEqual(new Set());
+        expect(mod._childrenPersonsFromParam('?e=5&s=c')).toEqual(new Set());
     });
 });
 
-describe('initState with childrenFams', () => {
-    it('reads ?c= compact param and reconstructs expandedChildrenFams Set', () => {
+describe('initState with childrenPersons', () => {
+    it('reads ?c= compact param and reconstructs expandedChildrenPersons Set', () => {
         const mod = loadModule('?p=G&c=5+c');
         mod.initState('@I1@');
-        expect(mod.getState().expandedChildrenFams).toEqual(new Set(['@F5@', '@F12@']));
+        expect(mod.getState().expandedChildrenPersons).toEqual(new Set(['@I5@', '@I12@']));
     });
 
-    it('expandedChildrenFams is empty Set when no ?c= param', () => {
+    it('expandedChildrenPersons is empty Set when no ?c= param', () => {
         const mod = loadModule('?p=G');
         mod.initState('@I1@');
-        expect(mod.getState().expandedChildrenFams).toEqual(new Set());
+        expect(mod.getState().expandedChildrenPersons).toEqual(new Set());
     });
 
-    it('restores all four: focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams', () => {
+    it('restores all four: focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons', () => {
         const mod = loadModule('?p=G&e=5&s=8&c=c');
         mod.initState('@I1@');
         const s = mod.getState();
         expect(s.focusXref).toBe('@I42@');
         expect(s.expandedNodes).toEqual(new Set(['@I5@']));
         expect(s.expandedSiblingsXrefs).toEqual(new Set(['@I8@']));
-        expect(s.expandedChildrenFams).toEqual(new Set(['@F12@']));
+        expect(s.expandedChildrenPersons).toEqual(new Set(['@I12@']));
     });
 });
 
-describe('setState with childrenFams', () => {
-    it('calls history.replaceState when only expandedChildrenFams changes', () => {
+describe('setState with childrenPersons', () => {
+    it('calls history.replaceState when only expandedChildrenPersons changes', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
         global.history.pushState.mockClear();
-        mod.setState({ expandedChildrenFams: new Set(['@F5@']) });
+        mod.setState({ expandedChildrenPersons: new Set(['@I5@']) });
         expect(global.history.replaceState).toHaveBeenCalledOnce();
         expect(global.history.pushState).not.toHaveBeenCalled();
     });
@@ -633,26 +633,26 @@ describe('setState with childrenFams', () => {
     it('URL from replaceState contains compact sorted c= param with + separator', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
-        mod.setState({ expandedChildrenFams: new Set(['@F23@', '@F5@']) });
+        mod.setState({ expandedChildrenPersons: new Set(['@I23@', '@I5@']) });
         const [, , url] = global.history.replaceState.mock.calls[0];
         expect(url).toContain('c=5+n');
     });
 
-    it('c= param is omitted when expandedChildrenFams is empty', () => {
+    it('c= param is omitted when expandedChildrenPersons is empty', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
-        mod.setState({ expandedChildrenFams: new Set() });
+        mod.setState({ expandedChildrenPersons: new Set() });
         const [, , url] = global.history.replaceState.mock.calls[0];
         expect(url).not.toContain('c=');
     });
 
-    it('does NOT call replaceState when expandedChildrenFams reference is unchanged', () => {
+    it('does NOT call replaceState when expandedChildrenPersons reference is unchanged', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
-        const sameSet = new Set(['@F5@']);
-        mod.setState({ expandedChildrenFams: sameSet });
+        const sameSet = new Set(['@I5@']);
+        mod.setState({ expandedChildrenPersons: sameSet });
         global.history.replaceState.mockClear();
-        mod.setState({ expandedChildrenFams: sameSet });
+        mod.setState({ expandedChildrenPersons: sameSet });
         expect(global.history.replaceState).not.toHaveBeenCalled();
     });
 
@@ -663,7 +663,7 @@ describe('setState with childrenFams', () => {
             focusXref: '@I42@',
             expandedNodes: new Set(['@I5@']),
             expandedSiblingsXrefs: new Set(['@I8@']),
-            expandedChildrenFams: new Set(['@F12@']),
+            expandedChildrenPersons: new Set(['@I12@']),
         });
         const [, , url] = global.history.pushState.mock.calls[0];
         expect(url).toContain('?p=G');
@@ -672,50 +672,50 @@ describe('setState with childrenFams', () => {
         expect(url).toContain('c=c');
     });
 
-    it('replaceState state object contains childrenFamsXrefs as +-joined tokens', () => {
+    it('replaceState state object contains childrenPersonsXrefs as +-joined tokens', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
-        mod.setState({ expandedChildrenFams: new Set(['@F5@', '@F12@']) });
+        mod.setState({ expandedChildrenPersons: new Set(['@I5@', '@I12@']) });
         const [stateObj] = global.history.replaceState.mock.calls[0];
-        expect(stateObj).toHaveProperty('childrenFamsXrefs', '5+c');
+        expect(stateObj).toHaveProperty('childrenPersonsXrefs', '5+c');
     });
 });
 
-describe('popstate with childrenFams', () => {
-    it('restores expandedChildrenFams from event.state.childrenFamsXrefs', () => {
+describe('popstate with childrenPersons', () => {
+    it('restores expandedChildrenPersons from event.state.childrenPersonsXrefs', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
         const listeners = global._popstateListeners;
-        listeners[0]({ state: { focusXref: '@I5@', childrenFamsXrefs: '7+8' } });
-        expect(mod.getState().expandedChildrenFams).toEqual(new Set(['@F7@', '@F8@']));
+        listeners[0]({ state: { focusXref: '@I5@', childrenPersonsXrefs: '7+8' } });
+        expect(mod.getState().expandedChildrenPersons).toEqual(new Set(['@I7@', '@I8@']));
     });
 
-    it('restores expandedChildrenFams from compact URL when state is null', () => {
+    it('restores expandedChildrenPersons from compact URL when state is null', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
         vi.stubGlobal('location', makeURL('?p=5&c=c+n'));
         const listeners = global._popstateListeners;
         listeners[0]({ state: null });
-        expect(mod.getState().expandedChildrenFams).toEqual(new Set(['@F12@', '@F23@']));
+        expect(mod.getState().expandedChildrenPersons).toEqual(new Set(['@I12@', '@I23@']));
     });
 
-    it('sets expandedChildrenFams to empty Set on popstate with no c param', () => {
+    it('sets expandedChildrenPersons to empty Set on popstate with no c param', () => {
         const mod = loadModule('?p=1&c=5');
         mod.initState('@I1@');
         vi.stubGlobal('location', makeURL('?p=G'));
         const listeners = global._popstateListeners;
         listeners[0]({ state: null });
-        expect(mod.getState().expandedChildrenFams).toEqual(new Set());
+        expect(mod.getState().expandedChildrenPersons).toEqual(new Set());
     });
 });
 
-describe('getState includes expandedChildrenFams', () => {
-    it('initial state includes expandedChildrenFams as empty Set', () => {
+describe('getState includes expandedChildrenPersons', () => {
+    it('initial state includes expandedChildrenPersons as empty Set', () => {
         const mod = loadModule('');
         mod.initState('@I1@');
         const s = mod.getState();
-        expect(s).toHaveProperty('expandedChildrenFams');
-        expect(s.expandedChildrenFams).toEqual(new Set());
+        expect(s).toHaveProperty('expandedChildrenPersons');
+        expect(s.expandedChildrenPersons).toEqual(new Set());
     });
 });
 
@@ -775,7 +775,7 @@ describe('visibleSpouseFams — serialization and URL round-trip', () => {
 });
 
 describe('resetToRoot', () => {
-    it('clears expandedChildrenFams from URL (c= param absent after reset)', () => {
+    it('clears expandedChildrenPersons from URL (c= param absent after reset)', () => {
         const mod = loadModule('?p=G&c=c+n');
         mod.initState('@I1@');
         mod.resetToRoot('@I1@');
@@ -830,7 +830,7 @@ describe('resetToRoot', () => {
         const s = mod.getState();
         expect(s.expandedNodes).toEqual(new Set());
         expect(s.expandedSiblingsXrefs).toEqual(new Set());
-        expect(s.expandedChildrenFams).toEqual(new Set());
+        expect(s.expandedChildrenPersons).toEqual(new Set());
     });
 
     it('clears visibleSpouseFams too', () => {

@@ -4,7 +4,7 @@ let _state = {
     focusXref: null,
     expandedNodes: new Set(),
     expandedSiblingsXrefs: new Set(),
-    expandedChildrenFams: new Set(),
+    expandedChildrenPersons: new Set(),
     visibleSpouseFams: new Set(),
     panelOpen: false,
     panelXref: null,
@@ -98,14 +98,14 @@ function _siblingsFromParam(search) {
     return _setFromParam(search, 's');
 }
 
-function _childrenFamsToParam(expandedChildrenFams) {
-    return _setToParam(expandedChildrenFams);
+function _childrenPersonsToParam(expandedChildrenPersons) {
+    return _setToParam(expandedChildrenPersons);
 }
 
-function _childrenFamsFromParam(search) {
+function _childrenPersonsFromParam(search) {
     const raw = _getRawParam(search, 'c');
     if (!raw) return new Set();
-    return new Set(raw.split('+').filter(Boolean).map(_tokenToFamXref));
+    return new Set(raw.split('+').filter(Boolean).map(_tokenToXref));
 }
 
 function _visibleSpouseFamsToParam(visibleSpouseFams) {
@@ -127,12 +127,12 @@ function _xrefFromUrl(search) {
     return null;
 }
 
-function _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams) {
+function _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams) {
     if (!focusXref) return '';
     const token = _xrefToToken(focusXref);
     const expandedParam = _expandedToParam(expandedNodes);
     const siblingsParam = _siblingsToParam(expandedSiblingsXrefs);
-    const childrenParam = _childrenFamsToParam(expandedChildrenFams);
+    const childrenParam = _childrenPersonsToParam(expandedChildrenPersons);
     const spouseParam = _visibleSpouseFamsToParam(visibleSpouseFams);
     let url = '?p=' + token;
     if (expandedParam) url += '&e=' + expandedParam;
@@ -142,31 +142,31 @@ function _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChil
     return url;
 }
 
-function _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams) {
+function _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams) {
     return {
         focusXref,
         expandedXrefs: _expandedToParam(expandedNodes),
         siblingsXrefs: _siblingsToParam(expandedSiblingsXrefs),
-        childrenFamsXrefs: _childrenFamsToParam(expandedChildrenFams),
+        childrenPersonsXrefs: _childrenPersonsToParam(expandedChildrenPersons),
         visibleSpouseFamsXrefs: _visibleSpouseFamsToParam(visibleSpouseFams),
     };
 }
 
-function _pushHistory(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams) {
+function _pushHistory(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams) {
     if (typeof history === 'undefined') return;
     history.pushState(
-        _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams),
+        _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams),
         '',
-        _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams),
+        _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams),
     );
 }
 
-function _replaceHistory(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams) {
+function _replaceHistory(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams) {
     if (typeof history === 'undefined') return;
     history.replaceState(
-        _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams),
+        _historyState(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams),
         '',
-        _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams),
+        _buildUrl(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams),
     );
 }
 
@@ -184,14 +184,14 @@ function initState(rootXref) {
         expandedNodes = _expandedFromParam(search);
         expandedSiblingsXrefs = _siblingsFromParam(search);
     }
-    const expandedChildrenFams = _childrenFamsFromParam(search);
+    const expandedChildrenPersons = _childrenPersonsFromParam(search);
     const visibleSpouseFams = _visibleSpouseFamsFromParam(search);
 
     _state = {
         focusXref: fromUrl || rootXref,
         expandedNodes,
         expandedSiblingsXrefs,
-        expandedChildrenFams,
+        expandedChildrenPersons,
         visibleSpouseFams,
         panelOpen: false,
         panelXref: null,
@@ -229,13 +229,13 @@ function initState(rootXref) {
                 newSiblings = _siblingsFromParam(locSearch);
             }
 
-            let newChildrenFams;
-            if (event.state && event.state.childrenFamsXrefs !== undefined) {
-                newChildrenFams = event.state.childrenFamsXrefs ?
-                    new Set(event.state.childrenFamsXrefs.split('+').map(_tokenToFamXref)) :
+            let newChildrenPersons;
+            if (event.state && event.state.childrenPersonsXrefs !== undefined) {
+                newChildrenPersons = event.state.childrenPersonsXrefs ?
+                    new Set(event.state.childrenPersonsXrefs.split('+').map(_tokenToXref)) :
                     new Set();
             } else {
-                newChildrenFams = _childrenFamsFromParam(locSearch);
+                newChildrenPersons = _childrenPersonsFromParam(locSearch);
             }
 
             let newVisibleSpouseFams;
@@ -252,7 +252,7 @@ function initState(rootXref) {
                     focusXref: newXref,
                     expandedNodes: newExpanded,
                     expandedSiblingsXrefs: newSiblings,
-                    expandedChildrenFams: newChildrenFams,
+                    expandedChildrenPersons: newChildrenPersons,
                     visibleSpouseFams: newVisibleSpouseFams,
                 });
                 _callbacks.forEach(cb => cb(_state));
@@ -265,20 +265,20 @@ function setState(updates) {
     const prevFocusXref = _state.focusXref;
     const prevExpanded = _state.expandedNodes;
     const prevSiblings = _state.expandedSiblingsXrefs;
-    const prevChildrenFams = _state.expandedChildrenFams;
+    const prevChildrenFams = _state.expandedChildrenPersons;
     const prevSpouseFams = _state.visibleSpouseFams;
     _state = Object.assign({}, _state, updates);
 
     const focusChanged = 'focusXref' in updates && updates.focusXref !== prevFocusXref;
     const expandedChanged = 'expandedNodes' in updates && updates.expandedNodes !== prevExpanded;
     const siblingsChanged = 'expandedSiblingsXrefs' in updates && updates.expandedSiblingsXrefs !== prevSiblings;
-    const childrenFamsChanged = 'expandedChildrenFams' in updates && updates.expandedChildrenFams !== prevChildrenFams;
+    const childrenFamsChanged = 'expandedChildrenPersons' in updates && updates.expandedChildrenPersons !== prevChildrenFams;
     const spouseFamsChanged = 'visibleSpouseFams' in updates && updates.visibleSpouseFams !== prevSpouseFams;
 
     if (focusChanged) {
-        _pushHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenFams, _state.visibleSpouseFams);
+        _pushHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenPersons, _state.visibleSpouseFams);
     } else if (expandedChanged || siblingsChanged || childrenFamsChanged || spouseFamsChanged) {
-        _replaceHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenFams, _state.visibleSpouseFams);
+        _replaceHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenPersons, _state.visibleSpouseFams);
     }
 
     _callbacks.forEach(cb => cb(_state));
@@ -289,12 +289,12 @@ function resetToRoot(rootXref) {
         focusXref: rootXref,
         expandedNodes: new Set(),
         expandedSiblingsXrefs: new Set(),
-        expandedChildrenFams: new Set(),
+        expandedChildrenPersons: new Set(),
         visibleSpouseFams: new Set(),
         panelOpen: false,
         panelXref: null,
     };
-    _pushHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenFams, _state.visibleSpouseFams);
+    _pushHistory(_state.focusXref, _state.expandedNodes, _state.expandedSiblingsXrefs, _state.expandedChildrenPersons, _state.visibleSpouseFams);
     _callbacks.forEach(cb => cb(_state));
 }
 
@@ -321,8 +321,8 @@ if (typeof module !== 'undefined') module.exports = {
     _expandedFromParam,
     _siblingsToParam,
     _siblingsFromParam,
-    _childrenFamsToParam,
-    _childrenFamsFromParam,
+    _childrenPersonsToParam,
+    _childrenPersonsFromParam,
     _visibleSpouseFamsToParam,
     _visibleSpouseFamsFromParam,
 };

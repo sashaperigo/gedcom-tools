@@ -158,7 +158,7 @@ function _formatYears(person) {
     return parts.join('  ');
 }
 
-function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set(), onChildrenExpandClick = () => {}, expandedChildrenFams = new Set()) {
+function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set(), expandedChildrenPersons = new Set(), onChildrenExpandClick = () => {}) {
     const {
         BG_NODE,
         BG_NODE_FOCUS,
@@ -410,72 +410,71 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         }
     }
 
+    // Children-expand chevron — under the pill's bottom-center. Only drawn
+    // for eligible roles (person, not spouse) AND when the person has at
+    // least one FAM with children.
+    if (CHILDREN_EXPAND_ROLES.has(node.role) && _personHasKids(node.xref)) {
+        _drawChildrenExpandBadge(g, node, expandedChildrenPersons.has(node.xref), onChildrenExpandClick);
+    }
+
     return g;
 }
 
-// Children-expand chevron top-level pass. One chevron per eligible FAM,
-// rendered as a direct child of the tree-root group (so a couple-centered
-// position between two pills is expressible in the same coordinate space as
-// the nodes). A FAM is eligible iff it has children, at least one of its
-// parents is visible, and none of its visible parents is the focus or a
-// direct ancestor (those already expose their children via the focus-row or
-// sibling-expand affordances).
-function _renderChildrenExpandPass(nodes, expandedChildrenFams, onChildrenExpandClick) {
-    if (typeof FAMILIES === 'undefined' || !FAMILIES) return [];
-    const { NODE_W, NODE_H } = DESIGN;
-    const nodeByXref = new Map(nodes.map(n => [n.xref, n]));
-    const els = [];
+// Roles eligible for a children-expand chevron. A chevron is anchored on the
+// *person* (not the couple): clicking reveals children from all of that
+// person's FAMs at once. Excluded roles either already expose their children
+// elsewhere (focus, ancestor) or represent a spouse rather than a lineage
+// person (spouse, descendant_spouse, ancestor_sibling_spouse, spouse_sibling).
+const CHILDREN_EXPAND_ROLES = new Set(['sibling', 'descendant', 'ancestor_sibling']);
+
+function _personHasKids(xref) {
+    if (typeof FAMILIES === 'undefined' || !FAMILIES) return false;
     for (const famXref in FAMILIES) {
         const fam = FAMILIES[famXref];
-        if (!fam || !fam.chil || fam.chil.length === 0) continue;
-        const husbNode = fam.husb ? nodeByXref.get(fam.husb) : null;
-        const wifeNode = fam.wife ? nodeByXref.get(fam.wife) : null;
-        const parentNodes = [husbNode, wifeNode].filter(Boolean);
-        if (parentNodes.length === 0) continue;
-        if (parentNodes.some(n => n.role === 'focus' || n.role === 'ancestor')) continue;
-
-        const R = 8;
-        const GAP = 6;
-        let ccx, ccy;
-        if (parentNodes.length === 2) {
-            ccx = (parentNodes[0].x + NODE_W + parentNodes[1].x) / 2;
-            ccy = Math.max(parentNodes[0].y, parentNodes[1].y) + NODE_H + GAP + R;
-        } else {
-            ccx = parentNodes[0].x + NODE_W / 2;
-            ccy = parentNodes[0].y + NODE_H + GAP + R;
+        if (!fam) continue;
+        if ((fam.husb === xref || fam.wife === xref) && fam.chil && fam.chil.length > 0) {
+            return true;
         }
-
-        const isExpanded = expandedChildrenFams.has(famXref);
-        const fill = isExpanded ? '#2a5a7a' : '#2a7a4a';
-        const chevronDown = `M ${ccx - 3.5} ${ccy - 1.5} L ${ccx} ${ccy + 2} L ${ccx + 3.5} ${ccy - 1.5}`;
-        const chevronUp = `M ${ccx - 3.5} ${ccy + 1.5} L ${ccx} ${ccy - 2} L ${ccx + 3.5} ${ccy + 1.5}`;
-        const d = isExpanded ? chevronUp : chevronDown;
-
-        const btn = _svgEl('circle', {
-            cx: ccx,
-            cy: ccy,
-            r: R,
-            fill,
-            class: 'children-expand-btn',
-            cursor: 'pointer',
-            'data-fam': famXref,
-        });
-        const chev = _svgEl('path', {
-            d,
-            stroke: '#ffffff',
-            'stroke-width': 1.5,
-            'stroke-linecap': 'round',
-            'stroke-linejoin': 'round',
-            fill: 'none',
-            'pointer-events': 'none',
-        });
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            onChildrenExpandClick(famXref);
-        });
-        els.push(btn, chev);
     }
-    return els;
+    return false;
+}
+
+function _drawChildrenExpandBadge(g, node, isExpanded, onChildrenExpandClick) {
+    const { NODE_W, NODE_H } = DESIGN;
+    const R = 8;
+    const GAP = 6;
+    const cx = NODE_W / 2;
+    const cy = NODE_H + GAP + R;
+
+    const fill = isExpanded ? '#2a5a7a' : '#2a7a4a';
+    const chevronDown = `M ${cx - 3.5} ${cy - 1.5} L ${cx} ${cy + 2} L ${cx + 3.5} ${cy - 1.5}`;
+    const chevronUp = `M ${cx - 3.5} ${cy + 1.5} L ${cx} ${cy - 2} L ${cx + 3.5} ${cy + 1.5}`;
+    const d = isExpanded ? chevronUp : chevronDown;
+
+    const btn = _svgEl('circle', {
+        cx,
+        cy,
+        r: R,
+        fill,
+        class: 'children-expand-btn',
+        cursor: 'pointer',
+        'data-xref': node.xref,
+    });
+    const chev = _svgEl('path', {
+        d,
+        stroke: '#ffffff',
+        'stroke-width': 1.5,
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        fill: 'none',
+        'pointer-events': 'none',
+    });
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onChildrenExpandClick(node.xref);
+    });
+    g.appendChild(btn);
+    g.appendChild(chev);
 }
 
 // ---------------------------------------------------------------------------
@@ -546,10 +545,10 @@ function render() {
     const focusXref = state.focusXref;
     const expandedNodes = state.expandedNodes || new Set();
     const expandedSiblingsXrefs = state.expandedSiblingsXrefs || new Set();
-    const expandedChildrenFams = state.expandedChildrenFams || new Set();
+    const expandedChildrenPersons = state.expandedChildrenPersons || new Set();
     const visibleSpouseFams = state.visibleSpouseFams || new Set();
 
-    const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenFams, visibleSpouseFams);
+    const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams);
 
     // Clear tree-root contents
     _treeRoot.innerHTML = '';
@@ -587,13 +586,13 @@ function render() {
     }
 
     // ── Children-expand click handler ────────────────────────────────────────
-    // Toggles a FAM xref in expandedChildrenFams.
-    function onChildrenExpandClick(famXref) {
-        const current = getState().expandedChildrenFams || new Set();
+    // Toggles a person xref in expandedChildrenPersons.
+    function onChildrenExpandClick(personXref) {
+        const current = getState().expandedChildrenPersons || new Set();
         const next = new Set(current);
-        if (next.has(famXref)) next.delete(famXref);
-        else next.add(famXref);
-        setState({ expandedChildrenFams: next });
+        if (next.has(personXref)) next.delete(personXref);
+        else next.add(personXref);
+        setState({ expandedChildrenPersons: next });
     }
 
     // ── Render edges (below nodes) ───────────────────────────────────────────
@@ -603,13 +602,17 @@ function render() {
 
     // ── Render nodes ─────────────────────────────────────────────────────────
     for (const node of nodes) {
-        const g = _renderNode(node, onNodeClick, onExpandClick, expandedNodes, onSiblingExpandClick, expandedSiblingsXrefs);
+        const g = _renderNode(
+            node,
+            onNodeClick,
+            onExpandClick,
+            expandedNodes,
+            onSiblingExpandClick,
+            expandedSiblingsXrefs,
+            expandedChildrenPersons,
+            onChildrenExpandClick,
+        );
         _treeRoot.appendChild(g);
-    }
-
-    // ── Children-expand chevrons (one per eligible FAM, tree-root level) ─────
-    for (const el of _renderChildrenExpandPass(nodes, expandedChildrenFams, onChildrenExpandClick)) {
-        _treeRoot.appendChild(el);
     }
 }
 

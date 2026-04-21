@@ -1063,14 +1063,12 @@ describe('render — ancestor sibling chevron', () => {
 
 // ── Tests: children-expand chevron ────────────────────────────────────────
 //
-// Chevrons are rendered as direct children of <g id="tree-root">, not inside
-// a node's <g data-xref> group — one per eligible FAM. Each chevron carries a
-// data-fam attribute identifying which FAM it belongs to.
+// Chevron is rendered as a child of each eligible node's <g data-xref> group,
+// anchored under the pill's bottom-center. The badge itself carries a
+// data-xref attribute matching its parent person.
 //
-// Eligibility: a FAM is shown a chevron iff
-//   - fam.chil.length > 0, AND
-//   - at least one of husb/wife appears in the rendered nodes, AND
-//   - none of the visible husb/wife has role in {'focus', 'ancestor'}.
+// Eligibility: node.role ∈ {sibling, descendant, ancestor_sibling} AND the
+// person has at least one FAM with children.
 
 describe('render — children-expand chevron', () => {
     let svg;
@@ -1102,127 +1100,101 @@ describe('render — children-expand chevron', () => {
         renderMod.initRenderer(svg);
     });
 
-    function getAllChildBtns(svgEl = svg) {
-        const treeRoot = svgEl.querySelector('#tree-root');
-        return treeRoot.querySelectorAll('circle').filter(
-            c => (c._attrs['class'] || '').includes('children-expand-btn')
+    function getNodeG(xref, svgEl = svg) {
+        return svgEl.querySelector('#tree-root')
+            .querySelectorAll('g[data-xref]')
+            .find(g => g._attrs['data-xref'] === xref);
+    }
+
+    function getChildBtnForPerson(personXref, svgEl = svg) {
+        const g = getNodeG(personXref, svgEl);
+        if (!g) return undefined;
+        return g.children.find(
+            c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('children-expand-btn')
         );
     }
 
-    function getChildBtnByFam(famXref, svgEl = svg) {
-        return getAllChildBtns(svgEl).find(c => c._attrs['data-fam'] === famXref);
-    }
-
-    it('eligible non-focus, non-ancestor FAM gets exactly one chevron', () => {
-        const btns = getAllChildBtns().filter(b => b._attrs['data-fam'] === '@BFAM@');
-        expect(btns.length).toBe(1);
-    });
-
-    it('chevron is a direct child of tree-root, not inside a node g[data-xref]', () => {
-        const treeRoot = svg.querySelector('#tree-root');
-        const btn = getChildBtnByFam('@BFAM@');
+    it('sibling with kids gets exactly one chevron inside its node group', () => {
+        const btn = getChildBtnForPerson('@BROTHER@');
         expect(btn).toBeDefined();
-        // Every node g has data-xref. The chevron must be attached directly to
-        // tree-root, so it should appear among tree-root's direct children.
-        expect(treeRoot.children.includes(btn)).toBe(true);
+        expect(btn._attrs['data-xref']).toBe('@BROTHER@');
     });
 
-    it('FAM whose only visible parents are ancestors (PFAM) gets no chevron', () => {
-        expect(getChildBtnByFam('@PFAM@')).toBeUndefined();
+    it('focus never gets a children-expand chevron', () => {
+        expect(getChildBtnForPerson('@FOCUS@')).toBeUndefined();
     });
 
-    it('FAM whose only visible parent is the focus gets no chevron', () => {
-        global.FAMILIES = {
-            '@FFAM@': { husb: '@FOCUS@', wife: null, chil: ['@NIECE@'] },
-        };
-        loadRenderMod();
-        const svg2 = makeSvgEl();
-        renderMod.initRenderer(svg2);
-        expect(getChildBtnByFam('@FFAM@', svg2)).toBeUndefined();
+    it('ancestor never gets a children-expand chevron', () => {
+        expect(getChildBtnForPerson('@FATHER@')).toBeUndefined();
+        expect(getChildBtnForPerson('@MOTHER@')).toBeUndefined();
     });
 
-    it('FAM with chil=[] (childless) gets no chevron', () => {
+    it('sibling-spouse (BSPOUSE) never gets a children-expand chevron', () => {
+        expect(getChildBtnForPerson('@BSPOUSE@')).toBeUndefined();
+    });
+
+    it('sibling with no children gets no chevron', () => {
         global.FAMILIES = {
             '@BFAM@': { husb: '@BROTHER@', wife: '@BSPOUSE@', chil: [] },
         };
         loadRenderMod();
         const svg2 = makeSvgEl();
         renderMod.initRenderer(svg2);
-        expect(getChildBtnByFam('@BFAM@', svg2)).toBeUndefined();
+        expect(getChildBtnForPerson('@BROTHER@', svg2)).toBeUndefined();
     });
 
-    it('FAM with no visible parent in the tree gets no chevron', () => {
-        global.FAMILIES = {
-            '@ORPHAN@': { husb: '@BSPOUSE@', wife: null, chil: ['@NIECE@'] },
-        };
-        loadRenderMod();
-        const svg2 = makeSvgEl();
-        renderMod.initRenderer(svg2);
-        expect(getChildBtnByFam('@ORPHAN@', svg2)).toBeUndefined();
-    });
-
-    it('chevron is green (expandable) when FAM is not in expandedChildrenFams', () => {
-        const btn = getChildBtnByFam('@BFAM@');
+    it('chevron is green (expandable) when person is not in expandedChildrenPersons', () => {
+        const btn = getChildBtnForPerson('@BROTHER@');
         expect(btn._attrs['fill']).toBe('#2a7a4a');
     });
 
-    it('chevron is blue (collapsible) when FAM is in expandedChildrenFams', () => {
-        stateMod.setState({ expandedChildrenFams: new Set(['@BFAM@']) });
+    it('chevron is blue (collapsible) when person is in expandedChildrenPersons', () => {
+        stateMod.setState({ expandedChildrenPersons: new Set(['@BROTHER@']) });
         loadRenderMod();
         const svg2 = makeSvgEl();
         renderMod.initRenderer(svg2);
-        const btn = getChildBtnByFam('@BFAM@', svg2);
+        const btn = getChildBtnForPerson('@BROTHER@', svg2);
         expect(btn._attrs['fill']).toBe('#2a5a7a');
     });
 
-    it('clicking a green chevron adds the FAM xref to expandedChildrenFams', () => {
+    it('clicking a green chevron adds the person xref to expandedChildrenPersons', () => {
         const spy = vi.fn();
         global.setState = spy;
         loadRenderMod();
         const svg2 = makeSvgEl();
         renderMod.initRenderer(svg2);
-        const btn = getChildBtnByFam('@BFAM@', svg2);
+        const btn = getChildBtnForPerson('@BROTHER@', svg2);
         spy.mockClear();
         btn.dispatchEvent('click', { stopPropagation: () => {} });
         expect(spy).toHaveBeenCalled();
         const update = spy.mock.calls[0][0];
-        expect(update.expandedChildrenFams).toBeInstanceOf(Set);
-        expect(update.expandedChildrenFams.has('@BFAM@')).toBe(true);
+        expect(update.expandedChildrenPersons).toBeInstanceOf(Set);
+        expect(update.expandedChildrenPersons.has('@BROTHER@')).toBe(true);
         global.setState = stateMod.setState;
     });
 
-    it('clicking a blue chevron removes the FAM xref from expandedChildrenFams', () => {
-        stateMod.setState({ expandedChildrenFams: new Set(['@BFAM@']) });
+    it('clicking a blue chevron removes the person xref from expandedChildrenPersons', () => {
+        stateMod.setState({ expandedChildrenPersons: new Set(['@BROTHER@']) });
         const spy = vi.fn();
         global.setState = spy;
         loadRenderMod();
         const svg2 = makeSvgEl();
         renderMod.initRenderer(svg2);
-        const btn = getChildBtnByFam('@BFAM@', svg2);
+        const btn = getChildBtnForPerson('@BROTHER@', svg2);
         spy.mockClear();
         btn.dispatchEvent('click', { stopPropagation: () => {} });
         const update = spy.mock.calls[0][0];
-        expect(update.expandedChildrenFams.has('@BFAM@')).toBe(false);
+        expect(update.expandedChildrenPersons.has('@BROTHER@')).toBe(false);
         global.setState = stateMod.setState;
     });
 
-    it('with only one parent visible, chevron cx equals that parent center x', () => {
-        // Brother is rendered; BSpouse is not (not a focus spouse).
-        const { NODE_W } = DESIGN;
-        const { computeLayout } = require('../../js/viz_layout.js');
-        const state = stateMod.getState();
-        const { nodes } = computeLayout(
-            state.focusXref,
-            state.expandedNodes || new Set(),
-            state.expandedSiblingsXrefs || new Set(),
-            state.expandedChildrenFams || new Set(),
-        );
-        const brotherNode = nodes.find(n => n.xref === '@BROTHER@');
-        expect(brotherNode).toBeDefined();
-        const btn = getChildBtnByFam('@BFAM@');
-        const cx = parseFloat(btn._attrs['cx']);
-        expect(cx).toBeCloseTo(brotherNode.x + NODE_W / 2, 1);
+    it('chevron cx is NODE_W/2 (bottom-center of the pill in node-local coords)', () => {
+        const { NODE_W, NODE_H } = DESIGN;
+        const btn = getChildBtnForPerson('@BROTHER@');
+        expect(parseFloat(btn._attrs['cx'])).toBeCloseTo(NODE_W / 2, 1);
+        expect(parseFloat(btn._attrs['cy'])).toBeGreaterThan(NODE_H);
     });
+});
 
 describe('render — spouse-menu hamburger badge', () => {
     function setup({ relatives, families }) {
@@ -1302,49 +1274,3 @@ describe('render — spouse-menu hamburger badge', () => {
     });
 });
 
-    it('with both parents visible, chevron cx equals the midpoint between them', () => {
-        // Make two siblings joined by a FAM so both parents render.
-        global.PEOPLE = {
-            '@FOCUS@': { name: 'Focus', birth_year: 1900, sex: 'M' },
-            '@SIB_A@': { name: 'Sib A', birth_year: 1897, sex: 'M' },
-            '@SIB_B@': { name: 'Sib B', birth_year: 1899, sex: 'F' },
-            '@KID@': { name: 'Kid', birth_year: 1920, sex: 'F' },
-            '@FATHER@': { name: 'Father', birth_year: 1870, sex: 'M' },
-            '@MOTHER@': { name: 'Mother', birth_year: 1872, sex: 'F' },
-        };
-        global.PARENTS = {
-            '@FOCUS@': ['@FATHER@', '@MOTHER@'],
-            '@SIB_A@': ['@FATHER@', '@MOTHER@'],
-            '@SIB_B@': ['@FATHER@', '@MOTHER@'],
-        };
-        global.CHILDREN = {};
-        global.RELATIVES = {
-            '@FOCUS@': { siblings: ['@SIB_A@', '@SIB_B@'], spouses: [] },
-        };
-        global.FAMILIES = {
-            '@ABFAM@': { husb: '@SIB_A@', wife: '@SIB_B@', chil: ['@KID@'] },
-        };
-        resetState();
-        loadRenderMod();
-        const svg2 = makeSvgEl();
-        renderMod.initRenderer(svg2);
-        const { NODE_W } = DESIGN;
-        const { computeLayout } = require('../../js/viz_layout.js');
-        const state = stateMod.getState();
-        const { nodes } = computeLayout(
-            state.focusXref,
-            state.expandedNodes || new Set(),
-            state.expandedSiblingsXrefs || new Set(),
-            state.expandedChildrenFams || new Set(),
-        );
-        const aN = nodes.find(n => n.xref === '@SIB_A@');
-        const bN = nodes.find(n => n.xref === '@SIB_B@');
-        expect(aN).toBeDefined();
-        expect(bN).toBeDefined();
-        const btn = getChildBtnByFam('@ABFAM@', svg2);
-        expect(btn).toBeDefined();
-        const cx = parseFloat(btn._attrs['cx']);
-        const expected = (aN.x + NODE_W / 2 + bN.x + NODE_W / 2) / 2;
-        expect(cx).toBeCloseTo(expected, 1);
-    });
-});

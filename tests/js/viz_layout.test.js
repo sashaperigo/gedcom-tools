@@ -1908,7 +1908,7 @@ describe('computeLayout — right-wing via father-then-mother path', () => {
 
 // ── Expanded children of non-focus families ────────────────────────────────
 
-describe('computeLayout — expandedChildrenFams: brother\'s kids', () => {
+describe('computeLayout — expandedChildrenPersons: brother\'s kids', () => {
     beforeEach(() => {
         resetGlobals({
             people: {
@@ -1926,14 +1926,14 @@ describe('computeLayout — expandedChildrenFams: brother\'s kids', () => {
         });
     });
 
-    it('nieces do NOT appear when @BFAM@ is NOT in expandedChildrenFams', () => {
+    it('nieces do NOT appear when @BFAM@ is NOT in expandedChildrenPersons', () => {
         const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set());
         expect(nodes.find(n => n.xref === '@NIECE1@')).toBeUndefined();
         expect(nodes.find(n => n.xref === '@NIECE2@')).toBeUndefined();
     });
 
-    it('nieces appear at y = +ROW_HEIGHT when @BFAM@ is in expandedChildrenFams', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+    it('nieces appear at y = +ROW_HEIGHT when @BFAM@ is in expandedChildrenPersons', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BROTHER@']));
         const n1 = nodes.find(n => n.xref === '@NIECE1@');
         const n2 = nodes.find(n => n.xref === '@NIECE2@');
         expect(n1).toBeDefined();
@@ -1943,14 +1943,14 @@ describe('computeLayout — expandedChildrenFams: brother\'s kids', () => {
     });
 
     it('nieces have role "descendant" and generation +1', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BROTHER@']));
         const n1 = nodes.find(n => n.xref === '@NIECE1@');
         expect(n1.role).toBe('descendant');
         expect(n1.generation).toBe(1);
     });
 
     it('nieces are centered under the brother', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BROTHER@']));
         const brother = nodes.find(n => n.xref === '@BROTHER@');
         const n1 = nodes.find(n => n.xref === '@NIECE1@');
         const n2 = nodes.find(n => n.xref === '@NIECE2@');
@@ -1960,20 +1960,20 @@ describe('computeLayout — expandedChildrenFams: brother\'s kids', () => {
     });
 
     it('nieces sorted by birth year left-to-right', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BROTHER@']));
         const n1 = nodes.find(n => n.xref === '@NIECE1@');
         const n2 = nodes.find(n => n.xref === '@NIECE2@');
         expect(n1.x).toBeLessThan(n2.x);
     });
 
     it('emits descendant edges for the children umbrella', () => {
-        const { edges } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BFAM@']));
+        const { edges } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@BROTHER@']));
         const desc = edges.filter(e => e.type === 'descendant');
         expect(desc.length).toBeGreaterThan(0);
     });
 });
 
-describe('computeLayout — expandedChildrenFams: aunt\'s kids (cousins)', () => {
+describe('computeLayout — expandedChildrenPersons: aunt\'s kids (cousins)', () => {
     beforeEach(() => {
         resetGlobals({
             people: {
@@ -1996,7 +1996,7 @@ describe('computeLayout — expandedChildrenFams: aunt\'s kids (cousins)', () =>
     });
 
     it('cousins appear at y=0 (focus row) when aunt\'s FAM is expanded and mother\'s siblings are expanded', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@AFAM@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@AUNT@']));
         const c1 = nodes.find(n => n.xref === '@C1@');
         expect(c1).toBeDefined();
         expect(c1.y).toBe(0);
@@ -2039,7 +2039,7 @@ describe('computeLayout — two focus-siblings with expanded kids: no cousin ove
     });
 
     it('sibling pills themselves do not overlap', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FAM_A@', '@FAM_B@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@SIB_A@', '@SIB_B@']));
         const a = nodes.find(n => n.xref === '@SIB_A@');
         const b = nodes.find(n => n.xref === '@SIB_B@');
         expect(a).toBeDefined();
@@ -2049,7 +2049,7 @@ describe('computeLayout — two focus-siblings with expanded kids: no cousin ove
     });
 
     it('rightmost child of left sibling does not overlap leftmost child of right sibling', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FAM_A@', '@FAM_B@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@SIB_A@', '@SIB_B@']));
         // SIB_A is placed left of SIB_B by birth-year sort (1895 < 1896).
         const a3 = nodes.find(n => n.xref === '@A3@'); // rightmost child of SIB_A
         const b1 = nodes.find(n => n.xref === '@B1@'); // leftmost child of SIB_B
@@ -2090,7 +2090,7 @@ describe('computeLayout — two ancestor-siblings with expanded kids: no cousin 
     });
 
     it('aunt pills themselves do not overlap', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@FAM_A@', '@FAM_B@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@AUNT_A@', '@AUNT_B@']));
         const a = nodes.find(n => n.xref === '@AUNT_A@');
         const b = nodes.find(n => n.xref === '@AUNT_B@');
         expect(a).toBeDefined();
@@ -2100,7 +2100,7 @@ describe('computeLayout — two ancestor-siblings with expanded kids: no cousin 
     });
 
     it('no two cousins on focus row overlap', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@FAM_A@', '@FAM_B@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@MOTHER@']), new Set(['@AUNT_A@', '@AUNT_B@']));
         const cousins = nodes.filter(n => /^@C[AB]\d@$/.test(n.xref));
         expect(cousins.length).toBe(6);
         const sorted = cousins.slice().sort((x, y) => x.x - y.x);
@@ -2134,7 +2134,7 @@ describe('computeLayout — single sibling with many expanded kids: pill itself 
     });
 
     it('lone older sibling with 3 expanded kids sits at x = -FOCUS_TO_SIB (not pushed further left)', () => {
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FAM@']));
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@SIB@']));
         const sib = nodes.find(n => n.xref === '@SIB@');
         expect(sib.x).toBe(-FOCUS_TO_SIB);
     });
@@ -2182,7 +2182,7 @@ describe('computeLayout — cross-generation: great-aunt\'s kids vs aunt+spouse'
             '@FOCUS@',
             new Set(['@MOM@']),
             new Set(['@MOM@', '@GM@']),
-            new Set(['@GA_FAM@']),
+            new Set(['@GA@']),
         );
         const gen1 = nodes.filter(n => n.generation === -1).sort((a, b) => a.x - b.x);
         for (let i = 1; i < gen1.length; i++) {
@@ -2234,7 +2234,7 @@ describe('computeLayout — cross-generation mirror: father-side great-uncle vs 
             '@FOCUS@',
             new Set(['@DAD@']),
             new Set(['@DAD@', '@PGF@']),
-            new Set(['@GU_FAM@']),
+            new Set(['@GU@']),
         );
         const gen1 = nodes.filter(n => n.generation === -1).sort((a, b) => a.x - b.x);
         for (let i = 1; i < gen1.length; i++) {
@@ -2282,7 +2282,7 @@ describe('computeLayout — aunt\'s kids on focus row vs focus+spouse+siblings',
             '@FOCUS@',
             new Set(),
             new Set(['@MOM@']),
-            new Set(['@AUNT_FAM@']),
+            new Set(['@AUNT@']),
         );
         const gen0 = nodes.filter(n => n.generation === 0).sort((a, b) => a.x - b.x);
         for (let i = 1; i < gen0.length; i++) {
@@ -2328,7 +2328,7 @@ describe('computeLayout — nested: sibling-A\'s grandkids vs sibling-B\'s kids'
             '@FOCUS@',
             new Set(),
             new Set(),
-            new Set(['@FAM_A@', '@FAM_A2@', '@FAM_B@']),
+            new Set(['@SIB_A@', '@A_KID2@', '@SIB_B@']),
         );
         for (const gen of [1, 2]) {
             const row = nodes.filter(n => n.generation === gen).sort((a, b) => a.x - b.x);
@@ -2343,7 +2343,7 @@ describe('computeLayout — nested: sibling-A\'s grandkids vs sibling-B\'s kids'
 
 // Same-person, two expanded FAMs (will matter for Stage B / multi-spouse).
 // Even pre-Stage-B, the layout should not crash or overlap when a person
-// is a parent in two FAMs both in expandedChildrenFams.
+// is a parent in two FAMs both in expandedChildrenPersons.
 describe('computeLayout — one sibling, two expanded FAMs (multi-marriage)', () => {
     beforeEach(() => {
         resetGlobals({
@@ -2369,7 +2369,7 @@ describe('computeLayout — one sibling, two expanded FAMs (multi-marriage)', ()
         const { nodes } = computeLayout(
             '@FOCUS@',
             new Set(), new Set(),
-            new Set(['@FAM1@', '@FAM2@']),
+            new Set(['@SIB@']),
         );
         const gen1 = nodes.filter(n => n.generation === 1).sort((a, b) => a.x - b.x);
         for (let i = 1; i < gen1.length; i++) {
@@ -2419,7 +2419,7 @@ describe('computeLayout — deep cross-gen: g-g-aunt FAM vs g-aunt', () => {
             '@FOCUS@',
             new Set(['@MOM@', '@GM@']),
             new Set(['@GM@', '@GGM@']),
-            new Set(['@GGA_FAM@']),
+            new Set(['@GGA@']),
         );
         const gen2 = nodes.filter(n => n.generation === -2).sort((a, b) => a.x - b.x);
         for (let i = 1; i < gen2.length; i++) {
