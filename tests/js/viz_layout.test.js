@@ -18,6 +18,7 @@ const {
     _rightContour,
     _leftContour,
     _requiredSeparation,
+    _placeChildrenOfPerson,
 } = require('../../js/viz_layout.js');
 const SLOT = NODE_W + H_GAP;
 
@@ -2551,5 +2552,72 @@ describe('computeLayout — multi-spouse filtering', () => {
         });
         const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set());
         expect(nodes.filter(n => n.role === 'spouse')).toHaveLength(1);
+    });
+});
+
+// ── Regression: _placeChildrenOfPerson collision avoidance must iterate past
+//    multiple adjacent obstacle pills (the Aime Joseph Bonnici screenshot bug).
+//
+// The buggy two-step push was: push past initially-overlapped pills; if still
+// overlapping, push once more past the second-pass overlapping pills — with
+// NO further re-check. When the second push still lands on yet another pill
+// (a third obstacle further right), the span is placed on top of that pill.
+// The fix replaces this with a gap-finding pass that guarantees clearance.
+
+describe('_placeChildrenOfPerson — iterative collision avoidance', () => {
+    it('kids land in a gap that clears ALL existing pills on the child row', () => {
+        // Anchor person PARENT at x=0, y=0 so kids target childY = ROW_HEIGHT,
+        // centered on PARENT (anchorX=50, totalWidth for 3 kids = 324, so
+        // naive startX = 50 - 162 = -112).
+        //
+        // Existing pills on childY form a chain of H_GAP-adjacent obstacles:
+        //   P1 @ x=-100..0     (blocks naive startX)
+        //   P2 @ x=12..112     (blocks first right-push to maxRight+H_GAP=112)
+        //   P3 @ x=124..224    (blocks second push to 224 — the buggy 2nd push
+        //                       lands startX=224, end=548, overlapping P3)
+        //   P4 @ x=236..336    (still blocks after P3; requires further iter)
+        //
+        // The fix picks a gap large enough for the 324-wide span and places it
+        // there with no overlap; the buggy code drops kids on top of P3 or P4.
+        resetGlobals({
+            people: {
+                '@PARENT@': { birth_year: 1900 },
+                '@K1@': { birth_year: 1930 },
+                '@K2@': { birth_year: 1932 },
+                '@K3@': { birth_year: 1934 },
+            },
+            families: {
+                '@PFAM@': { husb: '@PARENT@', wife: null, chil: ['@K1@', '@K2@', '@K3@'] },
+            },
+            relatives: { '@PARENT@': { spouses: [], siblings: [] } },
+        });
+
+        // P0 blocks leftward pushes (so the code picks rightward). P1..P4 are
+        // adjacent with H_GAP; P5 sits further right in the exact window that
+        // the buggy two-pass push lands on after push #2. P5 does NOT overlap
+        // the push-#1 startX (so maxRight2 ignores it), but DOES overlap the
+        // push-#2 startX — a third push is required.
+        const nodes = [
+            { xref: '@PARENT@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@P0@', x: -500, y: ROW_HEIGHT, generation: 1, role: 'descendant' },
+            { xref: '@P1@', x: -100, y: ROW_HEIGHT, generation: 1, role: 'descendant' },
+            { xref: '@P2@', x: -100 + NODE_W + H_GAP, y: ROW_HEIGHT, generation: 1, role: 'descendant' },
+            { xref: '@P3@', x: -100 + 2 * (NODE_W + H_GAP), y: ROW_HEIGHT, generation: 1, role: 'descendant' },
+            { xref: '@P4@', x: -100 + 3 * (NODE_W + H_GAP), y: ROW_HEIGHT, generation: 1, role: 'descendant' },
+            { xref: '@P5@', x: 580, y: ROW_HEIGHT, generation: 1, role: 'descendant' },
+        ];
+        const edges = [];
+
+        _placeChildrenOfPerson('@PARENT@', new Set(), '@PARENT@', nodes, edges);
+
+        const row = nodes.filter(n => n.y === ROW_HEIGHT);
+        for (let i = 0; i < row.length; i++) {
+            for (let j = i + 1; j < row.length; j++) {
+                const a = row[i];
+                const b = row[j];
+                const overlap = a.x < b.x + NODE_W && a.x + NODE_W > b.x;
+                expect(overlap, `${a.xref}@${a.x} overlaps ${b.xref}@${b.x}`).toBe(false);
+            }
+        }
     });
 });

@@ -528,31 +528,53 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
 
     let startX = anchorX - totalWidth / 2;
 
-    // Collision avoidance against any node already on childY.
+    // Collision avoidance: place the span in the free gap (between/around
+    // existing pills on childY) whose closest point to the anchor is nearest,
+    // clamped to fit entirely inside that gap. A single-pass push can leave
+    // the span overlapping a pill the push landed on; gap-finding guarantees
+    // clearance against every pill at childY.
     const existingAtChildY = nodes.filter(n => n.y === childY);
-    const groupOverlaps = (start) => existingAtChildY.some(n =>
-        n.x < start + totalWidth && n.x + NODE_W > start
-    );
-    if (groupOverlaps(startX)) {
-        const maxRight = existingAtChildY
-            .filter(n => n.x < startX + totalWidth && n.x + NODE_W > startX)
-            .reduce((m, n) => Math.max(m, n.x + NODE_W), -Infinity);
-        const minLeft = existingAtChildY
-            .filter(n => n.x < startX + totalWidth && n.x + NODE_W > startX)
-            .reduce((m, n) => Math.min(m, n.x), Infinity);
-        const pushedRightStart = maxRight > -Infinity ? maxRight + H_GAP : startX;
-        const pushedLeftStart = minLeft < Infinity ? minLeft - H_GAP - totalWidth : startX;
-        const rightShift = Math.abs(pushedRightStart - startX);
-        const leftShift = Math.abs(pushedLeftStart - startX);
-        startX = (leftShift < rightShift && !groupOverlaps(pushedLeftStart)) ?
-            pushedLeftStart :
-            pushedRightStart;
-        if (groupOverlaps(startX)) {
-            const maxRight2 = existingAtChildY
-                .filter(n => n.x < startX + totalWidth && n.x + NODE_W > startX)
-                .reduce((m, n) => Math.max(m, n.x + NODE_W), -Infinity);
-            if (maxRight2 > -Infinity) startX = maxRight2 + H_GAP;
+    if (existingAtChildY.length > 0) {
+        // Merge occupied intervals (sorted by left edge).
+        const sortedOccupied = existingAtChildY
+            .map(n => [n.x, n.x + NODE_W])
+            .sort((a, b) => a[0] - b[0]);
+        const merged = [];
+        for (const [l, r] of sortedOccupied) {
+            if (merged.length && l <= merged[merged.length - 1][1]) {
+                merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], r);
+            } else {
+                merged.push([l, r]);
+            }
         }
+        // Free gaps with H_GAP enforced as clearance from any pill edge.
+        const gaps = [];
+        let prevRight = -Infinity;
+        for (const [l, r] of merged) {
+            const gapL = prevRight === -Infinity ? -Infinity : prevRight + H_GAP;
+            const gapR = l - H_GAP;
+            if (gapR - gapL >= totalWidth) gaps.push([gapL, gapR]);
+            prevRight = r;
+        }
+        gaps.push([prevRight === -Infinity ? -Infinity : prevRight + H_GAP, Infinity]);
+
+        // Pick the gap whose closest point to anchorX is nearest; clamp startX
+        // so the span stays entirely inside the gap.
+        const idealStart = anchorX - totalWidth / 2;
+        let best = null;
+        let bestDist = Infinity;
+        for (const [gL, gR] of gaps) {
+            if (gR - gL < totalWidth) continue;
+            const minStart = gL;
+            const maxStart = gR - totalWidth;
+            const clamped = Math.max(minStart, Math.min(maxStart, idealStart));
+            const dist = Math.abs(clamped - idealStart);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = clamped;
+            }
+        }
+        if (best !== null) startX = best;
     }
 
     // Emit child + spouse nodes and inter-spouse marriage edges. Record each
@@ -1212,5 +1234,6 @@ if (typeof module !== 'undefined') {
         _rightContour,
         _leftContour,
         _requiredSeparation,
+        _placeChildrenOfPerson,
     };
 }
