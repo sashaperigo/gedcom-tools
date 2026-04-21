@@ -75,6 +75,13 @@ function primaryFamFor(personXref, focusXref) {
     if (fams.length === 0) return null;
     if (fams.length === 1) return fams[0];
 
+    // Rule 0: if the focus person is the other parent in exactly one FAM, use
+    // that FAM so the currently-visible relationship is treated as primary.
+    if (focusXref) {
+        const focusFams = fams.filter(f => _otherParent(f, personXref) === focusXref);
+        if (focusFams.length === 1) return focusFams[0];
+    }
+
     // Rule 1: lineage
     const lineage = fams.filter(f => _lineageChildInFam(f, personXref, focusXref));
     if (lineage.length === 1) return lineage[0];

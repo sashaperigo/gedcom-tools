@@ -2664,3 +2664,119 @@ describe('_placeChildrenOfPerson — iterative collision avoidance', () => {
         }
     });
 });
+
+// ── Regression: co-spouse placement in focus row ───────────────────────────
+//
+// When the focus is Josephina and Michele is her spouse, and the user enables
+// Maria Elena via Michele's multi-spouse toggle, Maria Elena must be placed in
+// the focus row to the right of Michele. Before the fix, Maria Elena was never
+// placed in the layout.
+describe('computeLayout — co-spouse placement in focus row', () => {
+    function setupJosephinaScene() {
+        resetGlobals({
+            people: {
+                '@Josephina@': { birth_year: 1900 },
+                '@Michele@': { birth_year: 1898 },
+                '@MariaElena@': { birth_year: 1895 },
+            },
+            parents: { '@Josephina@': [null, null], '@Michele@': [null, null], '@MariaElena@': [null, null] },
+            children: {},
+            relatives: {
+                '@Josephina@': { siblings: [], spouses: ['@Michele@'] },
+                '@Michele@': { siblings: [], spouses: ['@Josephina@', '@MariaElena@'] },
+                '@MariaElena@': { siblings: [], spouses: ['@Michele@'] },
+            },
+            families: {
+                '@F_JM@': { husb: '@Michele@', wife: '@Josephina@', chil: [], marr_year: 1920 },
+                '@F_MM@': { husb: '@Michele@', wife: '@MariaElena@', chil: [], marr_year: 1915 },
+            },
+        });
+    }
+
+    it('with no visibleSpouseFams Michele appears but MariaElena does not (Rule 0: Josephina is primary)', () => {
+        setupJosephinaScene();
+        const { nodes } = computeLayout('@Josephina@', new Set(), new Set(), new Set(), new Set());
+        const spouseNodes = nodes.filter(n => n.role === 'spouse');
+        expect(spouseNodes.map(n => n.xref)).toContain('@Michele@');
+        expect(spouseNodes.map(n => n.xref)).not.toContain('@MariaElena@');
+    });
+
+    it('with Michele-MariaElena FAM in visibleSpouseFams, MariaElena is placed to the right of Michele', () => {
+        setupJosephinaScene();
+        const { nodes } = computeLayout(
+            '@Josephina@', new Set(), new Set(), new Set(),
+            new Set(['@F_JM@', '@F_MM@']),
+        );
+        const micheleNode = nodes.find(n => n.xref === '@Michele@');
+        const mariaNode = nodes.find(n => n.xref === '@MariaElena@');
+        expect(micheleNode).toBeDefined();
+        expect(mariaNode).toBeDefined();
+        expect(mariaNode.y).toBe(0);
+        expect(mariaNode.x).toBeGreaterThan(micheleNode.x);
+    });
+
+    it('with Michele-MariaElena FAM selected, a marriage edge connects Michele to MariaElena', () => {
+        setupJosephinaScene();
+        const { edges } = computeLayout(
+            '@Josephina@', new Set(), new Set(), new Set(),
+            new Set(['@F_JM@', '@F_MM@']),
+        );
+        const marriageEdges = edges.filter(e => e.type === 'marriage');
+        // There must be an edge that starts at Michele's right edge and ends at MariaElena's left edge.
+        const micheleRightX = DESIGN.NODE_W_FOCUS / 2 + DESIGN.MARRIAGE_GAP + DESIGN.NODE_W / 2 + DESIGN.NODE_W;
+        const coEdge = marriageEdges.find(e => Math.abs(e.x1 - micheleRightX) < 0.5);
+        expect(coEdge).toBeDefined();
+    });
+
+    it('with only Michele-MariaElena FAM selected (not Josephina FAM), MariaElena still appears', () => {
+        setupJosephinaScene();
+        const { nodes } = computeLayout(
+            '@Josephina@', new Set(), new Set(), new Set(),
+            new Set(['@F_MM@']),
+        );
+        const mariaNode = nodes.find(n => n.xref === '@MariaElena@');
+        expect(mariaNode).toBeDefined();
+    });
+
+    it('co-spouse placement does not affect younger-sibling start position (no overlap)', () => {
+        resetGlobals({
+            people: {
+                '@Josephina@': { birth_year: 1900 },
+                '@Michele@': { birth_year: 1898 },
+                '@MariaElena@': { birth_year: 1895 },
+                '@YoungSib@': { birth_year: 1905 },
+            },
+            parents: {
+                '@Josephina@': [null, null],
+                '@Michele@': [null, null],
+                '@MariaElena@': [null, null],
+                '@YoungSib@': [null, null],
+            },
+            children: {},
+            relatives: {
+                '@Josephina@': { siblings: ['@YoungSib@'], spouses: ['@Michele@'] },
+                '@Michele@': { siblings: [], spouses: ['@Josephina@', '@MariaElena@'] },
+                '@MariaElena@': { siblings: [], spouses: ['@Michele@'] },
+                '@YoungSib@': { siblings: ['@Josephina@'], spouses: [] },
+            },
+            families: {
+                '@F_JM@': { husb: '@Michele@', wife: '@Josephina@', chil: [], marr_year: 1920 },
+                '@F_MM@': { husb: '@Michele@', wife: '@MariaElena@', chil: [], marr_year: 1915 },
+            },
+        });
+        const { nodes } = computeLayout(
+            '@Josephina@', new Set(), new Set(), new Set(),
+            new Set(['@F_JM@', '@F_MM@']),
+        );
+        const row0 = nodes.filter(n => n.y === 0);
+        for (let i = 0; i < row0.length; i++) {
+            for (let j = i + 1; j < row0.length; j++) {
+                const a = row0[i];
+                const b = row0[j];
+                const wa = a.role === 'focus' ? DESIGN.NODE_W_FOCUS : DESIGN.NODE_W;
+                const overlap = a.x < b.x + DESIGN.NODE_W && a.x + wa > b.x;
+                expect(overlap, `${a.xref}@${a.x} overlaps ${b.xref}@${b.x}`).toBe(false);
+            }
+        }
+    });
+});

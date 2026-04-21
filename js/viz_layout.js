@@ -186,13 +186,40 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             type: 'marriage',
         });
 
+        // Co-spouses: the first right spouse may have their own additional marriage
+        // partners visible via the multi-spouse toggle (e.g., focus is Josephina,
+        // Michele is her spouse, and the user has also selected Maria Elena via
+        // Michele's toggle). Place those co-spouses to the right of Michele.
+        let coSpouseEndX = thisSpouseX;
+        if (si === 0) {
+            const coSpouses = _visibleSpousesFor(
+                spouseXref,
+                RELATIVES[spouseXref]?.spouses ?? [],
+                visibleSpouseFams,
+                focusXref,
+            ).filter(s => s !== focusXref);
+            coSpouses.forEach((coXref, ci) => {
+                const coX = thisSpouseX + (ci + 1) * SLOT;
+                nodes.push({ xref: coXref, x: coX, y: 0, generation: 0, role: 'spouse' });
+                edges.push({
+                    x1: thisSpouseX + ci * SLOT + NODE_W,
+                    y1: NODE_H / 2,
+                    x2: coX,
+                    y2: NODE_H / 2,
+                    type: 'marriage',
+                });
+                coSpouseEndX = coX;
+                rightmostSpouseAreaX = coX;
+            });
+        }
+
         // Spouse's siblings (if expanded and this is the first right-side spouse)
         if (si === 0 && expandedSiblingsXrefs.has(spouseXref)) {
             const spouseSibs = _sortByBirthYear(RELATIVES[spouseXref]?.siblings ?? []);
             if (spouseSibs.length > 0) {
                 const spouseSibNodes = _packRow(
                     spouseSibs.map(xref => ({ xref })),
-                    thisSpouseX + SLOT,
+                    coSpouseEndX + SLOT,
                     0,
                     'spouse_sibling',
                 );
