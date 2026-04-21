@@ -152,13 +152,41 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         leftmostSpouseAreaX - NODE_W / 2 - H_GAP - NODE_W / 2 :
         -FOCUS_TO_SIB;
     if (olderSibs.length > 0) {
-        nodes.push(..._packRowWithDescendants(
+        const olderSibNodes = _packRowWithDescendants(
             olderSibs.map(xref => ({ xref })),
             0,
             'sibling',
             expandedChildrenPersons,
             { type: 'lastLeftEdge', value: olderSibsAnchor },
-        ));
+        );
+        // Insert spouses of older focus-row siblings. Process right→left so that
+        // each sib's spouse goes to its LEFT and more-left sibs are shifted left.
+        const olderSibSpouseNodes = [];
+        let olderShift = 0;
+        for (let i = olderSibNodes.length - 1; i >= 0; i--) {
+            const sibNode = olderSibNodes[i];
+            sibNode.x -= olderShift;
+            const spouses = _visibleSpousesFor(
+                sibNode.xref,
+                RELATIVES[sibNode.xref]?.spouses ?? [],
+                visibleSpouseFams,
+                focusXref,
+            );
+            spouses.forEach((spXref, si) => {
+                const refX = si === 0 ? sibNode.x : sibNode.x - si * (NODE_W + SIB_MARRIAGE_GAP);
+                const spX = refX - SIB_MARRIAGE_GAP - NODE_W;
+                olderSibSpouseNodes.push({ xref: spXref, x: spX, y: 0, generation: 0, role: 'spouse' });
+                edges.push({
+                    x1: spX + NODE_W,
+                    y1: NODE_H / 2,
+                    x2: refX,
+                    y2: NODE_H / 2,
+                    type: 'marriage',
+                });
+                olderShift += NODE_W + SIB_MARRIAGE_GAP;
+            });
+        }
+        nodes.push(...olderSibNodes, ...olderSibSpouseNodes);
     }
 
     // Focus node at x=0
@@ -240,7 +268,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         edges.push({
             x1: leftSpouseX + NODE_W,
             y1: NODE_H / 2,
-            x2: -NODE_W_FOCUS / 2,
+            x2: NODE_W_FOCUS / 2,
             y2: NODE_H / 2,
             type: 'marriage',
         });
@@ -251,13 +279,40 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         rightmostSpouseAreaX + NODE_W / 2 + H_GAP + NODE_W / 2 :
         FOCUS_TO_SIB;
     if (youngerSibs.length > 0) {
-        nodes.push(..._packRowWithDescendants(
+        const youngerSibNodes = _packRowWithDescendants(
             youngerSibs.map(xref => ({ xref })),
             0,
             'sibling',
             expandedChildrenPersons,
             { type: 'firstLeftEdge', value: youngerSibStartX },
-        ));
+        );
+        // Insert spouses of younger focus-row siblings. Process left→right so that
+        // each sib's spouse goes to its RIGHT and more-right sibs are shifted right.
+        const youngerSibSpouseNodes = [];
+        let youngerShift = 0;
+        for (const sibNode of youngerSibNodes) {
+            sibNode.x += youngerShift;
+            const spouses = _visibleSpousesFor(
+                sibNode.xref,
+                RELATIVES[sibNode.xref]?.spouses ?? [],
+                visibleSpouseFams,
+                focusXref,
+            );
+            spouses.forEach((spXref, si) => {
+                const prevX = si === 0 ? sibNode.x : sibNode.x + si * (NODE_W + SIB_MARRIAGE_GAP);
+                const spX = prevX + NODE_W + SIB_MARRIAGE_GAP;
+                youngerSibSpouseNodes.push({ xref: spXref, x: spX, y: 0, generation: 0, role: 'spouse' });
+                edges.push({
+                    x1: prevX + NODE_W,
+                    y1: NODE_H / 2,
+                    x2: spX,
+                    y2: NODE_H / 2,
+                    type: 'marriage',
+                });
+                youngerShift += NODE_W + SIB_MARRIAGE_GAP;
+            });
+        }
+        nodes.push(...youngerSibNodes, ...youngerSibSpouseNodes);
     }
 
     // ── Phase 2: Generation -1 (parents) with umbrella over focus + siblings ─

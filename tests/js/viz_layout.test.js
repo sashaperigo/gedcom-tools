@@ -306,6 +306,41 @@ describe('computeLayout — focus with spouse', () => {
 
 // ── Test 5c: Multi-spouse marriage edges ───────────────────────────────────
 
+// ── Regression: left-spouse marriage edge must reach the focus node ─────────
+//
+// Bug: x2 was -NODE_W_FOCUS/2 = -58, but the focus node's left edge is at x=0.
+// The edge ended 58 px before the focus, creating a tiny 10-px stub.
+// Fix: use x2 = NODE_W_FOCUS/2 (mirrors the right-side formula) so the edge
+// extends into the focus node and is visually covered by it — same pattern as
+// the right-side edge which starts at NODE_W_FOCUS/2 (inside the focus).
+describe('computeLayout — left-spouse marriage edge reaches focus node', () => {
+    it('left-side marriage edge x2 is NODE_W_FOCUS/2 (not -NODE_W_FOCUS/2)', () => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1900 },
+                '@SP1@': { birth_year: 1890 },
+                '@SP2@': { birth_year: 1920 },
+            },
+            relatives: {
+                '@FOCUS@': { siblings: [], spouses: ['@SP1@', '@SP2@'] },
+            },
+            families: {
+                '@F1@': { husb: '@FOCUS@', wife: '@SP1@', chil: [], marr_year: 1910 },
+                '@F2@': { husb: '@FOCUS@', wife: '@SP2@', chil: [], marr_year: 1920 },
+            },
+        });
+        const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set(['@F1@', '@F2@']));
+        const leftSpouseNode = nodes.find(n => n.role === 'spouse' && n.x < 0);
+        expect(leftSpouseNode).toBeDefined();
+        const leftEdge = edges.find(e => e.type === 'marriage' && e.x1 === leftSpouseNode.x + NODE_W);
+        expect(leftEdge).toBeDefined();
+        // x2 must be NODE_W_FOCUS/2, NOT -NODE_W_FOCUS/2
+        expect(leftEdge.x2).toBe(NODE_W_FOCUS / 2);
+        // The edge must cross x=0 (the focus node's left edge), so it's visually connected
+        expect(leftEdge.x2).toBeGreaterThan(0);
+    });
+});
+
 describe('computeLayout — multi-spouse marriage edges', () => {
     it('with 2 spouses, one marriage edge on each side of focus', () => {
         resetGlobals({
@@ -327,9 +362,9 @@ describe('computeLayout — multi-spouse marriage edges', () => {
         expect(marriageEdges[0].x1).toBe(NODE_W_FOCUS / 2);
         expect(marriageEdges[0].x2).toBe(sp1.x);
         expect(sp1.x).toBeGreaterThan(0);
-        // Left-side edge: sp2 right edge → focus left edge
+        // Left-side edge: sp2 right edge → focus center (mirrors right side formula)
         expect(marriageEdges[1].x1).toBe(sp2.x + NODE_W);
-        expect(marriageEdges[1].x2).toBe(-NODE_W_FOCUS / 2);
+        expect(marriageEdges[1].x2).toBe(NODE_W_FOCUS / 2);
         expect(sp2.x).toBeLessThan(0);
     });
 });
@@ -2572,10 +2607,10 @@ describe('computeLayout — multi-spouse filtering', () => {
     it('when both spouses visible, there is a marriage edge on both sides of focus', () => {
         const { edges } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(), new Set(['@F_A@', '@F_B@']));
         const marriages = edges.filter(e => e.type === 'marriage');
-        // One edge whose right endpoint is at focus's left edge, one whose left endpoint is at focus's right edge.
+        // Right edge starts at focus center (NODE_W_FOCUS/2); left edge ends at focus center too.
         const { NODE_W_FOCUS } = DESIGN;
-        const leftSideEdge = marriages.find(e => Math.abs(e.x2 - (-NODE_W_FOCUS / 2)) < 0.5 || Math.abs(e.x1 - (-NODE_W_FOCUS / 2)) < 0.5);
-        const rightSideEdge = marriages.find(e => Math.abs(e.x1 - (NODE_W_FOCUS / 2)) < 0.5 || Math.abs(e.x2 - (NODE_W_FOCUS / 2)) < 0.5);
+        const leftSideEdge = marriages.find(e => Math.abs(e.x2 - (NODE_W_FOCUS / 2)) < 0.5);
+        const rightSideEdge = marriages.find(e => Math.abs(e.x1 - (NODE_W_FOCUS / 2)) < 0.5);
         expect(leftSideEdge).toBeDefined();
         expect(rightSideEdge).toBeDefined();
     });
@@ -2778,5 +2813,104 @@ describe('computeLayout — co-spouse placement in focus row', () => {
                 expect(overlap, `${a.xref}@${a.x} overlaps ${b.xref}@${b.x}`).toBe(false);
             }
         }
+    });
+});
+
+// ── Regression: focus-row siblings must show their spouses ───────────────────
+//
+// Bug: _packRowWithDescendants only placed sibling nodes; no spouse nodes were
+// added. Giacomo's wife never appeared in the focus row next to him.
+// Fix: after packing, post-process each sibling to insert their visible spouse(s)
+// and shift subsequent siblings to avoid overlap.
+describe('computeLayout — focus-row sibling spouse placement', () => {
+    function setupSiblingWithSpouse() {
+        // Michele is focus; Giacomo is a younger sibling who has a wife (Rosa).
+        resetGlobals({
+            people: {
+                '@Michele@': { birth_year: 1870 },
+                '@Giacomo@': { birth_year: 1876 },
+                '@Rosa@': { birth_year: 1880 },
+                '@Nicola@': { birth_year: 1878 },
+            },
+            parents: {
+                '@Michele@': [null, null],
+                '@Giacomo@': [null, null],
+                '@Rosa@': [null, null],
+                '@Nicola@': [null, null],
+            },
+            children: {},
+            relatives: {
+                '@Michele@': { siblings: ['@Giacomo@', '@Nicola@'], spouses: [] },
+                '@Giacomo@': { siblings: ['@Michele@', '@Nicola@'], spouses: ['@Rosa@'] },
+                '@Rosa@': { siblings: [], spouses: ['@Giacomo@'] },
+                '@Nicola@': { siblings: ['@Michele@', '@Giacomo@'], spouses: [] },
+            },
+            families: {
+                '@F_GR@': { husb: '@Giacomo@', wife: '@Rosa@', chil: [], marr_year: 1900 },
+            },
+        });
+    }
+
+    it('Giacomo\'s wife Rosa appears in the focus row', () => {
+        setupSiblingWithSpouse();
+        const { nodes } = computeLayout('@Michele@', new Set(), new Set(), new Set(), new Set());
+        const rosaNode = nodes.find(n => n.xref === '@Rosa@');
+        expect(rosaNode).toBeDefined();
+        expect(rosaNode.y).toBe(0);
+    });
+
+    it('Rosa is placed to the right of Giacomo', () => {
+        setupSiblingWithSpouse();
+        const { nodes } = computeLayout('@Michele@', new Set(), new Set(), new Set(), new Set());
+        const giacomoNode = nodes.find(n => n.xref === '@Giacomo@');
+        const rosaNode = nodes.find(n => n.xref === '@Rosa@');
+        expect(rosaNode.x).toBeGreaterThan(giacomoNode.x + NODE_W);
+    });
+
+    it('a marriage edge connects Giacomo to Rosa', () => {
+        setupSiblingWithSpouse();
+        const { nodes, edges } = computeLayout('@Michele@', new Set(), new Set(), new Set(), new Set());
+        const giacomoNode = nodes.find(n => n.xref === '@Giacomo@');
+        const marriageEdge = edges.find(e =>
+            e.type === 'marriage' && Math.abs(e.x1 - (giacomoNode.x + NODE_W)) < 0.5
+        );
+        expect(marriageEdge).toBeDefined();
+    });
+
+    it('Nicola is shifted right of Rosa with no overlap', () => {
+        setupSiblingWithSpouse();
+        const { nodes } = computeLayout('@Michele@', new Set(), new Set(), new Set(), new Set());
+        const rosaNode = nodes.find(n => n.xref === '@Rosa@');
+        const nicolaNode = nodes.find(n => n.xref === '@Nicola@');
+        expect(nicolaNode.x).toBeGreaterThan(rosaNode.x + NODE_W);
+    });
+
+    it('focus row has no overlapping nodes', () => {
+        setupSiblingWithSpouse();
+        const { nodes } = computeLayout('@Michele@', new Set(), new Set(), new Set(), new Set());
+        const row0 = nodes.filter(n => n.y === 0);
+        for (let i = 0; i < row0.length; i++) {
+            for (let j = i + 1; j < row0.length; j++) {
+                const a = row0[i];
+                const b = row0[j];
+                const wa = a.role === 'focus' ? NODE_W_FOCUS : NODE_W;
+                expect(
+                    a.x < b.x + NODE_W && a.x + wa > b.x,
+                    `${a.xref}@${a.x} overlaps ${b.xref}@${b.x}`,
+                ).toBe(false);
+            }
+        }
+    });
+
+    it('sibling with no spouse is not affected', () => {
+        setupSiblingWithSpouse();
+        const { nodes } = computeLayout('@Michele@', new Set(), new Set(), new Set(), new Set());
+        const nicolaNode = nodes.find(n => n.xref === '@Nicola@');
+        // Nicola has no spouse — no spouse node should appear for her
+        const nicolaSpouseCount = nodes.filter(n =>
+            n.y === 0 && n.role === 'spouse' && n.xref !== '@Rosa@'
+        ).length;
+        expect(nicolaSpouseCount).toBe(0);
+        expect(nicolaNode).toBeDefined();
     });
 });
