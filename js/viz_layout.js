@@ -959,8 +959,8 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
 
 // Clearance kept on the chevron side of every ancestor pill that has siblings,
 // so the r=8 sibling-expand chevron at 4px offset doesn't collide with a
-// neighbor pill or an adjacent couple across the row. 24 = r(8)*2 + gap(4) + buffer(4).
-const CHEVRON_CLEARANCE = 24;
+// neighbor pill or an adjacent couple across the row. 40 = r(8)*2 + gap(4) + buffer(20).
+const CHEVRON_CLEARANCE = 40;
 
 // Female ancestor with siblings → chevron sits on the right side of the pill.
 function _hasRightChevron(xref) {
