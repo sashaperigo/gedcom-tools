@@ -854,7 +854,6 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
     if (sibs.length === 0) return;
 
     const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
-    const SIB_MARRIAGE_GAP = H_GAP;
     const sorted = _sortByBirthYear(sibs);
     const generation = Math.round(ancY / ROW_HEIGHT);
     const midY = ancY + NODE_H / 2;
@@ -963,6 +962,9 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
 // so the r=8 sibling-expand chevron at 4px offset doesn't collide with a
 // neighbor pill or an adjacent couple across the row. 40 = r(8)*2 + gap(4) + buffer(20).
 const CHEVRON_CLEARANCE = 40;
+// Gap between a sibling and their own spouse — smaller than H_GAP so couples
+// appear visually attached while sibling-pair groups remain clearly separated.
+const SIB_MARRIAGE_GAP = 6;
 
 // Female ancestor with siblings → chevron sits on the right side of the pill.
 function _hasRightChevron(xref) {
@@ -996,7 +998,7 @@ function _inlineSiblingExtentRight(xref, expandedSiblingsXrefs) {
         if (i > 0) extent += H_GAP;
         extent += NODE_W;
         const sp = (RELATIVES[s] && RELATIVES[s].spouses) || [];
-        sp.forEach(() => { extent += H_GAP + NODE_W; });
+        sp.forEach(() => { extent += SIB_MARRIAGE_GAP + NODE_W; });
     });
     return extent;
 }
@@ -1013,7 +1015,7 @@ function _inlineSiblingExtentLeft(xref, expandedSiblingsXrefs) {
         if (i > 0) extent += H_GAP;
         extent += NODE_W;
         const sp = (RELATIVES[s] && RELATIVES[s].spouses) || [];
-        sp.forEach(() => { extent += H_GAP + NODE_W; });
+        sp.forEach(() => { extent += SIB_MARRIAGE_GAP + NODE_W; });
     });
     return extent;
 }
@@ -1038,7 +1040,7 @@ function _bioGroupOffset(xref, expandedSiblingsXrefs) {
             sibCenters.push(cursor + NODE_W / 2);
             cursor += NODE_W;
             const sp = (RELATIVES[sx] && RELATIVES[sx].spouses) || [];
-            sp.forEach(() => { cursor += H_GAP + NODE_W; });
+            sp.forEach(() => { cursor += SIB_MARRIAGE_GAP + NODE_W; });
         });
     } else if (_hasLeftChevron(xref)) {
         let cursor = -(NODE_W / 2 + CHEVRON_CLEARANCE); // xref.cx → first sib right edge (leftward)
@@ -1047,7 +1049,7 @@ function _bioGroupOffset(xref, expandedSiblingsXrefs) {
             sibCenters.push(cursor - NODE_W / 2);
             cursor -= NODE_W;
             const sp = (RELATIVES[sx] && RELATIVES[sx].spouses) || [];
-            sp.forEach(() => { cursor -= H_GAP + NODE_W; });
+            sp.forEach(() => { cursor -= SIB_MARRIAGE_GAP + NODE_W; });
         });
     } else {
         return 0;
