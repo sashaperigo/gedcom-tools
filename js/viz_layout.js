@@ -429,7 +429,9 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     }
 
     // ── Phase 3: Expanded children of non-focus persons ─────────────────────
+    // Skip focusXref — Phase 2 already placed the focus person's children.
     expandedChildrenPersons.forEach(personXref => {
+        if (personXref === focusXref) return;
         _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges);
     });
 

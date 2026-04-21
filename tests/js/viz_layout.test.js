@@ -1974,6 +1974,49 @@ describe('computeLayout — expandedChildrenPersons: brother\'s kids', () => {
     });
 });
 
+// ── Regression: focus person in expandedChildrenPersons must not duplicate children ──
+describe('computeLayout — focus person in expandedChildrenPersons does not duplicate children', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1905 },
+                '@SPOUSE@': { birth_year: 1910 },
+                '@CHILD1@': { birth_year: 1930 },
+                '@CHILD2@': { birth_year: 1932 },
+            },
+            relatives: {
+                '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] },
+            },
+            children: {
+                '@FOCUS@': ['@CHILD1@', '@CHILD2@'],
+            },
+            families: {
+                '@FAM@': { husb: '@FOCUS@', wife: '@SPOUSE@', chil: ['@CHILD1@', '@CHILD2@'] },
+            },
+        });
+    });
+
+    it('each child appears exactly once when focusXref is in expandedChildrenPersons', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FOCUS@']));
+        const child1Nodes = nodes.filter(n => n.xref === '@CHILD1@');
+        const child2Nodes = nodes.filter(n => n.xref === '@CHILD2@');
+        expect(child1Nodes).toHaveLength(1);
+        expect(child2Nodes).toHaveLength(1);
+    });
+
+    it('children appear at y=+ROW_HEIGHT (not doubled)', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set(['@FOCUS@']));
+        const child1 = nodes.find(n => n.xref === '@CHILD1@');
+        expect(child1.y).toBe(ROW_HEIGHT);
+    });
+
+    it('without focusXref in expandedChildrenPersons children still appear once', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), new Set());
+        const child1Nodes = nodes.filter(n => n.xref === '@CHILD1@');
+        expect(child1Nodes).toHaveLength(1);
+    });
+});
+
 describe('computeLayout — expandedChildrenPersons: aunt\'s kids (cousins)', () => {
     beforeEach(() => {
         resetGlobals({

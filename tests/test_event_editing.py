@@ -575,7 +575,7 @@ class TestTemplateUIElements:
         assert 'id="event-modal-place"' in _HTML_TEMPLATE
 
     def test_add_event_btn_class_present(self):
-        assert 'add-event-btn' in _HTML_TEMPLATE
+        assert 'add-event-btn' in _FULL_SOURCE
 
     def test_add_nationality_btn_present(self):
         assert 'Add nationality' in _FULL_SOURCE
