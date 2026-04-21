@@ -508,7 +508,7 @@ describe('render — ancestor expand buttons', () => {
         const expandBtn = fatherG.children.find(
             c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
         );
-        expect(expandBtn._attrs['fill']).toBe('#2a7a4a');
+        expect(expandBtn._attrs['class']).toMatch(/\bbtn-expand\b/);
     });
 
     it('expand button circle is blue when ancestor is already expanded (can collapse)', () => {
@@ -531,7 +531,7 @@ describe('render — ancestor expand buttons', () => {
         const expandBtn = fatherG.children.find(
             c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('expand-btn')
         );
-        expect(expandBtn._attrs['fill']).toBe('#2a5a7a');
+        expect(expandBtn._attrs['class']).toMatch(/\bbtn-collapse\b/);
     });
 
     it('expanded ancestor shows a down-chevron path', () => {
@@ -823,8 +823,7 @@ describe('render — died-young badge', () => {
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
         expect(focusG).toBeDefined();
-        // Badge is an amber circle appended to the node group
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeDefined();
     });
 
@@ -836,7 +835,7 @@ describe('render — died-young badge', () => {
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeDefined();
     });
 
@@ -848,7 +847,7 @@ describe('render — died-young badge', () => {
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeDefined();
     });
 
@@ -861,7 +860,7 @@ describe('render — died-young badge', () => {
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && c._attrs['fill'] === '#fbbf24');
+        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeUndefined();
     });
 });
@@ -888,7 +887,7 @@ describe('render — descendant umbrella edges', () => {
         renderMod.initRenderer(svg);
         const treeRoot = svg.querySelector('#tree-root');
         const lines = treeRoot.querySelectorAll('line');
-        const descLines = lines.filter(l => l._attrs['stroke'] === '#2c2c54');
+        const descLines = lines.filter(l => (l._attrs['class'] || '').includes('edge-descendant'));
         // At minimum: anchor drop + per-child drop (single child, no crossbar)
         expect(descLines.length).toBeGreaterThanOrEqual(2);
     });
@@ -898,7 +897,7 @@ describe('render — descendant umbrella edges', () => {
         renderMod.initRenderer(svg);
         const treeRoot = svg.querySelector('#tree-root');
         const lines = treeRoot.querySelectorAll('line');
-        const marriageLines = lines.filter(l => l._attrs['stroke'] === '#3a6a3a');
+        const marriageLines = lines.filter(l => (l._attrs['class'] || '').includes('edge-marriage'));
         // Expect at least one marriage edge (between @C1@ and @C1SP@) in descendant row
         const expectedY = String(DESIGN.ROW_HEIGHT + DESIGN.NODE_H / 2);
         const childRowMarriage = marriageLines.find(l =>
@@ -975,18 +974,18 @@ describe('render — ancestor sibling chevron', () => {
         expect(btn).toBeUndefined();
     });
 
-    it('ancestor with siblings, not expanded → green fill', () => {
+    it('ancestor with siblings, not expanded → btn-expand class', () => {
         const btn = getSibBtn('@MOTHER@');
-        expect(btn._attrs['fill']).toBe('#2a7a4a');
+        expect(btn._attrs['class']).toMatch(/\bbtn-expand\b/);
     });
 
-    it('ancestor with siblings, already expanded → blue fill', () => {
+    it('ancestor with siblings, already expanded → btn-collapse class', () => {
         stateMod.setState({ expandedSiblingsXrefs: new Set(['@MOTHER@']) });
         loadRenderMod();
         const svg2 = makeSvgEl();
         renderMod.initRenderer(svg2);
         const btn = getSibBtn('@MOTHER@', svg2);
-        expect(btn._attrs['fill']).toBe('#2a5a7a');
+        expect(btn._attrs['class']).toMatch(/\bbtn-collapse\b/);
     });
 
     it('female ancestor sibling chevron sits to the right of the pill', () => {
@@ -1186,18 +1185,18 @@ describe('render — children-expand chevron', () => {
         expect(getChildBtnForPerson('@BROTHER@', svg2)).toBeUndefined();
     });
 
-    it('chevron is green (expandable) when person is not in expandedChildrenPersons', () => {
+    it('chevron has btn-expand class when person is not in expandedChildrenPersons', () => {
         const btn = getChildBtnForPerson('@BROTHER@');
-        expect(btn._attrs['fill']).toBe('#2a7a4a');
+        expect(btn._attrs['class']).toMatch(/\bbtn-expand\b/);
     });
 
-    it('chevron is blue (collapsible) when person is in expandedChildrenPersons', () => {
+    it('chevron has btn-collapse class when person is in expandedChildrenPersons', () => {
         stateMod.setState({ expandedChildrenPersons: new Set(['@BROTHER@']) });
         loadRenderMod();
         const svg2 = makeSvgEl();
         renderMod.initRenderer(svg2);
         const btn = getChildBtnForPerson('@BROTHER@', svg2);
-        expect(btn._attrs['fill']).toBe('#2a5a7a');
+        expect(btn._attrs['class']).toMatch(/\bbtn-collapse\b/);
     });
 
     it('clicking a green chevron adds the person xref to expandedChildrenPersons', () => {
