@@ -715,7 +715,8 @@ header h1 {
 #sources-modal-overlay,
 #add-citation-modal-overlay,
 #edit-citation-modal-overlay,
-#edit-source-modal-overlay {
+#edit-source-modal-overlay,
+#spouse-menu-modal-overlay {
     display: none;
     position: fixed;
     inset: 0;
@@ -744,7 +745,8 @@ header h1 {
 #sources-modal-overlay.open,
 #add-citation-modal-overlay.open,
 #edit-citation-modal-overlay.open,
-#edit-source-modal-overlay.open {
+#edit-source-modal-overlay.open,
+#spouse-menu-modal-overlay.open {
     display: flex;
 }
 
@@ -756,7 +758,8 @@ header h1 {
 #change-parent-modal,
 #add-citation-modal,
 #edit-citation-modal,
-#edit-source-modal {
+#edit-source-modal,
+#spouse-menu-modal {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -801,6 +804,30 @@ header h1 {
     font-size: 14px;
     color: var(--text-secondary);
     font-weight: 600;
+}
+
+#spouse-menu-modal h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.spouse-menu-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.spouse-menu-row input[type="checkbox"] {
+    cursor: pointer;
 }
 
 #name-modal h3,

@@ -82,6 +82,55 @@ function _drawDiedYoungBadge(g, w, ageAtDeath) {
     g.appendChild(sym);
 }
 
+// Append a small hamburger badge to a node <g> whose person participates in
+// two or more FAMs. Placed in the top-left corner. Clicking opens the
+// spouse-menu modal via openSpouseMenuModal(xref).
+const SPOUSE_MENU_ROLES = new Set([
+    'focus', 'spouse', 'descendant_spouse',
+    'ancestor_sibling', 'ancestor_sibling_spouse',
+]);
+
+function _personFamCount(xref) {
+    if (typeof FAMILIES === 'undefined' || !FAMILIES) return 0;
+    let n = 0;
+    for (const f in FAMILIES) {
+        const fam = FAMILIES[f];
+        if (fam && (fam.husb === xref || fam.wife === xref)) n++;
+    }
+    return n;
+}
+
+function _drawSpouseMenuBadge(g, xref) {
+    const cx = 11, cy = 11;
+    const circle = _svgEl('circle', {
+        cx, cy, r: 8,
+        fill: '#4a5568',
+        class: 'spouse-menu-btn',
+        'data-xref': xref,
+        cursor: 'pointer',
+    });
+    const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    titleEl.textContent = 'Spouses';
+    circle.appendChild(titleEl);
+    g.appendChild(circle);
+    // Three short horizontal lines (hamburger icon)
+    for (let i = -1; i <= 1; i++) {
+        const line = _svgEl('line', {
+            x1: cx - 3, y1: cy + i * 2.5,
+            x2: cx + 3, y2: cy + i * 2.5,
+            stroke: '#ffffff',
+            'stroke-width': 1.2,
+            'stroke-linecap': 'round',
+            'pointer-events': 'none',
+        });
+        g.appendChild(line);
+    }
+    circle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof openSpouseMenuModal === 'function') openSpouseMenuModal(xref);
+    });
+}
+
 function _truncateLine(text, maxLen) {
     if (!text) return '';
     if (text.length <= maxLen) return text;
@@ -252,6 +301,11 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
 
     // Died-young badge (stillborn / infant / child)
     _drawDiedYoungBadge(g, w, person.age_at_death);
+
+    // Spouse-menu hamburger badge (top-left) when person has ≥2 FAMs
+    if (SPOUSE_MENU_ROLES.has(node.role) && _personFamCount(node.xref) >= 2) {
+        _drawSpouseMenuBadge(g, node.xref);
+    }
 
     // Click handler
     g.addEventListener('click', (e) => {

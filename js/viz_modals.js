@@ -1718,6 +1718,65 @@ async function submitAddSourceModal() {
 }
 
 // ---------------------------------------------------------------------------
+// Spouse-menu modal (multi-spouse toggle)
+// ---------------------------------------------------------------------------
+
+function _famsForPerson(xref) {
+    if (typeof FAMILIES === 'undefined' || !FAMILIES) return [];
+    const out = [];
+    for (const f in FAMILIES) {
+        const fam = FAMILIES[f];
+        if (fam && (fam.husb === xref || fam.wife === xref)) out.push(f);
+    }
+    return out;
+}
+
+function _buildSpouseMenuRows(xref, visibleSpouseFams) {
+    const fams = _famsForPerson(xref);
+    const visible = visibleSpouseFams || new Set();
+    return fams.map(f => {
+        const fam = FAMILIES[f];
+        const other = fam.husb === xref ? fam.wife : fam.husb;
+        const otherName = (other && PEOPLE[other] && PEOPLE[other].name) || (other || '(unknown)');
+        const year = fam.marr_year ? ` (${fam.marr_year})` : '';
+        const checked = visible.has(f) ? ' checked' : '';
+        const fQ = escHtml(f);
+        return (
+            `<label class="spouse-menu-row" data-fam="${fQ}">` +
+            `<input type="checkbox"${checked} onchange="toggleSpouseMenuFam('${fQ}')">` +
+            `<span>${escHtml(otherName)}${escHtml(year)}</span>` +
+            `</label>`
+        );
+    }).join('');
+}
+
+function openSpouseMenuModal(xref) {
+    const overlay = document.getElementById('spouse-menu-modal-overlay');
+    const list = document.getElementById('spouse-menu-modal-list');
+    const title = document.getElementById('spouse-menu-modal-title');
+    const name = (PEOPLE && PEOPLE[xref] && PEOPLE[xref].name) || xref;
+    if (title) title.textContent = 'Spouses — ' + name;
+    const state = (typeof getState === 'function') ? getState() : {};
+    const visible = state.visibleSpouseFams || new Set();
+    if (list) list.innerHTML = _buildSpouseMenuRows(xref, visible);
+    if (overlay) overlay.classList.add('open');
+}
+
+function closeSpouseMenuModal() {
+    const overlay = document.getElementById('spouse-menu-modal-overlay');
+    if (overlay) overlay.classList.remove('open');
+}
+
+function toggleSpouseMenuFam(famXref) {
+    const state = (typeof getState === 'function') ? getState() : {};
+    const cur = state.visibleSpouseFams || new Set();
+    const next = new Set(cur);
+    if (next.has(famXref)) next.delete(famXref);
+    else next.add(famXref);
+    setState({ visibleSpouseFams: next });
+}
+
+// ---------------------------------------------------------------------------
 // Exports (for Vitest unit tests via CommonJS require)
 // ---------------------------------------------------------------------------
 
@@ -1757,5 +1816,9 @@ if (typeof module !== 'undefined' && module.exports) {
         _onPlaceInput,
         _selectPlace,
         _clearPlaceResults,
+        openSpouseMenuModal,
+        closeSpouseMenuModal,
+        toggleSpouseMenuFam,
+        _buildSpouseMenuRows,
     };
 }

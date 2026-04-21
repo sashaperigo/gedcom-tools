@@ -1665,3 +1665,99 @@ describe('handleCitationPaste — refreshes modal and panel after paste', () => 
         expect(list.innerHTML).not.toContain('No sources recorded');
     });
 });
+
+// ── Spouse-menu modal ─────────────────────────────────────────────────────
+
+describe('spouse-menu modal', () => {
+    let overlay, list, title;
+    let setStateSpy;
+    const { openSpouseMenuModal, closeSpouseMenuModal, toggleSpouseMenuFam, _buildSpouseMenuRows } =
+        require('../../js/viz_modals.js');
+
+    beforeEach(() => {
+        overlay = { classList: { list: [], add(c) { this.list.push(c); }, remove(c) { this.list = this.list.filter(x => x !== c); }, contains(c) { return this.list.includes(c); } } };
+        list = { innerHTML: '' };
+        title = { textContent: '' };
+        const byId = {
+            'spouse-menu-modal-overlay': overlay,
+            'spouse-menu-modal-list': list,
+            'spouse-menu-modal-title': title,
+        };
+        global.document = {
+            getElementById: (id) => byId[id] || null,
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@F@': { name: 'Focus Person' },
+            '@SP1@': { name: 'Alice One' },
+            '@SP2@': { name: 'Beth Two' },
+        };
+        global.FAMILIES = {
+            '@FAM1@': { husb: '@F@', wife: '@SP1@', chil: [], marr_year: 1920 },
+            '@FAM2@': { husb: '@F@', wife: '@SP2@', chil: [], marr_year: 1935 },
+        };
+        setStateSpy = vi.fn();
+        global.setState = setStateSpy;
+        global.getState = () => ({ visibleSpouseFams: new Set() });
+    });
+
+    it('openSpouseMenuModal adds .open to overlay', () => {
+        openSpouseMenuModal('@F@');
+        expect(overlay.classList.contains('open')).toBe(true);
+    });
+
+    it('closeSpouseMenuModal removes .open', () => {
+        openSpouseMenuModal('@F@');
+        closeSpouseMenuModal();
+        expect(overlay.classList.contains('open')).toBe(false);
+    });
+
+    it('sets title to "Spouses — <name>"', () => {
+        openSpouseMenuModal('@F@');
+        expect(title.textContent).toContain('Focus Person');
+    });
+
+    it('renders one row per FAM the person participates in', () => {
+        openSpouseMenuModal('@F@');
+        // Count data-fam attributes
+        const matches = list.innerHTML.match(/data-fam=/g) || [];
+        expect(matches.length).toBe(2);
+    });
+
+    it('each row shows the other-parent name', () => {
+        openSpouseMenuModal('@F@');
+        expect(list.innerHTML).toContain('Alice One');
+        expect(list.innerHTML).toContain('Beth Two');
+    });
+
+    it('each row shows marr_year when present', () => {
+        openSpouseMenuModal('@F@');
+        expect(list.innerHTML).toContain('1920');
+        expect(list.innerHTML).toContain('1935');
+    });
+
+    it('checkbox is checked when FAM is in visibleSpouseFams', () => {
+        global.getState = () => ({ visibleSpouseFams: new Set(['@FAM1@']) });
+        openSpouseMenuModal('@F@');
+        // Find the FAM1 row — should contain "checked"
+        const fam1Idx = list.innerHTML.indexOf('@FAM1@');
+        const fam2Idx = list.innerHTML.indexOf('@FAM2@');
+        const fam1Row = list.innerHTML.slice(fam1Idx, fam2Idx > fam1Idx ? fam2Idx : undefined);
+        expect(fam1Row).toContain('checked');
+    });
+
+    it('toggleSpouseMenuFam adds FAM to visibleSpouseFams when not present', () => {
+        toggleSpouseMenuFam('@FAM1@');
+        expect(setStateSpy).toHaveBeenCalled();
+        const update = setStateSpy.mock.calls[0][0];
+        expect(update.visibleSpouseFams).toBeInstanceOf(Set);
+        expect(update.visibleSpouseFams.has('@FAM1@')).toBe(true);
+    });
+
+    it('toggleSpouseMenuFam removes FAM from visibleSpouseFams when already present', () => {
+        global.getState = () => ({ visibleSpouseFams: new Set(['@FAM1@']) });
+        toggleSpouseMenuFam('@FAM1@');
+        const update = setStateSpy.mock.calls[0][0];
+        expect(update.visibleSpouseFams.has('@FAM1@')).toBe(false);
+    });
+});

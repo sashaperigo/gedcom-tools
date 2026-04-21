@@ -25,6 +25,15 @@
             <g id="canvas"></g>
         </svg>
     </div>
+    <div id="spouse-menu-modal-overlay" onclick="closeIfFarFromPanel(event,'spouse-menu-modal',closeSpouseMenuModal)">
+        <div id="spouse-menu-modal">
+            <h3 id="spouse-menu-modal-title">Spouses</h3>
+            <div id="spouse-menu-modal-list"></div>
+            <div class="note-modal-actions">
+                <button class="note-modal-save" onclick="closeSpouseMenuModal()">Done</button>
+            </div>
+        </div>
+    </div>
     <div id="note-modal-overlay" onclick="closeIfFarFromPanel(event,'note-modal',closeNoteModal)">
         <div id="note-modal">
             <h3 id="note-modal-title">Edit Note</h3>

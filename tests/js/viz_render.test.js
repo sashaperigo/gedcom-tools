@@ -1224,6 +1224,84 @@ describe('render — children-expand chevron', () => {
         expect(cx).toBeCloseTo(brotherNode.x + NODE_W / 2, 1);
     });
 
+describe('render — spouse-menu hamburger badge', () => {
+    function setup({ relatives, families }) {
+        global.PEOPLE = {
+            '@FOCUS@': { name: 'Focus', birth_year: 1900, sex: 'M' },
+            '@SP1@': { name: 'Spouse One', birth_year: 1902, sex: 'F' },
+            '@SP2@': { name: 'Spouse Two', birth_year: 1904, sex: 'F' },
+            '@FATHER@': { name: 'Father', birth_year: 1870, sex: 'M' },
+            '@MOTHER@': { name: 'Mother', birth_year: 1872, sex: 'F' },
+        };
+        global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+        global.CHILDREN = {};
+        global.RELATIVES = relatives;
+        global.FAMILIES = families;
+        resetState();
+        loadRenderMod();
+        const svg = makeSvgEl();
+        renderMod.initRenderer(svg);
+        return svg;
+    }
+
+    function getBadge(svg, xref) {
+        const g = svg.querySelector('#tree-root')
+            .querySelectorAll('g[data-xref]')
+            .find(gr => gr._attrs['data-xref'] === xref);
+        if (!g) return null;
+        return g.children.find(
+            c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('spouse-menu-btn')
+        );
+    }
+
+    it('person with 1 FAM on focus role → no badge', () => {
+        const svg = setup({
+            relatives: { '@FOCUS@': { siblings: [], spouses: ['@SP1@'] } },
+            families: {
+                '@FAM1@': { husb: '@FOCUS@', wife: '@SP1@', chil: [] },
+            },
+        });
+        expect(getBadge(svg, '@FOCUS@')).toBeUndefined();
+    });
+
+    it('person with 2 FAMs on focus role → one .spouse-menu-btn at top-left (cx ≈ 11, cy ≈ 11)', () => {
+        const svg = setup({
+            relatives: { '@FOCUS@': { siblings: [], spouses: ['@SP1@'] } },
+            families: {
+                '@FAM1@': { husb: '@FOCUS@', wife: '@SP1@', chil: [] },
+                '@FAM2@': { husb: '@FOCUS@', wife: '@SP2@', chil: [] },
+            },
+        });
+        const badge = getBadge(svg, '@FOCUS@');
+        expect(badge).toBeDefined();
+        expect(parseFloat(badge._attrs['cx'])).toBeCloseTo(11, 0);
+        expect(parseFloat(badge._attrs['cy'])).toBeCloseTo(11, 0);
+    });
+
+    it('person with 2 FAMs on ancestor role → no badge (excluded)', () => {
+        const svg = setup({
+            relatives: { '@FOCUS@': { siblings: [], spouses: [] } },
+            families: {
+                '@FAM1@': { husb: '@FATHER@', wife: '@MOTHER@', chil: ['@FOCUS@'] },
+                '@FAM2@': { husb: '@FATHER@', wife: '@SP2@', chil: [] },
+            },
+        });
+        expect(getBadge(svg, '@FATHER@')).toBeUndefined();
+    });
+
+    it('badge carries data-xref matching the person', () => {
+        const svg = setup({
+            relatives: { '@FOCUS@': { siblings: [], spouses: ['@SP1@'] } },
+            families: {
+                '@FAM1@': { husb: '@FOCUS@', wife: '@SP1@', chil: [] },
+                '@FAM2@': { husb: '@FOCUS@', wife: '@SP2@', chil: [] },
+            },
+        });
+        const badge = getBadge(svg, '@FOCUS@');
+        expect(badge._attrs['data-xref']).toBe('@FOCUS@');
+    });
+});
+
     it('with both parents visible, chevron cx equals the midpoint between them', () => {
         // Make two siblings joined by a FAM so both parents render.
         global.PEOPLE = {
