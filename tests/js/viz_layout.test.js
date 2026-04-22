@@ -3287,4 +3287,47 @@ describe('computeLayout — focus-parents ↔ spouse-parents collision avoidance
         // At depth 0 the required center-to-center gap is NODE_W + H_GAP.
         expect(spDadCenter - fMomCenter).toBeGreaterThanOrEqual(NODE_W + H_GAP);
     });
+
+    it('does not shift the spouse when focus has no parents in the tree', () => {
+        // Remove focus's parents from the fixture — no focus-side subtree
+        // exists at the ancestor row, so there's nothing to collide with.
+        delete global.PARENTS['@FOCUS@'];
+        const expanded = new Set(['@SPOUSE@']);
+        const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
+        const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+        const firstSpouseX = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+        expect(spouse.x).toBe(firstSpouseX);
+        // Spouse's parents are still placed.
+        expect(nodes.find(n => n.xref === '@SPDAD@')).toBeDefined();
+    });
+
+    it('does not place spouse parents when spouse side is collapsed', () => {
+        const expanded = new Set(['@FOCUS@']);
+        const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
+        expect(nodes.find(n => n.xref === '@SPDAD@')).toBeUndefined();
+        expect(nodes.find(n => n.xref === '@SPMOM@')).toBeUndefined();
+        // And focus-mother is at her un-shifted position.
+        const fMom = nodes.find(n => n.xref === '@FMOM@');
+        expect(fMom).toBeDefined();
+    });
+
+    it('keeps younger focus-sibling to the right of the shifted spouse', () => {
+        // Extend fixture with a younger focus-sibling.
+        global.PEOPLE['@SIB@'] = { birth_year: 1925 };
+        global.RELATIVES['@FOCUS@'] = { siblings: ['@SIB@'], spouses: ['@SPOUSE@'] };
+        global.RELATIVES['@SIB@'] = { siblings: ['@FOCUS@'], spouses: [] };
+        global.PARENTS['@SIB@'] = ['@FDAD@', '@FMOM@'];
+
+        const expanded = new Set(['@FOCUS@', '@SPOUSE@']);
+        const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
+
+        const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+        const sib = nodes.find(n => n.xref === '@SIB@');
+        expect(spouse).toBeDefined();
+        expect(sib).toBeDefined();
+        // The younger sibling is placed to the RIGHT of the spouse with a
+        // proper gap. If the sibling didn't get shifted alongside the
+        // spouse during collision avoidance, it would overlap the spouse.
+        expect(sib.x).toBeGreaterThan(spouse.x + NODE_W);
+    });
 });
