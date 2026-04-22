@@ -918,6 +918,18 @@ describe('showEditCitationModal', () => {
         expect(urlInp.value).toBe('https://example.com/src');
     });
 
+    it('shows the source name (read-only) so users can see which source they are editing', () => {
+        if (!showEditCitationModal) return;
+        const sourceNameEl = _fakeModalEl('edit-citation-modal-source-name');
+        const prevById = global.document.getElementById;
+        global.document.getElementById = (id) => {
+            if (id === 'edit-citation-modal-source-name') return sourceNameEl;
+            return prevById(id);
+        };
+        showEditCitationModal('@I1@', 'BIRT', 0);
+        expect(sourceNameEl.textContent).toBe('Birth Register');
+    });
+
     it('pre-fills QUAY and DATE fields when present on the citation', () => {
         if (!showEditCitationModal) return;
         const quayEl = _fakeModalEl('edit-citation-modal-quay');

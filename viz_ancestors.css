@@ -806,6 +806,36 @@ header h1 {
     font-weight: 600;
 }
 
+/* Read-only source-name banner shown above the citation field stack so users
+   can see which source they're editing a citation for without leaving the
+   modal. Goes empty (display:none) when unset. */
+.citation-modal-source-name {
+    margin: -6px 0 14px;
+    padding: 8px 10px;
+    background: rgba(147, 197, 253, 0.06);
+    border: 1px solid rgba(147, 197, 253, 0.18);
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--text-light);
+    word-break: break-word;
+}
+
+.citation-modal-source-name:empty {
+    display: none;
+}
+
+.citation-modal-source-name::before {
+    content: 'Source';
+    display: block;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    margin-bottom: 3px;
+}
+
 #spouse-menu-modal h3 {
     margin: 0 0 12px;
     font-size: 14px;
@@ -1330,7 +1360,9 @@ header h1 {
     margin-bottom: 2px;
 }
 
-#sources-modal-event-label:empty { display: none; }
+#sources-modal-event-label:empty {
+    display: none;
+}
 
 #sources-modal-title {
     font-size: 14px;
@@ -1367,7 +1399,7 @@ header h1 {
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    background: rgba(255,255,255,0.025);
+    background: rgba(255, 255, 255, 0.025);
     border: 1px solid var(--border-deep);
     border-radius: 7px;
     padding: 11px 12px;
@@ -1377,7 +1409,7 @@ header h1 {
 
 .citation-card:hover {
     border-color: var(--border);
-    background: rgba(255,255,255,0.04);
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .citation-card-icon {
@@ -1416,11 +1448,11 @@ header h1 {
 .citation-title a {
     color: var(--accent-light);
     text-underline-offset: 2px;
-    text-decoration-color: rgba(147,197,253,0.35);
+    text-decoration-color: rgba(147, 197, 253, 0.35);
 }
 
 .citation-title a:hover {
-    text-decoration-color: rgba(147,197,253,0.7);
+    text-decoration-color: rgba(147, 197, 253, 0.7);
 }
 
 .citation-fields {
@@ -1433,29 +1465,33 @@ header h1 {
 }
 
 .citation-field {
-    display: grid;
-    grid-template-columns: 34px 1fr;
-    gap: 8px;
+    display: flex;
     align-items: baseline;
+    gap: 8px;
 }
 
 .citation-field-label {
+    flex-shrink: 0;
+    width: 30px;
     font-size: 9px;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-muted);
-    opacity: 0.6;
-    padding-top: 1px;
+    opacity: 0.55;
     text-align: right;
     white-space: nowrap;
+    line-height: 1.7;
 }
 
 .citation-field-value {
+    flex: 1;
+    min-width: 0;
     font-size: 11.5px;
     color: var(--text-muted);
     line-height: 1.45;
     text-wrap: pretty;
+    word-break: break-word;
 }
 
 .citation-field-value--quoted {
@@ -1471,7 +1507,9 @@ header h1 {
     flex-shrink: 0;
 }
 
-.citation-card:hover .citation-card-actions { opacity: 1; }
+.citation-card:hover .citation-card-actions {
+    opacity: 1;
+}
 
 .citation-action {
     background: none;
@@ -1487,17 +1525,17 @@ header h1 {
 
 .citation-action:hover {
     color: var(--accent-light);
-    background: rgba(147,197,253,0.08);
+    background: rgba(147, 197, 253, 0.08);
 }
 
 .citation-action.copy:hover {
     color: var(--emerald);
-    background: rgba(110,231,183,0.08);
+    background: rgba(110, 231, 183, 0.08);
 }
 
 .citation-action.del:hover {
     color: var(--danger);
-    background: rgba(239,68,68,0.08);
+    background: rgba(239, 68, 68, 0.08);
 }
 
 .citation-action.copied {
@@ -1916,10 +1954,12 @@ button.sources-section-title:hover .sources-toggle-arrow {
     position: relative;
 }
 
-.source-card:last-child { margin-bottom: 0; }
+.source-card:last-child {
+    margin-bottom: 0;
+}
 
 .source-card:hover {
-    background: rgba(255,255,255,0.03);
+    background: rgba(255, 255, 255, 0.03);
     border-color: var(--border-deep);
 }
 
@@ -1973,7 +2013,9 @@ button.sources-section-title:hover .sources-toggle-arrow {
     flex-shrink: 0;
 }
 
-.source-card:hover .source-card-actions { opacity: 1; }
+.source-card:hover .source-card-actions {
+    opacity: 1;
+}
 
 .source-card-action {
     background: none;
@@ -1989,12 +2031,12 @@ button.sources-section-title:hover .sources-toggle-arrow {
 
 .source-card-action:hover {
     color: var(--accent-light);
-    background: rgba(147,197,253,0.08);
+    background: rgba(147, 197, 253, 0.08);
 }
 
 .source-card-action.del:hover {
     color: var(--danger);
-    background: rgba(239,68,68,0.08);
+    background: rgba(239, 68, 68, 0.08);
 }
 
 .sources-empty {

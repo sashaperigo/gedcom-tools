@@ -1329,7 +1329,15 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
     const quayEl = document.getElementById('edit-citation-modal-quay');
     const dateEl = document.getElementById('edit-citation-modal-date');
     const titleEl = document.getElementById('edit-citation-modal-title');
+    const sourceNameEl = document.getElementById('edit-citation-modal-source-name');
     const viewSrcBtn = document.getElementById('edit-citation-view-source-btn');
+
+    if (sourceNameEl) {
+        const sxref = _editCitationSourceXref;
+        const src = (sxref && typeof SOURCES !== 'undefined' && SOURCES) ? SOURCES[sxref] : null;
+        const title = (src && (src.titl || src.title)) || sxref || '';
+        sourceNameEl.textContent = title;
+    }
 
     if (titleEl) titleEl.textContent = 'Edit Citation' + (factTag ? ' \u2014 ' + factTag : '');
     if (pageEl) pageEl.value = (cite && cite.page) || '';
