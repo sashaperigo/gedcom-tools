@@ -1078,7 +1078,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
 const CHEVRON_CLEARANCE = 40;
 // Gap between a sibling and their own spouse — smaller than H_GAP so couples
 // appear visually attached while sibling-pair groups remain clearly separated.
-const SIB_MARRIAGE_GAP = 6;
+const SIB_MARRIAGE_GAP = 12;
 
 // Female ancestor with siblings → chevron sits on the right side of the pill.
 function _hasRightChevron(xref) {

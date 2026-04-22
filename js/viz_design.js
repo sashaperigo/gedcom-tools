@@ -23,7 +23,7 @@ var DESIGN = {
     NODE_H_FOCUS: 70, // focused node height
     ROW_HEIGHT: 148, // vertical distance between generation rows (gap stays 84px)
     H_GAP: 12, // gap between sibling nodes
-    MARRIAGE_GAP: 60, // gap between last sibling and spouse
+    MARRIAGE_GAP: 20, // offset in the focus-spouse layout formula; yields a 12px visible gap between focus right edge and spouse left edge, matching SIB_MARRIAGE_GAP and the parent-parent gap (H_GAP)
     FAMILY_GAP: 40, // padding between two separate family subtrees at depth >= 1
     NODE_RADIUS: 4, // border-radius for nodes
 };
