@@ -834,19 +834,27 @@ function closeSourcesModal() {
     _sourcesModalIndiLevel = false;
 }
 
+function _setSourcesModalHeader(eventLabel, title) {
+    const labelEl = document.getElementById('sources-modal-event-label');
+    const titleEl = document.getElementById('sources-modal-title');
+    if (labelEl) labelEl.textContent = eventLabel || '';
+    if (titleEl) titleEl.textContent = title || 'Sources';
+}
+
 function _refreshSourcesModalContent() {
     const xref = _sourcesModalXref;
     const eventIdx = _sourcesModalEventIdx;
     if (xref == null) return;
 
+    const _topListEl = document.getElementById('sources-modal-list');
+
     if (_sourcesModalIndiLevel) {
         const person = (typeof PEOPLE !== 'undefined') && PEOPLE[xref];
         const citations = (person && person.sources) || [];
         const sources = (typeof SOURCES !== 'undefined') ? SOURCES : {};
-        const titleEl = document.getElementById('sources-modal-title');
-        const listEl = document.getElementById('sources-modal-list');
-        if (titleEl) titleEl.textContent = 'Person Sources';
-        if (listEl) listEl.innerHTML = _buildSourcesModalContent(citations, sources, xref, { tag: 'SOUR' });
+        const name = (person && (person.name || person.display_name)) || '';
+        _setSourcesModalHeader('Person sources', name || 'Person Sources');
+        if (_topListEl) _topListEl.innerHTML = _buildSourcesModalContent(citations, sources, xref, { tag: 'SOUR' });
         return;
     }
 
@@ -856,7 +864,7 @@ function _refreshSourcesModalContent() {
         const noteIdx = _sourcesModalNoteIdx;
         const note = (typeof PEOPLE !== 'undefined') && PEOPLE[xref] && PEOPLE[xref].notes && PEOPLE[xref].notes[noteIdx];
         const rawText = (note && note.text) || '';
-        const label = rawText.length > 40 ? rawText.slice(0, 40) + '\u2026' : rawText;
+        const label = rawText.length > 60 ? rawText.slice(0, 60) + '\u2026' : rawText;
         const noteEvt = {
             tag: (note && note.shared) ? 'SNOTE' : 'NOTE',
             note_xref: note && note.note_xref,
@@ -864,29 +872,34 @@ function _refreshSourcesModalContent() {
             citations: (note && note.citations) || [],
         };
         const sources = (typeof SOURCES !== 'undefined') ? SOURCES : {};
-        const titleEl = document.getElementById('sources-modal-title');
-        const listEl = document.getElementById('sources-modal-list');
-        if (titleEl) titleEl.textContent = label || 'Note Sources';
-        if (listEl) listEl.innerHTML = _buildSourcesModalContent(noteEvt.citations, sources, xref, noteEvt);
+        _setSourcesModalHeader(noteEvt.tag === 'SNOTE' ? 'Shared note' : 'Note', label || 'Note Sources');
+        if (_topListEl) _topListEl.innerHTML = _buildSourcesModalContent(noteEvt.citations, sources, xref, noteEvt);
         return;
     }
     const evt = PEOPLE[xref] && PEOPLE[xref].events && PEOPLE[xref].events[eventIdx];
     const citations = (evt && evt.citations) || [];
     const sources = (typeof SOURCES !== 'undefined') ? SOURCES : {};
 
-    // Build fact label: e.g. "Emigration · 1922"
-    let label = '';
+    // Split header: small uppercase "Arrival · 1922" + larger prose "Arrived in Southampton".
+    let eventLabel = '';
+    let title = 'Sources';
     if (evt) {
         const labelMap = (typeof EVENT_LABELS !== 'undefined') ? EVENT_LABELS : {};
         const tag = labelMap[evt.tag] || evt.tag;
         const type = evt.type ? ` (${evt.type})` : '';
         const year = evt.date ? (' \u00b7 ' + (evt.date.match(/\b\d{4}\b/) || [''])[0]) : '';
-        label = tag + type + year;
+        eventLabel = tag + type + year;
+        if (typeof buildProse === 'function') {
+            try {
+                const p = buildProse(evt);
+                title = (p && p.prose) ? p.prose : eventLabel;
+            } catch (_e) { title = eventLabel; }
+        } else {
+            title = eventLabel;
+        }
     }
-    const titleEl = document.getElementById('sources-modal-title');
-    const listEl = document.getElementById('sources-modal-list');
-    if (titleEl) titleEl.textContent = label || 'Sources';
-    if (listEl) listEl.innerHTML = _buildSourcesModalContent(citations, sources, xref, evt);
+    _setSourcesModalHeader(eventLabel, title);
+    if (_topListEl) _topListEl.innerHTML = _buildSourcesModalContent(citations, sources, xref, evt);
 }
 
 function _buildSourcesModalContent(citations, sources, xref, evt) {
@@ -913,9 +926,25 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
     else factKey = tag ? `${tag}:${eventOcc}` : '';
     const factKeyQ = JSON.stringify(factKey).replace(/"/g, '&quot;');
 
+    const bookIconSvg =
+        `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" ` +
+        `stroke-linecap="round" stroke-linejoin="round">` +
+        `<path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v9a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5v-9z"/>` +
+        `<path d="M5 2v12M5 6h4"/>` +
+        `</svg>`;
+    const plusIconSvg =
+        `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" ` +
+        `stroke-width="2" stroke-linecap="round"><path d="M6 1v10M1 6h10"/></svg>`;
+    const pasteIconSvg =
+        `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" ` +
+        `stroke-width="1.8" stroke-linecap="round">` +
+        `<rect x="3" y="1" width="7" height="9" rx="1.5"/>` +
+        `<path d="M3 3H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1v-1"/>` +
+        `</svg>`;
+
     let html = '';
     if (!citations || citations.length === 0) {
-        html += '<div class="src-modal-empty">No sources recorded for this fact.</div>';
+        html += '<div class="citation-empty">No sources recorded for this fact.</div>';
     } else {
         html += citations.map((c, idx) => {
             const xrefKey = c.sourceXref || c.sour_xref;
@@ -925,7 +954,7 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
             const titleHtml = citUrl ?
                 `<a href="${escHtml(citUrl)}" target="_blank" rel="noopener">${escHtml(title)}</a>` :
                 escHtml(title);
-            const pageHtml = c.page ? `<div class="src-modal-page">Page ${escHtml(c.page)}</div>` : '';
+            const pageHtml = c.page ? `<div class="citation-page">${escHtml(/^p\.?\s*/i.test(c.page) ? c.page : 'p. ' + c.page)}</div>` : '';
             const citeKey = isIndiSour ? (c.citationKey || `SOUR:${idx}`) :
                 (tag === 'NOTE') ? `NOTE:${evt && evt.note_idx}:${idx}` :
                 (tag === 'SNOTE') ? `SNOTE:${evt && evt.note_xref}:${idx}` :
@@ -952,14 +981,17 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
                 `data-url="${escHtml(c.url || '')}" ` +
                 `data-label="${escHtml((src.titl || src.title || xrefKey2) + (pageVal ? ' p. ' + pageVal : ''))}"`;
             return (
-                `<div class="src-modal-item">` +
-                `<div class="src-modal-item-body"><div class="src-modal-title">${titleHtml}</div>${pageHtml}</div>` +
-                `<button class="citation-copy-btn src-modal-icon-btn" title="Copy citation" ` +
+                `<div class="citation-card">` +
+                `<div class="citation-card-icon">${bookIconSvg}</div>` +
+                `<div class="citation-card-body"><div class="citation-title">${titleHtml}</div>${pageHtml}</div>` +
+                `<div class="citation-card-actions">` +
+                `<button class="citation-action copy" title="Copy citation" ` +
                 `${copyDataAttrs} onclick="handleCitationCopy(this)">\u29c9</button>` +
-                `<button class="src-modal-edit-btn" title="Edit this citation" ` +
+                `<button class="citation-action" title="Edit this citation" ` +
                 `onclick="${editOnclick}">\u270f</button>` +
-                `<button class="src-modal-delete-btn" title="Remove this citation" ` +
+                `<button class="citation-action del" title="Remove this citation" ` +
                 `onclick="deleteSourceFromModal(${xrefQ},${citeKeyQ})">\u00d7</button>` +
+                `</div>` +
                 `</div>`
             );
         }).join('');
@@ -968,12 +1000,13 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
         escHtml((_copiedCitation.label || '').slice(0, 60)) :
         '';
     const pasteHidden = _copiedCitation ? '' : ' hidden';
-    html += `<div class="src-modal-add">` +
-        `<button class="src-modal-add-btn" ` +
-        `onclick="showAddCitationModal(${xrefQ},${factKeyQ})">+ Add source</button>` +
-        `<button class="citation-paste-btn src-modal-add-btn${pasteHidden}" ` +
+    const noBorder = (!citations || citations.length === 0) ? ' no-border' : '';
+    html += `<div class="citation-add-row${noBorder}">` +
+        `<button class="citation-add-primary" ` +
+        `onclick="showAddCitationModal(${xrefQ},${factKeyQ})">${plusIconSvg}Add source</button>` +
+        `<button class="citation-paste-btn${pasteHidden}" ` +
         `onclick="handleCitationPaste(${xrefQ},${factKeyQ})">` +
-        `Paste: \u201c${pasteLabel}\u201d</button>` +
+        `${pasteIconSvg}Paste: \u201c${pasteLabel}\u201d</button>` +
         `</div>`;
     return html;
 }
@@ -1007,8 +1040,8 @@ function handleCitationCopy(btn) {
     const label = btn.dataset.label || xref;
     copyCitation({ sourceXref: xref, page, text, note, url }, label);
     // Flash button to confirm copy, then refresh the modal to show paste button.
-    btn.classList.add('citation-copy-btn--copied');
-    setTimeout(() => btn.classList.remove('citation-copy-btn--copied'), 700);
+    btn.classList.add('copied');
+    setTimeout(() => btn.classList.remove('copied'), 700);
     _refreshSourcesModalContent();
 }
 
