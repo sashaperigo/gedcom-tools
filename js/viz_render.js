@@ -76,11 +76,6 @@ function _drawDiedYoungBadge(g, w, ageAtDeath) {
 // Append a small hamburger badge to a node <g> whose person participates in
 // two or more FAMs. Placed in the top-left corner. Clicking opens the
 // spouse-menu modal via openSpouseMenuModal(xref).
-const SPOUSE_MENU_ROLES = new Set([
-    'focus', 'spouse', 'descendant_spouse',
-    'ancestor_sibling', 'ancestor_sibling_spouse',
-]);
-
 function _personFamCount(xref) {
     if (typeof FAMILIES === 'undefined' || !FAMILIES) return 0;
     let n = 0;
@@ -288,8 +283,8 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     // Died-young badge (stillborn / infant / child)
     _drawDiedYoungBadge(g, w, person.age_at_death);
 
-    // Spouse-menu hamburger badge (top-left) when person has ≥2 FAMs
-    if (SPOUSE_MENU_ROLES.has(node.role) && _personFamCount(node.xref) >= 2) {
+    // Spouse-menu hamburger badge (top-left) when person has ≥2 FAMs.
+    if (_personFamCount(node.xref) >= 2) {
         _drawSpouseMenuBadge(g, node.xref);
     }
 
@@ -460,6 +455,7 @@ function _drawChildrenExpandBadge(g, node, isExpanded, onChildrenExpandClick) {
 // ---------------------------------------------------------------------------
 
 let _treeRoot = null; // the <g id="tree-root"> wrapper
+let _svgElRef = null; // the owning <svg>, cached for resetView
 let _tx = 0,
     _ty = 0; // current translation
 let _scale = 1; // current zoom scale
@@ -601,19 +597,26 @@ function render() {
 // initRenderer
 // ---------------------------------------------------------------------------
 
+function resetView() {
+    if (!_svgElRef || !_treeRoot) return;
+    const w = parseFloat(_svgElRef.getAttribute('width') || 800);
+    const h = parseFloat(_svgElRef.getAttribute('height') || 600);
+    _tx = w / 2;
+    _ty = h / 2;
+    _scale = 1;
+    _applyTransform();
+}
+
 function initRenderer(svgEl) {
+    _svgElRef = svgEl;
+
     // Create the tree-root group
     _treeRoot = _svgEl('g', { id: 'tree-root' });
 
     // Initial transform: center the canvas on (svgWidth/2, svgHeight/2)
     // so the focus node at layout origin (0,0) appears centered.
-    const w = parseFloat(svgEl.getAttribute('width') || 800);
-    const h = parseFloat(svgEl.getAttribute('height') || 600);
-    _tx = w / 2;
-    _ty = h / 2;
-    _scale = 1;
+    resetView();
 
-    _treeRoot.setAttribute('transform', `translate(${_tx}, ${_ty}) scale(${_scale})`);
     svgEl.appendChild(_treeRoot);
 
     // Attach pan/zoom
@@ -630,4 +633,4 @@ function initRenderer(svgEl) {
 // Exports
 // ---------------------------------------------------------------------------
 
-if (typeof module !== 'undefined') module.exports = { initRenderer, render };
+if (typeof module !== 'undefined') module.exports = { initRenderer, render, resetView };

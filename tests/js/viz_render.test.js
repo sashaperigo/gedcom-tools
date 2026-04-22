@@ -1292,7 +1292,7 @@ describe('render — spouse-menu hamburger badge', () => {
         expect(parseFloat(badge._attrs['cy'])).toBeCloseTo(11, 0);
     });
 
-    it('person with 2 FAMs on ancestor role → no badge (excluded)', () => {
+    it('person with 2 FAMs on ancestor role → badge IS rendered', () => {
         const svg = setup({
             relatives: { '@FOCUS@': { siblings: [], spouses: [] } },
             families: {
@@ -1300,7 +1300,7 @@ describe('render — spouse-menu hamburger badge', () => {
                 '@FAM2@': { husb: '@FATHER@', wife: '@SP2@', chil: [] },
             },
         });
-        expect(getBadge(svg, '@FATHER@')).toBeUndefined();
+        expect(getBadge(svg, '@FATHER@')).toBeDefined();
     });
 
     it('badge carries data-xref matching the person', () => {
@@ -1313,6 +1313,67 @@ describe('render — spouse-menu hamburger badge', () => {
         });
         const badge = getBadge(svg, '@FOCUS@');
         expect(badge._attrs['data-xref']).toBe('@FOCUS@');
+    });
+
+    it('ancestor with 2 FAMs AND expanded children → badge IS rendered', () => {
+        global.PEOPLE = {
+            '@FOCUS@': { name: 'Focus', birth_year: 1900, sex: 'M' },
+            '@FATHER@': { name: 'Father', birth_year: 1870, sex: 'M' },
+            '@MOTHER@': { name: 'Mother', birth_year: 1872, sex: 'F' },
+            '@SP2@': { name: 'Other Wife', birth_year: 1875, sex: 'F' },
+            '@HALFSIB@': { name: 'Half Sibling', birth_year: 1895, sex: 'F' },
+        };
+        global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+        global.CHILDREN = {};
+        global.RELATIVES = { '@FOCUS@': { siblings: [], spouses: [] } };
+        global.FAMILIES = {
+            '@FAM1@': { husb: '@FATHER@', wife: '@MOTHER@', chil: ['@FOCUS@'] },
+            '@FAM2@': { husb: '@FATHER@', wife: '@SP2@', chil: ['@HALFSIB@'] },
+        };
+        resetState();
+        stateMod.setState({ expandedChildrenPersons: new Set(['@FATHER@']) });
+        loadRenderMod();
+        const svg = makeSvgEl();
+        renderMod.initRenderer(svg);
+        const g = svg.querySelector('#tree-root')
+            .querySelectorAll('g[data-xref]')
+            .find(gr => gr._attrs['data-xref'] === '@FATHER@');
+        const badge = g.children.find(
+            c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('spouse-menu-btn')
+        );
+        expect(badge).toBeDefined();
+        expect(badge._attrs['data-xref']).toBe('@FATHER@');
+    });
+});
+
+describe('resetView', () => {
+    beforeEach(() => {
+        global.PEOPLE = makeMinimalPeople();
+        global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+        global.CHILDREN = { '@FOCUS@': ['@CHILD@'] };
+        global.RELATIVES = { '@FOCUS@': { siblings: ['@SIBLING@'], spouses: ['@SPOUSE@'] } };
+        resetState();
+        loadRenderMod();
+    });
+
+    it('restores tree-root transform to translate(w/2, h/2) scale(1)', () => {
+        const svg = makeSvgEl();
+        renderMod.initRenderer(svg);
+        const treeRoot = svg.querySelector('#tree-root');
+
+        // Simulate the user panning and zooming away from the initial view.
+        treeRoot.setAttribute('transform', 'translate(0, 0) scale(0.3)');
+
+        renderMod.resetView();
+
+        const transform = treeRoot._attrs['transform'] || '';
+        const match = transform.match(
+            /translate\(\s*([\d.+-]+)\s*,\s*([\d.+-]+)\s*\)\s*scale\(\s*([\d.+-]+)\s*\)/,
+        );
+        expect(match).not.toBeNull();
+        expect(parseFloat(match[1])).toBeCloseTo(400, 0); // 800 / 2
+        expect(parseFloat(match[2])).toBeCloseTo(300, 0); // 600 / 2
+        expect(parseFloat(match[3])).toBeCloseTo(1, 3);
     });
 });
 
