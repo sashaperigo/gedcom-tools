@@ -948,6 +948,61 @@ describe('showEditCitationModal', () => {
         showEditCitationModal('@I1@', 'OCCU', 0, undefined, 1);
         expect(pageInp.value).toBe('Second job page');
     });
+
+    // Regression: FAM events (MARR/DIV) have event_idx:null and use marr_idx/div_idx.
+    // showEditCitationModal must match on fam_xref+marr_idx, not event_idx.
+    describe('FAM event (MARR) citation pre-fill', () => {
+        beforeEach(() => {
+            global.PEOPLE['@I1@'].events = [
+                {
+                    tag: 'MARR', event_idx: null, fam_xref: '@F1@', marr_idx: 0,
+                    citations: [
+                        { sourceXref: '@S1@', page: 'Senglea parish p.12', text: 'Entry text', note: 'Researcher note', url: 'https://example.com/marr' },
+                    ],
+                },
+            ];
+        });
+
+        it('pre-fills page for a MARR citation (regression: was blank due to event_idx:null)', () => {
+            if (!showEditCitationModal) return;
+            showEditCitationModal('@I1@', 'MARR', 0, '@F1@', 0);
+            expect(pageInp.value).toBe('Senglea parish p.12');
+        });
+
+        it('pre-fills text for a MARR citation', () => {
+            if (!showEditCitationModal) return;
+            showEditCitationModal('@I1@', 'MARR', 0, '@F1@', 0);
+            expect(textArea.value).toBe('Entry text');
+        });
+
+        it('pre-fills note for a MARR citation', () => {
+            if (!showEditCitationModal) return;
+            showEditCitationModal('@I1@', 'MARR', 0, '@F1@', 0);
+            expect(noteInp.value).toBe('Researcher note');
+        });
+
+        it('pre-fills url for a MARR citation', () => {
+            if (!showEditCitationModal) return;
+            showEditCitationModal('@I1@', 'MARR', 0, '@F1@', 0);
+            expect(urlInp.value).toBe('https://example.com/marr');
+        });
+
+        it('picks the correct FAM when a person has multiple marriages', () => {
+            if (!showEditCitationModal) return;
+            global.PEOPLE['@I1@'].events = [
+                {
+                    tag: 'MARR', event_idx: null, fam_xref: '@F1@', marr_idx: 0,
+                    citations: [{ sourceXref: '@S1@', page: 'First marriage page', text: '', note: '', url: '' }],
+                },
+                {
+                    tag: 'MARR', event_idx: null, fam_xref: '@F2@', marr_idx: 0,
+                    citations: [{ sourceXref: '@S1@', page: 'Second marriage page', text: '', note: '', url: '' }],
+                },
+            ];
+            showEditCitationModal('@I1@', 'MARR', 0, '@F2@', 0);
+            expect(pageInp.value).toBe('Second marriage page');
+        });
+    });
 });
 
 describe('showEditSourceModal', () => {
