@@ -294,11 +294,12 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         onNodeClick(node);
     });
 
-    // Expand button on ancestor nodes — floats above the top edge with a small gap.
-    // Only rendered when the ancestor has parents. Two visual states:
+    // Expand button on ancestor nodes (and on the focus person's spouse) —
+    // floats above the top edge with a small gap. Only rendered when the
+    // person has parents. Two visual states:
     //   can expand   → green up-chevron (click to reveal parents)
     //   can collapse → blue down-chevron (click to hide parents)
-    if (isAncestor) {
+    if (isAncestor || node.isFocusSpouse) {
         const parents = PARENTS[node.xref] || [null, null];
         const hasParents = parents.some(p => p !== null);
         if (hasParents) {

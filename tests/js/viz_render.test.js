@@ -1377,3 +1377,13 @@ describe('resetView', () => {
     });
 });
 
+describe('_renderNode — parent-expand chevron on focus spouse', () => {
+    it('chevron gate includes node.isFocusSpouse', () => {
+        const renderSrc = require('fs').readFileSync(
+            require.resolve('../../js/viz_render.js'),
+            'utf8',
+        );
+        expect(renderSrc).toMatch(/isAncestor\s*\|\|\s*node\.isFocusSpouse/);
+    });
+});
+
