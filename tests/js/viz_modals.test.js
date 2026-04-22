@@ -294,13 +294,13 @@ describe('_buildSourcesModalContent', () => {
 
     it('renders page info when page is present', () => {
         const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: '47' }], SOURCES);
-        expect(html).toContain('src-modal-page');
+        expect(html).toContain('citation-page');
         expect(html).toContain('47');
     });
 
     it('omits page element when page is null', () => {
         const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
-        expect(html).not.toContain('src-modal-page');
+        expect(html).not.toContain('citation-page');
     });
 
     it('HTML-escapes source title', () => {
@@ -349,7 +349,7 @@ describe('_buildSourcesModalContent — camelCase sourceXref / titl (B1)', () =>
         const citations = [{ sourceXref: '@S1@', page: '12' }];
         const html = _buildSourcesModalContent(citations, sources);
         expect(html).toContain('12');
-        expect(html).toContain('src-modal-page');
+        expect(html).toContain('citation-page');
     });
 });
 
@@ -1205,19 +1205,19 @@ describe('openSourcesModal and closeSourcesModal', () => {
 
     it('renders a delete button for each citation', () => {
         openSourcesModal('@I1@', 0);
-        expect(list.innerHTML).toContain('src-modal-delete-btn');
+        expect(list.innerHTML).toContain('citation-action del');
         expect(list.innerHTML).toContain('deleteSourceFromModal');
     });
 
     it('renders an "+ Add source" button even when there are no citations', () => {
         openSourcesModal('@I1@', 1);
-        expect(list.innerHTML).toContain('src-modal-add-btn');
+        expect(list.innerHTML).toContain('citation-add-primary');
         expect(list.innerHTML).toContain('showAddCitationModal');
     });
 
     it('renders an "+ Add source" button when citations are present', () => {
         openSourcesModal('@I1@', 0);
-        expect(list.innerHTML).toContain('src-modal-add-btn');
+        expect(list.innerHTML).toContain('citation-add-primary');
     });
 });
 
@@ -1386,7 +1386,7 @@ describe('_buildSourcesModalContent — copy button per citation', () => {
             [{ sourceXref: '@S1@', page: '42' }],
             SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 }
         );
-        expect(html).toContain('citation-copy-btn');
+        expect(html).toContain('citation-action copy');
     });
 
     it('copy button carries data-sour-xref of the citation', () => {
@@ -1407,7 +1407,7 @@ describe('_buildSourcesModalContent — copy button per citation', () => {
 
     it('no copy buttons rendered when citations list is empty', () => {
         const html = _buildSourcesModalContent([], SOURCES, '@I1@', { tag: 'BIRT', event_idx: 0 });
-        expect(html).not.toContain('citation-copy-btn');
+        expect(html).not.toContain('citation-action copy');
     });
 });
 
@@ -1490,18 +1490,18 @@ describe('openIndiSourcesModal', () => {
 
     it('renders an "+ Add source" button', () => {
         openIndiSourcesModal('@I1@');
-        expect(list.innerHTML).toContain('src-modal-add-btn');
+        expect(list.innerHTML).toContain('citation-add-primary');
         expect(list.innerHTML).toContain('showAddCitationModal');
     });
 
     it('renders delete buttons for each citation', () => {
         openIndiSourcesModal('@I1@');
-        expect(list.innerHTML).toContain('src-modal-delete-btn');
+        expect(list.innerHTML).toContain('citation-action del');
     });
 
     it('renders edit buttons for each citation', () => {
         openIndiSourcesModal('@I1@');
-        expect(list.innerHTML).toContain('src-modal-edit-btn');
+        expect(list.innerHTML).toContain('citation-action');
     });
 });
 
@@ -1564,7 +1564,7 @@ describe('_buildSourcesModalContent — SOUR tag (person-level citations)', () =
         const citations = [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.47' }];
         const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
         expect(html).toContain('p.47');
-        expect(html).toContain('src-modal-page');
+        expect(html).toContain('citation-page');
     });
 });
 

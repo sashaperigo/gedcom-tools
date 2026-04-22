@@ -351,6 +351,15 @@ function _buildGodparentPillsHtml(evt, xref, xrefQ) {
 let _panelEl = null;
 let _familyOpen = false;
 
+function _toggleSourcesSection(btn) {
+    const section = document.getElementById('detail-sources');
+    if (!section) return;
+    const collapsed = section.classList.toggle('sources-collapsed');
+    btn.setAttribute('aria-expanded', String(!collapsed));
+    const arrow = btn.querySelector('.sources-toggle-arrow');
+    if (arrow) arrow.textContent = collapsed ? '▶' : '▼';
+}
+
 function _toggleFamily() {
     _familyOpen = !_familyOpen;
     renderPanel();
@@ -827,32 +836,53 @@ function renderPanel() {
         familyDiv.className = 'has-content';
     }
 
-    // ── Sources (person-level, collapsed by default) ─────────────────────
+    // ── Sources (person-level) ──────────────────────────────────────────
     const sourcesDiv = document.getElementById('detail-sources');
     if (sourcesDiv) {
         const srcs = data.sources || [];
         const xrefQ = escHtml(JSON.stringify(xref));
-        const _srcHtml = s => s.url ?
-            `<a href="${escHtml(s.url)}" target="_blank" rel="noopener" class="source-link">${escHtml(s.title)}</a>` :
+        const bookIconSvg =
+            `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" ` +
+            `stroke-linecap="round" stroke-linejoin="round">` +
+            `<path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v9a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5v-9z"/>` +
+            `<path d="M5 2v12M5 6h4"/>` +
+            `</svg>`;
+        const _srcTitleHtml = s => s.url ?
+            `<a href="${escHtml(s.url)}" target="_blank" rel="noopener">${escHtml(s.title)}</a>` :
             escHtml(s.title);
-        const editBtn = `<button class="notes-edit-btn" title="Manage sources" onclick="openIndiSourcesModal(${xrefQ})">&#9998;</button>`;
+        const manageBtn = `<button class="sources-manage-btn" onclick="openIndiSourcesModal(${xrefQ})">Manage</button>`;
+
         if (srcs.length) {
             const count = srcs.length;
-            const label = `Sources (${count})`;
-            const cards = srcs.map(s => `<div class="source-item">${_srcHtml(s)}</div>`).join('');
-            sourcesDiv.innerHTML =
-                `<div class="notes-header">` +
-                `<button class="notes-toggle" onclick="this.closest('.notes-header').nextElementSibling.style.display=` +
-                `this.classList.toggle('open')?'block':'none'">` +
-                `<span class="notes-toggle-arrow">&#9658;</span>${escHtml(label)}</button>` +
-                editBtn +
+            const cards = srcs.map(s =>
+                `<div class="source-card">` +
+                `<div class="source-card-icon">${bookIconSvg}</div>` +
+                `<div class="source-card-body"><div class="source-card-title">${_srcTitleHtml(s)}</div></div>` +
+                `<div class="source-card-actions">` +
+                `<button class="source-card-action" title="Edit" onclick="openIndiSourcesModal(${xrefQ})">✎</button>` +
                 `</div>` +
-                `<div class="notes-body" style="display:none">${cards}</div>`;
-        } else {
+                `</div>`
+            ).join('');
+            sourcesDiv.className = 'sources-collapsed';
             sourcesDiv.innerHTML =
-                `<div class="notes-header">` +
-                `<span class="notes-header-label">Sources</span>` +
-                editBtn +
+                `<div class="sources-section-header">` +
+                `<button class="sources-section-title sources-toggle" onclick="_toggleSourcesSection(this)" aria-expanded="false">` +
+                `<span class="sources-toggle-arrow">▶</span>` +
+                `Sources<span class="sources-count-pill">${count}</span>` +
+                `</button>` +
+                manageBtn +
+                `</div>` +
+                `<div class="sources-cards">${cards}</div>`;
+        } else {
+            sourcesDiv.className = '';
+            sourcesDiv.innerHTML =
+                `<div class="sources-section-header">` +
+                `<div class="sources-section-title">Sources</div>` +
+                manageBtn +
+                `</div>` +
+                `<div class="sources-empty">` +
+                `<div class="sources-empty-text">No person-level sources recorded</div>` +
+                `<button class="sources-add-btn" onclick="openIndiSourcesModal(${xrefQ})">+ Add source</button>` +
                 `</div>`;
         }
     }

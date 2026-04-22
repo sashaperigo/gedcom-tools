@@ -988,8 +988,8 @@ describe('renderPanel — collapsible family section (C3)', () => {
     });
 });
 
-describe('renderPanel — person-level sources collapsed by default', () => {
-    it('detail-sources section is present and collapsed (no expanded content without interaction)', () => {
+describe('renderPanel — person-level sources section', () => {
+    it('renders source cards with a count pill and a Manage button', () => {
         const panelEl = makeFakeEl('detail-panel');
         const sourcesEl = makeFakeEl('detail-sources');
         _state = { panelOpen: true, panelXref: '@SRCP@' };
@@ -1020,11 +1020,12 @@ describe('renderPanel — person-level sources collapsed by default', () => {
         renderPanel();
 
         const html = sourcesEl.innerHTML;
-        // Should render a Sources heading/toggle
         expect(html).toContain('Sources');
-        // Content should initially be hidden (wrapped in a display:none container or toggle class)
-        // The old code used a notes-body hidden container pattern
-        expect(html).toMatch(/notes-body|sources-body|display.*none|collapsed/i);
+        expect(html).toContain('sources-count-pill');
+        expect(html).toContain('sources-manage-btn');
+        expect(html).toContain('source-card');
+        expect(html).toContain('Birth Register 1900');
+        expect(html).toContain('Census 1910');
     });
 });
 
