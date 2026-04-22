@@ -1423,36 +1423,43 @@ header h1 {
     text-decoration-color: rgba(147,197,253,0.7);
 }
 
-.citation-page {
-    display: inline-flex;
-    align-items: center;
-    margin-top: 5px;
-    font-size: 10px;
-    font-weight: 500;
-    color: var(--text-muted);
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--border-deep);
-    border-radius: 4px;
-    padding: 1px 7px;
-    letter-spacing: 0.01em;
+.citation-fields {
+    margin-top: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-top: 1px solid var(--border-deep);
+    padding-top: 7px;
 }
 
-.citation-quoted-text {
-    margin-top: 6px;
+.citation-field {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 8px;
+    align-items: baseline;
+}
+
+.citation-field-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    opacity: 0.6;
+    padding-top: 1px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.citation-field-value {
     font-size: 11.5px;
     color: var(--text-muted);
-    font-style: italic;
     line-height: 1.45;
     text-wrap: pretty;
 }
 
-.citation-note-text {
-    margin-top: 5px;
-    font-size: 11px;
-    color: var(--text-muted);
-    opacity: 0.75;
-    line-height: 1.4;
-    text-wrap: pretty;
+.citation-field-value--quoted {
+    font-style: italic;
 }
 
 .citation-card-actions {

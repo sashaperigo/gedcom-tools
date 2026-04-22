@@ -954,9 +954,12 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
             const titleHtml = citUrl ?
                 `<a href="${escHtml(citUrl)}" target="_blank" rel="noopener">${escHtml(title)}</a>` :
                 escHtml(title);
-            const pageHtml = c.page ? `<div class="citation-page">${escHtml(/^p\.?\s*/i.test(c.page) ? c.page : 'p. ' + c.page)}</div>` : '';
-            const textHtml = c.text ? `<div class="citation-quoted-text">“${escHtml(c.text)}”</div>` : '';
-            const noteHtml = c.note ? `<div class="citation-note-text">${escHtml(c.note)}</div>` : '';
+            const fieldRows = [
+                c.page ? `<div class=”citation-field”><span class=”citation-field-label”>Page</span><span class=”citation-field-value”>${escHtml(/^p\.?\s*/i.test(c.page) ? c.page : 'p. ' + c.page)}</span></div>` : '',
+                c.text ? `<div class=”citation-field”><span class=”citation-field-label”>Text</span><span class=”citation-field-value citation-field-value--quoted”>“${escHtml(c.text)}”</span></div>` : '',
+                c.note ? `<div class=”citation-field”><span class=”citation-field-label”>Note</span><span class=”citation-field-value”>${escHtml(c.note)}</span></div>` : '',
+            ].filter(Boolean).join('');
+            const fieldsHtml = fieldRows ? `<div class=”citation-fields”>${fieldRows}</div>` : '';
             const citeKey = isIndiSour ? (c.citationKey || `SOUR:${idx}`) :
                 (tag === 'NOTE') ? `NOTE:${evt && evt.note_idx}:${idx}` :
                 (tag === 'SNOTE') ? `SNOTE:${evt && evt.note_xref}:${idx}` :
@@ -985,7 +988,7 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
             return (
                 `<div class="citation-card">` +
                 `<div class="citation-card-icon">${bookIconSvg}</div>` +
-                `<div class="citation-card-body"><div class="citation-title">${titleHtml}</div>${pageHtml}${textHtml}${noteHtml}</div>` +
+                `<div class="citation-card-body"><div class="citation-title">${titleHtml}</div>${fieldsHtml}</div>` +
                 `<div class="citation-card-actions">` +
                 `<button class="citation-action copy" title="Copy citation" ` +
                 `${copyDataAttrs} onclick="handleCitationCopy(this)">\u29c9</button>` +
