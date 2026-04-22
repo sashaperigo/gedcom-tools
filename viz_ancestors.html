@@ -248,6 +248,20 @@
                 <label>URL (optional)</label>
                 <input type="url" id="add-citation-modal-url" autocomplete="off" placeholder="https://">
             </div>
+            <div class="event-modal-field">
+                <label>Quality (optional)</label>
+                <select id="add-citation-modal-quay">
+                    <option value="">— unset —</option>
+                    <option value="3">3 — Direct/primary evidence</option>
+                    <option value="2">2 — Secondary evidence</option>
+                    <option value="1">1 — Questionable</option>
+                    <option value="0">0 — Unreliable</option>
+                </select>
+            </div>
+            <div class="event-modal-field">
+                <label>Date of source entry (optional)</label>
+                <input type="text" id="add-citation-modal-date" autocomplete="off" placeholder="e.g. 21 MAY 1814 or 1990">
+            </div>
             <div class="event-modal-actions">
                 <button class="event-modal-cancel" onclick="closeAddCitationModal()">Cancel</button>
                 <button class="event-modal-save" onclick="submitAddCitationModal()">Add</button>
@@ -272,6 +286,20 @@
             <div class="event-modal-field">
                 <label>URL (optional)</label>
                 <input type="url" id="edit-citation-modal-url" autocomplete="off" placeholder="https://">
+            </div>
+            <div class="event-modal-field">
+                <label>Quality (optional)</label>
+                <select id="edit-citation-modal-quay">
+                    <option value="">— unset —</option>
+                    <option value="3">3 — Direct/primary evidence</option>
+                    <option value="2">2 — Secondary evidence</option>
+                    <option value="1">1 — Questionable</option>
+                    <option value="0">0 — Unreliable</option>
+                </select>
+            </div>
+            <div class="event-modal-field">
+                <label>Date of source entry (optional)</label>
+                <input type="text" id="edit-citation-modal-date" autocomplete="off" placeholder="e.g. 21 MAY 1814 or 1990">
             </div>
             <div class="event-modal-actions">
                 <button id="edit-citation-view-source-btn" class="event-modal-cancel" style="display:none">View Source</button>
@@ -412,7 +440,10 @@
         onStateChange(() => render());
 
         const homeBtn = document.getElementById('home-btn');
-        if (homeBtn) homeBtn.addEventListener('click', () => resetToRoot(ROOT_XREF));
+        if (homeBtn) homeBtn.addEventListener('click', () => {
+            resetToRoot(ROOT_XREF);
+            resetView();
+        });
 
         render();
     });

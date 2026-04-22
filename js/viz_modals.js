@@ -954,10 +954,14 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
             const titleHtml = citUrl ?
                 `<a href="${escHtml(citUrl)}" target="_blank" rel="noopener">${escHtml(title)}</a>` :
                 escHtml(title);
+            const quayLabels = { '3': 'Direct (3)', '2': 'Secondary (2)', '1': 'Questionable (1)', '0': 'Unreliable (0)' };
+            const quayDisplay = c.quay ? (quayLabels[String(c.quay)] || String(c.quay)) : '';
             const fieldRows = [
                 c.page ? `<div class="citation-field"><span class="citation-field-label">Page</span><span class="citation-field-value">${escHtml(/^p\.?\s*/i.test(c.page) ? c.page : 'p. ' + c.page)}</span></div>` : '',
+                c.date ? `<div class="citation-field"><span class="citation-field-label">Date</span><span class="citation-field-value">${escHtml(c.date)}</span></div>` : '',
                 c.text ? `<div class="citation-field"><span class="citation-field-label">Text</span><span class="citation-field-value citation-field-value--quoted">“${escHtml(c.text)}”</span></div>` : '',
                 c.note ? `<div class="citation-field"><span class="citation-field-label">Note</span><span class="citation-field-value">${escHtml(c.note)}</span></div>` : '',
+                quayDisplay ? `<div class="citation-field"><span class="citation-field-label">Qual</span><span class="citation-field-value">${escHtml(quayDisplay)}</span></div>` : '',
             ].filter(Boolean).join('');
             const fieldsHtml = fieldRows ? `<div class="citation-fields">${fieldRows}</div>` : '';
             const citeKey = isIndiSour ? (c.citationKey || `SOUR:${idx}`) :
@@ -984,6 +988,8 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
                 `data-text="${escHtml(c.text || '')}" ` +
                 `data-note="${escHtml(c.note || '')}" ` +
                 `data-url="${escHtml(c.url || '')}" ` +
+                `data-quay="${escHtml(c.quay || '')}" ` +
+                `data-date="${escHtml(c.date || '')}" ` +
                 `data-label="${escHtml((src.titl || src.title || xrefKey2) + (pageVal ? ' p. ' + pageVal : ''))}"`;
             return (
                 `<div class="citation-card">` +
@@ -1042,8 +1048,10 @@ function handleCitationCopy(btn) {
     const text = btn.dataset.text || '';
     const note = btn.dataset.note || '';
     const url = btn.dataset.url || null;
+    const quay = btn.dataset.quay || '';
+    const date = btn.dataset.date || '';
     const label = btn.dataset.label || xref;
-    copyCitation({ sourceXref: xref, page, text, note, url }, label);
+    copyCitation({ sourceXref: xref, page, text, note, url, quay, date }, label);
     // Flash button to confirm copy, then refresh the modal to show paste button.
     btn.classList.add('copied');
     setTimeout(() => btn.classList.remove('copied'), 700);
@@ -1056,7 +1064,8 @@ async function handleCitationPaste(xref, factKey) {
     try {
         const resp = await apiAddCitation(
             xref, c.sourceXref, factKey,
-            c.page || '', c.text || '', c.note || '', c.url || ''
+            c.page || '', c.text || '', c.note || '', c.url || '',
+            c.quay || '', c.date || ''
         );
         if (resp && resp.ok) {
             if (resp.people) {
@@ -1190,6 +1199,8 @@ function showAddCitationModal(xref, factKey) {
     const textEl = document.getElementById('add-citation-modal-text');
     const noteEl = document.getElementById('add-citation-modal-note');
     const urlEl = document.getElementById('add-citation-modal-url');
+    const quayEl = document.getElementById('add-citation-modal-quay');
+    const dateEl = document.getElementById('add-citation-modal-date');
     const titleEl = document.getElementById('add-citation-modal-title');
 
     const displayTag = factKey ? String(factKey).split(':')[0] : '';
@@ -1198,6 +1209,8 @@ function showAddCitationModal(xref, factKey) {
     if (textEl) textEl.value = '';
     if (noteEl) noteEl.value = '';
     if (urlEl) urlEl.value = '';
+    if (quayEl) quayEl.value = '';
+    if (dateEl) dateEl.value = '';
 
     // Populate sourceXref select from global SOURCES, sorted alphabetically by title
     // (case-insensitive) so users can find a specific source.
@@ -1236,15 +1249,19 @@ async function submitAddCitationModal() {
     const textEl = document.getElementById('add-citation-modal-text');
     const noteEl = document.getElementById('add-citation-modal-note');
     const urlEl = document.getElementById('add-citation-modal-url');
+    const quayEl = document.getElementById('add-citation-modal-quay');
+    const dateEl = document.getElementById('add-citation-modal-date');
     const sourceXref = sourceEl ? sourceEl.value : '';
     const page = pageEl ? pageEl.value.trim() : '';
     const text = textEl ? textEl.value.trim() : '';
     const note = noteEl ? noteEl.value.trim() : '';
     const url = urlEl ? urlEl.value.trim() : '';
+    const quay = quayEl ? quayEl.value : '';
+    const date = dateEl ? dateEl.value.trim() : '';
     closeAddCitationModal();
     if (!sourceXref) { alert('Please select a source.'); return; }
     try {
-        const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note, url);
+        const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note, url, quay, date);
         // FAM citations refresh both spouses; merge every returned person.
         if (resp && resp.people) {
             for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
@@ -1309,6 +1326,8 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
     const textEl = document.getElementById('edit-citation-modal-text');
     const noteEl = document.getElementById('edit-citation-modal-note');
     const urlEl = document.getElementById('edit-citation-modal-url');
+    const quayEl = document.getElementById('edit-citation-modal-quay');
+    const dateEl = document.getElementById('edit-citation-modal-date');
     const titleEl = document.getElementById('edit-citation-modal-title');
     const viewSrcBtn = document.getElementById('edit-citation-view-source-btn');
 
@@ -1317,6 +1336,8 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
     if (textEl) textEl.value = (cite && cite.text) || '';
     if (noteEl) noteEl.value = (cite && cite.note) || '';
     if (urlEl) urlEl.value = (cite && cite.url) || '';
+    if (quayEl) quayEl.value = (cite && cite.quay) || '';
+    if (dateEl) dateEl.value = (cite && cite.date) || '';
 
     if (viewSrcBtn && _editCitationSourceXref) {
         const sxref = _editCitationSourceXref;
@@ -1348,13 +1369,21 @@ async function submitEditCitationModal() {
     const textEl = document.getElementById('edit-citation-modal-text');
     const noteEl = document.getElementById('edit-citation-modal-note');
     const urlEl = document.getElementById('edit-citation-modal-url');
+    const quayEl = document.getElementById('edit-citation-modal-quay');
+    const dateEl = document.getElementById('edit-citation-modal-date');
     const page = pageEl ? pageEl.value.trim() : '';
     const text = textEl ? textEl.value.trim() : '';
     const note = noteEl ? noteEl.value.trim() : '';
     const url = urlEl ? urlEl.value.trim() : '';
+    const quay = quayEl ? quayEl.value : '';
+    const date = dateEl ? dateEl.value.trim() : '';
     closeEditCitationModal();
     try {
-        const resp = await apiEditCitation(xref, factTag ? `${factTag}:${eventOcc}:${index}` : `SOUR:${index}`, page, text, note, url);
+        const resp = await apiEditCitation(
+            xref,
+            factTag ? `${factTag}:${eventOcc}:${index}` : `SOUR:${index}`,
+            page, text, note, url, quay, date,
+        );
         if (resp && resp.ok) {
             if (resp.people) {
                 for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;

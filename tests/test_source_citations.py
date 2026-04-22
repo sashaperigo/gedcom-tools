@@ -857,6 +857,91 @@ class TestBuildPeopleJsonIndiCitations:
 
 
 # ---------------------------------------------------------------------------
+# TestCitationQuayDateParsing — QUAY (citation quality) and citation DATE
+# captured from event-level and person-level SOUR blocks
+# ---------------------------------------------------------------------------
+
+class TestCitationQuayDateParsing:
+
+    def test_quay_under_indi_event_citation(self, tmp_path):
+        """3 QUAY n on an INDI-event citation surfaces as cite['quay']."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Source
+0 @I1@ INDI
+1 NAME J /Doe/
+1 BIRT
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE p.1
+3 QUAY 3
+"""))
+        cite = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')['citations'][0]
+        assert cite.get('quay') == '3'
+
+    def test_date_under_indi_event_citation_data_block(self, tmp_path):
+        """4 DATE inside the citation's 3 DATA block surfaces as cite['date']."""
+        indis, _, _ = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Source
+0 @I1@ INDI
+1 NAME J /Doe/
+1 BIRT
+2 DATE 1900
+2 SOUR @S1@
+3 DATA
+4 DATE 21 MAY 1814
+4 TEXT some transcribed text
+"""))
+        cite = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')['citations'][0]
+        assert cite.get('date') == '21 MAY 1814'
+        assert cite.get('text') == 'some transcribed text'
+
+    def test_quay_under_fam_marr_citation(self, tmp_path):
+        """3 QUAY on a FAM MARR citation surfaces in build_people_json output for both spouses."""
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL Marriage Reg
+0 @I1@ INDI
+1 NAME H /B/
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME W /C/
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1814
+2 SOUR @S1@
+3 PAGE p.7
+3 QUAY 2
+"""))
+        people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
+        for sp in ('@I1@', '@I2@'):
+            marr = next(e for e in people[sp]['events'] if e['tag'] == 'MARR')
+            assert marr['citations'][0].get('quay') == '2'
+
+    def test_quay_at_person_level_source(self, tmp_path):
+        """2 QUAY on a person-level (1 SOUR) citation surfaces in the sources list."""
+        indis, _, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL P
+0 @I1@ INDI
+1 NAME J /Doe/
+1 SOUR @S1@
+2 PAGE p.1
+2 QUAY 1
+2 DATA
+3 DATE 1990
+"""))
+        people = build_people_json({'@I1@'}, indis, sources=sources)
+        src = people['@I1@']['sources'][0]
+        assert src.get('quay') == '1'
+        assert src.get('date') == '1990'
+
+
+# ---------------------------------------------------------------------------
 # TestCitationAlreadyExists — deduplication helper in serve_viz.py
 # ---------------------------------------------------------------------------
 

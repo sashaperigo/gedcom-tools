@@ -1157,6 +1157,228 @@ class TestEditCitationEndpoint:
 
 
 # ===========================================================================
+# QUAY + DATE round-trip on citation builders + add/edit endpoints
+# ===========================================================================
+
+class TestCitationQuayAndDate:
+    """QUAY (citation quality 0–3) and citation DATE round-trip through
+    `_build_citation_lines`, `/api/add_citation`, and `/api/edit_citation`,
+    for both INDI events and FAM (MARR/DIV) events."""
+
+    def _add_source(self, post):
+        return post('/api/add_source', {
+            'titl': 'Quality-and-date Source', 'auth': '', 'publ': '', 'repo': '', 'note': '',
+        })['xref']
+
+    # -------------------------------------------------------------------
+    # Pure builder unit tests (`_build_citation_lines`)
+    # -------------------------------------------------------------------
+
+    def test_builder_emits_quay_under_sour_at_correct_level(self):
+        from serve_viz import _build_citation_lines
+        lines = _build_citation_lines('@S1@', 'p. 1', '', '', base_level=2, quay='3')
+        assert lines[0] == '2 SOUR @S1@'
+        assert '3 QUAY 3' in lines, f'expected `3 QUAY 3` in {lines}'
+
+    def test_builder_emits_date_inside_data_block(self):
+        """DATE must be a child of DATA at level b+2, alongside TEXT."""
+        from serve_viz import _build_citation_lines
+        lines = _build_citation_lines(
+            '@S1@', '', 'transcribed text', '', base_level=2, date='21 MAY 1814',
+        )
+        assert '3 DATA' in lines
+        data_i = lines.index('3 DATA')
+        assert '4 DATE 21 MAY 1814' in lines, f'expected `4 DATE …` in {lines}'
+        date_i = lines.index('4 DATE 21 MAY 1814')
+        assert date_i > data_i, 'DATE must appear after DATA'
+        # And DATE must precede TEXT per GEDCOM 5.5.1 ordering convention.
+        assert date_i < lines.index('4 TEXT transcribed text')
+
+    def test_builder_creates_data_block_when_only_date_set(self):
+        """Even without TEXT/URL, setting DATE must wrap it in a DATA block."""
+        from serve_viz import _build_citation_lines
+        lines = _build_citation_lines('@S1@', '', '', '', base_level=2, date='1900')
+        assert '3 DATA' in lines
+        assert '4 DATE 1900' in lines
+
+    def test_builder_omits_quay_when_blank(self):
+        from serve_viz import _build_citation_lines
+        lines = _build_citation_lines('@S1@', 'p. 1', '', '', base_level=2)
+        assert not any(ln.startswith('3 QUAY') for ln in lines), f'QUAY must be absent: {lines}'
+
+    def test_builder_omits_date_when_blank(self):
+        from serve_viz import _build_citation_lines
+        lines = _build_citation_lines('@S1@', 'p. 1', '', '', base_level=2)
+        assert not any('DATE' in ln for ln in lines), f'DATE must be absent: {lines}'
+
+    def test_builder_person_level_uses_base_1(self):
+        """For person-level citations (base_level=1), QUAY → level 2 and DATE → level 3."""
+        from serve_viz import _build_citation_lines
+        lines = _build_citation_lines(
+            '@S1@', '', '', '', base_level=1, quay='2', date='1900',
+        )
+        assert '1 SOUR @S1@' == lines[0]
+        assert '2 QUAY 2' in lines
+        assert '2 DATA' in lines
+        assert '3 DATE 1900' in lines
+
+    # -------------------------------------------------------------------
+    # /api/add_citation accepts QUAY + DATE on INDI events
+    # -------------------------------------------------------------------
+
+    def test_add_citation_writes_quay_and_date_on_indi_event(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0',
+            'page': 'p. 1', 'text': '', 'note': '',
+            'quay': '3', 'date': '14 MAR 1990',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '3 QUAY 3' in text
+        assert '4 DATE 14 MAR 1990' in text
+
+    def test_add_citation_normalizes_date(self, live_server):
+        """`/api/add_citation` runs DATE through the same normalizer used for event dates."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0',
+            'page': '', 'text': '', 'note': '',
+            'date': '1814-05-21',
+        })
+        text = _ged_text(ged)
+        assert '4 DATE 21 MAY 1814' in text, f'expected normalized date in {text}'
+
+    def test_add_citation_rejects_invalid_quay(self, live_server):
+        import urllib.error
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        try:
+            post('/api/add_citation', {
+                'xref': '@I1@', 'sour_xref': sour_xref,
+                'fact_key': 'BIRT:0',
+                'page': '', 'text': '', 'note': '',
+                'quay': '7',
+            })
+            assert False, 'Should have raised on QUAY=7'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_add_citation_rejects_invalid_date(self, live_server):
+        import urllib.error
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        try:
+            post('/api/add_citation', {
+                'xref': '@I1@', 'sour_xref': sour_xref,
+                'fact_key': 'BIRT:0',
+                'page': '', 'text': '', 'note': '',
+                'date': 'banana',
+            })
+            assert False, 'Should have raised on invalid DATE'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    # -------------------------------------------------------------------
+    # /api/edit_citation round-trips QUAY + DATE
+    # -------------------------------------------------------------------
+
+    def test_edit_citation_adds_quay_and_date(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 1', 'text': '', 'note': '',
+            'quay': '2', 'date': '1990',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '3 QUAY 2' in text
+        assert '4 DATE 1990' in text
+
+    def test_edit_citation_clears_quay_and_date(self, live_server):
+        """Setting QUAY/DATE to '' on edit must remove the corresponding lines."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 1', 'text': '', 'note': '',
+            'quay': '3', 'date': '1990',
+        })
+        post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 1', 'text': '', 'note': '',
+            'quay': '', 'date': '',
+        })
+        text = _ged_text(ged)
+        assert '3 QUAY' not in text
+        assert 'DATE 1990' not in text
+
+    def test_edit_citation_returns_quay_and_date_in_people_payload(self, live_server):
+        """Refreshed people payload exposes c.quay and c.date for the client to display."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@I1@', 'citation_key': 'BIRT:0:0',
+            'page': 'p. 1', 'text': '', 'note': '',
+            'quay': '3', 'date': '1990',
+        })
+        birt = next(e for e in resp['people']['@I1@']['events'] if e['tag'] == 'BIRT')
+        cite = birt['citations'][0]
+        assert cite.get('quay') == '3', f'expected quay=3 in refreshed citation, got {cite}'
+        assert cite.get('date') == '1990', f'expected date=1990 in refreshed citation, got {cite}'
+
+    # -------------------------------------------------------------------
+    # FAM (MARR/DIV) parity — same flow for FAM events
+    # -------------------------------------------------------------------
+
+    def test_add_citation_writes_quay_and_date_on_fam_marr(self, live_server):
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        resp = post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0',
+            'page': 'p.12', 'text': '', 'note': '',
+            'quay': '3', 'date': '21 MAY 1814',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        assert '3 QUAY 3' in text
+        assert '4 DATE 21 MAY 1814' in text
+
+    def test_edit_fam_citation_round_trips_quay_and_date_in_payload(self, live_server):
+        """Both spouses' refreshed payloads include the new quay/date on the FAM MARR citation."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.1', 'text': '', 'note': '',
+        })
+        resp = post('/api/edit_citation', {
+            'xref': '@F5@', 'citation_key': 'MARR:0:0',
+            'page': 'p.1', 'text': '', 'note': '',
+            'quay': '2', 'date': '1814',
+        })
+        for spouse in ('@I1@', '@I12@'):
+            marr = next(e for e in resp['people'][spouse]['events'] if e['tag'] == 'MARR')
+            cite = next(c for c in marr['citations'] if c.get('sourceXref') == sour_xref)
+            assert cite.get('quay') == '2', f'{spouse} MARR citation missing quay; got {cite}'
+            assert cite.get('date') == '1814', f'{spouse} MARR citation missing date; got {cite}'
+
+
+# ===========================================================================
 # /api/delete_citation
 # ===========================================================================
 

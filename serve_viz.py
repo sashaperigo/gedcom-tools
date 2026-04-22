@@ -997,43 +997,56 @@ def _citation_already_exists(lines: list[str], insert_pos: int, sour_xref: str, 
     return False
 
 
-def _build_citation_lines(sour_xref: str, page: str, text: str, note: str, base_level: int, url: str = '') -> list[str]:
+def _build_citation_lines(
+    sour_xref: str, page: str, text: str, note: str, base_level: int,
+    url: str = '', quay: str = '', date: str = '',
+) -> list[str]:
     """
     Build the citation block lines at base_level.
-    base_level=1 → person-level (1 SOUR, 2 PAGE, 2 DATA, 3 TEXT/WWW, 2 NOTE)
-    base_level=2 → fact-level   (2 SOUR, 3 PAGE, 3 DATA, 4 TEXT/WWW, 3 NOTE)
+    base_level=1 → person-level (1 SOUR, 2 PAGE, 2 DATA, 3 DATE/TEXT/WWW, 2 NOTE, 2 QUAY)
+    base_level=2 → fact-level   (2 SOUR, 3 PAGE, 3 DATA, 4 DATE/TEXT/WWW, 3 NOTE, 3 QUAY)
     """
     b = base_level
     lines_out = [f'{b} SOUR {sour_xref}']
     if page and page.strip():
         lines_out.append(f'{b+1} PAGE {page.strip()}')
-    if (text and text.strip()) or (url and url.strip()):
+    has_text = bool(text and text.strip())
+    has_url  = bool(url  and url.strip())
+    has_date = bool(date and date.strip())
+    if has_date or has_text or has_url:
         lines_out.append(f'{b+1} DATA')
-        if text and text.strip():
+        if has_date:
+            lines_out.append(f'{b+2} DATE {date.strip()}')
+        if has_text:
             for i, logical_line in enumerate(text.strip().split('\n')):
                 first_tag = f'{b+2} TEXT' if i == 0 else f'{b+3} CONT'
                 lines_out.extend(_chunk_note_line(logical_line, first_tag, f'{b+3} CONC'))
-        if url and url.strip():
+        if has_url:
             lines_out.append(f'{b+2} WWW {url.strip()}')
     if note and note.strip():
         for i, logical_line in enumerate(note.strip().split('\n')):
             first_tag = f'{b+1} NOTE' if i == 0 else f'{b+2} CONT'
             lines_out.extend(_chunk_note_line(logical_line, first_tag, f'{b+2} CONC'))
+    if quay and quay.strip():
+        lines_out.append(f'{b+1} QUAY {quay.strip()}')
     return lines_out
 
 
 def _update_citation_block(
     lines: list[str], block_start: int, block_end: int,
-    citation_level: int, page: str, text: str, note: str, url: str = ''
+    citation_level: int, page: str, text: str, note: str, url: str = '',
+    quay: str = '', date: str = '',
 ) -> list[str]:
     """
-    Replace citation block (block_start..block_end) with updated PAGE/TEXT/NOTE/WWW values.
+    Replace citation block (block_start..block_end) with updated values.
     Preserves the SOUR xref header line.
     """
     header = lines[block_start]  # '2 SOUR @S1@' or '1 SOUR @S1@'
     b = citation_level
     sour_xref_val = (header.split(' ', 2) + [''])[2].strip()
-    new_block = _build_citation_lines(sour_xref_val, page, text, note, b, url)
+    new_block = _build_citation_lines(
+        sour_xref_val, page, text, note, b, url, quay=quay, date=date,
+    )
     return lines[:block_start] + new_block + lines[block_end:]
 
 
@@ -1138,6 +1151,16 @@ def _remove_famc_from_indi(lines: list[str], indi_xref: str, fam_xref: str) -> l
 # Input validation / normalization
 # ---------------------------------------------------------------------------
 
+def _validate_quay(value: str) -> tuple[str, str | None]:
+    """QUAY must be empty or one of '0', '1', '2', '3' (GEDCOM 5.5.1 §QUAY)."""
+    s = (value or '').strip()
+    if s == '':
+        return '', None
+    if s in ('0', '1', '2', '3'):
+        return s, None
+    return s, f'Invalid QUAY value: {value!r}. Must be one of 0, 1, 2, 3.'
+
+
 def _normalize_event_date(value: str) -> tuple[str, str | None]:
     """
     Normalize a user-supplied date string to GEDCOM 5.5.1 format.
@@ -1176,6 +1199,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if js_file.exists():
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/javascript')
+                self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
                 self.end_headers()
                 self.wfile.write(js_file.read_bytes())
                 return
@@ -1591,6 +1615,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             text      = (body.get('text') or '').strip()
             note      = (body.get('note') or '').strip()
             url       = (body.get('url')  or '').strip()
+            quay, q_err = _validate_quay(body.get('quay') or '')
+            if q_err:
+                self.send_error(400, q_err)
+                return
+            date, d_err = _normalize_event_date(body.get('date') or '')
+            if d_err:
+                self.send_error(400, d_err)
+                return
             lines     = GED.read_text(encoding='utf-8').splitlines()
             is_fam    = xref.startswith('@F')
 
@@ -1607,7 +1639,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if _citation_already_exists(lines, indi_end, sour_xref, page, cite_level=1):
                     insert_pos, new_lines = None, lines
                 else:
-                    cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
+                    cite_lines = _build_citation_lines(
+                        sour_xref, page, text, note, base_level=1, url=url, quay=quay, date=date,
+                    )
                     new_lines  = lines[:indi_end] + cite_lines + lines[indi_end:]
             elif str(fact_key).startswith('SNOTE:'):
                 # Shared note citation — insert 1 SOUR at end of 0 @note_xref@ NOTE record
@@ -1619,7 +1653,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if _citation_already_exists(lines, snote_end, sour_xref, page, cite_level=1):
                     new_lines = lines
                 else:
-                    cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=1, url=url)
+                    cite_lines = _build_citation_lines(
+                        sour_xref, page, text, note, base_level=1, url=url, quay=quay, date=date,
+                    )
                     new_lines  = lines[:snote_end] + cite_lines + lines[snote_end:]
             else:
                 insert_pos, err = _find_fact_for_citation(lines, xref, fact_key)
@@ -1635,7 +1671,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if _citation_already_exists(lines, insert_pos, sour_xref, page, cite_level=2):
                     new_lines = lines
                 else:
-                    cite_lines = _build_citation_lines(sour_xref, page, text, note, base_level=2, url=url)
+                    cite_lines = _build_citation_lines(
+                        sour_xref, page, text, note, base_level=2, url=url, quay=quay, date=date,
+                    )
                     new_lines  = lines[:insert_pos] + cite_lines + lines[insert_pos:]
 
             if new_lines is not lines:
@@ -1664,12 +1702,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             text = (body.get('text') or '').strip()
             note = (body.get('note') or '').strip()
             url  = (body.get('url')  or '').strip()
+            quay, q_err = _validate_quay(body.get('quay') or '')
+            if q_err:
+                self.send_error(400, q_err)
+                return
+            date, d_err = _normalize_event_date(body.get('date') or '')
+            if d_err:
+                self.send_error(400, d_err)
+                return
             lines = GED.read_text(encoding='utf-8').splitlines()
             block_start, block_end, cite_level, err = _find_citation_block(lines, xref, citation_key)
             if err:
                 self.send_error(400, err)
                 return
-            new_lines = _update_citation_block(lines, block_start, block_end, cite_level, page, text, note, url)
+            new_lines = _update_citation_block(
+                lines, block_start, block_end, cite_level, page, text, note, url,
+                quay=quay, date=date,
+            )
             _write_gedcom_atomic(new_lines)
             print(f"[citation-edit] {xref} {citation_key}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json

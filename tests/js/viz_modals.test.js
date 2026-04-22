@@ -294,13 +294,13 @@ describe('_buildSourcesModalContent', () => {
 
     it('renders page info when page is present', () => {
         const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: '47' }], SOURCES);
-        expect(html).toContain('citation-page');
+        expect(html).toContain('citation-field-label">Page<');
         expect(html).toContain('47');
     });
 
     it('omits page element when page is null', () => {
         const html = _buildSourcesModalContent([{ sour_xref: '@S1@', page: null }], SOURCES);
-        expect(html).not.toContain('citation-page');
+        expect(html).not.toContain('citation-field-label">Page<');
     });
 
     it('HTML-escapes source title', () => {
@@ -349,7 +349,64 @@ describe('_buildSourcesModalContent — camelCase sourceXref / titl (B1)', () =>
         const citations = [{ sourceXref: '@S1@', page: '12' }];
         const html = _buildSourcesModalContent(citations, sources);
         expect(html).toContain('12');
-        expect(html).toContain('citation-page');
+        expect(html).toContain('citation-field-label">Page<');
+    });
+});
+
+// ── QUAY (citation quality) + DATE rendering in citation cards ────────────
+
+describe('_buildSourcesModalContent — QUAY and DATE field rows', () => {
+    const SOURCES = { '@S1@': { titl: 'Marriage Register' } };
+
+    it('renders a Date row when c.date is present', () => {
+        const html = _buildSourcesModalContent(
+            [{ sourceXref: '@S1@', page: 'p.1', date: '21 MAY 1814' }],
+            SOURCES,
+        );
+        expect(html).toContain('citation-field-label">Date<');
+        expect(html).toContain('21 MAY 1814');
+    });
+
+    it('omits Date row when c.date is empty', () => {
+        const html = _buildSourcesModalContent(
+            [{ sourceXref: '@S1@', page: 'p.1', date: '' }],
+            SOURCES,
+        );
+        expect(html).not.toContain('citation-field-label">Date<');
+    });
+
+    it('renders a Qual row with the human label for QUAY=3', () => {
+        const html = _buildSourcesModalContent(
+            [{ sourceXref: '@S1@', page: 'p.1', quay: '3' }],
+            SOURCES,
+        );
+        expect(html).toContain('citation-field-label">Qual<');
+        expect(html).toContain('Direct (3)');
+    });
+
+    it('renders Secondary (2) for QUAY=2', () => {
+        const html = _buildSourcesModalContent(
+            [{ sourceXref: '@S1@', quay: '2' }],
+            SOURCES,
+        );
+        expect(html).toContain('Secondary (2)');
+    });
+
+    it('omits Qual row when c.quay is empty', () => {
+        const html = _buildSourcesModalContent(
+            [{ sourceXref: '@S1@', page: 'p.1' }],
+            SOURCES,
+        );
+        expect(html).not.toContain('citation-field-label">Qual<');
+    });
+
+    it('exposes data-quay and data-date on the copy button so paste round-trips both', () => {
+        const html = _buildSourcesModalContent(
+            [{ sourceXref: '@S1@', page: 'p.1', quay: '3', date: '1814' }],
+            SOURCES,
+        );
+        expect(html).toContain('data-quay="3"');
+        expect(html).toContain('data-date="1814"');
     });
 });
 
@@ -859,6 +916,47 @@ describe('showEditCitationModal', () => {
         if (!showEditCitationModal) return;
         showEditCitationModal('@I1@', 'BIRT', 0);
         expect(urlInp.value).toBe('https://example.com/src');
+    });
+
+    it('pre-fills QUAY and DATE fields when present on the citation', () => {
+        if (!showEditCitationModal) return;
+        const quayEl = _fakeModalEl('edit-citation-modal-quay');
+        const dateEl = _fakeModalEl('edit-citation-modal-date');
+        const prevById = global.document.getElementById;
+        global.document.getElementById = (id) => {
+            if (id === 'edit-citation-modal-quay') return quayEl;
+            if (id === 'edit-citation-modal-date') return dateEl;
+            return prevById(id);
+        };
+        global.PEOPLE['@I1@'].events[0].citations[0].quay = '2';
+        global.PEOPLE['@I1@'].events[0].citations[0].date = '21 MAY 1814';
+        showEditCitationModal('@I1@', 'BIRT', 0);
+        expect(quayEl.value).toBe('2');
+        expect(dateEl.value).toBe('21 MAY 1814');
+    });
+
+    it('forwards QUAY and DATE to apiEditCitation on submit', async () => {
+        if (!showEditCitationModal) return;
+        const quayEl = _fakeModalEl('edit-citation-modal-quay');
+        const dateEl = _fakeModalEl('edit-citation-modal-date');
+        const prevById = global.document.getElementById;
+        global.document.getElementById = (id) => {
+            if (id === 'edit-citation-modal-quay') return quayEl;
+            if (id === 'edit-citation-modal-date') return dateEl;
+            return prevById(id);
+        };
+        const calls = [];
+        global.apiEditCitation = async (...args) => { calls.push(args); return { ok: true }; };
+        global.renderPanel = () => {};
+        const { submitEditCitationModal } = require('../../js/viz_modals.js');
+        showEditCitationModal('@I1@', 'BIRT', 0);
+        quayEl.value = '3';
+        dateEl.value = '1990';
+        await submitEditCitationModal();
+        expect(calls.length).toBe(1);
+        // signature: (xref, citationKey, page, text, note, url, quay, date)
+        expect(calls[0][6]).toBe('3');
+        expect(calls[0][7]).toBe('1990');
     });
 
     it('includes event occurrence in citation key sent to API', async () => {
@@ -1619,7 +1717,7 @@ describe('_buildSourcesModalContent — SOUR tag (person-level citations)', () =
         const citations = [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.47' }];
         const html = _buildSourcesModalContent(citations, SOURCES, '@I1@', sourEvt);
         expect(html).toContain('p.47');
-        expect(html).toContain('citation-page');
+        expect(html).toContain('citation-field-label">Page<');
     });
 });
 

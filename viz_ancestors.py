@@ -156,9 +156,13 @@ def _parse_fam_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec
     elif tag == 'NOTE' and lvl == 3 and current_evt is not None and current_evt.get('citations'):
         current_evt['citations'][-1]['note'] = _ged_val(val)
         state['current_evt_cite_field'] = 'note'
+    elif tag == 'QUAY' and lvl == 3 and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['quay'] = val.strip()
     elif tag == 'TEXT' and lvl == 4 and current_evt is not None and current_evt.get('citations'):
         current_evt['citations'][-1]['text'] = _ged_val(val)
         state['current_evt_cite_field'] = 'text'
+    elif tag == 'DATE' and lvl == 4 and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['date'] = val.strip()
     elif tag in ('CONT', 'CONC') and current_evt is not None:
         _fam_cont_conc(state, lvl, tag, val, raw_val, current_evt)
     elif tag == 'WWW' and lvl in (3, 4) and current_evt is not None and current_evt.get('citations'):
@@ -311,6 +315,8 @@ def _indi_handle_lvl2(state: dict, tag: str, val: str, raw_val: str, rec: dict) 
     elif tag == 'NOTE' and current_person_cite is not None:
         current_person_cite['note'] = _ged_val(val)
         state['current_cite_field'] = 'note'
+    elif tag == 'QUAY' and current_person_cite is not None:
+        current_person_cite['quay'] = val.strip()
     elif tag == 'WWW' and current_person_cite is not None:
         if current_person_cite.get('url') is None:
             current_person_cite['url'] = val
@@ -326,6 +332,8 @@ def _indi_handle_lvl3(state: dict, tag: str, val: str, raw_val: str, rec: dict) 
     elif tag == 'NOTE' and current_evt is not None and current_evt.get('citations'):
         current_evt['citations'][-1]['note'] = _ged_val(val)
         state['current_evt_cite_field'] = 'note'
+    elif tag == 'QUAY' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['quay'] = val.strip()
     elif tag in ('CONT', 'CONC') and current_note == 'event':
         sep = '\n' if tag == 'CONT' else ''
         current_evt['note'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
@@ -336,6 +344,8 @@ def _indi_handle_lvl3(state: dict, tag: str, val: str, raw_val: str, rec: dict) 
     elif tag == 'TEXT' and current_person_cite is not None:
         current_person_cite['text'] = _ged_val(val)
         state['current_cite_field'] = 'text'
+    elif tag == 'DATE' and current_person_cite is not None:
+        current_person_cite['date'] = val.strip()
     elif tag in ('CONT', 'CONC') and current_person_cite is not None and state['current_cite_field'] == 'note':
         sep = '\n' if tag == 'CONT' else ''
         current_person_cite['note'] = (current_person_cite['note'] or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
@@ -357,6 +367,8 @@ def _indi_handle_lvl4(state: dict, tag: str, val: str, raw_val: str, rec: dict) 
     if tag == 'TEXT' and current_evt is not None and current_evt.get('citations'):
         current_evt['citations'][-1]['text'] = _ged_val(val)
         state['current_evt_cite_field'] = 'text'
+    elif tag == 'DATE' and current_evt is not None and current_evt.get('citations'):
+        current_evt['citations'][-1]['date'] = val.strip()
     elif tag in ('CONT', 'CONC') and current_evt is not None and current_evt.get('citations') and state.get('current_evt_cite_field') == 'note':
         sep = '\n' if tag == 'CONT' else ''
         current_evt['citations'][-1]['note'] = (current_evt['citations'][-1].get('note') or '') + sep + _ged_val(raw_val if tag == 'CONC' else val)
@@ -667,6 +679,8 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                     'page':        cite.get('page') or '',
                     'text':        cite.get('text') or '',
                     'note':        cite.get('note') or '',
+                    'quay':        cite.get('quay') or '',
+                    'date':        cite.get('date') or '',
                 })
         excl_list = excl_by_xref.get(xref, [])
         # Assign per-tag occurrence index before exclusion filtering.

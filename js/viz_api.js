@@ -73,12 +73,20 @@ async function apiEditSourceRecord(sourXref, fields) {
 
 // ── Citation operations ───────────────────────────────────────────────────
 
-async function apiAddCitation(xref, sourXref, factKey, page, text, note, url) {
-    return _post('/api/add_citation', { xref, sour_xref: sourXref, fact_key: factKey, page, text, note, url });
+async function apiAddCitation(xref, sourXref, factKey, page, text, note, url, quay, date) {
+    return _post('/api/add_citation', {
+        xref, sour_xref: sourXref, fact_key: factKey,
+        page, text, note, url,
+        quay: quay || '', date: date || '',
+    });
 }
 
-async function apiEditCitation(xref, citationKey, page, text, note, url) {
-    return _post('/api/edit_citation', { xref, citation_key: citationKey, page, text, note, url });
+async function apiEditCitation(xref, citationKey, page, text, note, url, quay, date) {
+    return _post('/api/edit_citation', {
+        xref, citation_key: citationKey,
+        page, text, note, url,
+        quay: quay || '', date: date || '',
+    });
 }
 
 async function apiDeleteCitation(xref, citationKey) {
