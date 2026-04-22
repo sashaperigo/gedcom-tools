@@ -955,11 +955,11 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
                 `<a href="${escHtml(citUrl)}" target="_blank" rel="noopener">${escHtml(title)}</a>` :
                 escHtml(title);
             const fieldRows = [
-                c.page ? `<div class=”citation-field”><span class=”citation-field-label”>Page</span><span class=”citation-field-value”>${escHtml(/^p\.?\s*/i.test(c.page) ? c.page : 'p. ' + c.page)}</span></div>` : '',
-                c.text ? `<div class=”citation-field”><span class=”citation-field-label”>Text</span><span class=”citation-field-value citation-field-value--quoted”>“${escHtml(c.text)}”</span></div>` : '',
-                c.note ? `<div class=”citation-field”><span class=”citation-field-label”>Note</span><span class=”citation-field-value”>${escHtml(c.note)}</span></div>` : '',
+                c.page ? `<div class="citation-field"><span class="citation-field-label">Page</span><span class="citation-field-value">${escHtml(/^p\.?\s*/i.test(c.page) ? c.page : 'p. ' + c.page)}</span></div>` : '',
+                c.text ? `<div class="citation-field"><span class="citation-field-label">Text</span><span class="citation-field-value citation-field-value--quoted">“${escHtml(c.text)}”</span></div>` : '',
+                c.note ? `<div class="citation-field"><span class="citation-field-label">Note</span><span class="citation-field-value">${escHtml(c.note)}</span></div>` : '',
             ].filter(Boolean).join('');
-            const fieldsHtml = fieldRows ? `<div class=”citation-fields”>${fieldRows}</div>` : '';
+            const fieldsHtml = fieldRows ? `<div class="citation-fields">${fieldRows}</div>` : '';
             const citeKey = isIndiSour ? (c.citationKey || `SOUR:${idx}`) :
                 (tag === 'NOTE') ? `NOTE:${evt && evt.note_idx}:${idx}` :
                 (tag === 'SNOTE') ? `SNOTE:${evt && evt.note_xref}:${idx}` :
