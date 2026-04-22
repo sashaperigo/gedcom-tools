@@ -351,6 +351,15 @@ function _buildGodparentPillsHtml(evt, xref, xrefQ) {
 let _panelEl = null;
 let _familyOpen = false;
 
+function _toggleSourcesSection(btn) {
+    const section = document.getElementById('detail-sources');
+    if (!section) return;
+    const collapsed = section.classList.toggle('sources-collapsed');
+    btn.setAttribute('aria-expanded', String(!collapsed));
+    const arrow = btn.querySelector('.sources-toggle-arrow');
+    if (arrow) arrow.textContent = collapsed ? '▶' : '▼';
+}
+
 function _toggleFamily() {
     _familyOpen = !_familyOpen;
     renderPanel();
@@ -854,13 +863,18 @@ function renderPanel() {
                 `</div>` +
                 `</div>`
             ).join('');
+            sourcesDiv.className = 'sources-collapsed';
             sourcesDiv.innerHTML =
                 `<div class="sources-section-header">` +
-                `<div class="sources-section-title">Sources<span class="sources-count-pill">${count}</span></div>` +
+                `<button class="sources-section-title sources-toggle" onclick="_toggleSourcesSection(this)" aria-expanded="false">` +
+                `<span class="sources-toggle-arrow">▶</span>` +
+                `Sources<span class="sources-count-pill">${count}</span>` +
+                `</button>` +
                 manageBtn +
                 `</div>` +
-                cards;
+                `<div class="sources-cards">${cards}</div>`;
         } else {
+            sourcesDiv.className = '';
             sourcesDiv.innerHTML =
                 `<div class="sources-section-header">` +
                 `<div class="sources-section-title">Sources</div>` +
