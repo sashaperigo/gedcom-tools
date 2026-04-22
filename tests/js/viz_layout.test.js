@@ -3229,4 +3229,21 @@ describe('computeLayout — focus spouse parent expansion', () => {
         expect(nodes.find(n => n.xref === '@SPDAD@')).toBeUndefined();
         expect(nodes.find(n => n.xref === '@SPMOM@')).toBeUndefined();
     });
+
+    it('recursively places spouse grandparents when spouse father is also expanded', () => {
+        global.PEOPLE['@SPGRANDPA@'] = { birth_year: 1705 };
+        global.PEOPLE['@SPGRANDMA@'] = { birth_year: 1710 };
+        global.PARENTS['@SPDAD@'] = ['@SPGRANDPA@', '@SPGRANDMA@'];
+
+        const expanded = new Set(['@SPOUSE@', '@SPDAD@']);
+        const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
+
+        const gpa = nodes.find(n => n.xref === '@SPGRANDPA@');
+        const gma = nodes.find(n => n.xref === '@SPGRANDMA@');
+        expect(gpa).toBeDefined();
+        expect(gma).toBeDefined();
+        expect(gpa.y).toBe(-2 * ROW_HEIGHT);
+        expect(gma.y).toBe(-2 * ROW_HEIGHT);
+        expect(gpa.role).toBe('ancestor');
+    });
 });
