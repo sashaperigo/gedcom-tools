@@ -1285,7 +1285,15 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
             const n = (person.notes || []).find(n => n.note_xref === String(eventOcc));
             cite = (n && n.citations || [])[citationIndex] || null;
         } else {
-            const fact = (person.events || []).find(f => f.tag === factTag && f.event_idx === _editCitationEventOcc);
+            const isFamCite = _editCitationApiXref && _editCitationApiXref !== _editCitationXref;
+            const fact = (person.events || []).find(f => {
+                if (f.tag !== factTag) return false;
+                if (isFamCite) {
+                    const famIdx = f.tag === 'MARR' ? f.marr_idx : f.div_idx;
+                    return f.fam_xref === _editCitationApiXref && famIdx === _editCitationEventOcc;
+                }
+                return f.event_idx === _editCitationEventOcc;
+            });
             if (fact) cite = (fact.citations || [])[citationIndex] || null;
         }
     }
