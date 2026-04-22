@@ -3247,3 +3247,44 @@ describe('computeLayout — focus spouse parent expansion', () => {
         expect(gpa.role).toBe('ancestor');
     });
 });
+
+describe('computeLayout — focus-parents ↔ spouse-parents collision avoidance', () => {
+    // Fixture: focus has both parents; spouse has both parents. With both
+    // sides expanded, focus's mother and spouse's father sit at the same row
+    // and must not overlap. Minimum center-to-center distance is NODE_W + H_GAP
+    // (the SLOT floor returned by _requiredSeparation at depth 0).
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@':   { birth_year: 1920 },
+                '@SPOUSE@':  { birth_year: 1920 },
+                '@FDAD@':    { birth_year: 1890 },
+                '@FMOM@':    { birth_year: 1895 },
+                '@SPDAD@':   { birth_year: 1888 },
+                '@SPMOM@':   { birth_year: 1892 },
+            },
+            relatives: {
+                '@FOCUS@':  { siblings: [], spouses: ['@SPOUSE@'] },
+                '@SPOUSE@': { siblings: [], spouses: ['@FOCUS@'] },
+            },
+            parents: {
+                '@FOCUS@':  ['@FDAD@', '@FMOM@'],
+                '@SPOUSE@': ['@SPDAD@', '@SPMOM@'],
+            },
+        });
+    });
+
+    it('leaves enough horizontal gap between focus-mother and spouse-father when both sides expanded', () => {
+        const expanded = new Set(['@FOCUS@', '@SPOUSE@']);
+        const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
+        const fMom = nodes.find(n => n.xref === '@FMOM@');
+        const spDad = nodes.find(n => n.xref === '@SPDAD@');
+        expect(fMom).toBeDefined();
+        expect(spDad).toBeDefined();
+
+        const fMomCenter = fMom.x + NODE_W / 2;
+        const spDadCenter = spDad.x + NODE_W / 2;
+        // At depth 0 the required center-to-center gap is NODE_W + H_GAP.
+        expect(spDadCenter - fMomCenter).toBeGreaterThanOrEqual(NODE_W + H_GAP);
+    });
+});

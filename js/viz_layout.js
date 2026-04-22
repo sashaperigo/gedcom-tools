@@ -124,6 +124,11 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     const nodes = [];
     const edges = [];
 
+    // Focus-spouses recorded during gen-0 emission; processed in Phase 1.5
+    // (after focus-parents) so their ancestor subtrees can be separated from
+    // the focus-parents subtree via contour comparison.
+    const focusSpouses = [];
+
     // ── Phase 1 & 2: Generation 0 (focus row) ────────────────────────────────
 
     const focusBY = PEOPLE[focusXref]?.birth_year ?? 9999;
@@ -257,11 +262,10 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             }
         }
 
-        // Spouse's ancestors (if expanded). _placeAncestors short-circuits
-        // when spouseXref is not in expandedAncestors, so this is a no-op
-        // by default.
-        _placeAncestorSiblings(spouseXref, thisSpouseX, 0, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-        _placeAncestors(spouseXref, thisSpouseX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        // Spouse's ancestors are placed in Phase 1.5 (after focus-parents)
+        // so contour-based separation can space them away from the
+        // focus-parents subtree.
+        focusSpouses.push({ xref: spouseXref, originalX: thisSpouseX, side: 'right' });
     });
 
     if (leftSpouseXref) {
@@ -280,8 +284,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             y2: NODE_H / 2,
             type: 'marriage',
         });
-        _placeAncestorSiblings(leftSpouseXref, leftSpouseX, 0, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-        _placeAncestors(leftSpouseXref, leftSpouseX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        focusSpouses.push({ xref: leftSpouseXref, originalX: leftSpouseX, side: 'left' });
     }
 
     // Younger siblings: packed after the rightmost spouse/spouse-sibling (or at FOCUS_TO_SIB if no spouses).
@@ -330,6 +333,10 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     const focusParents = PARENTS[focusXref] ?? [];
     const fatherXref = focusParents[0] ?? null;
     const motherXref = focusParents[1] ?? null;
+    // Hoisted so Phase 1.5 (focus-spouse ancestors) can read them for
+    // contour-based separation against the focus-parents subtree.
+    let fatherX = null;
+    let motherX = null;
 
     if (fatherXref || motherXref) {
         const focusCenterX = NODE_W_FOCUS / 2;
@@ -359,8 +366,8 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             // ancestors on either side don't collide while keeping the marriage-line
             // midpoint above the sibling group.
             const sep = _requiredSeparation(fatherXref, motherXref, effectiveExpandedAncestors, expandedSiblingsXrefs);
-            const fatherX = focusGroupCenterX - sep / 2 - NODE_W / 2;
-            const motherX = focusGroupCenterX + sep / 2 - NODE_W / 2;
+            fatherX = focusGroupCenterX - sep / 2 - NODE_W / 2;
+            motherX = focusGroupCenterX + sep / 2 - NODE_W / 2;
 
             nodes.push({ xref: fatherXref, x: fatherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
             nodes.push({ xref: motherXref, x: motherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
@@ -388,6 +395,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
             _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
             _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+            if (fatherXref) fatherX = singleParentX; else motherX = singleParentX;
         }
 
         // Umbrella anchor drop (mirrors the descendant umbrella).
@@ -423,6 +431,28 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
                 type: 'ancestor',
             });
         });
+    }
+
+    // ── Phase 1.5: focus-spouse ancestors with collision avoidance ──────────
+    //
+    // For each focus-spouse, apply Reingold-Tilford contour comparison
+    // (via _requiredSeparation) against the focus-parents subtree. If the
+    // spouse-parents subtree would overlap, shift the spouse subtree
+    // outward by the shortfall before placing its ancestor subtree.
+    for (const entry of focusSpouses) {
+        if (!effectiveExpandedAncestors.has(entry.xref)) {
+            continue;
+        }
+        const shift = _computeFocusSpouseShift(
+            entry, fatherXref, motherXref, fatherX, motherX,
+            effectiveExpandedAncestors, expandedSiblingsXrefs,
+        );
+        if (shift !== 0) {
+            _shiftFocusSpouseSubtree(nodes, edges, entry, shift);
+            entry.originalX += shift;
+        }
+        _placeAncestorSiblings(entry.xref, entry.originalX, 0, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestors(entry.xref, entry.originalX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
     }
 
     // ── Phase 2: Generation +1 (children + umbrella) ─────────────────────────
@@ -1264,6 +1294,76 @@ function _requiredSeparation(fatherXref, motherXref, expandedAncestors, expanded
         sep = Math.max(sep, rf[d] + lm[d] + gap);
     }
     return sep;
+}
+
+// Required x-shift for a focus-spouse so its parent subtree clears the
+// focus-parents subtree at every row. Positive = move rightward
+// (right-side spouse); negative = move leftward (left-side spouse).
+// Returns 0 when no collision is possible: focus has no inner-facing
+// parent, spouse has no parents, or current spacing already satisfies
+// _requiredSeparation.
+function _computeFocusSpouseShift(entry, focusFatherXref, focusMotherXref, focusFatherX, focusMotherX, expandedAncestors, expandedSibs) {
+    const { NODE_W } = DESIGN;
+    const spParents = PARENTS[entry.xref] ?? [];
+    const spFatherXref = spParents[0] ?? null;
+    const spMotherXref = spParents[1] ?? null;
+    if (!spFatherXref && !spMotherXref) return 0;
+
+    // Where the spouse's inner-facing parent would land if we placed the
+    // spouse subtree at its un-shifted originalX. Mirrors _placeAncestors.
+    const spouseCenterX = entry.originalX + NODE_W / 2;
+    let spouseInnerParentXref;
+    let spouseInnerParentCenter;
+    if (spFatherXref && spMotherXref) {
+        const spSep = _requiredSeparation(spFatherXref, spMotherXref, expandedAncestors, expandedSibs);
+        if (entry.side === 'right') {
+            spouseInnerParentXref = spFatherXref;
+            spouseInnerParentCenter = spouseCenterX - spSep / 2;
+        } else {
+            spouseInnerParentXref = spMotherXref;
+            spouseInnerParentCenter = spouseCenterX + spSep / 2;
+        }
+    } else {
+        spouseInnerParentXref = spFatherXref || spMotherXref;
+        spouseInnerParentCenter = spouseCenterX;
+    }
+
+    if (entry.side === 'right') {
+        if (!focusMotherXref || focusMotherX === null) return 0;
+        const focusInnerCenter = focusMotherX + NODE_W / 2;
+        const required = _requiredSeparation(focusMotherXref, spouseInnerParentXref, expandedAncestors, expandedSibs);
+        const actual = spouseInnerParentCenter - focusInnerCenter;
+        return actual >= required ? 0 : required - actual;
+    } else {
+        if (!focusFatherXref || focusFatherX === null) return 0;
+        const focusInnerCenter = focusFatherX + NODE_W / 2;
+        const required = _requiredSeparation(spouseInnerParentXref, focusFatherXref, expandedAncestors, expandedSibs);
+        const actual = focusInnerCenter - spouseInnerParentCenter;
+        return actual >= required ? 0 : -(required - actual);
+    }
+}
+
+// Mutate nodes/edges in place: shift every gen-0 node and every edge
+// endpoint in the gen-0 zone (y >= ancUmbrellaY) that lies on the
+// focus-spouse's "side" of the canvas by dx. Focus-parents subtree
+// (y < ancUmbrellaY) is untouched.
+function _shiftFocusSpouseSubtree(nodes, edges, entry, dx) {
+    const { NODE_W, NODE_H, ROW_HEIGHT } = DESIGN;
+    const ancUmbrellaY = -(ROW_HEIGHT - NODE_H) / 2;
+    const onSide = entry.side === 'right'
+        ? (x) => x >= entry.originalX
+        : (x) => x <= entry.originalX + NODE_W;
+
+    for (const n of nodes) {
+        if (n.y === 0 && onSide(n.x)) {
+            n.x += dx;
+        }
+    }
+    for (const e of edges) {
+        if (e.y1 < ancUmbrellaY || e.y2 < ancUmbrellaY) continue;
+        if (onSide(e.x1)) e.x1 += dx;
+        if (onSide(e.x2)) e.x2 += dx;
+    }
 }
 
 // ---------------------------------------------------------------------------
