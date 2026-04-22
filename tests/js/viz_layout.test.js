@@ -3173,3 +3173,41 @@ describe('_placeChildrenOfPerson — multi-FAM with visible spouse splits into t
         expect(crossbars.length).toBe(1);
     });
 });
+
+describe('computeLayout — focus spouse parent expansion', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1765 },
+                '@SPOUSE@': { birth_year: 1765 },
+                '@SPDAD@':  { birth_year: 1735 },
+                '@SPMOM@':  { birth_year: 1740 },
+                '@SIB@':    { birth_year: 1770 },
+                '@SIBSP@':  { birth_year: 1768 },
+            },
+            relatives: {
+                '@FOCUS@':  { siblings: ['@SIB@'], spouses: ['@SPOUSE@'] },
+                '@SPOUSE@': { siblings: [], spouses: ['@FOCUS@'] },
+                '@SIB@':    { siblings: ['@FOCUS@'], spouses: ['@SIBSP@'] },
+                '@SIBSP@':  { siblings: [], spouses: ['@SIB@'] },
+            },
+            parents: {
+                '@SPOUSE@': ['@SPDAD@', '@SPMOM@'],
+            },
+        });
+    });
+
+    it('marks focus spouse with isFocusSpouse=true', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
+        const spouse = nodes.find(n => n.xref === '@SPOUSE@');
+        expect(spouse).toBeDefined();
+        expect(spouse.isFocusSpouse).toBe(true);
+    });
+
+    it('does NOT mark a sibling-of-focus spouse as isFocusSpouse', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
+        const sibSpouse = nodes.find(n => n.xref === '@SIBSP@');
+        expect(sibSpouse).toBeDefined();
+        expect(sibSpouse.isFocusSpouse).toBeFalsy();
+    });
+});

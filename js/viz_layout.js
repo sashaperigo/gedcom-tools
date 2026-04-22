@@ -201,6 +201,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             y: 0,
             generation: 0,
             role: 'spouse',
+            isFocusSpouse: true,
         });
 
         const edgeX1 = si === 0 ?
@@ -264,6 +265,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             y: 0,
             generation: 0,
             role: 'spouse',
+            isFocusSpouse: true,
         });
         edges.push({
             x1: leftSpouseX + NODE_W,
