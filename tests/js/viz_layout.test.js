@@ -922,6 +922,96 @@ describe('computeLayout — descendant umbrella', () => {
     });
 });
 
+// ── Test 10b: Multi-FAM children split ────────────────────────────────────
+
+describe('computeLayout — multi-FAM children split', () => {
+    const UMBRELLA_Y = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+
+    it('splits focus children into visible-FAM (marriage line) and other-FAM (under focus) umbrellas', () => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1955 },
+                '@SPOUSE1@': { birth_year: 1958 },
+                '@CLAIRE@': { birth_year: 1985 },
+                '@ELEANOR@': { birth_year: 1994 },
+                '@TENG@': { birth_year: 1976 },
+                '@WU@': { birth_year: 1978 },
+            },
+            children: { '@FOCUS@': ['@TENG@', '@WU@', '@CLAIRE@', '@ELEANOR@'] },
+            relatives: { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE1@'] } },
+            families: {
+                '@F1@': { husb: '@FOCUS@', wife: '@SPOUSE1@', chil: ['@CLAIRE@'] },
+                '@F2@': { husb: '@FOCUS@', wife: null, chil: ['@ELEANOR@'] },
+                '@F3@': { husb: '@FOCUS@', wife: null, chil: ['@TENG@', '@WU@'] },
+            },
+        });
+        const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
+
+        const focusCenter = NODE_W_FOCUS / 2;
+        const spouseLeft = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
+        const spouseCenter = spouseLeft + NODE_W / 2;
+        const marriageMid = (focusCenter + spouseCenter) / 2;
+
+        const claire = nodes.find(n => n.xref === '@CLAIRE@');
+        expect(claire).toBeDefined();
+        expect(claire.x + NODE_W / 2).toBeCloseTo(marriageMid, 1);
+
+        const visibleDrop = edges.find(e =>
+            e.type === 'descendant' &&
+            e.x1 === marriageMid && e.y1 === NODE_H / 2 &&
+            e.x2 === marriageMid && e.y2 === UMBRELLA_Y
+        );
+        expect(visibleDrop).toBeDefined();
+
+        const otherDrop = edges.find(e =>
+            e.type === 'descendant' &&
+            e.x1 === focusCenter && e.y1 === NODE_H_FOCUS &&
+            e.x2 === focusCenter && e.y2 === UMBRELLA_Y
+        );
+        expect(otherDrop).toBeDefined();
+
+        const teng = nodes.find(n => n.xref === '@TENG@');
+        const wu = nodes.find(n => n.xref === '@WU@');
+        const eleanor = nodes.find(n => n.xref === '@ELEANOR@');
+        [teng, wu, eleanor].forEach(n => {
+            expect(n.x + NODE_W).toBeLessThan(claire.x);
+        });
+
+        expect(teng.x).toBeLessThan(wu.x);
+        expect(wu.x).toBeLessThan(eleanor.x);
+    });
+
+    it('single-FAM focus with on-row spouse behaves like legacy (one umbrella at marriage midpoint)', () => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1900 },
+                '@SPOUSE@': { birth_year: 1902 },
+                '@C1@': { birth_year: 1925 },
+            },
+            children: { '@FOCUS@': ['@C1@'] },
+            relatives: { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] } },
+            families: {
+                '@F1@': { husb: '@FOCUS@', wife: '@SPOUSE@', chil: ['@C1@'] },
+            },
+        });
+        const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
+
+        const focusCenter = NODE_W_FOCUS / 2;
+        const spouseCenter = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2 + NODE_W / 2;
+        const marriageMid = (focusCenter + spouseCenter) / 2;
+
+        const c1 = nodes.find(n => n.xref === '@C1@');
+        expect(c1.x + NODE_W / 2).toBeCloseTo(marriageMid, 1);
+
+        const otherDrop = edges.find(e =>
+            e.type === 'descendant' &&
+            e.x1 === focusCenter && e.y1 === NODE_H_FOCUS &&
+            e.x2 === focusCenter && e.y2 === UMBRELLA_Y
+        );
+        expect(otherDrop).toBeUndefined();
+    });
+});
+
 // ── Test 11: Ancestor umbrella layout ─────────────────────────────────────
 
 describe('computeLayout — ancestor umbrella', () => {
@@ -2912,5 +3002,174 @@ describe('computeLayout — focus-row sibling spouse placement', () => {
         ).length;
         expect(nicolaSpouseCount).toBe(0);
         expect(nicolaNode).toBeDefined();
+    });
+});
+
+// ── Regression: non-focus multi-FAM children separate into two umbrellas ──
+//
+// Adrian Gill scenario: Adrian has 3 FAMs with children — one with a visible
+// spouse (Elaine → Claire) and two with non-visible spouses (Jennifer → Wu;
+// no spouse → Teng, Eleanor). Clicking the chevron on Adrian must produce:
+//   1. A line from the Adrian–Elaine marriage midpoint down to Claire.
+//   2. A single 3-pronged umbrella from Adrian's pill covering Wu, Teng,
+//      and Eleanor.
+//   3. The 3-pronged umbrella must NOT touch the Claire line.
+describe('_placeChildrenOfPerson — multi-FAM with visible spouse splits into two umbrellas', () => {
+    function setupAdrianScene() {
+        resetGlobals({
+            people: {
+                '@ADRIAN@': { birth_year: 1955 },
+                '@ELAINE@': { birth_year: 1957 },
+                '@CLAIRE@': { birth_year: 1982 },
+                '@WU@': { birth_year: 1993 },
+                '@TENG@': { birth_year: 2000 },
+                '@ELEANOR@': { birth_year: 2002 },
+            },
+            relatives: {
+                '@ADRIAN@': { siblings: [], spouses: ['@ELAINE@'] },
+            },
+            families: {
+                '@F_AE@': { husb: '@ADRIAN@', wife: '@ELAINE@', chil: ['@CLAIRE@'] },
+                '@F_AJ@': { husb: '@ADRIAN@', wife: '@JENNIFER@', chil: ['@WU@'] },
+                '@F_A@': { husb: '@ADRIAN@', wife: null, chil: ['@TENG@', '@ELEANOR@'] },
+            },
+        });
+    }
+
+    it('visible-FAM child (Claire) sits on visible-spouse side; other-FAM kids on opposite side', () => {
+        setupAdrianScene();
+        const elaineX = NODE_W + MARRIAGE_GAP;
+        const nodes = [
+            { xref: '@ADRIAN@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@ELAINE@', x: elaineX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
+
+        const adrianCenter = NODE_W / 2;
+        const kids = nodes.filter(n => n.y === ROW_HEIGHT && n.role === 'descendant');
+        const byXref = Object.fromEntries(kids.map(k => [k.xref, k]));
+        expect(byXref['@CLAIRE@']).toBeDefined();
+        expect(byXref['@WU@']).toBeDefined();
+        expect(byXref['@TENG@']).toBeDefined();
+        expect(byXref['@ELEANOR@']).toBeDefined();
+
+        expect(byXref['@CLAIRE@'].x + NODE_W / 2).toBeGreaterThan(adrianCenter);
+        expect(byXref['@WU@'].x + NODE_W / 2).toBeLessThan(adrianCenter);
+        expect(byXref['@TENG@'].x + NODE_W / 2).toBeLessThan(adrianCenter);
+        expect(byXref['@ELEANOR@'].x + NODE_W / 2).toBeLessThan(adrianCenter);
+    });
+
+    it('no horizontal edge at umbrellaY crosses Adrian\'s center (two umbrellas stay disjoint)', () => {
+        setupAdrianScene();
+        const elaineX = NODE_W + MARRIAGE_GAP;
+        const nodes = [
+            { xref: '@ADRIAN@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@ELAINE@', x: elaineX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
+
+        const adrianCenter = NODE_W / 2;
+        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const horizontals = edges.filter(e =>
+            e.type === 'descendant' && e.y1 === umbrellaY && e.y2 === umbrellaY
+        );
+        for (const e of horizontals) {
+            const lo = Math.min(e.x1, e.x2);
+            const hi = Math.max(e.x1, e.x2);
+            expect(
+                hi <= adrianCenter || lo >= adrianCenter,
+                `horizontal at umbrellaY spans ${lo}→${hi} crossing Adrian center ${adrianCenter}`,
+            ).toBe(true);
+        }
+    });
+
+    it('Wu, Teng, Eleanor share ONE crossbar at umbrellaY (single 3-pronged umbrella)', () => {
+        setupAdrianScene();
+        const elaineX = NODE_W + MARRIAGE_GAP;
+        const nodes = [
+            { xref: '@ADRIAN@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@ELAINE@', x: elaineX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
+
+        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const byXref = Object.fromEntries(
+            nodes.filter(n => n.y === ROW_HEIGHT).map(k => [k.xref, k])
+        );
+        const otherCenters = [
+            byXref['@WU@'].x + NODE_W / 2,
+            byXref['@TENG@'].x + NODE_W / 2,
+            byXref['@ELEANOR@'].x + NODE_W / 2,
+        ];
+        const leftC = Math.min(...otherCenters);
+        const rightC = Math.max(...otherCenters);
+
+        const crossbar = edges.find(e =>
+            e.type === 'descendant' && e.y1 === umbrellaY && e.y2 === umbrellaY &&
+            Math.min(e.x1, e.x2) === leftC && Math.max(e.x1, e.x2) === rightC
+        );
+        expect(crossbar, 'expected a single crossbar spanning the 3 non-visible children').toBeDefined();
+    });
+
+    it('mirror: visible spouse on left puts other-FAM kids on Adrian\'s right', () => {
+        setupAdrianScene();
+        const elaineX = -(NODE_W + MARRIAGE_GAP);
+        const nodes = [
+            { xref: '@ADRIAN@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@ELAINE@', x: elaineX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
+
+        const adrianCenter = NODE_W / 2;
+        const byXref = Object.fromEntries(
+            nodes.filter(n => n.y === ROW_HEIGHT).map(k => [k.xref, k])
+        );
+        expect(byXref['@CLAIRE@'].x + NODE_W / 2).toBeLessThan(adrianCenter);
+        expect(byXref['@WU@'].x + NODE_W / 2).toBeGreaterThan(adrianCenter);
+        expect(byXref['@TENG@'].x + NODE_W / 2).toBeGreaterThan(adrianCenter);
+        expect(byXref['@ELEANOR@'].x + NODE_W / 2).toBeGreaterThan(adrianCenter);
+    });
+
+    it('no visible spouse: all kids share a single umbrella (one crossbar spanning all)', () => {
+        resetGlobals({
+            people: {
+                '@ADRIAN@': { birth_year: 1955 },
+                '@WU@': { birth_year: 1993 },
+                '@TENG@': { birth_year: 2000 },
+                '@ELEANOR@': { birth_year: 2002 },
+            },
+            relatives: {
+                '@ADRIAN@': { siblings: [], spouses: [] },
+            },
+            families: {
+                '@F_AJ@': { husb: '@ADRIAN@', wife: '@JENNIFER@', chil: ['@WU@'] },
+                '@F_A@': { husb: '@ADRIAN@', wife: null, chil: ['@TENG@', '@ELEANOR@'] },
+            },
+        });
+        const nodes = [{ xref: '@ADRIAN@', x: 0, y: 0, generation: 0, role: 'sibling' }];
+        const edges = [];
+        _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
+
+        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const byXref = Object.fromEntries(
+            nodes.filter(n => n.y === ROW_HEIGHT).map(k => [k.xref, k])
+        );
+        const centers = [
+            byXref['@WU@'].x + NODE_W / 2,
+            byXref['@TENG@'].x + NODE_W / 2,
+            byXref['@ELEANOR@'].x + NODE_W / 2,
+        ];
+        const leftC = Math.min(...centers);
+        const rightC = Math.max(...centers);
+
+        const crossbars = edges.filter(e =>
+            e.type === 'descendant' && e.y1 === umbrellaY && e.y2 === umbrellaY &&
+            Math.min(e.x1, e.x2) === leftC && Math.max(e.x1, e.x2) === rightC
+        );
+        expect(crossbars.length).toBe(1);
     });
 });

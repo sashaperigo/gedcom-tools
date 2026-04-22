@@ -416,98 +416,149 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     }
 
     // ── Phase 2: Generation +1 (children + umbrella) ─────────────────────────
+    //
+    // Focus children are split by FAM:
+    //   (1) "visible-FAM" — children of the first FAM whose co-parent is on
+    //       the focus row. Hang from that marriage-line midpoint.
+    //   (2) "other" — children from every remaining FAM combined. Hang from
+    //       a single umbrella anchored under focus alone.
+    // This prevents half-siblings from unrelated marriages from being drawn
+    // as a single crossbar group.
 
     const childXrefs = CHILDREN[focusXref] ?? [];
     if (childXrefs.length > 0) {
-        // Anchor: midpoint between focus center and first spouse center if present,
-        // else focus center. This is where the umbrella hangs from.
         const focusCenterX = NODE_W_FOCUS / 2;
-        const anchorX = rightSpouseXrefs.length > 0 ?
-            (focusCenterX + (firstSpouseX + NODE_W / 2)) / 2 :
-            focusCenterX;
 
-        // Build child groups [child, ...childSpouses] and pack them left→right.
-        // Descendant-row couples use H_GAP between partners — a short marriage line;
-        // MARRIAGE_GAP is reserved for the focus couple (where children hang below).
+        let visibleFamXref = null;
+        let visibleOtherNode = null;
+        if (typeof FAMILIES !== 'undefined' && FAMILIES) {
+            for (const f of Object.keys(FAMILIES)) {
+                const fam = FAMILIES[f];
+                if (!fam) continue;
+                if (fam.husb !== focusXref && fam.wife !== focusXref) continue;
+                if (!(fam.chil || []).length) continue;
+                const other = fam.husb === focusXref ? fam.wife : fam.husb;
+                if (!other) continue;
+                const otherNode = nodes.find(n => n.xref === other && n.y === 0);
+                if (otherNode) {
+                    visibleFamXref = f;
+                    visibleOtherNode = otherNode;
+                    break;
+                }
+            }
+        }
+
+        const sortByBirth = (a, b) => {
+            const ya = PEOPLE[a]?.birth_year ?? 9999;
+            const yb = PEOPLE[b]?.birth_year ?? 9999;
+            return ya - yb;
+        };
+
+        let visibleKids = [];
+        let otherKids = [];
+        if (visibleFamXref) {
+            const visibleChilSet = new Set(FAMILIES[visibleFamXref].chil || []);
+            for (const c of childXrefs) {
+                if (visibleChilSet.has(c)) visibleKids.push(c);
+                else otherKids.push(c);
+            }
+            visibleKids.sort(sortByBirth);
+            otherKids.sort(sortByBirth);
+        } else if (rightSpouseXrefs.length > 0) {
+            // FAMILIES global missing/incomplete (e.g. unit tests) but focus has
+            // an on-row spouse — preserve legacy single-umbrella behavior under
+            // the marriage midpoint.
+            visibleKids = childXrefs.slice();
+            const firstSpouseXref = rightSpouseXrefs[0];
+            visibleOtherNode = nodes.find(n => n.xref === firstSpouseXref && n.y === 0) || null;
+        } else {
+            // No on-row co-parent: all children hang from focus alone.
+            otherKids = childXrefs.slice();
+        }
+
         const CHILD_MARRIAGE_GAP = H_GAP;
-        const groups = childXrefs.map(childXref => {
+        const buildGroup = (childXref) => {
             const childSpouses = _visibleSpousesFor(childXref, RELATIVES[childXref]?.spouses ?? [], visibleSpouseFams, focusXref);
             const width = NODE_W + childSpouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
             return { childXref, childSpouses, width };
-        });
+        };
+        const visibleGroups = visibleKids.map(buildGroup);
+        const otherGroups = otherKids.map(buildGroup);
 
-        const placements = [];
-        let cursor = 0;
-        groups.forEach(g => {
-            placements.push({ ...g, start: cursor });
-            cursor += g.width + H_GAP;
-        });
+        const sumWidth = (groups) => groups.reduce((w, g, i) => w + g.width + (i > 0 ? H_GAP : 0), 0);
+        const visibleWidth = sumWidth(visibleGroups);
+        const otherWidth = sumWidth(otherGroups);
 
-        // Shift so the midpoint of first and last *child* centers aligns with anchorX.
-        const firstChildCenter = placements[0].start + NODE_W / 2;
-        const lastChildCenter = placements[placements.length - 1].start + NODE_W / 2;
-        const shift = anchorX - (firstChildCenter + lastChildCenter) / 2;
+        const marriageMidpointX = visibleOtherNode ?
+            (focusCenterX + visibleOtherNode.x + NODE_W / 2) / 2 :
+            focusCenterX;
 
-        const childCenters = [];
-        placements.forEach(p => {
-            const childX = p.start + shift;
-            nodes.push({ xref: p.childXref, x: childX, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
-            childCenters.push(childX + NODE_W / 2);
-
-            p.childSpouses.forEach((sxref, si) => {
-                const spouseX = childX + (si + 1) * (NODE_W + CHILD_MARRIAGE_GAP);
-                nodes.push({ xref: sxref, x: spouseX, y: ROW_HEIGHT, generation: 1, role: 'descendant_spouse' });
-
-                // Marriage edge between consecutive members of the group (right edge → left edge)
-                const prevX = si === 0 ? childX : childX + si * (NODE_W + CHILD_MARRIAGE_GAP);
-                edges.push({
-                    x1: prevX + NODE_W,
-                    y1: ROW_HEIGHT + NODE_H / 2,
-                    x2: spouseX,
-                    y2: ROW_HEIGHT + NODE_H / 2,
-                    type: 'marriage',
-                });
-            });
-        });
-
-        // Umbrella geometry
-        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
-
-        // Drop from anchor down to umbrella bar. When focus has a spouse, start at the
-        // marriage-line center (NODE_H/2) so it meets the marriage edge perpendicularly
-        // with no gap. No spouse → start at NODE_H_FOCUS (the bottom of the focus node).
-        const anchorTopY = rightSpouseXrefs.length > 0 ? NODE_H / 2 : NODE_H_FOCUS;
-        edges.push({
-            x1: anchorX,
-            y1: anchorTopY,
-            x2: anchorX,
-            y2: umbrellaY,
-            type: 'descendant',
-        });
-
-        // Horizontal crossbar from leftmost to rightmost child center (only if >1 child)
-        if (childCenters.length > 1) {
-            const leftX = Math.min(...childCenters);
-            const rightX = Math.max(...childCenters);
-            edges.push({
-                x1: leftX,
-                y1: umbrellaY,
-                x2: rightX,
-                y2: umbrellaY,
-                type: 'descendant',
-            });
+        let visibleStart = marriageMidpointX - visibleWidth / 2;
+        let otherStart = focusCenterX - otherWidth / 2;
+        const INTER_GROUP_GAP = H_GAP * 4;
+        if (otherGroups.length > 0 && visibleGroups.length > 0) {
+            const otherEnd = otherStart + otherWidth;
+            if (otherEnd + INTER_GROUP_GAP > visibleStart) {
+                otherStart = visibleStart - INTER_GROUP_GAP - otherWidth;
+            }
         }
 
-        // Vertical drop from umbrella to each child
-        childCenters.forEach(cx => {
-            edges.push({
-                x1: cx,
-                y1: umbrellaY,
-                x2: cx,
-                y2: ROW_HEIGHT,
-                type: 'descendant',
+        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+
+        const emitGroup = (groups, startX) => {
+            const centers = [];
+            let cursor = startX;
+            groups.forEach((g, i) => {
+                if (i > 0) cursor += H_GAP;
+                const childX = cursor;
+                nodes.push({ xref: g.childXref, x: childX, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
+                centers.push(childX + NODE_W / 2);
+
+                g.childSpouses.forEach((sxref, si) => {
+                    const spouseX = childX + (si + 1) * (NODE_W + CHILD_MARRIAGE_GAP);
+                    nodes.push({ xref: sxref, x: spouseX, y: ROW_HEIGHT, generation: 1, role: 'descendant_spouse' });
+                    const prevX = si === 0 ? childX : childX + si * (NODE_W + CHILD_MARRIAGE_GAP);
+                    edges.push({
+                        x1: prevX + NODE_W,
+                        y1: ROW_HEIGHT + NODE_H / 2,
+                        x2: spouseX,
+                        y2: ROW_HEIGHT + NODE_H / 2,
+                        type: 'marriage',
+                    });
+                });
+                cursor += g.width;
             });
-        });
+            return centers;
+        };
+
+        const emitUmbrella = (centers, famAnchorX, anchorTopY) => {
+            if (centers.length === 0) return;
+            const leftCenter = Math.min(...centers);
+            const rightCenter = Math.max(...centers);
+            const umbrellaAnchorX = Math.min(Math.max(famAnchorX, leftCenter), rightCenter);
+
+            edges.push({ x1: famAnchorX, y1: anchorTopY, x2: famAnchorX, y2: umbrellaY, type: 'descendant' });
+            if (umbrellaAnchorX !== famAnchorX) {
+                edges.push({ x1: famAnchorX, y1: umbrellaY, x2: umbrellaAnchorX, y2: umbrellaY, type: 'descendant' });
+            }
+            if (centers.length > 1) {
+                edges.push({ x1: leftCenter, y1: umbrellaY, x2: rightCenter, y2: umbrellaY, type: 'descendant' });
+            }
+            centers.forEach(cx => {
+                edges.push({ x1: cx, y1: umbrellaY, x2: cx, y2: ROW_HEIGHT, type: 'descendant' });
+            });
+        };
+
+        const visibleCenters = emitGroup(visibleGroups, visibleStart);
+        const otherCenters = emitGroup(otherGroups, otherStart);
+
+        if (visibleCenters.length > 0) {
+            const anchorTopY = rightSpouseXrefs.length > 0 ? NODE_H / 2 : NODE_H_FOCUS;
+            emitUmbrella(visibleCenters, marriageMidpointX, anchorTopY);
+        }
+        if (otherCenters.length > 0) {
+            emitUmbrella(otherCenters, focusCenterX, NODE_H_FOCUS);
+        }
     }
 
     // ── Phase 3: Expanded children of non-focus persons ─────────────────────
@@ -523,22 +574,32 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 // ---------------------------------------------------------------------------
 // Non-focus person children placement
 // ---------------------------------------------------------------------------
-// The chevron lives on the person (not the couple). Clicking it reveals every
-// child the person has across every FAM. For the FAM whose other-parent is
-// visible on the tree (the "visible FAM"), the children's umbrella drops from
-// the marriage-line midpoint. For every other FAM of the same person, the
-// umbrella drops directly from the person's pill. Each expanded child renders
-// with their own visible spouse(s), matching how focus-row descendants render.
+// Clicking the person's chevron reveals every child across every FAM, split
+// into two disjoint clusters so the umbrellas can't share horizontal segments
+// at the common umbrellaY:
+//
+//   (1) Visible-FAM cluster — children of the one FAM whose other-parent is
+//       on-row. Centered on the marriage-line midpoint; the umbrella drops
+//       from that midpoint.
+//   (2) Other-FAMs cluster — every child from every non-visible FAM merged
+//       into one cluster under a single umbrella that drops from the
+//       person's own pill. Placed on the OPPOSITE side of the person from
+//       the visible spouse, keeping its horizontal reach strictly on one
+//       side of personCenter and therefore away from the visible-FAM drop.
+//
+// Within the other-FAMs cluster, kids stay grouped by FAM (INTER_FAM_GAP
+// between different FAMs, H_GAP within) so multi-marriage fatherhood is
+// still visually distinguishable.
 
 function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges) {
     const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
     const CHILD_MARRIAGE_GAP = H_GAP;
+    const INTER_FAM_GAP = H_GAP * 8;
 
     if (typeof FAMILIES === 'undefined' || !FAMILIES) return;
     const personNode = nodes.find(n => n.xref === personXref);
     if (!personNode) return;
 
-    // Enumerate this person's FAMs with children (in xref order).
     const personFams = Object.keys(FAMILIES)
         .filter(f => {
             const fam = FAMILIES[f];
@@ -549,38 +610,44 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     const personY = personNode.y;
     const childY = personY + ROW_HEIGHT;
     const personCenter = personNode.x + NODE_W / 2;
+    const umbrellaY = personY + NODE_H + (ROW_HEIGHT - NODE_H) / 2;
 
-    // Identify the "visible FAM": the one whose other-parent is placed on the
-    // same row as personXref. If multiple match (rare: user enabled multi-
-    // spouse), pick the first FAM by iteration order.
+    // Visible FAM = first childful FAM whose other-parent is on-row.
     let visibleFamXref = null;
+    let visibleSpouseNode = null;
     for (const f of personFams) {
         const fam = FAMILIES[f];
         const other = fam.husb === personXref ? fam.wife : fam.husb;
         if (!other) continue;
         const otherNode = nodes.find(n => n.xref === other && n.y === personY);
-        if (otherNode) { visibleFamXref = f; break; }
+        if (otherNode) { visibleFamXref = f; visibleSpouseNode = otherNode; break; }
+    }
+    // If no childful FAM has a visible spouse, look across all FAMs for any
+    // on-row spouse — their x tells us which side to place the other cluster.
+    if (!visibleSpouseNode) {
+        for (const f of Object.keys(FAMILIES)) {
+            const fam = FAMILIES[f];
+            if (!fam || (fam.husb !== personXref && fam.wife !== personXref)) continue;
+            const other = fam.husb === personXref ? fam.wife : fam.husb;
+            if (!other) continue;
+            const otherNode = nodes.find(n => n.xref === other && n.y === personY);
+            if (otherNode) { visibleSpouseNode = otherNode; break; }
+        }
     }
 
-    // Build groups (one per child, with their visible spouses) FAM-by-FAM so
-    // siblings from the same FAM stay contiguous in the horizontal order.
-    // Within a FAM, sort by birth year. Across FAMs, order by earliest birth
-    // year per FAM. Never interleave FAMs, so each per-FAM umbrella crossbar
-    // spans a distinct horizontal range.
-    const famOrder = personFams.slice().sort((a, b) => {
-        const ya = Math.min(...FAMILIES[a].chil.map(c => (typeof PEOPLE !== 'undefined' && PEOPLE[c]?.birth_year) || 9999));
-        const yb = Math.min(...FAMILIES[b].chil.map(c => (typeof PEOPLE !== 'undefined' && PEOPLE[c]?.birth_year) || 9999));
-        return ya - yb;
-    });
-    const allGroups = [];
-    for (const famXref of famOrder) {
+    const famEarliestBirth = (f) =>
+        Math.min(...FAMILIES[f].chil.map(c =>
+            (typeof PEOPLE !== 'undefined' && PEOPLE[c]?.birth_year) || 9999
+        ));
+
+    const buildGroupsForFam = (famXref) => {
         const fam = FAMILIES[famXref];
         const kidsSorted = fam.chil.slice().sort((a, b) => {
             const ya = (typeof PEOPLE !== 'undefined' && PEOPLE[a]?.birth_year) || 9999;
             const yb = (typeof PEOPLE !== 'undefined' && PEOPLE[b]?.birth_year) || 9999;
             return ya - yb;
         });
-        for (const childXref of kidsSorted) {
+        return kidsSorted.map(childXref => {
             const childSpouses = _visibleSpousesFor(
                 childXref,
                 (typeof RELATIVES !== 'undefined' && RELATIVES[childXref]?.spouses) || [],
@@ -588,39 +655,52 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
                 focusXref,
             );
             const width = NODE_W + childSpouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
-            allGroups.push({ famXref, childXref, childSpouses, width });
-        }
-    }
+            return { famXref, childXref, childSpouses, width };
+        });
+    };
 
-    // Extra gap between different FAM groups makes the visual separation
-    // obvious (so a viewer can tell which kids belong to which marriage).
-    const INTER_FAM_GAP = H_GAP * 8;
-    const totalWidth = allGroups.reduce((w, g, i) => {
+    const visibleGroups = visibleFamXref ? buildGroupsForFam(visibleFamXref) : [];
+    const otherFamsSorted = personFams
+        .filter(f => f !== visibleFamXref)
+        .sort((a, b) => famEarliestBirth(a) - famEarliestBirth(b));
+    const otherGroups = otherFamsSorted.flatMap(buildGroupsForFam);
+
+    const groupsWidth = (groups) => groups.reduce((w, g, i) => {
         if (i === 0) return g.width;
-        const gap = allGroups[i - 1].famXref === g.famXref ? H_GAP : INTER_FAM_GAP;
+        const gap = groups[i - 1].famXref === g.famXref ? H_GAP : INTER_FAM_GAP;
         return w + gap + g.width;
     }, 0);
 
-    // Anchor x: marriage-line midpoint if a visible FAM exists, else person center.
-    let anchorX = personCenter;
-    if (visibleFamXref) {
-        const fam = FAMILIES[visibleFamXref];
-        const other = fam.husb === personXref ? fam.wife : fam.husb;
-        const otherNode = nodes.find(n => n.xref === other && n.y === personY);
-        if (otherNode) anchorX = (personCenter + otherNode.x + NODE_W / 2) / 2;
+    const visibleWidth = groupsWidth(visibleGroups);
+    const otherWidth = groupsWidth(otherGroups);
+
+    const marriageMidpointX = visibleFamXref && visibleSpouseNode
+        ? (personCenter + visibleSpouseNode.x + NODE_W / 2) / 2
+        : null;
+
+    // Ideal start positions. Other cluster goes on the opposite side of
+    // personCenter from the visible spouse so its umbrella horizontal can
+    // never extend past personCenter into the visible-FAM drop's territory.
+    const visibleIdealStart = marriageMidpointX !== null
+        ? marriageMidpointX - visibleWidth / 2
+        : null;
+    let otherIdealStart;
+    if (visibleSpouseNode) {
+        const spouseRight = visibleSpouseNode.x > personNode.x;
+        otherIdealStart = spouseRight
+            ? personCenter - otherWidth  // right edge at personCenter
+            : personCenter;              // left edge at personCenter
+    } else {
+        otherIdealStart = personCenter - otherWidth / 2;
     }
 
-    let startX = anchorX - totalWidth / 2;
-
-    // Collision avoidance: place the span in the free gap (between/around
-    // existing pills on childY) whose closest point to the anchor is nearest,
-    // clamped to fit entirely inside that gap. A single-pass push can leave
-    // the span overlapping a pill the push landed on; gap-finding guarantees
-    // clearance against every pill at childY.
-    const existingAtChildY = nodes.filter(n => n.y === childY);
-    if (existingAtChildY.length > 0) {
-        // Merge occupied intervals (sorted by left edge).
-        const sortedOccupied = existingAtChildY
+    // Free-gap collision avoidance: clamp a cluster's start into the nearest
+    // gap at childY big enough to hold it. Re-called per cluster so the
+    // second cluster sees the first cluster's pills as obstacles.
+    const pickStartInFreeGap = (idealStart, clusterWidth) => {
+        const occupied = nodes.filter(n => n.y === childY);
+        if (occupied.length === 0) return idealStart;
+        const sortedOccupied = occupied
             .map(n => [n.x, n.x + NODE_W])
             .sort((a, b) => a[0] - b[0]);
         const merged = [];
@@ -631,136 +711,86 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
                 merged.push([l, r]);
             }
         }
-        // Free gaps with CHEVRON_CLEARANCE enforced as clearance from any pill edge,
-        // so children groups from different family expansions get the same visual
-        // separation as sibling groups do from their anchor nodes.
         const gaps = [];
         let prevRight = -Infinity;
         for (const [l, r] of merged) {
             const gapL = prevRight === -Infinity ? -Infinity : prevRight + CHEVRON_CLEARANCE;
             const gapR = l - CHEVRON_CLEARANCE;
-            if (gapR - gapL >= totalWidth) gaps.push([gapL, gapR]);
+            if (gapR - gapL >= clusterWidth) gaps.push([gapL, gapR]);
             prevRight = r;
         }
         gaps.push([prevRight === -Infinity ? -Infinity : prevRight + CHEVRON_CLEARANCE, Infinity]);
 
-        // Pick the gap whose closest point to anchorX is nearest; clamp startX
-        // so the span stays entirely inside the gap.
-        const idealStart = anchorX - totalWidth / 2;
-        let best = null;
-        let bestDist = Infinity;
+        let best = null, bestDist = Infinity;
         for (const [gL, gR] of gaps) {
-            if (gR - gL < totalWidth) continue;
+            if (gR - gL < clusterWidth) continue;
             const minStart = gL;
-            const maxStart = gR - totalWidth;
+            const maxStart = gR - clusterWidth;
             const clamped = Math.max(minStart, Math.min(maxStart, idealStart));
             const dist = Math.abs(clamped - idealStart);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = clamped;
+            if (dist < bestDist) { bestDist = dist; best = clamped; }
+        }
+        return best !== null ? best : idealStart;
+    };
+
+    // Emit child + spouse pills and inter-spouse marriage edges for one
+    // cluster; return the ordered list of child center x-coordinates.
+    const emitClusterNodes = (groups, startX) => {
+        const generation = Math.round(childY / ROW_HEIGHT);
+        const centers = [];
+        let cursor = startX;
+        for (let i = 0; i < groups.length; i++) {
+            const g = groups[i];
+            if (i > 0) {
+                const gap = groups[i - 1].famXref === g.famXref ? H_GAP : INTER_FAM_GAP;
+                cursor += gap;
             }
-        }
-        if (best !== null) startX = best;
-    }
-
-    // Emit child + spouse nodes and inter-spouse marriage edges. Record each
-    // child's center x, tagged with its FAM, for per-FAM umbrellas.
-    const generation = Math.round(childY / ROW_HEIGHT);
-    const childCentersByFam = new Map(); // famXref → [cx, ...]
-    let cursor = startX;
-    for (let i = 0; i < allGroups.length; i++) {
-        const g = allGroups[i];
-        if (i > 0) {
-            const gap = allGroups[i - 1].famXref === g.famXref ? H_GAP : INTER_FAM_GAP;
-            cursor += gap;
-        }
-        const childX = cursor;
-        nodes.push({ xref: g.childXref, x: childX, y: childY, generation, role: 'descendant' });
-        const childCenter = childX + NODE_W / 2;
-        if (!childCentersByFam.has(g.famXref)) childCentersByFam.set(g.famXref, []);
-        childCentersByFam.get(g.famXref).push(childCenter);
-
-        g.childSpouses.forEach((sxref, si) => {
-            const spouseX = childX + (si + 1) * (NODE_W + CHILD_MARRIAGE_GAP);
-            nodes.push({ xref: sxref, x: spouseX, y: childY, generation, role: 'descendant_spouse' });
-            const prevX = si === 0 ? childX : childX + si * (NODE_W + CHILD_MARRIAGE_GAP);
-            edges.push({
-                x1: prevX + NODE_W,
-                y1: childY + NODE_H / 2,
-                x2: spouseX,
-                y2: childY + NODE_H / 2,
-                type: 'marriage',
+            const childX = cursor;
+            nodes.push({ xref: g.childXref, x: childX, y: childY, generation, role: 'descendant' });
+            centers.push(childX + NODE_W / 2);
+            g.childSpouses.forEach((sxref, si) => {
+                const spouseX = childX + (si + 1) * (NODE_W + CHILD_MARRIAGE_GAP);
+                nodes.push({ xref: sxref, x: spouseX, y: childY, generation, role: 'descendant_spouse' });
+                const prevX = si === 0 ? childX : childX + si * (NODE_W + CHILD_MARRIAGE_GAP);
+                edges.push({
+                    x1: prevX + NODE_W,
+                    y1: childY + NODE_H / 2,
+                    x2: spouseX,
+                    y2: childY + NODE_H / 2,
+                    type: 'marriage',
+                });
             });
-        });
-
-        cursor += g.width;
-    }
-
-    // Per-FAM umbrellas.
-    const umbrellaY = personY + NODE_H + (ROW_HEIGHT - NODE_H) / 2;
-
-    for (const famXref of personFams) {
-        const centers = childCentersByFam.get(famXref);
-        if (!centers || centers.length === 0) continue;
-
-        // Anchor depends on whether this is the visible FAM.
-        let famAnchorX;
-        let anchorTopY;
-        if (famXref === visibleFamXref) {
-            // Midpoint of marriage line between person and visible spouse.
-            const fam = FAMILIES[famXref];
-            const other = fam.husb === personXref ? fam.wife : fam.husb;
-            const otherNode = nodes.find(n => n.xref === other && n.y === personY);
-            famAnchorX = otherNode ?
-                (personCenter + otherNode.x + NODE_W / 2) / 2 :
-                personCenter;
-            anchorTopY = personY + NODE_H / 2;
-        } else {
-            // Directly below the person's pill.
-            famAnchorX = personCenter;
-            anchorTopY = personY + NODE_H;
+            cursor += g.width;
         }
+        return centers;
+    };
 
+    const emitUmbrella = (anchorX, anchorTopY, centers) => {
+        if (centers.length === 0) return;
         const leftCenter = Math.min(...centers);
         const rightCenter = Math.max(...centers);
-        const umbrellaAnchorX = Math.min(Math.max(famAnchorX, leftCenter), rightCenter);
-
-        edges.push({
-            x1: famAnchorX,
-            y1: anchorTopY,
-            x2: famAnchorX,
-            y2: umbrellaY,
-            type: 'descendant',
-        });
-        if (umbrellaAnchorX !== famAnchorX) {
-            edges.push({
-                x1: famAnchorX,
-                y1: umbrellaY,
-                x2: umbrellaAnchorX,
-                y2: umbrellaY,
-                type: 'descendant',
-            });
+        const umbrellaAnchorX = Math.min(Math.max(anchorX, leftCenter), rightCenter);
+        edges.push({ x1: anchorX, y1: anchorTopY, x2: anchorX, y2: umbrellaY, type: 'descendant' });
+        if (umbrellaAnchorX !== anchorX) {
+            edges.push({ x1: anchorX, y1: umbrellaY, x2: umbrellaAnchorX, y2: umbrellaY, type: 'descendant' });
         }
-
         if (centers.length > 1) {
-            edges.push({
-                x1: leftCenter,
-                y1: umbrellaY,
-                x2: rightCenter,
-                y2: umbrellaY,
-                type: 'descendant',
-            });
+            edges.push({ x1: leftCenter, y1: umbrellaY, x2: rightCenter, y2: umbrellaY, type: 'descendant' });
         }
-
         centers.forEach(cx => {
-            edges.push({
-                x1: cx,
-                y1: umbrellaY,
-                x2: cx,
-                y2: childY,
-                type: 'descendant',
-            });
+            edges.push({ x1: cx, y1: umbrellaY, x2: cx, y2: childY, type: 'descendant' });
         });
+    };
+
+    if (visibleGroups.length > 0) {
+        const startX = pickStartInFreeGap(visibleIdealStart, visibleWidth);
+        const centers = emitClusterNodes(visibleGroups, startX);
+        emitUmbrella(marriageMidpointX, personY + NODE_H / 2, centers);
+    }
+    if (otherGroups.length > 0) {
+        const startX = pickStartInFreeGap(otherIdealStart, otherWidth);
+        const centers = emitClusterNodes(otherGroups, startX);
+        emitUmbrella(personCenter, personY + NODE_H, centers);
     }
 }
 
