@@ -1437,6 +1437,24 @@ header h1 {
     letter-spacing: 0.01em;
 }
 
+.citation-quoted-text {
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    font-style: italic;
+    line-height: 1.45;
+    text-wrap: pretty;
+}
+
+.citation-note-text {
+    margin-top: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.75;
+    line-height: 1.4;
+    text-wrap: pretty;
+}
+
 .citation-card-actions {
     display: flex;
     gap: 1px;
