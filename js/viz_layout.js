@@ -256,6 +256,12 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
                 rightmostSpouseAreaX = spouseSibNodes[spouseSibNodes.length - 1].x;
             }
         }
+
+        // Spouse's ancestors (if expanded). _placeAncestors short-circuits
+        // when spouseXref is not in expandedAncestors, so this is a no-op
+        // by default.
+        _placeAncestorSiblings(spouseXref, thisSpouseX, 0, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestors(spouseXref, thisSpouseX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
     });
 
     if (leftSpouseXref) {
@@ -274,6 +280,8 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             y2: NODE_H / 2,
             type: 'marriage',
         });
+        _placeAncestorSiblings(leftSpouseXref, leftSpouseX, 0, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestors(leftSpouseXref, leftSpouseX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
     }
 
     // Younger siblings: packed after the rightmost spouse/spouse-sibling (or at FOCUS_TO_SIB if no spouses).

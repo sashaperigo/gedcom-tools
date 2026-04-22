@@ -3210,4 +3210,23 @@ describe('computeLayout — focus spouse parent expansion', () => {
         expect(sibSpouse).toBeDefined();
         expect(sibSpouse.isFocusSpouse).toBeFalsy();
     });
+
+    it('places spouse parents at y=-ROW_HEIGHT when spouse xref is in expandedAncestors', () => {
+        const expanded = new Set(['@SPOUSE@']);
+        const { nodes } = computeLayout('@FOCUS@', expanded, new Set());
+        const spDad = nodes.find(n => n.xref === '@SPDAD@');
+        const spMom = nodes.find(n => n.xref === '@SPMOM@');
+        expect(spDad).toBeDefined();
+        expect(spMom).toBeDefined();
+        expect(spDad.y).toBe(-ROW_HEIGHT);
+        expect(spMom.y).toBe(-ROW_HEIGHT);
+        expect(spDad.role).toBe('ancestor');
+        expect(spMom.role).toBe('ancestor');
+    });
+
+    it('does NOT place spouse parents when spouse xref is NOT in expandedAncestors', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set());
+        expect(nodes.find(n => n.xref === '@SPDAD@')).toBeUndefined();
+        expect(nodes.find(n => n.xref === '@SPMOM@')).toBeUndefined();
+    });
 });
