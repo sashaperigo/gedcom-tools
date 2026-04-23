@@ -1286,3 +1286,67 @@ class TestIndiEventAddrParsing:
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         deat = next(e for e in people['@I1@']['events'] if e['tag'] == 'DEAT')
         assert deat['addr'] == 'Père Lachaise Cemetery'
+
+
+# ---------------------------------------------------------------------------
+# _edit_name suffix tests
+# ---------------------------------------------------------------------------
+
+NSFX_NAME_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5
+0 @I1@ INDI
+1 NAME Pietro /Capponi/ I
+2 GIVN Pietro
+2 SURN Capponi
+2 NSFX I
+1 BIRT
+2 DATE 1900
+0 TRLR""".splitlines()
+
+
+class TestEditNameSuffix:
+    def test_add_suffix_writes_nsfx_subtag(self):
+        new_lines, err = _edit_name(SIMPLE_NAME_GED, '@I1@', 'James', 'Brown', suffix='Jr')
+        assert err is None
+        assert any('2 NSFX Jr' in l for l in new_lines)
+
+    def test_add_suffix_appends_to_name_line(self):
+        new_lines, err = _edit_name(SIMPLE_NAME_GED, '@I1@', 'James', 'Brown', suffix='Jr')
+        assert err is None
+        name_line = next(l for l in new_lines if '1 NAME' in l)
+        assert 'James /Brown/ Jr' in name_line
+
+    def test_suffix_removed_when_empty(self):
+        new_lines, err = _edit_name(NSFX_NAME_GED, '@I1@', 'Pietro', 'Capponi', suffix='')
+        assert err is None
+        assert not any('2 NSFX' in l for l in new_lines)
+
+    def test_existing_nsfx_replaced(self):
+        new_lines, err = _edit_name(NSFX_NAME_GED, '@I1@', 'Pietro', 'Capponi', suffix='II')
+        assert err is None
+        nsfx_lines = [l for l in new_lines if '2 NSFX' in l]
+        assert len(nsfx_lines) == 1
+        assert 'II' in nsfx_lines[0]
+
+    def test_existing_nsfx_bug_fix(self):
+        """NSFX 'I' must not appear as surname in the edit modal.
+        When parsed, name_suffix='I' and name_surname='Capponi' (not 'I').
+        """
+        import tempfile
+        import pathlib
+        from viz_ancestors import parse_gedcom, build_people_json
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ged = pathlib.Path(tmpdir) / 'test.ged'
+            ged.write_text(
+                '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+                '0 @U1@ SUBM\n1 NAME Test\n'
+                '0 @I1@ INDI\n1 NAME Pietro /Capponi/ I\n2 GIVN Pietro\n2 SURN Capponi\n2 NSFX I\n'
+                '0 TRLR\n',
+                encoding='utf-8',
+            )
+            indis, fams, sources = parse_gedcom(str(ged))
+            people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        assert people['@I1@']['name_surname'] == 'Capponi'
+        assert people['@I1@']['name_suffix'] == 'I'

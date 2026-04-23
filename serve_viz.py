@@ -371,13 +371,15 @@ def _write_gedcom_atomic(lines: list[str]) -> None:
 # Name editing helper
 # ---------------------------------------------------------------------------
 
-def _edit_name(lines: list[str], xref: str, given_name: str, surname: str) -> tuple[list[str], str | None]:
-    """Rewrite the 1 NAME (and 2 GIVN/2 SURN sub-tags) for an individual."""
+def _edit_name(lines: list[str], xref: str, given_name: str, surname: str, suffix: str = '') -> tuple[list[str], str | None]:
+    """Rewrite the 1 NAME (and 2 GIVN/2 SURN/2 NSFX sub-tags) for an individual."""
     indi_start, indi_end, err = _find_indi_block(lines, xref)
     if err:
         return lines, err
 
     full_name = f'{given_name} /{surname}/'.strip()
+    if suffix:
+        full_name = f'{full_name} {suffix}'
 
     # Find existing 1 NAME line
     name_start = None
@@ -394,6 +396,8 @@ def _edit_name(lines: list[str], xref: str, given_name: str, surname: str) -> tu
             new_block.append(f'2 GIVN {given_name}')
         if surname:
             new_block.append(f'2 SURN {surname}')
+        if suffix:
+            new_block.append(f'2 NSFX {suffix}')
         return lines[:indi_start + 1] + new_block + lines[indi_start + 1:], None
 
     # Find end of existing NAME block (stops at next level ≤ 1)
@@ -404,16 +408,18 @@ def _edit_name(lines: list[str], xref: str, given_name: str, surname: str) -> tu
             break
         name_end += 1
 
-    # Keep any sub-tags that are not GIVN/SURN (e.g. NICK, NPFX, etc.)
+    # Keep any sub-tags that are not GIVN/SURN/NSFX (e.g. NICK, NPFX, etc.)
     kept = [
         ln for ln in lines[name_start + 1: name_end]
-        if not ((m := _TAG_RE.match(ln)) and m.group(2) in ('GIVN', 'SURN'))
+        if not ((m := _TAG_RE.match(ln)) and m.group(2) in ('GIVN', 'SURN', 'NSFX'))
     ]
     new_block = [f'1 NAME {full_name}'] + kept
     if given_name:
         new_block.append(f'2 GIVN {given_name}')
     if surname:
         new_block.append(f'2 SURN {surname}')
+    if suffix:
+        new_block.append(f'2 NSFX {suffix}')
     return lines[:name_start] + new_block + lines[name_end:], None
 
 
@@ -1433,13 +1439,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             xref       = body['xref']
             given_name = (body.get('given_name') or '').strip()
             surname    = (body.get('surname') or '').strip()
+            suffix     = (body.get('suffix') or '').strip()
             lines      = GED.read_text(encoding='utf-8').splitlines()
-            new_lines, err = _edit_name(lines, xref, given_name, surname)
+            new_lines, err = _edit_name(lines, xref, given_name, surname, suffix=suffix)
             if err:
                 resp = json.dumps({'ok': False, 'error': err}).encode()
             else:
                 _write_gedcom_atomic(new_lines)
-                print(f"[name-edit] {xref} → {given_name} /{surname}/")
+                print(f"[name-edit] {xref} → {given_name} /{surname}/ {suffix}".rstrip())
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
