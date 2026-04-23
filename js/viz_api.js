@@ -113,6 +113,10 @@ async function apiConvertEvent(xref, eventIdx, fromTag, toTag) {
     return _post('/api/convert_event', { xref, event_idx: eventIdx, from_tag: fromTag, to_tag: toTag });
 }
 
+async function apiDeletePerson(xref) {
+    return _post('/api/delete_person', { xref });
+}
+
 if (typeof module !== 'undefined') module.exports = {
     apiDeleteFact,
     apiDeleteNote,
@@ -135,4 +139,5 @@ if (typeof module !== 'undefined') module.exports = {
     apiAddGodparent,
     apiDeleteGodparent,
     apiConvertEvent,
+    apiDeletePerson,
 };
