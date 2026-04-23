@@ -181,8 +181,10 @@ def _indi_handle_name(state: dict, val: str, rec: dict) -> None:
     name = re.sub(r'\s+', ' ', re.sub(r'/', '', html_mod.unescape(val))).strip()
     if rec['name'] is None:
         rec['name'] = name
+        state['current_name_primary'] = True
         state['current_evt'] = state['current_note'] = None
     else:
+        state['current_name_primary'] = False
         n = state['secondary_name_n']
         evt = {'tag': 'FACT', 'type': 'AKA', 'date': None, 'place': None,
                'cause': None, 'addr': None, 'note': name, 'inline_val': None,
@@ -241,6 +243,8 @@ def _indi_handle_lvl1(state: dict, tag: str, val: str, raw_val: str, rec: dict) 
         state['current_cite_field']  = None
     if tag != 'ASSO':
         state['current_asso'] = None
+    if tag != 'NAME':
+        state['current_name_primary'] = False
 
     if tag == 'NAME':
         _indi_handle_name(state, val, rec)
@@ -301,7 +305,15 @@ def _indi_handle_lvl2(state: dict, tag: str, val: str, raw_val: str, rec: dict) 
     current_person_cite = state['current_person_cite']
     current_asso        = state['current_asso']
 
-    if current_evt is not None:
+    if state.get('current_name_primary') and tag in ('GIVN', 'SURN', 'NSFX'):
+        v = html_mod.unescape(val).strip() if val else None
+        if tag == 'GIVN':
+            rec['name_given'] = v
+        elif tag == 'SURN':
+            rec['name_surname'] = v
+        elif tag == 'NSFX':
+            rec['name_suffix'] = v
+    elif current_evt is not None:
         _indi_evt_subfield(state, tag, val, raw_val, rec, current_evt)
     elif tag in ('CONT', 'CONC') and isinstance(current_note, int):
         sep = '\n' if tag == 'CONT' else ''
@@ -425,7 +437,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
         if m:
             xref = m.group(1)
             indis[xref] = {
-                'name': None, 'birth_year': None, 'death_year': None,
+                'name': None, 'name_given': None, 'name_surname': None, 'name_suffix': None,
+                'birth_year': None, 'death_year': None,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [],
                 'source_xrefs': [], 'source_urls': {}, 'source_citations': [], 'asso': [],
             }
@@ -435,6 +448,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
                 'current_sour_xref': None, 'current_person_cite': None,
                 'current_cite_field': None, 'current_asso': None,
                 'current_evt_cite_field': None,
+                'current_name_primary': False,
                 'secondary_name_n': 0, 'shared_notes': shared_notes,
             }
             continue
@@ -759,6 +773,9 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
             normalised_notes.append({**n, 'citations': norm_cites})
         result[xref] = {
             'name':         info['name'] or '?',
+            'name_given':   info.get('name_given'),
+            'name_surname': info.get('name_surname'),
+            'name_suffix':  info.get('name_suffix'),
             'birth_year':   info['birth_year'],
             'death_year':   info['death_year'],
             'sex':          info['sex'],

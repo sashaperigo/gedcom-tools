@@ -833,3 +833,77 @@ class TestConcLeadingSpace:
         assert 'north side of the valley' in birt['note'], (
             f'Space missing: {birt["note"]!r}'
         )
+
+
+# ---------------------------------------------------------------------------
+# TestNameSubTags
+# ---------------------------------------------------------------------------
+
+class TestNameSubTags:
+    def test_nsfx_parsed_as_name_suffix(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'nsfx.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+            '0 @U1@ SUBM\n1 NAME Test\n'
+            '0 @I1@ INDI\n1 NAME Pietro /Capponi/ I\n2 GIVN Pietro\n2 SURN Capponi\n2 NSFX I\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        indis, _fams, _sources = parse_gedcom(str(ged))
+        assert indis['@I1@']['name_suffix'] == 'I'
+
+    def test_givn_parsed_as_name_given(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'givn.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+            '0 @U1@ SUBM\n1 NAME Test\n'
+            '0 @I1@ INDI\n1 NAME Pietro /Capponi/ I\n2 GIVN Pietro\n2 SURN Capponi\n2 NSFX I\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        indis, _fams, _sources = parse_gedcom(str(ged))
+        assert indis['@I1@']['name_given'] == 'Pietro'
+
+    def test_surn_parsed_as_name_surname(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'surn.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+            '0 @U1@ SUBM\n1 NAME Test\n'
+            '0 @I1@ INDI\n1 NAME Pietro /Capponi/ I\n2 GIVN Pietro\n2 SURN Capponi\n2 NSFX I\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        indis, _fams, _sources = parse_gedcom(str(ged))
+        assert indis['@I1@']['name_surname'] == 'Capponi'
+
+    def test_name_subtags_absent_gives_none(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'nosubtag.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+            '0 @U1@ SUBM\n1 NAME Test\n'
+            '0 @I1@ INDI\n1 NAME John /Smith/\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        indis, _fams, _sources = parse_gedcom(str(ged))
+        assert indis['@I1@']['name_suffix'] is None
+
+    def test_build_people_json_includes_name_suffix(self, tmp_path):
+        from viz_ancestors import parse_gedcom, build_people_json
+        ged = tmp_path / 'nsfx2.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+            '0 @U1@ SUBM\n1 NAME Test\n'
+            '0 @I1@ INDI\n1 NAME Pietro /Capponi/ I\n2 GIVN Pietro\n2 SURN Capponi\n2 NSFX I\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        indis, fams, sources = parse_gedcom(str(ged))
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        assert people['@I1@']['name_suffix'] == 'I'
+        assert people['@I1@']['name_given'] == 'Pietro'
+        assert people['@I1@']['name_surname'] == 'Capponi'
