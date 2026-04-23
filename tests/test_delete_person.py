@@ -116,6 +116,7 @@ def test_delete_only_chil_empty_fam_deletes_fam():
     assert err is None
     assert '0 @I1@ INDI' not in new_lines
     assert '0 @F1@ FAM' not in new_lines            # FAM deleted (no remaining members)
+    assert nav is None                               # FAM had no HUSB/WIFE so no parent to navigate to
 
 # ── Test 7: ASSO cleanup ──────────────────────────────────────────────────────
 def test_asso_blocks_in_other_indis_removed():
