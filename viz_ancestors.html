@@ -52,7 +52,7 @@
                 <button id="event-modal-close" onclick="closeEventModal()" title="Close">&times;</button>
             </div>
             <div class="event-modal-field" id="event-modal-tag-row">
-                <label>Event Type</label>
+                <label for="event-modal-tag">Event Type</label>
                 <select id="event-modal-tag" onchange="_eventModalAddTag=this.value;_updateEventModalFields(this.value);" onkeydown="if(event.key==='Escape')closeEventModal()">
                     <option value="BIRT">Birth</option>
                     <option value="DEAT">Death</option>
@@ -79,42 +79,42 @@
                 </select>
             </div>
             <div class="event-modal-field" id="event-modal-spouse-row" style="display:none">
-                <label>Spouse / Other Party</label>
+                <label for="event-modal-spouse-input">Spouse / Other Party</label>
                 <input type="text" id="event-modal-spouse-input" placeholder="Search by name…" autocomplete="off" onkeydown="if(event.key==='Escape')closeEventModal()">
                 <div id="event-modal-spouse-results"></div>
             </div>
             <div class="event-modal-field" id="event-modal-inline-row">
-                <label id="event-modal-inline-label">Value</label>
+                <label id="event-modal-inline-label" for="event-modal-inline">Value</label>
                 <input type="text" id="event-modal-inline" onkeydown="if(event.key==='Escape')closeEventModal()">
             </div>
             <div class="event-modal-field" id="event-modal-type-row">
-                <label>Type / Description</label>
+                <label for="event-modal-type">Type / Description</label>
                 <input type="text" id="event-modal-type" onkeydown="if(event.key==='Escape')closeEventModal()">
             </div>
             <div class="event-modal-field">
-                <label>Date</label>
+                <label for="event-modal-date">Date</label>
                 <input type="text" id="event-modal-date" placeholder="e.g. 26 FEB 1785" onkeydown="if(event.key==='Escape')closeEventModal()">
             </div>
             <div class="event-modal-field" id="event-modal-place-row">
-                <label>Place</label>
+                <label for="event-modal-place">Place</label>
                 <input type="text" id="event-modal-place" autocomplete="off" oninput="_onPlaceInput(this.value)" onblur="_schedulePlaceResultsClear()" onkeydown="if(event.key==='Escape')closeEventModal()">
                 <div id="event-modal-place-results"></div>
             </div>
             <div class="event-modal-field" id="event-modal-addr-row">
-                <label>Address</label>
+                <label for="event-modal-addr">Address</label>
                 <input type="text" id="event-modal-addr" list="addr-suggestions" placeholder="e.g. Church name or building" onkeydown="if(event.key==='Escape')closeEventModal()">
                 <datalist id="addr-suggestions"></datalist>
             </div>
             <div class="event-modal-field" id="event-modal-age-row" style="display:none">
-                <label>Age at Death</label>
+                <label for="event-modal-age">Age at Death</label>
                 <input type="text" id="event-modal-age" placeholder="e.g. 72" onkeydown="if(event.key==='Escape')closeEventModal()">
             </div>
             <div class="event-modal-field" id="event-modal-cause-row" style="display:none">
-                <label>Cause of Death</label>
+                <label for="event-modal-cause">Cause of Death</label>
                 <input type="text" id="event-modal-cause" onkeydown="if(event.key==='Escape')closeEventModal()">
             </div>
             <div class="event-modal-field">
-                <label>Note</label>
+                <label for="event-modal-note">Note</label>
                 <textarea id="event-modal-note" rows="3" onkeydown="if(event.key==='Escape')closeEventModal()"></textarea>
             </div>
             <div class="event-modal-actions">
@@ -127,15 +127,15 @@
         <div id="alias-modal">
             <h3 id="alias-modal-title">Add Secondary Name</h3>
             <div class="event-modal-field">
-                <label>Given Name(s)</label>
+                <label for="alias-modal-given">Given Name(s)</label>
                 <input type="text" id="alias-modal-given" placeholder="e.g. Paul" onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
             </div>
             <div class="event-modal-field">
-                <label>Surname</label>
+                <label for="alias-modal-surname">Surname</label>
                 <input type="text" id="alias-modal-surname" placeholder="e.g. Kemerli" onkeydown="if(event.key==='Escape')closeAliasModal();if(event.key==='Enter')submitAliasModal()">
             </div>
             <div class="event-modal-field">
-                <label>Name Type</label>
+                <label for="alias-modal-type">Name Type</label>
                 <select id="alias-modal-type" onkeydown="if(event.key==='Escape')closeAliasModal()">
                     <option value="AKA">AKA (Also Known As)</option>
                     <option value="Birth">Birth Name</option>
@@ -156,7 +156,7 @@
         <div id="add-godparent-modal">
             <h3 id="add-godparent-modal-title">Add Godparent</h3>
             <div class="event-modal-field">
-                <label>Search by name</label>
+                <label for="add-godparent-modal-search">Search by name</label>
                 <input type="text" id="add-godparent-modal-search" placeholder="Type a name…" onkeydown="if(event.key==='Escape')closeAddGodparentModal()">
                 <div id="add-godparent-modal-results"></div>
             </div>
@@ -170,15 +170,15 @@
         <div id="add-person-modal" onkeydown="if(event.key==='Escape')closeAddPersonModal()">
             <h3 id="add-person-modal-title">Add Person</h3>
             <div class="event-modal-field">
-                <label>Given name</label>
+                <label for="add-person-modal-given">Given name</label>
                 <input type="text" id="add-person-modal-given" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Surname</label>
+                <label for="add-person-modal-surname">Surname</label>
                 <input type="text" id="add-person-modal-surname" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Sex</label>
+                <label for="add-person-modal-sex">Sex</label>
                 <select id="add-person-modal-sex">
                     <option value="U">Unknown</option>
                     <option value="M">Male</option>
@@ -186,11 +186,11 @@
                 </select>
             </div>
             <div class="event-modal-field">
-                <label>Birth year</label>
+                <label for="add-person-modal-birth-year">Birth year</label>
                 <input type="text" id="add-person-modal-birth-year" inputmode="numeric" autocomplete="off">
             </div>
             <div class="event-modal-field" id="add-person-modal-other-parent-row" style="display:none">
-                <label>Other parent</label>
+                <label for="add-person-modal-other-parent">Other parent</label>
                 <select id="add-person-modal-other-parent"></select>
             </div>
             <div class="event-modal-actions">
@@ -203,7 +203,7 @@
         <div id="change-parent-modal">
             <h3 id="change-parent-modal-title">Change Parent</h3>
             <div class="event-modal-field">
-                <label>Search by name (blank = no parent)</label>
+                <label for="change-parent-modal-search">Search by name (blank = no parent)</label>
                 <input type="text" id="change-parent-modal-search" placeholder="Type a name…" onkeydown="if(event.key==='Escape')closeChangeParentModal()">
                 <div id="change-parent-modal-results"></div>
             </div>
@@ -229,27 +229,27 @@
         <div id="add-citation-modal" onkeydown="if(event.key==='Escape')closeAddCitationModal()">
             <h3 id="add-citation-modal-title">Add Citation</h3>
             <div class="event-modal-field">
-                <label>Source</label>
+                <label for="add-citation-modal-source">Source</label>
                 <select id="add-citation-modal-source"></select>
             </div>
             <div class="event-modal-field">
-                <label>Page / reference</label>
+                <label for="add-citation-modal-page">Page / reference</label>
                 <input type="text" id="add-citation-modal-page" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Quoted text (optional)</label>
+                <label for="add-citation-modal-text">Quoted text (optional)</label>
                 <textarea id="add-citation-modal-text" rows="3"></textarea>
             </div>
             <div class="event-modal-field">
-                <label>Note (optional)</label>
+                <label for="add-citation-modal-note">Note (optional)</label>
                 <textarea id="add-citation-modal-note" rows="2"></textarea>
             </div>
             <div class="event-modal-field">
-                <label>URL (optional)</label>
+                <label for="add-citation-modal-url">URL (optional)</label>
                 <input type="url" id="add-citation-modal-url" autocomplete="off" placeholder="https://">
             </div>
             <div class="event-modal-field">
-                <label>Quality (optional)</label>
+                <label for="add-citation-modal-quay">Quality (optional)</label>
                 <select id="add-citation-modal-quay">
                     <option value="">— unset —</option>
                     <option value="3">3 — Direct/primary evidence</option>
@@ -259,7 +259,7 @@
                 </select>
             </div>
             <div class="event-modal-field">
-                <label>Date of source entry (optional)</label>
+                <label for="add-citation-modal-date">Date of source entry (optional)</label>
                 <input type="text" id="add-citation-modal-date" autocomplete="off" placeholder="e.g. 21 MAY 1814 or 1990">
             </div>
             <div class="event-modal-actions">
@@ -273,23 +273,23 @@
             <h3 id="edit-citation-modal-title">Edit Citation</h3>
             <div class="citation-modal-source-name" id="edit-citation-modal-source-name"></div>
             <div class="event-modal-field">
-                <label>Page / reference</label>
+                <label for="edit-citation-modal-page">Page / reference</label>
                 <input type="text" id="edit-citation-modal-page" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Quoted text (optional)</label>
+                <label for="edit-citation-modal-text">Quoted text (optional)</label>
                 <textarea id="edit-citation-modal-text" rows="3"></textarea>
             </div>
             <div class="event-modal-field">
-                <label>Note (optional)</label>
+                <label for="edit-citation-modal-note">Note (optional)</label>
                 <textarea id="edit-citation-modal-note" rows="2"></textarea>
             </div>
             <div class="event-modal-field">
-                <label>URL (optional)</label>
+                <label for="edit-citation-modal-url">URL (optional)</label>
                 <input type="url" id="edit-citation-modal-url" autocomplete="off" placeholder="https://">
             </div>
             <div class="event-modal-field">
-                <label>Quality (optional)</label>
+                <label for="edit-citation-modal-quay">Quality (optional)</label>
                 <select id="edit-citation-modal-quay">
                     <option value="">— unset —</option>
                     <option value="3">3 — Direct/primary evidence</option>
@@ -299,7 +299,7 @@
                 </select>
             </div>
             <div class="event-modal-field">
-                <label>Date of source entry (optional)</label>
+                <label for="edit-citation-modal-date">Date of source entry (optional)</label>
                 <input type="text" id="edit-citation-modal-date" autocomplete="off" placeholder="e.g. 21 MAY 1814 or 1990">
             </div>
             <div class="event-modal-actions">
@@ -314,23 +314,23 @@
             <h3 id="edit-source-modal-title">Edit Source Record</h3>
             <div id="edit-source-modal-warning"></div>
             <div class="event-modal-field">
-                <label>Title</label>
+                <label for="edit-source-modal-titl">Title</label>
                 <input type="text" id="edit-source-modal-titl" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Author (optional)</label>
+                <label for="edit-source-modal-auth">Author (optional)</label>
                 <input type="text" id="edit-source-modal-auth" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Publication (optional)</label>
+                <label for="edit-source-modal-publ">Publication (optional)</label>
                 <input type="text" id="edit-source-modal-publ" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Repository (optional)</label>
+                <label for="edit-source-modal-repo">Repository (optional)</label>
                 <input type="text" id="edit-source-modal-repo" autocomplete="off">
             </div>
             <div class="event-modal-field">
-                <label>Note (optional)</label>
+                <label for="edit-source-modal-note">Note (optional)</label>
                 <textarea id="edit-source-modal-note" rows="2"></textarea>
             </div>
             <div class="event-modal-actions">
@@ -343,15 +343,15 @@
         <div id="name-modal">
             <h3 id="name-modal-title">Edit Name</h3>
             <div class="event-modal-field">
-                <label>Given Name(s)</label>
+                <label for="name-modal-given">Given Name(s)</label>
                 <input type="text" id="name-modal-given" onkeydown="if(event.key==='Escape')closeNameModal();if(event.key==='Enter')submitNameModal()">
             </div>
             <div class="event-modal-field">
-                <label>Surname</label>
+                <label for="name-modal-surname">Surname</label>
                 <input type="text" id="name-modal-surname" onkeydown="if(event.key==='Escape')closeNameModal();if(event.key==='Enter')submitNameModal()">
             </div>
             <div class="event-modal-field">
-                <label>Suffix (e.g. Jr, Sr, I, II)</label>
+                <label for="name-modal-suffix">Suffix (e.g. Jr, Sr, I, II)</label>
                 <input type="text" id="name-modal-suffix" onkeydown="if(event.key==='Escape')closeNameModal();if(event.key==='Enter')submitNameModal()">
             </div>
             <div class="event-modal-actions">
