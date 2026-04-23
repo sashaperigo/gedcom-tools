@@ -1935,5 +1935,29 @@ if (typeof module !== 'undefined' && module.exports) {
         closeSpouseMenuModal,
         toggleSpouseMenuFam,
         _buildSpouseMenuRows,
+        deletePerson,
     };
+}
+
+// ── Delete person ─────────────────────────────────────────────────────────────
+
+async function deletePerson(xref) {
+    const person = PEOPLE[xref];
+    const name = person ? (person.name || xref) : xref;
+    if (!confirm(`Permanently delete "${name}" and all references to them from the GEDCOM?\n\nThis cannot be undone.`)) {
+        return;
+    }
+    try {
+        const data = await apiDeletePerson(xref);
+        if (!data.ok) {
+            alert('Delete failed: ' + (data.error || 'unknown error'));
+            return;
+        }
+        const dest = data.navigate_to
+            ? `/viz.html?person=${encodeURIComponent(data.navigate_to)}`
+            : '/viz.html';
+        window.location.href = dest;
+    } catch (e) {
+        alert('Delete failed: ' + e.message);
+    }
 }
