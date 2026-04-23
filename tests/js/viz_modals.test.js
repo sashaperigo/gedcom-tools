@@ -1993,6 +1993,32 @@ describe('spouse-menu modal', () => {
         expect(fam1Row).toContain('checked');
         expect(fam2Row).not.toContain('checked');
     });
+
+    it('after toggling FAM2 with the modal open, modal list re-renders to show BOTH as checked', () => {
+        // Simulate: modal open (FAM1 implicitly checked as primary), user checks FAM2.
+        // toggleSpouseMenuFam seeds FAM1 + adds FAM2 → {FAM1, FAM2}.
+        // The modal list must re-render immediately so both show as checked —
+        // otherwise the DOM diverges from state and a second click on FAM1 removes it.
+        global.getState = () => ({ visibleSpouseFams: new Set(), focusXref: '@F@' });
+        openSpouseMenuModal('@F@');
+
+        // Simulate the setState side-effect: update getState so re-render reads the new set.
+        let capturedSet;
+        global.setState = (update) => {
+            capturedSet = update.visibleSpouseFams;
+            global.getState = () => ({ visibleSpouseFams: capturedSet, focusXref: '@F@' });
+        };
+
+        toggleSpouseMenuFam('@FAM2@');
+
+        // Both FAMs must be checked in the re-rendered modal list.
+        const fam1Idx = list.innerHTML.indexOf('@FAM1@');
+        const fam2Idx = list.innerHTML.indexOf('@FAM2@');
+        const fam1Row = list.innerHTML.slice(fam1Idx, fam2Idx > fam1Idx ? fam2Idx : undefined);
+        const fam2Row = list.innerHTML.slice(fam2Idx);
+        expect(fam1Row).toContain('checked');
+        expect(fam2Row).toContain('checked');
+    });
 });
 
 // ── editName suffix pre-fill ──────────────────────────────────────────────

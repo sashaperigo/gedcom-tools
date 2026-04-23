@@ -1901,6 +1901,16 @@ function toggleSpouseMenuFam(famXref) {
     if (next.has(famXref)) next.delete(famXref);
     else next.add(famXref);
     setState({ visibleSpouseFams: next });
+    // Re-render the modal list so checkboxes always reflect the true state.
+    // Without this, the DOM diverges from visibleSpouseFams: e.g. the primary
+    // FAM is shown as checked initially even when visibleSpouseFams is empty,
+    // so a subsequent click on that checkbox removes it from the set instead of
+    // keeping both FAMs selected.
+    if (xref) {
+        const list = document.getElementById('spouse-menu-modal-list');
+        const newState = (typeof getState === 'function') ? getState() : {};
+        if (list) list.innerHTML = _buildSpouseMenuRows(xref, newState.visibleSpouseFams, newState.focusXref);
+    }
 }
 
 // ── Delete person ─────────────────────────────────────────────────────────────
