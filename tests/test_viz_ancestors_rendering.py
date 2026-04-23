@@ -907,6 +907,13 @@ class TestHomeBtnWiring:
         assert "home-btn" in html
         assert "resetToRoot(ROOT_XREF)" in html
 
+    def test_home_btn_also_resets_view(self):
+        """Home button must also recenter/zoom-reset the canvas via resetView()."""
+        assert "resetView()" in _HTML_TEMPLATE, (
+            "home-btn handler must call resetView() so the tree re-centers "
+            "and zoom returns to 1 when Home is clicked."
+        )
+
 
 # ---------------------------------------------------------------------------
 # D3  No snippets_templating.styles.css 404
@@ -1050,4 +1057,86 @@ class TestExternalTemplateFiles:
         leftover = re.findall(r'__[A-Z_]+__', html)
         assert not leftover, (
             f"Unsubstituted placeholders in render_html output: {leftover}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# B9  Add-event modal source citation section
+# ---------------------------------------------------------------------------
+
+class TestAddEventModalSourceSection:
+    """
+    B9: The add-event modal must include an optional source-citation section
+    with a toggle, source select, and page input — hidden by default.
+    Submitting with a source selected must call apiAddCitation after add_event.
+    """
+
+    @pytest.fixture(scope='class')
+    def _html(self):
+        return (Path(__file__).parent.parent / 'viz_ancestors.html').read_text()
+
+    def test_source_toggle_exists(self, _html):
+        """Modal must have a toggle button to reveal the source citation section."""
+        assert 'event-modal-source-toggle' in _html, (
+            'viz_ancestors.html must contain id="event-modal-source-toggle"'
+        )
+
+    def test_source_row_hidden_by_default(self, _html):
+        """Source citation row must be hidden by default (display:none)."""
+        assert 'event-modal-source-row' in _html, (
+            'viz_ancestors.html must contain id="event-modal-source-row"'
+        )
+        import re
+        match = re.search(
+            r'id="event-modal-source-row"[^>]*style="[^"]*display\s*:\s*none', _html
+        )
+        assert match, (
+            'event-modal-source-row must have style="display:none" to start collapsed'
+        )
+
+    def test_source_select_exists(self, _html):
+        """Source dropdown must be present inside the event modal."""
+        assert 'id="event-modal-source"' in _html, (
+            'viz_ancestors.html must contain <select id="event-modal-source">'
+        )
+
+    def test_page_input_exists(self, _html):
+        """Page/folio input must be present inside the event modal."""
+        assert 'id="event-modal-page"' in _html, (
+            'viz_ancestors.html must contain <input id="event-modal-page">'
+        )
+
+    def test_toggle_function_defined_in_modals_js(self):
+        """viz_modals.js must define _toggleEventModalSourceSection."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        assert '_toggleEventModalSourceSection' in modals_src, (
+            'js/viz_modals.js must define _toggleEventModalSourceSection()'
+        )
+
+    def test_source_section_cleared_in_addEvent(self):
+        """addEvent() must reset event-modal-source and event-modal-page."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        assert 'event-modal-source' in modals_src, (
+            'addEvent() must reference event-modal-source to reset it'
+        )
+        assert 'event-modal-page' in modals_src, (
+            'addEvent() must reference event-modal-page to reset it'
+        )
+
+    def test_submit_calls_add_citation_when_source_selected(self):
+        """submitEventModal must call apiAddCitation after a successful add_event when a source is selected."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        submit_fn_start = modals_src.index('async function submitEventModal()')
+        submit_fn_body = modals_src[submit_fn_start:submit_fn_start + 8000]
+        assert 'apiAddCitation' in submit_fn_body, (
+            'submitEventModal() must call apiAddCitation() when a source is selected in the event modal'
+        )
+
+    def test_fact_key_derived_from_response(self):
+        """submitEventModal must build factKey from the add_event response event_idx."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        submit_fn_start = modals_src.index('async function submitEventModal()')
+        submit_fn_body = modals_src[submit_fn_start:submit_fn_start + 8000]
+        assert 'factKey' in submit_fn_body, (
+            'submitEventModal() must construct factKey from the response to call apiAddCitation'
         )

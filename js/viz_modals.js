@@ -226,6 +226,36 @@ function _updateEventModalFields(tag) {
     _updateSpouseRow(tag);
 }
 
+function _toggleEventModalSourceSection() {
+    const sourRow = document.getElementById('event-modal-source-row');
+    const pageRow = document.getElementById('event-modal-page-row');
+    const btn = document.getElementById('event-modal-source-toggle');
+    const isOpen = sourRow.style.display !== 'none';
+    sourRow.style.display = isOpen ? 'none' : '';
+    pageRow.style.display = isOpen ? 'none' : '';
+    btn.textContent = isOpen ? '+ Add source citation (optional)' : '− Remove source citation';
+    if (!isOpen && typeof SOURCES !== 'undefined') {
+        _populateEventModalSources();
+    }
+}
+
+function _populateEventModalSources() {
+    const sourceEl = document.getElementById('event-modal-source');
+    if (!sourceEl) return;
+    sourceEl.innerHTML = '<option value="">— select source —</option>';
+    const entries = Object.entries(SOURCES).map(([sxref, src]) => ({
+        sxref,
+        label: (src && src.titl) || sxref,
+    }));
+    entries.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+    for (const { sxref, label } of entries) {
+        const opt = document.createElement('option');
+        opt.value = sxref;
+        opt.textContent = label;
+        sourceEl.appendChild(opt);
+    }
+}
+
 function _updateAddrSuggestions(place) {
     const dl = document.getElementById('addr-suggestions');
     if (!dl) return;
@@ -350,6 +380,11 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
     document.getElementById('event-modal-cause').value = '';
     document.getElementById('event-modal-note').value = '';
     document.getElementById('event-modal-addr').value = '';
+    document.getElementById('event-modal-source-row').style.display = 'none';
+    document.getElementById('event-modal-page-row').style.display = 'none';
+    document.getElementById('event-modal-source-toggle').textContent = '+ Add source citation (optional)';
+    document.getElementById('event-modal-source').value = '';
+    document.getElementById('event-modal-page').value = '';
     const spouseInp = document.getElementById('event-modal-spouse-input');
     const spouseRes = document.getElementById('event-modal-spouse-results');
     if (spouseInp) spouseInp.value = '';
@@ -474,6 +509,27 @@ async function submitEventModal() {
             // Update all returned people (may include both spouses for marriage edits)
             if (data.people) {
                 for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+            }
+            // If the user chose a source, attach it to the newly created event.
+            if (isAdd) {
+                const sourXref = document.getElementById('event-modal-source').value;
+                const page = document.getElementById('event-modal-page').value.trim();
+                if (sourXref && data.people && data.people[xref]) {
+                    const events = (data.people[xref].events || []).filter(e => e.tag === tag);
+                    if (events.length > 0) {
+                        const newEvent = events.reduce((max, e) =>
+                            (e.event_idx > max.event_idx ? e : max), events[0]);
+                        const factKey = `${tag}:${newEvent.event_idx}`;
+                        try {
+                            const citResp = await apiAddCitation(xref, sourXref, factKey, page, '', '', '', '', '');
+                            if (citResp && citResp.people) {
+                                for (const [k, v] of Object.entries(citResp.people)) PEOPLE[k] = v;
+                            }
+                        } catch (_e) {
+                            // Citation failed silently — event was still saved.
+                        }
+                    }
+                }
             }
             window._openDetailKey = null;
             setState({ panelXref: xref, panelOpen: true });

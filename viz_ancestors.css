@@ -926,6 +926,19 @@ header h1 {
     cursor: pointer;
 }
 
+.event-modal-source-toggle-btn {
+    background: none;
+    border: none;
+    color: #6b9fc4;
+    cursor: pointer;
+    font-size: 0.85em;
+    padding: 0;
+    text-align: left;
+}
+.event-modal-source-toggle-btn:hover {
+    text-decoration: underline;
+}
+
 .note-modal-save,
 .event-modal-save {
     background: var(--accent);
