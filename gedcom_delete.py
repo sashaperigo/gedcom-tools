@@ -43,10 +43,14 @@ def delete_person_from_lines(lines: list[str], xref: str) -> tuple[list[str], st
     Returns (new_lines, navigate_to_xref_or_None, error_or_None).
 
     Family cleanup rules:
-    - FAM becomes empty (no HUSB, WIFE, or CHIL) → delete FAM and remove any
-      remaining FAMS/FAMC references to it in other INDI records.
-    - FAM retains at least one member → keep FAM, only remove person's line.
-    - ASSO blocks referencing the deleted xref in other INDI records are removed.
+    - FAM has no HUSB, WIFE, or CHIL after person removal → delete FAM; remove
+      any remaining FAMS/FAMC references to it in other INDI records.
+    - FAM had exactly two spouses and no children and one spouse is deleted →
+      delete FAM; remove the surviving spouse's dangling FAMS reference.
+    - FAM retains at least one member after the above rules → keep FAM, only
+      remove person's line.
+    - ASSO blocks referencing the deleted xref in other INDI records are removed,
+      including any level-2+ sub-tags (RELA, NOTE, SOUR, etc.).
     """
     indi_start, indi_end, err = _find_record_block(lines, xref, 'INDI')
     if err:
@@ -136,7 +140,7 @@ def delete_person_from_lines(lines: list[str], xref: str) -> tuple[list[str], st
             asso_end = i + 1
             while asso_end < len(lines):
                 sub = lines[asso_end].split()
-                if not sub or sub[0] in ('0', '1'):
+                if not sub or sub[0] in ('0', '1'):  # next level-0/1 = end of ASSO block
                     break
                 asso_end += 1
             remove.update(range(i, asso_end))
