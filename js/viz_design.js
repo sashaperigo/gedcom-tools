@@ -4,7 +4,7 @@ var DESIGN = {
     // Colors
     BG_BASE: '#07070d',
     BG_SURFACE: '#0d0d1f',
-    BG_NODE: '#12101e',
+    BG_NODE: '#131c30',
     BG_NODE_FOCUS: '#2a1e4a',
     BORDER: 'rgba(148,163,184,0.18)',
     BORDER_FOCUS: '#a78bfa',
