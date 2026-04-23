@@ -1132,6 +1132,22 @@ class TestAddEventModalSourceSection:
             'submitEventModal() must call apiAddCitation() when a source is selected in the event modal'
         )
 
+    def test_paste_citation_btn_exists(self, _html):
+        """Modal must have a paste citation button alongside the source toggle."""
+        assert 'event-modal-paste-citation-btn' in _html, (
+            'viz_ancestors.html must contain id="event-modal-paste-citation-btn"'
+        )
+
+    def test_paste_citation_btn_hidden_by_default(self, _html):
+        """Paste citation button must be hidden by default."""
+        import re
+        match = re.search(
+            r'id="event-modal-paste-citation-btn"[^>]*style="[^"]*display\s*:\s*none', _html
+        )
+        assert match, (
+            'event-modal-paste-citation-btn must have style="display:none" by default'
+        )
+
     def test_fact_key_derived_from_response(self):
         """submitEventModal must build factKey from the add_event response event_idx."""
         modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
