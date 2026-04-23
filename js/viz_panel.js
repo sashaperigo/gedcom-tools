@@ -692,21 +692,21 @@ function renderPanel() {
         const _xrefQ2 = JSON.stringify(xref).replace(/"/g, '&quot;');
         const _addFactBtn = `<select class="add-fact-select" onchange="if(this.value){addEvent(${_xrefQ2},this.value);this.selectedIndex=0}">` +
             `<option value="" disabled selected>&#43; Add fact\u2026</option>` +
-            `<option value="OCCU">Occupation</option>` +
-            `<option value="EDUC">Education</option>` +
-            `<option value="TITL">Title</option>` +
-            `<option value="RELI">Religion</option>` +
-            `<option value="RETI">Retirement</option>` +
             `<option value="ADOP">Adoption</option>` +
-            `<option value="CHR">Christening</option>` +
             `<option value="BAPM">Baptism</option>` +
+            `<option value="NCHI">Children (count)</option>` +
+            `<option value="CHR">Christening</option>` +
             `<option value="CONF">Confirmation</option>` +
+            `<option value="EDUC">Education</option>` +
             `<option value="FACT:Languages">Languages</option>` +
             `<option value="FACT:Literacy">Literacy</option>` +
-            `<option value="FACT:Politics">Politics</option>` +
             `<option value="FACT:Medical condition">Medical condition</option>` +
+            `<option value="OCCU">Occupation</option>` +
             `<option value="DSCR">Physical Description</option>` +
-            `<option value="NCHI">Children (count)</option>` +
+            `<option value="FACT:Politics">Politics</option>` +
+            `<option value="RELI">Religion</option>` +
+            `<option value="RETI">Retirement</option>` +
+            `<option value="TITL">Title</option>` +
             `</select>`;
 
         let bottomHtml = ''; {
