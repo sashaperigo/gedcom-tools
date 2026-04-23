@@ -535,11 +535,17 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 
         let visibleStart = marriageMidpointX - visibleWidth / 2;
         let otherStart = focusCenterX - otherWidth / 2;
-        const INTER_GROUP_GAP = H_GAP * 4;
+        const INTER_CLUSTER_GAP = H_GAP * 8;
         if (otherGroups.length > 0 && visibleGroups.length > 0) {
+            // Push other LEFT if it would encroach on visible
             const otherEnd = otherStart + otherWidth;
-            if (otherEnd + INTER_GROUP_GAP > visibleStart) {
-                otherStart = visibleStart - INTER_GROUP_GAP - otherWidth;
+            if (otherEnd + INTER_CLUSTER_GAP > visibleStart) {
+                otherStart = visibleStart - INTER_CLUSTER_GAP - otherWidth;
+            }
+            // Push visible RIGHT if other is too close from the left
+            const newOtherEnd = otherStart + otherWidth;
+            if (visibleStart < newOtherEnd + INTER_CLUSTER_GAP) {
+                visibleStart = newOtherEnd + INTER_CLUSTER_GAP;
             }
         }
 
@@ -822,12 +828,23 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
         });
     };
 
+    let actualVisibleStart = visibleIdealStart;
     if (visibleGroups.length > 0) {
-        const startX = pickStartInFreeGap(visibleIdealStart, visibleWidth);
-        const centers = emitClusterNodes(visibleGroups, startX);
+        actualVisibleStart = pickStartInFreeGap(visibleIdealStart, visibleWidth);
+        const centers = emitClusterNodes(visibleGroups, actualVisibleStart);
         emitUmbrella(marriageMidpointX, personY + NODE_H / 2, centers);
     }
     if (otherGroups.length > 0) {
+        if (visibleGroups.length > 0) {
+            const spouseRight = visibleSpouseNode && visibleSpouseNode.x > personNode.x;
+            if (spouseRight) {
+                // Visible goes RIGHT → other goes LEFT; keep INTER_FAM_GAP before visible start
+                otherIdealStart = Math.min(otherIdealStart, actualVisibleStart - INTER_FAM_GAP - otherWidth);
+            } else {
+                // Visible goes LEFT → other goes RIGHT; keep INTER_FAM_GAP after visible end
+                otherIdealStart = Math.max(otherIdealStart, actualVisibleStart + visibleWidth + INTER_FAM_GAP);
+            }
+        }
         const startX = pickStartInFreeGap(otherIdealStart, otherWidth);
         const centers = emitClusterNodes(otherGroups, startX);
         emitUmbrella(personCenter, personY + NODE_H, centers);

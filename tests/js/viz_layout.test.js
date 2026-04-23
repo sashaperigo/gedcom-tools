@@ -3174,6 +3174,126 @@ describe('_placeChildrenOfPerson — multi-FAM with visible spouse splits into t
     });
 });
 
+// ── Polycarpe scenario: visible spouse LEFT with a child-spouse that extends ──
+// past personCenter — the other-FAMs cluster must be separated by INTER_FAM_GAP
+// (H_GAP * 8 = 96px), not just CHEVRON_CLEARANCE (40px).
+describe('_placeChildrenOfPerson — visible spouse LEFT enforces INTER_FAM_GAP between clusters', () => {
+    const INTER_FAM_GAP = H_GAP * 8;
+    const CHILD_MARRIAGE_GAP = H_GAP;
+
+    function setupPolycarpeScene() {
+        resetGlobals({
+            people: {
+                '@POLYCARPE@': { birth_year: 1923 },
+                '@MARION@': { birth_year: 1929 },
+                '@SANDRA@': { birth_year: 1965 },
+                '@JIM@': { birth_year: 1966 },
+                '@ADRIAN@': { birth_year: 1955 },
+            },
+            relatives: {
+                '@POLYCARPE@': { siblings: [], spouses: ['@MARION@'] },
+                '@SANDRA@': { siblings: [], spouses: ['@JIM@'] },
+            },
+            families: {
+                '@F_PM@': { husb: '@POLYCARPE@', wife: '@MARION@', chil: ['@SANDRA@'] },
+                '@F_PX@': { husb: '@POLYCARPE@', wife: null, chil: ['@ADRIAN@'] },
+            },
+        });
+    }
+
+    it('gap between visible-cluster rightmost node and other-cluster leftmost node >= INTER_FAM_GAP', () => {
+        setupPolycarpeScene();
+        const marionX = -(NODE_W + MARRIAGE_GAP);
+        const nodes = [
+            { xref: '@POLYCARPE@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@MARION@', x: marionX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@POLYCARPE@', new Set(), '@POLYCARPE@', nodes, edges);
+
+        const childY = ROW_HEIGHT;
+        const atChildY = nodes.filter(n => n.y === childY);
+        const sandraNode = atChildY.find(n => n.xref === '@SANDRA@');
+        const jimNode = atChildY.find(n => n.xref === '@JIM@');
+        const adrianNode = atChildY.find(n => n.xref === '@ADRIAN@');
+
+        expect(sandraNode).toBeDefined();
+        expect(jimNode).toBeDefined();
+        expect(adrianNode).toBeDefined();
+
+        const visibleRightEdge = jimNode.x + NODE_W;
+        const otherLeftEdge = adrianNode.x;
+        expect(
+            otherLeftEdge - visibleRightEdge,
+            `expected >= ${INTER_FAM_GAP}px between Jim (ends ${visibleRightEdge}) and Adrian (starts ${otherLeftEdge})`,
+        ).toBeGreaterThanOrEqual(INTER_FAM_GAP);
+    });
+
+    it('other-FAM cluster starts to the RIGHT of personCenter', () => {
+        setupPolycarpeScene();
+        const marionX = -(NODE_W + MARRIAGE_GAP);
+        const nodes = [
+            { xref: '@POLYCARPE@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@MARION@', x: marionX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@POLYCARPE@', new Set(), '@POLYCARPE@', nodes, edges);
+
+        const personCenter = NODE_W / 2;
+        const adrianNode = nodes.find(n => n.xref === '@ADRIAN@');
+        expect(adrianNode.x + NODE_W / 2).toBeGreaterThan(personCenter);
+    });
+
+    it('no horizontal at umbrellaY crosses personCenter', () => {
+        setupPolycarpeScene();
+        const marionX = -(NODE_W + MARRIAGE_GAP);
+        const nodes = [
+            { xref: '@POLYCARPE@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@MARION@', x: marionX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@POLYCARPE@', new Set(), '@POLYCARPE@', nodes, edges);
+
+        const personCenter = NODE_W / 2;
+        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const horizontals = edges.filter(e =>
+            e.type === 'descendant' && e.y1 === umbrellaY && e.y2 === umbrellaY,
+        );
+        for (const e of horizontals) {
+            const lo = Math.min(e.x1, e.x2);
+            const hi = Math.max(e.x1, e.x2);
+            expect(
+                hi <= personCenter || lo >= personCenter,
+                `horizontal at umbrellaY spans ${lo}→${hi} crossing personCenter ${personCenter}`,
+            ).toBe(true);
+        }
+    });
+
+    it('mirror: visible spouse RIGHT also enforces INTER_FAM_GAP (other cluster left of visible)', () => {
+        setupPolycarpeScene();
+        const marionX = NODE_W + MARRIAGE_GAP;
+        const nodes = [
+            { xref: '@POLYCARPE@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@MARION@', x: marionX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@POLYCARPE@', new Set(), '@POLYCARPE@', nodes, edges);
+
+        const childY = ROW_HEIGHT;
+        const atChildY = nodes.filter(n => n.y === childY);
+        const sandraNode = atChildY.find(n => n.xref === '@SANDRA@');
+        const jimNode = atChildY.find(n => n.xref === '@JIM@');
+        const adrianNode = atChildY.find(n => n.xref === '@ADRIAN@');
+
+        const visibleLeftEdge = sandraNode.x;
+        const otherRightEdge = adrianNode.x + NODE_W;
+        expect(
+            visibleLeftEdge - otherRightEdge,
+            `expected >= ${INTER_FAM_GAP}px between Adrian (ends ${otherRightEdge}) and Sandra (starts ${visibleLeftEdge})`,
+        ).toBeGreaterThanOrEqual(INTER_FAM_GAP);
+    });
+});
+
 describe('computeLayout — focus spouse parent expansion', () => {
     beforeEach(() => {
         resetGlobals({
