@@ -645,9 +645,8 @@ function renderPanel() {
                 const tagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
                 html +=
                     `<div class="evt-entry">` +
-                    `<div class="evt-year-col">${yearStr}</div>` +
+                    `<div class="evt-year-col">${yearStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
                     `<div class="evt-content">` +
-                    `<span class="evt-tag-abbrev">${tagAbbr}</span>` +
                     `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                     (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
                     noteInl +
@@ -676,9 +675,8 @@ function renderPanel() {
                 const undGpHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
                 const undTagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
                 return `<div class="evt-entry">` +
-                    `<div class="evt-year-col"></div>` +
+                    `<div class="evt-year-col"><span class="evt-tag-abbrev">${undTagAbbr}</span></div>` +
                     `<div class="evt-content">` +
-                    `<span class="evt-tag-abbrev">${undTagAbbr}</span>` +
                     `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                     (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
                     noteInl +

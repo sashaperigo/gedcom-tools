@@ -1809,20 +1809,20 @@ header h1 .root-name-accent {
 }
 
 .evt-year-col {
-    width: 52px;
+    width: 46px;
     flex-shrink: 0;
     border-right: 1px solid var(--border);
     padding-right: 10px;
 }
 
 .evt-year {
-    font-size: 15px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.2;
     font-variant-numeric: tabular-nums;
     display: block;
-    letter-spacing: -0.3px;
+    letter-spacing: -0.2px;
 }
 
 .evt-tag-abbrev {
@@ -1830,7 +1830,7 @@ header h1 .root-name-accent {
     color: var(--text-disabled);
     letter-spacing: 0.5px;
     text-transform: uppercase;
-    margin-top: 4px;
+    margin-top: 2px;
     font-family: 'JetBrains Mono', monospace;
     display: block;
 }
