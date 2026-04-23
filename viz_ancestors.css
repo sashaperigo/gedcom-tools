@@ -5,28 +5,28 @@
 }
 
 :root {
-    /* Backgrounds — Dark Editorial */
+    /* Backgrounds — navy tree palette */
     --bg-app: #0a0f1c;
     --bg-surface: #0d1526;
     --bg-hover: #1e293b;
 
-    /* Borders */
-    --border: #2a2a4a;
-    --border-subtle: #1a2030;
+    /* Borders — navy-blue (matches tree node border hue, no purple cast) */
+    --border: #1e2d48;
+    --border-subtle: #162038;
     --border-deep: #1e2a42;
 
     /* Text */
-    --text-primary: #e4e4ff;
-    --text-label: #e4e4ff;
-    --text-light: #b8b8e0;
-    --text-secondary: #b8b8e0;
-    --text-muted: #727298;
-    --text-disabled: #424260;
+    --text-primary: #e2e8f0;
+    --text-label: #e2e8f0;
+    --text-light: #b8c8e0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-disabled: #475569;
 
-    /* Violet accent (Dark Editorial) */
+    /* Accent — indigo/slate (interactive elements only) */
     --accent: #818cf8;
     --accent-light: #a5b4fc;
-    --accent-bg: #2a1e4a;
+    --accent-bg: #162848;
     --accent-hover: #c7d2fe;
 
     /* Danger */
@@ -43,7 +43,7 @@
     --emerald: #6ee7b7;
 
     /* Citation badge (gold) */
-    --citation: var(--citation);
+    --citation: #c4a35a;
 
     /* Sex indicator dots */
     --sex-m: #7db4e8;
@@ -1862,11 +1862,13 @@ header h1 .root-name-accent {
     display: none;
 }
 
-.evt-prose {
-    font-size: 12.5px;
-    color: var(--text-secondary);
-    line-height: 1.4;
-    font-weight: 500;
+.evt-prose-text {
+    display: block;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+    margin-top: 1px;
 }
 
 .evt-meta {

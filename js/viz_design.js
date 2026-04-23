@@ -8,10 +8,10 @@ var DESIGN = {
     BG_NODE_FOCUS: '#2a1e4a', // --accent-bg
     BORDER: 'rgba(148,163,184,0.18)',
     BORDER_FOCUS: '#818cf8', // --accent
-    TEXT_PRIMARY: '#e4e4ff', // --text-primary
-    TEXT_SECONDARY: '#b8b8e0', // --text-secondary
-    TEXT_MUTED: '#727298',   // --text-muted
-    TEXT_DIM: '#424260',     // --text-disabled
+    TEXT_PRIMARY: '#e2e8f0', // --text-primary
+    TEXT_SECONDARY: '#94a3b8', // --text-secondary
+    TEXT_MUTED: '#64748b',   // --text-muted
+    TEXT_DIM: '#334155',     // --text-disabled
     ACCENT: '#818cf8',       // --accent
     ACCENT_SPOUSE: '#a78bfa', // violet variant
     ACCENT_SOURCE: '#6ee7b7',
