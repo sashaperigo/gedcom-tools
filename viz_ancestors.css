@@ -5,29 +5,29 @@
 }
 
 :root {
-    /* Backgrounds */
-    --bg-app: #0f172a;
-    --bg-surface: #1e293b;
-    --bg-hover: #334155;
+    /* Backgrounds — Dark Editorial */
+    --bg-app: #0a0f1c;
+    --bg-surface: #0d0d1f;
+    --bg-hover: #1e293b;
 
     /* Borders */
-    --border: #334155;
-    --border-subtle: #1e293b;
-    --border-deep: #1e3a52;
+    --border: #2a2a4a;
+    --border-subtle: #1e1e38;
+    --border-deep: #1e2a42;
 
     /* Text */
-    --text-primary: #f1f5f9;
-    --text-label: #e2e8f0;
-    --text-light: #cbd5e1;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --text-disabled: #475569;
+    --text-primary: #e4e4ff;
+    --text-label: #e4e4ff;
+    --text-light: #b8b8e0;
+    --text-secondary: #b8b8e0;
+    --text-muted: #727298;
+    --text-disabled: #424260;
 
-    /* Blue accent */
-    --accent: #3b82f6;
-    --accent-light: #93c5fd;
-    --accent-bg: #1e3a5f;
-    --accent-hover: #bfdbfe;
+    /* Violet accent (Dark Editorial) */
+    --accent: #818cf8;
+    --accent-light: #a5b4fc;
+    --accent-bg: #2a1e4a;
+    --accent-hover: #c7d2fe;
 
     /* Danger */
     --danger: #ef4444;
@@ -48,29 +48,40 @@
 }
 
 body {
-    background: var(--bg-app);
-    color: white;
-    font-family: system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at top, #1a2236 0%, #0f1524 55%, #0a0f1c 100%);
+    color: var(--text-primary);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow: hidden;
 }
 
 header {
-    padding: 12px 20px;
-    background: var(--bg-surface);
-    border-bottom: 1px solid var(--border);
+    padding: 14px 22px;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.08);
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
+    position: relative;
+    z-index: 2;
 }
 
 header h1 {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
+    letter-spacing: -0.2px;
+    color: var(--text-primary);
+}
+
+header h1 .root-name-accent {
+    color: #a78bfa;
 }
 
 .hint {
-    font-size: 12px;
-    color: var(--text-secondary);
+    font-size: 11px;
+    color: #64748b;
+    letter-spacing: 0.3px;
 }
 
 #search-container {
@@ -78,15 +89,16 @@ header h1 {
 }
 
 #search-input {
-    background: var(--bg-app);
-    border: 1px solid var(--border);
-    border-radius: 20px;
+    background: transparent;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 16px;
     color: var(--text-primary);
-    font-size: 13px;
-    padding: 6px 14px;
-    width: 220px;
+    font-size: 11px;
+    padding: 5px 12px;
+    width: 200px;
     outline: none;
     transition: border-color 0.15s;
+    font-family: inherit;
 }
 
 #search-input:focus {
@@ -94,7 +106,7 @@ header h1 {
 }
 
 #search-input::placeholder {
-    color: var(--text-disabled);
+    color: rgba(148, 163, 184, 0.5);
 }
 
 #search-results {
@@ -173,17 +185,25 @@ header h1 {
     left: 0;
     top: 0;
     bottom: 0;
-    width: 90px;
+    width: 56px;
     pointer-events: none;
     overflow: hidden;
+    border-right: 1px solid rgba(148, 163, 184, 0.06);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-around;
+    padding: 30px 0;
 }
 
 .gen-label {
-    position: absolute;
-    left: 8px;
-    font-size: 11px;
-    color: var(--text-muted);
-    transform: translateY(-50%);
+    font-size: 9px;
+    letter-spacing: 0.15px;
+    color: #475569;
+    text-transform: uppercase;
+    writing-mode: vertical-rl;
+    text-align: center;
+    opacity: 0.8;
     white-space: nowrap;
 }
 
@@ -2266,32 +2286,36 @@ button.sources-section-title:hover .sources-toggle-arrow {
     padding-top: 0;
 }
 
-/* ── SVG tree element colors ────────────────────────────── */
+/* ── SVG tree element colors — Dark Editorial ───────────── */
 .edge-ancestor {
-    stroke: #44447a;
-    stroke-width: 1;
+    stroke: rgba(148, 163, 184, 0.3);
+    stroke-width: 1.2;
 }
 
 .edge-descendant {
-    stroke: #2c2c54;
-    stroke-width: 1;
+    stroke: rgba(148, 163, 184, 0.2);
+    stroke-width: 1.2;
 }
 
 .edge-marriage {
-    stroke: #0e6a8a;
-    stroke-width: 1.5;
+    stroke: rgba(148, 163, 184, 0.25);
+    stroke-width: 1.2;
 }
 
 .btn-expand {
-    fill: #0891b2;
+    fill: #1a2b3a;
+    stroke: rgba(110, 231, 183, 0.5);
+    stroke-width: 1;
 }
 
 .btn-collapse {
-    fill: #0074d9;
+    fill: #1a2b3a;
+    stroke: rgba(110, 231, 183, 0.5);
+    stroke-width: 1;
 }
 
 .btn-chevron {
-    stroke: #ffffff;
+    stroke: #6ee7b7;
 }
 
 .spouse-menu-btn {

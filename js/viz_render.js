@@ -215,6 +215,16 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     const rect = _svgEl('rect', rectAttrs);
     g.appendChild(rect);
 
+    // Violet left-edge stripe for the focus node
+    if (isFocus) {
+        const stripe = _svgEl('rect', {
+            x: 0, y: 0, width: 3, height: h,
+            fill: '#a78bfa',
+            rx: NODE_RADIUS,
+        });
+        g.appendChild(stripe);
+    }
+
     // Name text — wraps to two lines when the name has whitespace. Line 1 sits
     // in the upper portion of the pill; line 2 (when present) sits just below.
     const hasTwoLines = nameLine2.length > 0;
@@ -229,7 +239,7 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         fill: nameFill,
         'font-size': nameFontSize,
         'font-weight': nameWeight,
-        'font-family': 'system-ui, sans-serif',
+        'font-family': "'Inter', system-ui, sans-serif",
         'pointer-events': 'none',
     });
     nameEl.textContent = nameLine1;
@@ -244,7 +254,7 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
             fill: nameFill,
             'font-size': nameFontSize,
             'font-weight': nameWeight,
-            'font-family': 'system-ui, sans-serif',
+            'font-family': "'Inter', system-ui, sans-serif",
             'pointer-events': 'none',
         });
         nameEl2.textContent = nameLine2;
@@ -259,7 +269,7 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
             'text-anchor': 'middle',
             fill: yearFill,
             'font-size': 9,
-            'font-family': 'system-ui, sans-serif',
+            'font-family': "'Inter', system-ui, sans-serif",
             'pointer-events': 'none',
         });
         yearsEl.textContent = years;
@@ -579,6 +589,36 @@ function render() {
             onChildrenExpandClick,
         );
         _treeRoot.appendChild(g);
+    }
+
+    // ── Generation rail ──────────────────────────────────────────────────────
+    _updateGenLabels(nodes);
+}
+
+function _genLabel(gen) {
+    if (gen === 0) return 'Self';
+    if (gen === -1) return 'Parents';
+    if (gen === -2) return 'Grandparents';
+    if (gen === -3) return 'Great-grandparents';
+    if (gen === 1) return 'Children';
+    if (gen === 2) return 'Grandchildren';
+    return gen < 0 ? `Gen ${Math.abs(gen)}` : `Gen +${gen}`;
+}
+
+function _updateGenLabels(nodes) {
+    const container = document.getElementById('gen-labels');
+    if (!container) return;
+
+    // Collect unique generations present
+    const gens = [...new Set(nodes.map(n => n.generation))].sort((a, b) => a - b);
+    if (gens.length === 0) { container.innerHTML = ''; return; }
+
+    container.innerHTML = '';
+    for (const gen of gens) {
+        const div = document.createElement('div');
+        div.className = 'gen-label';
+        div.textContent = _genLabel(gen);
+        container.appendChild(div);
     }
 }
 

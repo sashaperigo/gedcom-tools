@@ -1,20 +1,20 @@
-// Design tokens (Obsidian theme)
+// Design tokens (Dark Editorial theme)
 // Use var (not const) so it becomes a window-level global in browser script tags
 var DESIGN = {
     // Colors
     BG_BASE: '#07070d',
-    BG_SURFACE: '#0a0a18',
-    BG_NODE: '#131330',
-    BG_NODE_FOCUS: '#1e1e42',
-    BORDER: '#343468',
-    BORDER_FOCUS: '#7878d4',
-    TEXT_PRIMARY: '#e4e4ff',
-    TEXT_SECONDARY: '#b8b8e0',
-    TEXT_MUTED: '#727298',
-    TEXT_DIM: '#484860',
-    ACCENT: '#7878d4',
-    ACCENT_SPOUSE: '#0891b2',
-    ACCENT_SOURCE: '#78b878',
+    BG_SURFACE: '#0d0d1f',
+    BG_NODE: '#131c30',
+    BG_NODE_FOCUS: '#2a1e4a',
+    BORDER: 'rgba(148,163,184,0.22)',
+    BORDER_FOCUS: '#a78bfa',
+    TEXT_PRIMARY: '#f1f5f9',
+    TEXT_SECONDARY: '#cbd5e1',
+    TEXT_MUTED: '#94a3b8',
+    TEXT_DIM: '#64748b',
+    ACCENT: '#818cf8',
+    ACCENT_SPOUSE: '#a78bfa',
+    ACCENT_SOURCE: '#6ee7b7',
 
     // Layout constants (replaces viz_constants.js)
     NODE_W: 100, // normal node width
