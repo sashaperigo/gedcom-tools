@@ -566,6 +566,7 @@ function renderPanel() {
         e.tag !== 'RELI' && (
             e.date ||
             e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'PROB' || e.tag === 'MARR' ||
+            e.tag === 'BAPM' || e.tag === 'CONF' ||
             e.type === 'Arrival' || e.type === 'Departure');
     const undatedFactoids = allVisible.filter(e => !_keepInTimeline(e));
     const visible = allVisible.filter(_keepInTimeline);
@@ -693,10 +694,8 @@ function renderPanel() {
         const _addFactBtn = `<select class="add-fact-select" onchange="if(this.value){addEvent(${_xrefQ2},this.value);this.selectedIndex=0}">` +
             `<option value="" disabled selected>&#43; Add fact\u2026</option>` +
             `<option value="ADOP">Adoption</option>` +
-            `<option value="BAPM">Baptism</option>` +
             `<option value="NCHI">Children (count)</option>` +
             `<option value="CHR">Christening</option>` +
-            `<option value="CONF">Confirmation</option>` +
             `<option value="EDUC">Education</option>` +
             `<option value="FACT:Languages">Languages</option>` +
             `<option value="FACT:Literacy">Literacy</option>` +
