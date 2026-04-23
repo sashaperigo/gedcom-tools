@@ -1020,3 +1020,30 @@ class TestCitationAlreadyExists:
         insert_pos = len(lines)
         # @S1@ exists in @F0@ but insert_pos is inside @F1@; must not find it.
         assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.47', cite_level=2) is False
+
+    def test_does_not_cross_event_boundary_within_indi_record(self):
+        """Fact-level scan must stop at level-1 boundaries; citation on an earlier
+        event in the same INDI record must NOT be mistaken for a duplicate on the
+        target event (which has no citation yet)."""
+        lines = [
+            '0 @I1@ INDI\n',
+            '1 BIRT\n',
+            '2 SOUR @S1@\n',   # citation on BIRT
+            '3 PAGE p.42\n',
+            '1 RESI\n',        # target event — no citation yet
+            '2 DATE 1 JAN 1950\n',
+        ]
+        insert_pos = len(lines)  # insert after RESI block (at indi_end)
+        # @S1@/p.42 exists only on BIRT, not on RESI; must not cross the 1 RESI boundary.
+        assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.42', cite_level=2) is False
+
+    def test_detects_duplicate_within_same_event_block(self):
+        """Citation already present inside the TARGET event block is still detected."""
+        lines = [
+            '0 @I1@ INDI\n',
+            '1 BIRT\n',
+            '2 SOUR @S1@\n',
+            '3 PAGE p.42\n',
+        ]
+        insert_pos = len(lines)
+        assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.42', cite_level=2) is True

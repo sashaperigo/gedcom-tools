@@ -984,14 +984,18 @@ def _find_citation_block(
 def _citation_already_exists(lines: list[str], insert_pos: int, sour_xref: str, page: str, cite_level: int) -> bool:
     """
     Return True if sour_xref+page already appears as a citation in the block
-    that ends at insert_pos.  Scans backward until a level-0 record boundary.
+    that ends at insert_pos.  Scans backward until a level-(cite_level-1)
+    boundary so fact-level scans (cite_level=2) stop at event boundaries
+    (level 1) and do not cross into earlier events in the same record.
     """
     sour_prefix = f'{cite_level} SOUR {sour_xref}'
     page_line   = f'{cite_level + 1} PAGE {page.strip()}' if (page and page.strip()) else None
+    boundary    = cite_level - 1  # level-0 for person-level; level-1 for fact-level
     i = insert_pos - 1
     while i >= 0:
         raw = lines[i].rstrip()
-        if raw.startswith('0 '):
+        m = _TAG_RE.match(raw)
+        if m and int(m.group(1)) <= boundary:
             break
         if raw == sour_prefix or raw.startswith(sour_prefix + ' '):
             # Matching source found — now check whether the page also matches.

@@ -1005,6 +1005,50 @@ class TestAddCitationEndpoint:
             if in_data and ln == '4 WWW https://example.com/record/42': found = True; break
         assert found, f'4 WWW not found under BIRT SOUR block in @I1@\n{text}'
 
+    def test_paste_citation_on_newly_added_event_writes_to_correct_fact(self, live_server):
+        """Regression: pasting a citation that already exists on an earlier event
+        (e.g. BIRT) onto a newly created event (RESI added via add_event) must
+        write the citation under the new event, not silently skip it as a
+        false duplicate."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+
+        # Step 1: cite BIRT on @I1@ with a specific page.
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+
+        # Step 2: add a new RESI event (simulates "recently created via UI").
+        resp = post('/api/add_event', {
+            'xref': '@I1@', 'tag': 'RESI',
+            'fields': {'DATE': '1 JAN 1950', 'PLAC': 'Boston'},
+        })
+        assert resp.get('ok') is True
+
+        # Step 3: paste the same source+page onto the new RESI event.
+        resp = post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'RESI:0', 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+
+        # The citation must appear under the RESI block, not just the BIRT block.
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        in_i1 = False; in_resi = False; found = False
+        for ln in lines:
+            if ln.startswith('0 @I1@ INDI'): in_i1 = True; continue
+            if in_i1 and ln.startswith('0 '): break
+            if in_i1 and ln == '1 RESI': in_resi = True; continue
+            if in_resi and ln.startswith('1 '): in_resi = False
+            if in_resi and ln == f'2 SOUR {sour_xref}': found = True; break
+        assert found, (
+            f'Citation on RESI not found; _citation_already_exists may be '
+            f'crossing event block boundaries.\n{text}'
+        )
+
 
 # ===========================================================================
 # /api/edit_citation
