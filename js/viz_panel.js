@@ -240,9 +240,9 @@ function dotColor(evt) {
     switch (evt.tag) {
         case 'BIRT':
         case 'DEAT':
-            return '#f1f5f9';
+            return '#e4e4ff';
         case 'BURI':
-            return '#94a3b8';
+            return '#727298';
         case 'RESI':
             return '#38bdf8';
         case 'OCCU':
@@ -257,9 +257,9 @@ function dotColor(evt) {
         case 'RELI':
             return '#2dd4bf';
         case 'EDUC':
-            return '#a78bfa';
+            return '#818cf8';
         default:
-            return '#64748b';
+            return '#727298';
     }
 }
 
@@ -389,12 +389,12 @@ function renderPanel() {
         return;
     }
 
-    const accent = '#a78bfa';
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#818cf8';
     const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
 
-    // ── Accent bar (always violet) ────────────────────────────────────────
+    // ── Accent bar ────────────────────────────────────────────────────────
     const accentEl = document.getElementById('detail-accent-bar');
-    if (accentEl) accentEl.style.background = '#a78bfa';
+    if (accentEl) accentEl.style.background = '';
 
     // ── ID badge ──────────────────────────────────────────────────────────
     const headerInner = document.getElementById('detail-header-inner');
@@ -466,7 +466,7 @@ function renderPanel() {
         const xrefQA = JSON.stringify(xref).replace(/"/g, '&quot;');
         const akaEvents = (data.events || []).map((e, i) => ({ ...e, _origIdx: i }))
             .filter(e => e._name_record && e.note);
-        const addAkaBtn = `<button class="aka-btn" title="Add secondary name" style="font-size:11px;color:#475569;margin-left:4px" onclick="openAliasModal(${xrefQA},null,'','AKA',true)">&#43; alias</button>`;
+        const addAkaBtn = `<button class="aka-btn" title="Add secondary name" style="font-size:11px;color:var(--text-disabled);margin-left:4px" onclick="openAliasModal(${xrefQA},null,'','AKA',true)">&#43; alias</button>`;
         if (akaEvents.length) {
             const entries = akaEvents.map(e => {
                 const editBtn = e._name_record === true ?
@@ -475,7 +475,7 @@ function renderPanel() {
                         `<button class="aka-btn" title="Edit alias" onclick="editEvent(${xrefQA},${e.event_idx},'FACT')">\u270f</button>` :
                         '');
                 const delBtn = `<button class="aka-btn del" title="Delete name" onclick="deleteAlias(${xrefQA},PEOPLE[${xrefQA}].events[${e._origIdx}])">\u2715</button>`;
-                const typeLabel = (e.type && e.type.toUpperCase() !== 'AKA') ? `<span style="font-size:10px;color:#94a3b8;margin-right:2px">${escHtml(e.type)}:</span>` : '';
+                const typeLabel = (e.type && e.type.toUpperCase() !== 'AKA') ? `<span style="font-size:10px;color:var(--text-secondary);margin-right:2px">${escHtml(e.type)}:</span>` : '';
                 return `<span class="aka-entry">${typeLabel}<span style="font-style:italic">${escHtml(e.note)}</span>${editBtn}${delBtn}</span>`;
             }).join(' \xb7 ');
             akaDiv.innerHTML = entries + addAkaBtn;
@@ -845,7 +845,7 @@ function renderPanel() {
 
         const _hasFamily = _parHtml || _sibHtml || _spChHtml;
         const _arr = _familyOpen ? '\u25bc' : '\u25b6';
-        const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:0 0 10px 0">Family ${_arr}</button>`;
+        const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:0 0 10px 0">Family ${_arr}</button>`;
         const _subStyle = _familyOpen ? '' : ' style="display:none"';
         const _wrapSub = (html) => html ? html.replace(/<div class="family-sub"/g, `<div class="family-sub"${_subStyle}`) : '';
         const _addBtnsWrapped = _familyOpen || !_hasFamily ? _addBtns : `<div${_subStyle}>${_addBtns}</div>`;

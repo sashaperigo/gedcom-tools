@@ -1,19 +1,19 @@
 // Design tokens (Dark Editorial theme)
 // Use var (not const) so it becomes a window-level global in browser script tags
 var DESIGN = {
-    // Colors
-    BG_BASE: '#07070d',
-    BG_SURFACE: '#0d0d1f',
-    BG_NODE: '#131c30',
-    BG_NODE_FOCUS: '#2a1e4a',
+    // Colors — Dark Editorial palette (matches CSS variables in viz_ancestors.css)
+    BG_BASE: '#0a0f1c',      // --bg-app
+    BG_SURFACE: '#0d1526',   // --bg-surface
+    BG_NODE: '#0d1526',      // --bg-surface (node cards)
+    BG_NODE_FOCUS: '#2a1e4a', // --accent-bg
     BORDER: 'rgba(148,163,184,0.18)',
-    BORDER_FOCUS: '#a78bfa',
-    TEXT_PRIMARY: '#f1f5f9',
-    TEXT_SECONDARY: '#cbd5e1',
-    TEXT_MUTED: '#94a3b8',
-    TEXT_DIM: '#64748b',
-    ACCENT: '#818cf8',
-    ACCENT_SPOUSE: '#a78bfa',
+    BORDER_FOCUS: '#818cf8', // --accent
+    TEXT_PRIMARY: '#e4e4ff', // --text-primary
+    TEXT_SECONDARY: '#b8b8e0', // --text-secondary
+    TEXT_MUTED: '#727298',   // --text-muted
+    TEXT_DIM: '#424260',     // --text-disabled
+    ACCENT: '#818cf8',       // --accent
+    ACCENT_SPOUSE: '#a78bfa', // violet variant
     ACCENT_SOURCE: '#6ee7b7',
 
     // Layout constants (replaces viz_constants.js)

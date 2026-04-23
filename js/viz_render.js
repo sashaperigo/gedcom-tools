@@ -215,11 +215,11 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     const rect = _svgEl('rect', rectAttrs);
     g.appendChild(rect);
 
-    // Violet left-edge stripe for the focus node
+    // Accent left-edge stripe for the focus node
     if (isFocus) {
         const stripe = _svgEl('rect', {
             x: 0, y: 0, width: 3, height: h,
-            fill: '#a78bfa',
+            fill: DESIGN.ACCENT,
             rx: NODE_RADIUS,
         });
         g.appendChild(stripe);
