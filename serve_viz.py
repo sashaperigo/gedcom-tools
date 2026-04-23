@@ -1584,9 +1584,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             new_block = [f'0 {xref} SOUR']
             if titl:
                 new_block.append(f'1 TITL {titl}')
-            for tag, val in (('AUTH', auth), ('PUBL', publ), ('REPO', repo), ('NOTE', note)):
+            for tag, val in (('AUTH', auth), ('PUBL', publ), ('REPO', repo)):
                 if val:
                     new_block.append(f'1 {tag} {val}')
+            if note:
+                new_block.extend(_encode_note_lines(note, base_level=1))
             # Keep any unmanaged level-1 sub-tags (e.g. custom extensions),
             # but skip managed tags AND all of their subordinate (level > 1)
             # continuation lines so we don't orphan CONT/CONC lines.

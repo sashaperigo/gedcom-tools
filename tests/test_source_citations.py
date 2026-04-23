@@ -379,6 +379,52 @@ class TestSourcesJsInjection:
         # The xref must appear as a JSON key inside the SOURCES const
         assert '@S42@' in html
 
+    def test_sour_note_cont_lines_joined(self, tmp_path):
+        """CONT lines inside a SOUR NOTE must be joined with newline in SOURCES JS."""
+        import json, re
+        from viz_ancestors import build_tree_json, build_relatives_json
+
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL My Source
+1 NOTE First line
+2 CONT Second line
+0 @I1@ INDI
+1 NAME Test /Person/
+1 SOUR @S1@
+"""))
+        tree = build_tree_json('@I1@', indis, fams)
+        people = build_people_json(set(tree.values()), indis, fams=fams, sources=sources)
+        relatives = build_relatives_json(tree, indis, fams)
+        html = render_html(tree, 'Test Person', people, relatives, indis, fams,
+                           root_xref='@I1@', sources=sources)
+        m = re.search(r'const SOURCES\s*=\s*(\{.*?\});', html, re.DOTALL)
+        assert m, "SOURCES global not found in HTML"
+        src_data = json.loads(m.group(1))
+        assert src_data['@S1@']['note'] == 'First line\nSecond line'
+
+    def test_sour_titl_ged_val_decoded(self, tmp_path):
+        """@@-escaped at-sign in SOUR TITL must be decoded to @ in SOURCES JS."""
+        import json, re
+        from viz_ancestors import build_tree_json, build_relatives_json
+
+        indis, fams, sources = _parse(tmp_path, _ged("""\
+0 @S1@ SOUR
+1 TITL User@@Handle Records
+0 @I1@ INDI
+1 NAME Test /Person/
+1 SOUR @S1@
+"""))
+        tree = build_tree_json('@I1@', indis, fams)
+        people = build_people_json(set(tree.values()), indis, fams=fams, sources=sources)
+        relatives = build_relatives_json(tree, indis, fams)
+        html = render_html(tree, 'Test Person', people, relatives, indis, fams,
+                           root_xref='@I1@', sources=sources)
+        m = re.search(r'const SOURCES\s*=\s*(\{.*?\});', html, re.DOTALL)
+        assert m
+        src_data = json.loads(m.group(1))
+        assert src_data['@S1@']['titl'] == 'User@Handle Records'
+
 
 # ---------------------------------------------------------------------------
 # TestFamEventCitations — MARR/DIV citations on FAM records
@@ -1047,3 +1093,48 @@ class TestCitationAlreadyExists:
         ]
         insert_pos = len(lines)
         assert _citation_already_exists(lines, insert_pos, '@S1@', 'p.42', cite_level=2) is True
+
+
+# ---------------------------------------------------------------------------
+# TestEditSourceRecordNote — write side: NOTE must use CONT lines
+# ---------------------------------------------------------------------------
+
+class TestEditSourceRecordNote:
+    def test_encode_note_lines_multiline(self):
+        """_encode_note_lines splits newlines into CONT lines."""
+        from serve_viz import _encode_note_lines
+        lines = _encode_note_lines('First line\nSecond line', base_level=1)
+        assert lines[0] == '1 NOTE First line'
+        assert lines[1] == '2 CONT Second line'
+
+    def test_encode_note_lines_single(self):
+        """_encode_note_lines on a single line returns just the NOTE line."""
+        from serve_viz import _encode_note_lines
+        lines = _encode_note_lines('Single line', base_level=1)
+        assert lines == ['1 NOTE Single line']
+
+    def test_multiline_note_round_trip(self, tmp_path):
+        """SOUR NOTE with embedded newline round-trips: _encode_note_lines writes
+        CONT lines that parse_gedcom reads back as a newline-joined string."""
+        from serve_viz import _encode_note_lines
+
+        note_text = 'First line\nSecond line'
+        encoded = _encode_note_lines(note_text, base_level=1)
+
+        ged_lines = [
+            '0 HEAD',
+            '1 GEDC',
+            '2 VERS 5.5.1',
+            '0 @S1@ SOUR',
+            '1 TITL My Source',
+        ] + encoded + [
+            '0 @I1@ INDI',
+            '1 NAME Test /Person/',
+            '1 SOUR @S1@',
+            '0 TRLR',
+        ]
+        ged = tmp_path / 'roundtrip.ged'
+        ged.write_text('\n'.join(ged_lines), encoding='utf-8')
+
+        _, _, sources = parse_gedcom(str(ged))
+        assert sources['@S1@']['note'] == 'First line\nSecond line'
