@@ -22,6 +22,8 @@ from urllib.parse import urlparse, parse_qs, unquote
 from gedcom_linter import normalize_date, GEDCOM_DATE_RE
 
 import viz_ancestors as _viz_mod
+from gedcom_delete import delete_person_from_lines
+
 _viz_mtime: float | None = None
 
 
@@ -2127,6 +2129,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             indis, fams, sources = parse_gedcom(str(GED))
             updated = build_people_json({xref}, indis, fams=fams, sources=sources)
             resp = json.dumps({'ok': True, 'people': updated}).encode()
+
+        elif parsed.path == '/api/delete_person':
+            xref = body.get('xref', '').strip()
+            if not xref:
+                self.send_error(400, 'xref required')
+                return
+            lines = GED.read_text(encoding='utf-8').splitlines()
+            new_lines, navigate_to, err = delete_person_from_lines(lines, xref)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                _write_gedcom_atomic(new_lines)
+                print(f"[person-delete] {xref} → navigate to {navigate_to}")
+                regenerate(navigate_to)
+                resp = json.dumps({'ok': True, 'navigate_to': navigate_to}).encode()
 
         else:
             self.send_error(404)
