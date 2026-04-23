@@ -56,6 +56,13 @@ let _noteEditXref = null,
 let _copiedCitation = null;
 let _eventModalPasteOnSave = false;
 
+const _pasteIconSvg =
+    `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" ` +
+    `stroke-width="1.8" stroke-linecap="round">` +
+    `<rect x="3" y="1" width="7" height="9" rx="1.5"/>` +
+    `<path d="M3 3H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1v-1"/>` +
+    `</svg>`;
+
 function copyCitation(citationFields, label) {
     _copiedCitation = { ...citationFields, label };
 }
@@ -241,20 +248,21 @@ function _toggleEventModalSourceSection() {
 }
 
 function _refreshEventModalPasteBtn() {
+    const row = document.getElementById('event-modal-paste-citation-row');
     const btn = document.getElementById('event-modal-paste-citation-btn');
-    if (!btn) return;
+    if (!btn || !row) return;
     const c = _copiedCitation;
     if (!c) {
-        btn.style.display = 'none';
+        row.style.display = 'none';
         return;
     }
-    btn.style.display = '';
+    row.style.display = '';
     const label = (c.label || '').slice(0, 50) || 'citation';
     if (_eventModalPasteOnSave) {
-        btn.textContent = '✓ ' + label;
+        btn.innerHTML = _pasteIconSvg + `Paste: “${label}” ✓`;
         btn.classList.add('armed');
     } else {
-        btn.textContent = 'Paste: ' + label;
+        btn.innerHTML = _pasteIconSvg + `Paste: “${label}”`;
         btn.classList.remove('armed');
     }
 }
@@ -1045,12 +1053,7 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
     const plusIconSvg =
         `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" ` +
         `stroke-width="2" stroke-linecap="round"><path d="M6 1v10M1 6h10"/></svg>`;
-    const pasteIconSvg =
-        `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" ` +
-        `stroke-width="1.8" stroke-linecap="round">` +
-        `<rect x="3" y="1" width="7" height="9" rx="1.5"/>` +
-        `<path d="M3 3H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1v-1"/>` +
-        `</svg>`;
+    const pasteIconSvg = _pasteIconSvg;
 
     let html = '';
     if (!citations || citations.length === 0) {

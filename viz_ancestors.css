@@ -1025,16 +1025,6 @@ header h1 .root-name-accent {
 .event-modal-source-toggle-btn:hover {
     text-decoration: underline;
 }
-.event-modal-paste-citation-btn {
-    margin-left: 10px;
-    color: var(--emerald);
-}
-.event-modal-paste-citation-btn.armed {
-    opacity: 0.85;
-}
-.event-modal-paste-citation-btn.armed:hover {
-    opacity: 1;
-}
 
 .note-modal-save,
 .event-modal-save {

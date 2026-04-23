@@ -1175,13 +1175,13 @@ class TestAddEventModalSourceSection:
         )
 
     def test_paste_citation_btn_hidden_by_default(self, _html):
-        """Paste citation button must be hidden by default."""
+        """Paste citation row must be hidden by default."""
         import re
         match = re.search(
-            r'id="event-modal-paste-citation-btn"[^>]*style="[^"]*display\s*:\s*none', _html
+            r'id="event-modal-paste-citation-row"[^>]*style="[^"]*display\s*:\s*none', _html
         )
         assert match, (
-            'event-modal-paste-citation-btn must have style="display:none" by default'
+            'event-modal-paste-citation-row must have style="display:none" by default'
         )
 
     def test_fact_key_derived_from_response(self):
