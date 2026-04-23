@@ -214,7 +214,7 @@ header h1 .root-name-accent {
     right: 0;
     width: var(--panel-w);
     height: calc(100vh - var(--header-h, 60px));
-    background: var(--bg-surface);
+    background: #07070d;
     border-left: 1px solid var(--border);
     overflow-y: auto;
     transform: translateX(100%);
@@ -234,7 +234,7 @@ header h1 .root-name-accent {
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
-    background: var(--bg-surface);
+    background: #07070d;
     z-index: 1;
     display: flex;
     align-items: flex-start;
@@ -244,34 +244,50 @@ header h1 .root-name-accent {
     width: 4px;
     flex-shrink: 0;
     align-self: stretch;
-    background: var(--text-disabled);
+    background: #a78bfa;
 }
 
 #detail-header-inner {
     flex: 1;
-    padding: 14px 8px 14px 14px;
+    padding: 20px 8px 16px 14px;
     min-width: 0;
 }
 
+.detail-person-id {
+    font-size: 10px;
+    color: var(--text-disabled);
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 6px;
+}
+
 #detail-name {
-    font-size: 17px;
-    font-weight: 700;
+    font-size: 20px;
+    font-weight: 600;
     color: var(--text-primary);
-    line-height: 1.3;
-    margin-bottom: 10px;
+    line-height: 1.2;
+    letter-spacing: -0.4px;
+    margin-bottom: 0;
 }
 
 .sex-sym {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin-left: 5px;
+    font-size: 12px;
+    color: var(--text-disabled);
+    margin-left: 8px;
+    font-weight: 400;
 }
 
 #detail-aka {
-    font-size: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    margin-top: 5px;
+    font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
-    margin-bottom: 10px;
+    font-family: 'JetBrains Mono', monospace;
     line-height: 1.5;
 }
 
@@ -287,19 +303,20 @@ header h1 .root-name-accent {
 
 #panel-close-btn {
     background: none;
-    border: none;
-    color: var(--text-disabled);
-    font-size: 20px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
     cursor: pointer;
-    padding: 2px;
+    padding: 3px 8px;
     line-height: 1;
+    font-family: inherit;
 }
 
 #panel-close-btn:hover {
     color: var(--text-primary);
 }
 
-/* ── Panel lifespan + nationalities ────────────────────────── */
+/* ── Panel lifespan ────────────────────────────────────────── */
 #detail-lifespan {
     display: flex;
     align-items: center;
@@ -323,22 +340,24 @@ header h1 .root-name-accent {
     color: var(--text-muted);
 }
 
+/* ── Nationalities ─────────────────────────────────────────── */
 #detail-nationalities {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
-    margin-top: 10px;
-    margin-bottom: 6px;
+    margin-top: 8px;
+    margin-bottom: 4px;
 }
 
 .panel-nati-pill {
-    background: var(--accent-bg);
-    border: 1px solid var(--accent);
-    color: var(--accent-light);
-    font-size: 11px;
-    border-radius: 12px;
-    padding: 2px 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    border-radius: 0;
+    padding: 1px 7px;
 }
 
 /* ── Panel sections ─────────────────────────────────────────── */
@@ -565,34 +584,33 @@ header h1 .root-name-accent {
     color: var(--text-primary);
 }
 
-/* ── Lifespan bar ───────────────────────────────────────── */
+/* ── Lifespan row (mono text, no bar) ───────────────────── */
 #detail-lifespan-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
     font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 6px;
 }
 
 .lifespan-year {
-    color: var(--text-secondary);
+    color: var(--text-muted);
     white-space: nowrap;
     flex-shrink: 0;
 }
 
 .lifespan-bar-track {
-    flex: 1;
-    height: 4px;
-    background: var(--bg-hover);
-    border-radius: 2px;
-    overflow: hidden;
+    display: none;
 }
 
 .lifespan-bar-fill {
-    height: 100%;
-    border-radius: 2px;
+    display: none;
 }
 
-/* width set by JS inline style */
+.lifespan-sep {
+    color: var(--text-disabled);
+    margin: 0 4px;
+}
+
 .lifespan-age {
     font-size: 11px;
     color: var(--text-muted);
@@ -604,17 +622,19 @@ header h1 .root-name-accent {
 #detail-body {
     padding: 18px 20px 28px 20px;
     flex: 1;
+    background: #07070d;
 }
 
 /* ── Notes ──────────────────────────────────────────────── */
 #detail-notes {
-    margin-bottom: 20px;
+    margin-bottom: 18px;
 }
 
 .notes-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    margin-bottom: 8px;
 }
 
 .notes-toggle {
@@ -628,7 +648,8 @@ header h1 .root-name-accent {
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    padding: 0 0 10px 0;
+    padding: 0;
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .notes-toggle:hover {
@@ -637,20 +658,18 @@ header h1 .root-name-accent {
 
 .note-add-btn {
     background: none;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--border);
     color: var(--text-muted);
-    border-radius: 4px;
+    border-radius: 0;
     padding: 2px 8px;
     cursor: pointer;
     font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 10px;
+    font-family: inherit;
 }
 
 .note-add-btn:hover {
     color: var(--text-secondary);
-    border-color: rgba(255, 255, 255, 0.3);
+    border-color: var(--text-muted);
 }
 
 .notes-toggle-arrow {
@@ -664,6 +683,7 @@ header h1 .root-name-accent {
 
 .note-card-wrap {
     position: relative;
+    margin-bottom: 8px;
 }
 
 .note-actions {
@@ -679,33 +699,31 @@ header h1 .root-name-accent {
 }
 
 .note-action-btn {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
     color: var(--text-secondary);
-    border-radius: 4px;
+    border-radius: 3px;
     padding: 2px 6px;
     cursor: pointer;
     font-size: 11px;
 }
 
 .note-action-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.12);
     color: var(--text-primary);
 }
 
 .note-card {
-    font-size: 13px;
-    color: var(--text-primary);
-    line-height: 1.75;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.65;
     white-space: pre-wrap;
     overflow-wrap: break-word;
     word-break: break-word;
     padding: 10px 14px 26px 14px;
-    /* extra bottom padding for the src badge overlay */
-    background: rgba(254, 249, 195, 0.1);
+    background: rgba(254, 235, 138, 0.07);
     border-radius: 6px;
-    border-left: 3px solid rgba(254, 243, 160, 0.35);
-    margin-bottom: 10px;
+    border-left: 2px solid rgba(254, 235, 138, 0.35);
     max-height: 260px;
     overflow-y: auto;
 }
@@ -716,15 +734,57 @@ header h1 .root-name-accent {
 }
 
 .note-card.shared {
-    background: rgba(252, 165, 138, 0.12);
-    border-left-color: rgba(251, 113, 83, 0.5);
+    background: rgba(147, 160, 253, 0.07);
+    border-left-color: rgba(147, 160, 253, 0.35);
 }
 
 .note-card.shared a {
-    color: #fca5a5;
+    color: #a5b4fc;
 }
 
 /* ── Modals ─────────────────────────────────────────────── */
+#confirm-delete-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    z-index: 1300;
+    align-items: center;
+    justify-content: center;
+}
+#confirm-delete-overlay.open { display: flex; }
+#confirm-delete-modal {
+    background: #12121f;
+    border: 1px solid #3a2a4a;
+    border-radius: 10px;
+    padding: 28px 28px 20px;
+    width: 340px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+#confirm-delete-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #e4e4ff;
+    margin: 0 0 10px;
+}
+#confirm-delete-body {
+    font-size: 13px;
+    color: #94a3b8;
+    margin: 0 0 20px;
+    line-height: 1.5;
+}
+.delete-confirm-btn {
+    background: #7f1d1d;
+    color: #fca5a5;
+    border: 1px solid #ef4444;
+    border-radius: 6px;
+    padding: 7px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+}
+.delete-confirm-btn:hover { background: #991b1b; }
+
 #note-modal-overlay,
 #event-modal-overlay,
 #name-modal-overlay,
@@ -1647,7 +1707,7 @@ header h1 .root-name-accent {
     display: none;
 }
 
-/* ── Citation badges ─────────────────────────────────────── */
+/* ── Citation badges (gold) ──────────────────────────────── */
 .evt-src-badge,
 .note-src-badge {
     display: inline-flex;
@@ -1655,29 +1715,23 @@ header h1 .root-name-accent {
     gap: 4px;
     font-size: 10px;
     font-weight: 500;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.25);
-    color: var(--accent-light);
-    border-radius: 4px;
-    padding: 2px 7px 2px 6px;
+    background: transparent;
+    border: 1px solid #c4a35a;
+    color: #c4a35a;
+    border-radius: 12px;
+    padding: 2px 8px;
     cursor: pointer;
     white-space: nowrap;
     line-height: 1.5;
     letter-spacing: 0.01em;
     transition: color 0.15s, border-color 0.15s, background 0.15s;
     flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .evt-src-badge::before,
 .note-src-badge::before {
-    content: '';
-    display: inline-block;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--accent);
-    opacity: 0.7;
-    flex-shrink: 0;
+    display: none;
 }
 
 .note-src-badge {
@@ -1689,9 +1743,8 @@ header h1 .root-name-accent {
 
 .evt-src-badge:hover,
 .note-src-badge:hover {
-    background: rgba(59, 130, 246, 0.16);
-    border-color: rgba(147, 197, 253, 0.55);
-    color: var(--accent-hover);
+    background: #c4a35a;
+    color: #07070d;
 }
 
 .evt-src-badge-empty,
@@ -1703,53 +1756,90 @@ header h1 .root-name-accent {
 
 .evt-src-badge-empty::before,
 .note-src-badge-empty::before {
-    background: var(--text-disabled);
-    opacity: 0.4;
+    display: none;
 }
 
 .evt-src-badge-empty:hover,
 .note-src-badge-empty:hover {
-    border-color: var(--accent-light);
-    color: var(--accent-light);
-    background: rgba(59, 130, 246, 0.06);
+    border-color: #c4a35a;
+    color: #c4a35a;
+    background: transparent;
 }
 
-.evt-src-badge-empty:hover::before,
-.note-src-badge-empty:hover::before {
-    background: var(--accent-light);
-    opacity: 0.7;
+/* ── Events section label ───────────────────────────────── */
+.events-section-label {
+    font-size: 10px;
+    color: var(--text-disabled);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 10px;
+    display: block;
 }
 
 /* ── Timeline ───────────────────────────────────────────── */
 #detail-timeline {
     position: relative;
-    padding-left: var(--timeline-indent);
+    padding-left: 0;
 }
 
 .timeline-spine {
-    position: absolute;
-    left: 7px;
-    top: 6px;
-    bottom: 6px;
-    width: 2px;
-    background: linear-gradient(to bottom, var(--bg-hover) 0%, transparent 100%);
+    display: none;
 }
 
+/* Event card layout */
 .evt-entry {
     position: relative;
-    margin-bottom: 14px;
-    padding-left: 4px;
-    padding-right: 92px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--bg-node, #131330);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    overflow: hidden;
+}
+
+.evt-year-col {
+    width: 44px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    padding-right: 10px;
+}
+
+.evt-year {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: block;
+}
+
+.evt-tag-abbrev {
+    font-size: 9px;
+    color: var(--text-disabled);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    display: block;
+}
+
+.evt-content {
+    flex: 1;
+    min-width: 0;
 }
 
 .fact-del {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 13px;
-    color: var(--text-secondary);
-    padding: 2px 4px;
-    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-disabled);
+    padding: 1px 4px;
+    border-radius: 3px;
     line-height: 1;
 }
 
@@ -1758,50 +1848,33 @@ header h1 .root-name-accent {
 }
 
 .evt-dot {
-    position: absolute;
-    left: -24px;
-    top: 5px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 2px solid var(--bg-surface);
+    display: none;
 }
 
 .evt-dot.dot-anchor {
-    width: 12px;
-    height: 12px;
-    left: -25px;
-    top: 4px;
-}
-
-.evt-year {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-secondary);
-    margin-right: 7px;
-    font-variant-numeric: tabular-nums;
+    display: none;
 }
 
 .evt-prose {
-    font-size: 13px;
-    color: var(--text-label);
-    line-height: 1.5;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.4;
     font-weight: 500;
 }
 
 .evt-meta {
     font-size: 11px;
     color: var(--text-muted);
-    margin-top: 2px;
+    margin-top: 3px;
     line-height: 1.4;
-    padding-left: 0;
 }
 
 .evt-note-inline {
     font-size: 11px;
-    color: var(--text-secondary);
+    color: var(--text-muted);
     margin-top: 3px;
     font-style: italic;
+    line-height: 1.5;
 }
 
 /* ── Also lived in ──────────────────────────────────────── */
@@ -1832,6 +1905,7 @@ header h1 .root-name-accent {
     color: var(--text-disabled);
     margin-bottom: 10px;
     display: block;
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .facts-subheading {
@@ -1842,6 +1916,7 @@ header h1 .root-name-accent {
     margin-bottom: 5px;
     margin-top: 10px;
     display: block;
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .facts-subheading:first-of-type {
@@ -2000,8 +2075,8 @@ button.sources-section-title:hover .sources-toggle-arrow {
     width: 24px;
     height: 24px;
     border-radius: 5px;
-    background: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.18);
+    background: rgba(129, 140, 248, 0.1);
+    border: 1px solid rgba(129, 140, 248, 0.18);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2012,7 +2087,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
 .source-card-icon svg {
     width: 12px;
     height: 12px;
-    color: var(--accent-light);
+    color: #818cf8;
     opacity: 0.7;
 }
 
@@ -2138,6 +2213,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
     margin-bottom: 10px;
     margin-top: 16px;
     display: block;
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .also-lived-heading:first-child {
@@ -2207,13 +2283,13 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .family-link {
-    color: var(--accent-light);
+    color: #818cf8;
     text-decoration: none;
     cursor: pointer;
 }
 
 .family-link:hover {
-    color: var(--accent-hover);
+    color: #a5b4fc;
     text-decoration: underline;
 }
 

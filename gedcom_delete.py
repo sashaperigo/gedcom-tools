@@ -13,26 +13,68 @@ def _find_record_block(lines, xref, record_tag):
     return start, end, None
 
 
-def _find_navigate_to_parent(lines, xref):
-    """Return xref of the first parent reachable via FAMC, or None."""
+def _find_navigate_to(lines, xref):
+    """Return the best xref to navigate to after deleting xref.
+
+    Priority: father → mother → spouse → oldest child → None (home person).
+    """
     indi_start, indi_end, err = _find_record_block(lines, xref, 'INDI')
     if err:
         return None
-    famc_xref = None
+
+    famc_xrefs = []
+    fams_xrefs = []
     for line in lines[indi_start:indi_end]:
         parts = line.split()
-        if len(parts) == 3 and parts[0] == '1' and parts[1] == 'FAMC':
-            famc_xref = parts[2]
-            break
-    if not famc_xref:
-        return None
-    fam_start, fam_end, err = _find_record_block(lines, famc_xref, 'FAM')
-    if err:
-        return None
-    for line in lines[fam_start:fam_end]:
-        parts = line.split()
-        if len(parts) == 3 and parts[0] == '1' and parts[1] in ('HUSB', 'WIFE'):
-            return parts[2]
+        if len(parts) == 3 and parts[0] == '1':
+            if parts[1] == 'FAMC':
+                famc_xrefs.append(parts[2])
+            elif parts[1] == 'FAMS':
+                fams_xrefs.append(parts[2])
+
+    # Father (HUSB) then Mother (WIFE) from birth family
+    for famc_xref in famc_xrefs:
+        fam_start, fam_end, err = _find_record_block(lines, famc_xref, 'FAM')
+        if err:
+            continue
+        husb = next(
+            (ln.split()[2] for ln in lines[fam_start:fam_end]
+             if ln.split()[:2] == ['1', 'HUSB']),
+            None,
+        )
+        if husb:
+            return husb
+        wife = next(
+            (ln.split()[2] for ln in lines[fam_start:fam_end]
+             if ln.split()[:2] == ['1', 'WIFE']),
+            None,
+        )
+        if wife:
+            return wife
+
+    # Spouse from first marriage family
+    for fams_xref in fams_xrefs:
+        fam_start, fam_end, err = _find_record_block(lines, fams_xref, 'FAM')
+        if err:
+            continue
+        for line in lines[fam_start:fam_end]:
+            parts = line.split()
+            if len(parts) == 3 and parts[0] == '1' and parts[1] in ('HUSB', 'WIFE') and parts[2] != xref:
+                return parts[2]
+
+    # Oldest child (first CHIL listed) from any marriage family
+    for fams_xref in fams_xrefs:
+        fam_start, fam_end, err = _find_record_block(lines, fams_xref, 'FAM')
+        if err:
+            continue
+        chil = next(
+            (ln.split()[2] for ln in lines[fam_start:fam_end]
+             if ln.split()[:2] == ['1', 'CHIL']),
+            None,
+        )
+        if chil:
+            return chil
+
     return None
 
 
@@ -56,7 +98,7 @@ def delete_person_from_lines(lines: list[str], xref: str) -> tuple[list[str], st
     if err:
         return lines, None, err
 
-    navigate_to = _find_navigate_to_parent(lines, xref)
+    navigate_to = _find_navigate_to(lines, xref)
 
     remove = set(range(indi_start, indi_end))   # indices of lines to drop
     fams_to_delete: set[str] = set()            # FAM xrefs deleted entirely

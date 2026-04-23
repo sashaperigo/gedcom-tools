@@ -1971,25 +1971,35 @@ function toggleSpouseMenuFam(famXref) {
 
 // ── Delete person ─────────────────────────────────────────────────────────────
 
-async function deletePerson(xref) {
+function deletePerson(xref) {
     const person = PEOPLE[xref];
     const name = person ? (person.name || xref) : xref;
-    if (!confirm(`Delete "${name}" and all references to them from the GEDCOM?\n\nA backup will be saved to .ged.bak.`)) {
-        return;
-    }
-    try {
-        const data = await apiDeletePerson(xref);
-        if (!data.ok) {
-            alert('Delete failed: ' + (data.error || 'unknown error'));
-            return;
+    const overlay = document.getElementById('confirm-delete-overlay');
+    const body = document.getElementById('confirm-delete-body');
+    const cancelBtn = document.getElementById('confirm-delete-cancel');
+    const okBtn = document.getElementById('confirm-delete-ok');
+    if (!overlay) { return; }
+    body.textContent = `Delete "${name}" and all references to them from the GEDCOM? A backup will be saved to .ged.bak.`;
+    overlay.classList.add('open');
+
+    const cleanup = () => { overlay.classList.remove('open'); cancelBtn.onclick = null; okBtn.onclick = null; };
+    cancelBtn.onclick = cleanup;
+    okBtn.onclick = async () => {
+        cleanup();
+        try {
+            const data = await apiDeletePerson(xref);
+            if (!data.ok) {
+                alert('Delete failed: ' + (data.error || 'unknown error'));
+                return;
+            }
+            const dest = data.navigate_to
+                ? `/viz.html?person=${encodeURIComponent(data.navigate_to)}`
+                : '/viz.html';
+            window.location.href = dest;
+        } catch (e) {
+            alert('Delete failed: ' + e.message);
         }
-        const dest = data.navigate_to
-            ? `/viz.html?person=${encodeURIComponent(data.navigate_to)}`
-            : '/viz.html';
-        window.location.href = dest;
-    } catch (e) {
-        alert('Delete failed: ' + e.message);
-    }
+    };
 }
 
 // ---------------------------------------------------------------------------

@@ -207,3 +207,73 @@ def test_person_in_two_families():
     assert '1 HUSB @I1@' not in new_lines
     assert '1 WIFE @I3@' in new_lines
     assert '1 CHIL @I4@' in new_lines
+
+# ── Navigate-to cascade: spouse ───────────────────────────────────────────────
+def test_navigate_to_spouse_when_no_parent():
+    lines = _lines(
+        '0 HEAD',
+        '0 @I1@ INDI',
+        '1 NAME Alice /Test/',
+        '1 FAMS @F1@',
+        '0 @I2@ INDI',
+        '1 NAME Bob /Test/',
+        '1 FAMS @F1@',
+        '0 @F1@ FAM',
+        '1 HUSB @I2@',
+        '1 WIFE @I1@',
+        '0 TRLR',
+    )
+    new_lines, nav, err = delete_person_from_lines(lines, '@I1@')
+    assert err is None
+    assert nav == '@I2@'
+
+# ── Navigate-to cascade: child when no parent or spouse ───────────────────────
+def test_navigate_to_child_when_no_parent_or_spouse():
+    lines = _lines(
+        '0 HEAD',
+        '0 @I1@ INDI',
+        '1 NAME Parent /Test/',
+        '1 FAMS @F1@',
+        '0 @I2@ INDI',
+        '1 NAME Child /Test/',
+        '1 FAMC @F1@',
+        '0 @F1@ FAM',
+        '1 WIFE @I1@',
+        '1 CHIL @I2@',
+        '0 TRLR',
+    )
+    new_lines, nav, err = delete_person_from_lines(lines, '@I1@')
+    assert err is None
+    assert nav == '@I2@'
+
+# ── Navigate-to: mother preferred over child when both present ────────────────
+def test_navigate_to_mother_over_child():
+    lines = _lines(
+        '0 HEAD',
+        '0 @IDAD@ INDI',
+        '1 NAME Father /Test/',
+        '1 FAMS @FPAR@',
+        '0 @IMOM@ INDI',
+        '1 NAME Mother /Test/',
+        '1 FAMS @FPAR@',
+        '0 @ICHLD@ INDI',
+        '1 NAME Child /Test/',
+        '1 FAMC @FPAR@',
+        '1 FAMS @FMAR@',
+        '0 @IGRAND@ INDI',
+        '1 NAME Grandchild /Test/',
+        '1 FAMC @FMAR@',
+        '0 @FPAR@ FAM',
+        '1 HUSB @IDAD@',
+        '1 WIFE @IMOM@',
+        '1 CHIL @ICHLD@',
+        '0 @FMAR@ FAM',
+        '1 WIFE @ICHLD@',
+        '1 CHIL @IGRAND@',
+        '0 TRLR',
+    )
+    new_lines, nav, err = delete_person_from_lines(lines, '@ICHLD@')
+    assert err is None
+    # ICHLD has both parents (IDAD=father) and a child (IGRAND)
+    # Father should win
+    assert nav == '@IDAD@'

@@ -389,12 +389,23 @@ function renderPanel() {
         return;
     }
 
-    const accent = { 'M': '#3b82f6', 'F': '#a855f7' } [data.sex] || '#475569';
+    const accent = '#a78bfa';
     const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
 
-    // ── Accent bar ────────────────────────────────────────────────────────
+    // ── Accent bar (always violet) ────────────────────────────────────────
     const accentEl = document.getElementById('detail-accent-bar');
-    if (accentEl) accentEl.style.background = accent;
+    if (accentEl) accentEl.style.background = '#a78bfa';
+
+    // ── ID badge ──────────────────────────────────────────────────────────
+    const headerInner = document.getElementById('detail-header-inner');
+    if (headerInner) {
+        const existing = headerInner.querySelector('.detail-person-id');
+        if (existing) existing.remove();
+        const idBadge = document.createElement('div');
+        idBadge.className = 'detail-person-id';
+        idBadge.textContent = 'Person \xb7 ' + xref.toUpperCase();
+        headerInner.insertBefore(idBadge, headerInner.firstChild);
+    }
 
     // ── Name + sex symbol + edit button ──────────────────────────────────
     const nameEl = document.getElementById('detail-name');
@@ -421,24 +432,20 @@ function renderPanel() {
     // ── Lifespan bar ──────────────────────────────────────────────────────
     const by = data.birth_year ? parseInt(data.birth_year) : null;
     const dy = data.death_year ? parseInt(data.death_year) : null;
-    // Lifespan bar — write to detail-lifespan-row (primary) or detail-lifespan (fallback)
+    // Lifespan — mono text only (bar hidden via CSS)
     const lifespanRow = document.getElementById('detail-lifespan-row');
     if (lifespanRow) {
         if (by) {
             const span = (dy && dy > by) ? dy - by : null;
-            const fillStyle = dy ?
-                `background: linear-gradient(90deg, ${accent}, #6366f1); width: 100%;` :
-                `background: linear-gradient(90deg, ${accent}, transparent); width: 100%;`;
             lifespanRow.innerHTML =
                 `<span class="lifespan-year">${by}</span>` +
-                `<div class="lifespan-bar-track"><div class="lifespan-bar-fill" style="${fillStyle}"></div></div>` +
+                `<span class="lifespan-sep">\u2013</span>` +
                 `<span class="lifespan-year">${dy || '\u2014'}</span>` +
-                (span ? `<span class="lifespan-age">~${span} years</span>` : '');
+                (span ? `<span class="lifespan-age">\u00b7 ${span} yrs</span>` : '');
         } else {
             lifespanRow.innerHTML = '';
         }
     } else {
-        // Backward-compat: detail-lifespan (simple years display)
         const lifespanEl = document.getElementById('detail-lifespan');
         if (lifespanEl) {
             let html = '';
@@ -447,7 +454,7 @@ function renderPanel() {
             if (dy) html += `<span class="panel-death-year">${escHtml(String(dy))}</span>`;
             if (by && dy) {
                 const age = dy - by;
-                if (age > 0) html += `<span class="panel-age">age ${age}</span>`;
+                if (age > 0) html += `<span class="panel-age">\u00b7 ${age} yrs</span>`;
             }
             lifespanEl.innerHTML = html;
         }
@@ -635,14 +642,20 @@ function renderPanel() {
                 // Godparents (CHR/BAPM)
                 const godparentHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
 
+                const tagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
+                const yearColStr = evt._yearRange ? escHtml(evt._yearRange) :
+                    (evtYear ? String(evtYear) : '');
                 html +=
                     `<div class="evt-entry">` +
-                    `<div class="${dotCls}" style="background:${color}"></div>` +
-                    `<div class="evt-prose">${yearStr}${escHtml(prose)}</div>` +
+                    `<div class="evt-year-col">${yearColStr}</div>` +
+                    `<div class="evt-content">` +
+                    `<span class="evt-tag-abbrev">${tagAbbr}</span>` +
+                    `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                     (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
                     noteInl +
                     godparentHtml +
                     `<div class="evt-actions">${srcBadge}${convertBtn}${editBtn}${delBtn}</div>` +
+                    `</div>` +
                     `</div>`;
             }
             html += _addEvtBtn;
@@ -663,13 +676,17 @@ function renderPanel() {
                     '';
                 const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
                 const undGpHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
+                const undTagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
                 return `<div class="evt-entry">` +
-                    `<div class="evt-dot" style="background:${color}"></div>` +
-                    `<div class="evt-prose">${escHtml(prose)}</div>` +
+                    `<div class="evt-year-col"></div>` +
+                    `<div class="evt-content">` +
+                    `<span class="evt-tag-abbrev">${undTagAbbr}</span>` +
+                    `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                     (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
                     noteInl +
                     undGpHtml +
                     `<div class="evt-actions">${srcBadge}${editBtn}${delBtn}</div>` +
+                    `</div>` +
                     `</div>`;
             }).join('');
         }
