@@ -610,23 +610,32 @@ let _nameModalXref = null;
 
 function editName(xref) {
     _nameModalXref = xref;
-    const name = (_personName(xref) || '').trim();
-    // Split "Given /Surname/" or just "Given Surname" into parts
-    const surnameMatch = name.match(/^(.*?)\s*\/([^/]*)\/\s*(.*)$/);
-    let given = '',
-        surname = '';
-    if (surnameMatch) {
-        given = (surnameMatch[1] + ' ' + (surnameMatch[3] || '')).trim();
-        surname = surnameMatch[2].trim();
+    const person = PEOPLE[xref] || {};
+    const name = (person.name || '').trim();
+
+    // Use explicit sub-tag fields when present; fall back to heuristic string split
+    let given = '', surname = '', suffix = '';
+    if (person.name_given != null || person.name_surname != null) {
+        given   = person.name_given   || '';
+        surname = person.name_surname || '';
+        suffix  = person.name_suffix  || '';
     } else {
-        // Try to split on last word as surname heuristic
-        const parts = name.split(' ');
-        surname = parts.length > 1 ? parts.pop() : '';
-        given = parts.join(' ');
+        const surnameMatch = name.match(/^(.*?)\s*\/([^/]*)\/\s*(.*)$/);
+        if (surnameMatch) {
+            given   = (surnameMatch[1] + ' ' + (surnameMatch[3] || '')).trim();
+            surname = surnameMatch[2].trim();
+        } else {
+            const parts = name.split(' ');
+            surname = parts.length > 1 ? parts.pop() : '';
+            given   = parts.join(' ');
+        }
     }
+
     document.getElementById('name-modal-title').textContent = 'Edit Name \u2014 ' + name;
-    document.getElementById('name-modal-given').value = given;
+    document.getElementById('name-modal-given').value   = given;
     document.getElementById('name-modal-surname').value = surname;
+    const suffixEl = document.getElementById('name-modal-suffix');
+    if (suffixEl) suffixEl.value = suffix;
     document.getElementById('name-modal-overlay').classList.add('open');
     setTimeout(() => document.getElementById('name-modal-given').focus(), 50);
 }
@@ -639,7 +648,9 @@ function closeNameModal() {
 async function submitNameModal() {
     const xref = _nameModalXref;
     const givenName = document.getElementById('name-modal-given').value.trim();
-    const surname = document.getElementById('name-modal-surname').value.trim();
+    const surname   = document.getElementById('name-modal-surname').value.trim();
+    const suffixEl  = document.getElementById('name-modal-suffix');
+    const suffix    = suffixEl ? suffixEl.value.trim() : '';
     closeNameModal();
     try {
         const resp = await fetch('/api/edit_name', {
@@ -649,6 +660,7 @@ async function submitNameModal() {
                 xref,
                 given_name: givenName,
                 surname,
+                suffix,
                 current_person: window._currentPerson || null
             }),
         });
@@ -1947,6 +1959,7 @@ if (typeof module !== 'undefined' && module.exports) {
         showAddSourceModal,
         _evtLabel,
         editEvent,
+        editName,
         deleteNote,
         submitNoteEdit,
         editNote,

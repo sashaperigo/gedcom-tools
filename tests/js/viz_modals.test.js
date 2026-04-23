@@ -679,6 +679,7 @@ const {
     showEditSourceModal,
     showAddGodparentModal,
     showAddSourceModal,
+    editName,
 } = require('../../js/viz_modals.js');
 
 // Helper to build a fake modal DOM with the elements each modal needs.
@@ -1991,5 +1992,66 @@ describe('spouse-menu modal', () => {
         const fam2Row = list.innerHTML.slice(fam2Idx);
         expect(fam1Row).toContain('checked');
         expect(fam2Row).not.toContain('checked');
+    });
+});
+
+// ── editName suffix pre-fill ──────────────────────────────────────────────
+
+describe('editName suffix pre-fill', () => {
+    let overlay, givenInp, surnameInp, suffixInp, titleEl;
+
+    beforeEach(() => {
+        overlay    = _fakeModalEl('name-modal-overlay');
+        givenInp   = _fakeModalEl('name-modal-given');
+        surnameInp = _fakeModalEl('name-modal-surname');
+        suffixInp  = _fakeModalEl('name-modal-suffix');
+        titleEl    = _fakeModalEl('name-modal-title');
+
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Pietro Capponi I',
+                name_given: 'Pietro',
+                name_surname: 'Capponi',
+                name_suffix: 'I',
+            },
+        };
+        global.document = {
+            getElementById(id) {
+                if (id === 'name-modal-overlay')  return overlay;
+                if (id === 'name-modal-given')    return givenInp;
+                if (id === 'name-modal-surname')  return surnameInp;
+                if (id === 'name-modal-suffix')   return suffixInp;
+                if (id === 'name-modal-title')    return titleEl;
+                return _fakeModalEl(id);
+            },
+            addEventListener: () => {},
+        };
+        global.setState = vi.fn();
+    });
+
+    it('pre-fills suffix from name_suffix field', () => {
+        editName('@I1@');
+        expect(suffixInp.value).toBe('I');
+    });
+
+    it('pre-fills given name from name_given field (not heuristic)', () => {
+        editName('@I1@');
+        expect(givenInp.value).toBe('Pietro');
+    });
+
+    it('pre-fills surname from name_surname field (not heuristic)', () => {
+        editName('@I1@');
+        expect(surnameInp.value).toBe('Capponi');
+    });
+
+    it('suffix is empty string when name_suffix is null', () => {
+        global.PEOPLE['@I1@'] = {
+            name: 'John Smith',
+            name_given: 'John',
+            name_surname: 'Smith',
+            name_suffix: null,
+        };
+        editName('@I1@');
+        expect(suffixInp.value).toBe('');
     });
 });
