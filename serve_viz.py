@@ -2133,7 +2133,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == '/api/delete_person':
             xref = body.get('xref', '').strip()
             if not xref:
-                self.send_error(400, 'xref required')
+                self.send_error(400, 'xref is required')
                 return
             lines = GED.read_text(encoding='utf-8').splitlines()
             new_lines, navigate_to, err = delete_person_from_lines(lines, xref)
