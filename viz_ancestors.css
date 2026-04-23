@@ -1018,7 +1018,7 @@ header h1 .root-name-accent {
     border: none;
     color: var(--accent-light);
     cursor: pointer;
-    font-size: 0.85em;
+    font-size: 11px;
     padding: 0;
     text-align: left;
 }
