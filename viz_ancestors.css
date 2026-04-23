@@ -1025,6 +1025,16 @@ header h1 .root-name-accent {
 .event-modal-source-toggle-btn:hover {
     text-decoration: underline;
 }
+.event-modal-paste-citation-btn {
+    margin-left: 10px;
+    color: var(--emerald);
+}
+.event-modal-paste-citation-btn.armed {
+    opacity: 0.85;
+}
+.event-modal-paste-citation-btn.armed:hover {
+    opacity: 1;
+}
 
 .note-modal-save,
 .event-modal-save {
@@ -1311,7 +1321,8 @@ header h1 .root-name-accent {
     border-left: 3px solid rgba(232, 121, 249, 0.5);
 }
 
-.marr-card .evt-src-badge {
+.marr-card .evt-src-badge,
+.evt-entry .evt-src-badge {
     position: absolute;
     bottom: 8px;
     right: 8px;
@@ -1803,7 +1814,7 @@ header h1 .root-name-accent {
     background: var(--bg-node, #131c30);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 10px 14px;
+    padding: 10px 14px 32px;
     margin-bottom: 6px;
     overflow: hidden;
 }
