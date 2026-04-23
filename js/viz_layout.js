@@ -837,11 +837,14 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     if (otherGroups.length > 0) {
         if (visibleGroups.length > 0) {
             const spouseRight = visibleSpouseNode && visibleSpouseNode.x > personNode.x;
-            if (spouseRight) {
-                // Visible goes RIGHT → other goes LEFT; keep INTER_FAM_GAP before visible start
+            // Only enforce the inter-cluster gap when the visible cluster landed on its
+            // expected side of personCenter. If obstacles pushed it to the wrong side,
+            // skip the adjustment — further pushing other away compounds the displacement.
+            if (spouseRight && actualVisibleStart + visibleWidth > personCenter) {
+                // Visible on right (expected): other goes LEFT; keep INTER_FAM_GAP before visible start
                 otherIdealStart = Math.min(otherIdealStart, actualVisibleStart - INTER_FAM_GAP - otherWidth);
-            } else {
-                // Visible goes LEFT → other goes RIGHT; keep INTER_FAM_GAP after visible end
+            } else if (!spouseRight && actualVisibleStart < personCenter) {
+                // Visible on left (expected): other goes RIGHT; keep INTER_FAM_GAP after visible end
                 otherIdealStart = Math.max(otherIdealStart, actualVisibleStart + visibleWidth + INTER_FAM_GAP);
             }
         }
