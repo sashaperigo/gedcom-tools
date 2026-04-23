@@ -89,11 +89,20 @@ def _collect_shared_notes(lines: list[str]) -> dict[str, dict]:
     return shared
 
 
-def _parse_sour_line(lvl: int, tag: str, val: str, rec: dict) -> None:
+def _parse_sour_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec: dict) -> None:
     if lvl == 1 and tag in ('TITL', 'AUTH', 'PUBL', 'NOTE'):
-        rec[tag.lower()] = val
+        rec[tag.lower()] = _ged_val(val)
+        state['current_field'] = tag.lower()
     elif lvl == 1 and tag == 'REPO':
-        rec['repo'] = val
+        rec['repo'] = _ged_val(val)
+        state['current_field'] = 'repo'
+    elif lvl == 1:
+        state['current_field'] = None
+    elif tag in ('CONT', 'CONC') and state.get('current_field'):
+        field = state['current_field']
+        sep = '\n' if tag == 'CONT' else ''
+        appended = _ged_val(raw_val if tag == 'CONC' else val)
+        rec[field] = (rec[field] or '') + sep + appended
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +475,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             sources[xref] = {'titl': None, 'auth': None, 'publ': None, 'repo': None, 'note': None}
             ctx = ('sour', xref)
+            sour_st: dict = {'current_field': None}
             continue
 
         if line.startswith('0 '):
@@ -488,7 +498,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
         elif ctx[0] == 'fam':
             _parse_fam_line(fam_st, lvl, tag, val, raw_val, fams[ctx[1]])
         elif ctx[0] == 'sour':
-            _parse_sour_line(lvl, tag, val, sources[ctx[1]])
+            _parse_sour_line(sour_st, lvl, tag, val, raw_val, sources[ctx[1]])
 
     return indis, fams, sources
 

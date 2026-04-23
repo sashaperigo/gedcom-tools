@@ -303,30 +303,80 @@ class TestParseFamLine:
 class TestParseSourLine:
     def test_titl_stored(self):
         rec = _blank_sour()
-        _parse_sour_line(1, 'TITL', 'Census 1900', rec)
+        _parse_sour_line({}, 1, 'TITL', 'Census 1900', 'Census 1900', rec)
         assert rec['titl'] == 'Census 1900'
 
     def test_auth_stored(self):
         rec = _blank_sour()
-        _parse_sour_line(1, 'AUTH', 'National Archives', rec)
+        _parse_sour_line({}, 1, 'AUTH', 'National Archives', 'National Archives', rec)
         assert rec['auth'] == 'National Archives'
 
     def test_publ_stored(self):
         rec = _blank_sour()
-        _parse_sour_line(1, 'PUBL', 'Washington DC', rec)
+        _parse_sour_line({}, 1, 'PUBL', 'Washington DC', 'Washington DC', rec)
         assert rec['publ'] == 'Washington DC'
 
     def test_note_stored(self):
         rec = _blank_sour()
-        _parse_sour_line(1, 'NOTE', 'See page 42', rec)
+        _parse_sour_line({}, 1, 'NOTE', 'See page 42', 'See page 42', rec)
         assert rec['note'] == 'See page 42'
 
     def test_repo_stored(self):
         rec = _blank_sour()
-        _parse_sour_line(1, 'REPO', '@R1@', rec)
+        _parse_sour_line({}, 1, 'REPO', '@R1@', '@R1@', rec)
         assert rec['repo'] == '@R1@'
 
     def test_unknown_tag_ignored(self):
         rec = _blank_sour()
-        _parse_sour_line(1, 'CHAN', '2024-01-01', rec)
+        _parse_sour_line({}, 1, 'CHAN', '2024-01-01', '2024-01-01', rec)
         assert rec == _blank_sour()
+
+
+class TestParseSourLineCont:
+    def test_ged_val_decodes_double_at_in_titl(self):
+        rec = _blank_sour()
+        st = {}
+        _parse_sour_line(st, 1, 'TITL', 'Family@@Records', 'Family@@Records', rec)
+        assert rec['titl'] == 'Family@Records'
+
+    def test_ged_val_decodes_html_entity_in_auth(self):
+        rec = _blank_sour()
+        st = {}
+        _parse_sour_line(st, 1, 'AUTH', 'John &amp; Jane', 'John &amp; Jane', rec)
+        assert rec['auth'] == 'John & Jane'
+
+    def test_cont_appends_newline_to_note(self):
+        rec = _blank_sour()
+        st = {}
+        _parse_sour_line(st, 1, 'NOTE', 'First line', 'First line', rec)
+        _parse_sour_line(st, 2, 'CONT', 'Second line', 'Second line', rec)
+        assert rec['note'] == 'First line\nSecond line'
+
+    def test_conc_appends_without_newline(self):
+        rec = _blank_sour()
+        st = {}
+        _parse_sour_line(st, 1, 'TITL', 'Part one', 'Part one', rec)
+        _parse_sour_line(st, 2, 'CONC', ' part two', ' part two', rec)
+        assert rec['titl'] == 'Part one part two'
+
+    def test_conc_uses_raw_val_for_leading_space(self):
+        rec = _blank_sour()
+        st = {}
+        _parse_sour_line(st, 1, 'TITL', 'Word', 'Word', rec)
+        _parse_sour_line(st, 2, 'CONC', 'two', ' two', rec)  # raw has leading space
+        assert rec['titl'] == 'Word two'
+
+    def test_unknown_lvl1_tag_clears_current_field(self):
+        rec = _blank_sour()
+        st = {}
+        _parse_sour_line(st, 1, 'NOTE', 'line one', 'line one', rec)
+        _parse_sour_line(st, 1, 'CHAN', '2024', '2024', rec)
+        _parse_sour_line(st, 2, 'CONT', 'ignored', 'ignored', rec)
+        assert rec['note'] == 'line one'
+
+    def test_cont_on_titl(self):
+        rec = _blank_sour()
+        st = {}
+        _parse_sour_line(st, 1, 'TITL', 'First', 'First', rec)
+        _parse_sour_line(st, 2, 'CONT', 'Second', 'Second', rec)
+        assert rec['titl'] == 'First\nSecond'
