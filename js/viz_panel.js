@@ -643,11 +643,9 @@ function renderPanel() {
                 const godparentHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
 
                 const tagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
-                const yearColStr = evt._yearRange ? escHtml(evt._yearRange) :
-                    (evtYear ? String(evtYear) : '');
                 html +=
                     `<div class="evt-entry">` +
-                    `<div class="evt-year-col">${yearColStr}</div>` +
+                    `<div class="evt-year-col">${yearStr}</div>` +
                     `<div class="evt-content">` +
                     `<span class="evt-tag-abbrev">${tagAbbr}</span>` +
                     `<span class="evt-prose-text">${escHtml(prose)}</span>` +
