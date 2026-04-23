@@ -2308,13 +2308,13 @@ button.sources-section-title:hover .sources-toggle-arrow {
     margin: 1.5rem 1rem 1rem;
     padding: 0.5rem 1rem;
     background: transparent;
-    border: 1px solid #dc2626;
-    color: #dc2626;
+    border: 1px solid var(--danger);
+    color: var(--danger);
     border-radius: 6px;
     font-size: 13px;
     cursor: pointer;
     text-align: center;
 }
 .delete-person-btn:hover {
-    background: #dc262618;
+    background: color-mix(in srgb, var(--danger) 9%, transparent);
 }

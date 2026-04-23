@@ -891,7 +891,7 @@ function renderPanel() {
     const footerDiv = document.getElementById('detail-footer');
     if (footerDiv) {
         footerDiv.innerHTML =
-            `<button class="delete-person-btn" onclick="deletePerson(${xrefQ})">&#x1F5D1; Delete Person</button>`;
+            `<button class="delete-person-btn" onclick="deletePerson(${xrefQ})">Delete Person</button>`;
     }
 
     _panelEl.classList.add('panel-open');
