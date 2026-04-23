@@ -285,7 +285,14 @@ function collapseResidences(events) {
         if (run.length < 2) { result.push(evt);
             i = j; continue; }
         const years = run.map(e => (_YR_RE.exec(e.date || '') || [, null])[1]).filter(Boolean);
-        const yearRange = years.length >= 2 ? `${years[0]}\u2013${years[years.length - 1]}` : (years[0] || '');
+        // For BET ranges, _YR_RE only grabs the first year; extract the last 4-digit year
+        // from the last event's date to use as the end of the displayed range.
+        const lastDateYears = [...(run[run.length - 1].date || '').matchAll(/\b(\d{4})\b/g)];
+        const endYear = lastDateYears.length ? lastDateYears[lastDateYears.length - 1][1] : years[years.length - 1];
+        const startYear = years[0];
+        const yearRange = (startYear && endYear && startYear !== endYear)
+            ? `${startYear}\u2013${endYear}`
+            : (startYear || endYear || '');
         const notes = run.flatMap(e => {
             if (!e.note) return [];
             const yr = (_YR_RE.exec(e.date || '') || [, null])[1];

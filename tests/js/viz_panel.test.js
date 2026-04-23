@@ -50,7 +50,7 @@ global.showAddNoteModal = vi.fn();
 global.showEditCitationModal = vi.fn();
 global.showAddGodparentModal = vi.fn();
 
-const { initPanel, renderPanel } = require('../../js/viz_panel.js');
+const { initPanel, renderPanel, collapseResidences } = require('../../js/viz_panel.js');
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -506,6 +506,17 @@ describe('renderPanel — RESI rollup', () => {
         // Should not contain three separate year entries
         const matches = (eventsEl.innerHTML.match(/1985/g) || []);
         expect(matches.length).toBe(0); // 1985 should be absorbed into the range
+    });
+
+    it('uses end year of BET range when collapsing RESI run', () => {
+        // BET 2019 AND 2020 should contribute 2020 as the end of the range, not 2019
+        const events = [
+            { tag: 'RESI', date: '2019', place: 'San Francisco, San Francisco, California, USA', citations: [], event_idx: 0 },
+            { tag: 'RESI', date: 'BET 2019 AND 2020', place: 'San Francisco, San Francisco, California, USA', citations: [], event_idx: 1 },
+        ];
+        const collapsed = collapseResidences(events);
+        expect(collapsed).toHaveLength(1);
+        expect(collapsed[0]._yearRange).toBe('2019\u20132020');
     });
 });
 
