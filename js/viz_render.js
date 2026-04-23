@@ -45,32 +45,18 @@ function _renderEdge(edge) {
 // Node rendering
 // ---------------------------------------------------------------------------
 
-// Append a small amber badge to a node <g> when the person died as a child,
-// infant, or stillborn.  Placed in the top-right corner of the node box.
-function _drawDiedYoungBadge(g, w, ageAtDeath) {
-    if (!ageAtDeath) return;
-    const cx = w - 11,
-        cy = 11;
-    const titleText = ageAtDeath === 'STILLBORN' ? 'Stillborn' :
-        ageAtDeath === 'INFANT' ? 'Died in infancy' :
-        'Died in childhood';
-    const circle = _svgEl('circle', { cx, cy, r: 8, class: 'badge-died-young', 'pointer-events': 'all' });
+// Append a small Latin cross to a node <g> when the person died young
+// (death_year − birth_year < 10). Placed in the top-right corner.
+function _drawDiedYoungCross(g, w, diedYoung) {
+    if (!diedYoung) return;
+    const cg = _svgEl('g', { transform: `translate(${w - 13}, 10)` });
     const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-    titleEl.textContent = titleText;
-    circle.appendChild(titleEl);
-    g.appendChild(circle);
-    const sym = _svgEl('text', {
-        x: cx,
-        y: cy + 3,
-        'text-anchor': 'middle',
-        class: 'badge-died-young-text',
-        'font-size': 9,
-        'font-weight': 700,
-        'font-family': 'system-ui, sans-serif',
-        'pointer-events': 'none',
-    });
-    sym.textContent = '\u2726'; // ✦ BLACK FOUR POINTED STAR
-    g.appendChild(sym);
+    titleEl.textContent = 'Died young';
+    cg.appendChild(titleEl);
+    const lineAttrs = { stroke: 'rgba(203,213,225,0.45)', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'pointer-events': 'none' };
+    cg.appendChild(_svgEl('line', { ...lineAttrs, x1: 0, y1: -6, x2: 0, y2: 6 }));
+    cg.appendChild(_svgEl('line', { ...lineAttrs, x1: -3.5, y1: -2, x2: 3.5, y2: -2 }));
+    g.appendChild(cg);
 }
 
 // Append a small hamburger badge to a node <g> whose person participates in
@@ -281,7 +267,9 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     }
 
     // Died-young badge (stillborn / infant / child)
-    _drawDiedYoungBadge(g, w, person.age_at_death);
+    const diedYoung = person.birth_year && person.death_year &&
+        (parseInt(person.death_year, 10) - parseInt(person.birth_year, 10)) < 10;
+    _drawDiedYoungCross(g, w, diedYoung);
 
     // Spouse-menu hamburger badge (top-left) when person has ≥2 FAMs.
     if (_personFamCount(node.xref) >= 2) {

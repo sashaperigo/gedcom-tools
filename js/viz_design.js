@@ -13,7 +13,7 @@ var DESIGN = {
     TEXT_MUTED: '#727298',
     TEXT_DIM: '#484860',
     ACCENT: '#7878d4',
-    ACCENT_SPOUSE: '#3a6a3a',
+    ACCENT_SPOUSE: '#0891b2',
     ACCENT_SOURCE: '#78b878',
 
     // Layout constants (replaces viz_constants.js)

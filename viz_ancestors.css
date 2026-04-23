@@ -1837,15 +1837,15 @@ header h1 {
 
 .facts-pill {
     font-size: 12px;
-    background: #1c2a1e;
-    border: 1px solid #2d4a31;
+    background: #0891b2;
+    border: none;
     border-radius: 12px;
     padding: 3px 10px;
-    color: #6ee37a;
+    color: #ffffff;
 }
 
 .facts-pill .pill-date {
-    color: #3d6642;
+    color: rgba(255,255,255,0.55);
     font-size: 11px;
     margin-left: 5px;
 }
@@ -2278,12 +2278,12 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .edge-marriage {
-    stroke: #3a6a3a;
+    stroke: #0e6a8a;
     stroke-width: 1.5;
 }
 
 .btn-expand {
-    fill: #2a7a4a;
+    fill: #0891b2;
 }
 
 .btn-collapse {
@@ -2292,14 +2292,6 @@ button.sources-section-title:hover .sources-toggle-arrow {
 
 .btn-chevron {
     stroke: #ffffff;
-}
-
-.badge-died-young {
-    fill: #fbbf24;
-}
-
-.badge-died-young-text {
-    fill: #1c1917;
 }
 
 .spouse-menu-btn {
@@ -2317,17 +2309,19 @@ button.sources-section-title:hover .sources-toggle-arrow {
 
 .delete-person-btn {
     display: block;
-    width: calc(100% - 2rem);
-    margin: 1.5rem 1rem 1rem;
-    padding: 0.5rem 1rem;
+    width: auto;
+    margin: 1.5rem 1rem 1rem auto;
+    padding: 0.25rem 0.6rem;
     background: transparent;
     border: 1px solid var(--danger);
     color: var(--danger);
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 11px;
     cursor: pointer;
     text-align: center;
+    opacity: 0.6;
 }
 .delete-person-btn:hover {
     background: color-mix(in srgb, var(--danger) 9%, transparent);
+    opacity: 1;
 }
