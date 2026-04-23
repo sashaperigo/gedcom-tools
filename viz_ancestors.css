@@ -6,14 +6,14 @@
 
 :root {
     /* Backgrounds — Dark Editorial */
-    --bg-app: #0a0f1c;
+    --bg-app: #07070d;
     --bg-surface: #0d0d1f;
-    --bg-hover: #1e293b;
+    --bg-hover: #1a1a2e;
 
     /* Borders */
     --border: #2a2a4a;
-    --border-subtle: #1e1e38;
-    --border-deep: #1e2a42;
+    --border-subtle: #1a1a30;
+    --border-deep: #221a38;
 
     /* Text */
     --text-primary: #e4e4ff;
@@ -48,7 +48,7 @@
 }
 
 body {
-    background: radial-gradient(ellipse at top, #1a2236 0%, #0f1524 55%, #0a0f1c 100%);
+    background: radial-gradient(ellipse at top, #150f2a 0%, #0d0a1e 55%, #07070d 100%);
     color: var(--text-primary);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow: hidden;
@@ -56,7 +56,7 @@ body {
 
 header {
     padding: 14px 22px;
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(13, 10, 30, 0.7);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     border-bottom: 1px solid rgba(148, 163, 184, 0.08);
@@ -1793,7 +1793,7 @@ header h1 .root-name-accent {
     display: flex;
     gap: 12px;
     align-items: flex-start;
-    background: var(--bg-node, #131330);
+    background: var(--bg-node, #12101e);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 10px 14px;
@@ -2379,13 +2379,13 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .btn-expand {
-    fill: #1a2b3a;
+    fill: #1a1428;
     stroke: rgba(110, 231, 183, 0.5);
     stroke-width: 1;
 }
 
 .btn-collapse {
-    fill: #1a2b3a;
+    fill: #1a1428;
     stroke: rgba(110, 231, 183, 0.5);
     stroke-width: 1;
 }
