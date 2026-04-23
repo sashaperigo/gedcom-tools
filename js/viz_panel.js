@@ -267,6 +267,16 @@ function dotColor(evt) {
 
 const _YR_RE = /\b(\d{4})\b/;
 
+// Keys: `${xref}:${startEventIdx}` for collapsed RESI runs that are expanded.
+const _expandedResiRuns = new Set();
+
+function toggleResiExpand(xref, startIdx) {
+    const key = `${xref}:${startIdx}`;
+    if (_expandedResiRuns.has(key)) _expandedResiRuns.delete(key);
+    else _expandedResiRuns.add(key);
+    renderPanel();
+}
+
 function collapseResidences(events) {
     const result = [];
     let i = 0;
@@ -298,7 +308,7 @@ function collapseResidences(events) {
             const yr = (_YR_RE.exec(e.date || '') || [, null])[1];
             return [yr ? `${yr}: ${e.note}` : e.note];
         });
-        result.push({ ...evt, _yearRange: yearRange, note: notes.length ? notes.join('\n') : null });
+        result.push({ ...evt, _yearRange: yearRange, _run: run, note: notes.length ? notes.join('\n') : null });
         i = j;
     }
     return result;
@@ -637,11 +647,60 @@ function renderPanel() {
                     continue;
                 }
 
+                // Collapsed RESI run \u2014 expand-to-edit
+                if (evt._run) {
+                    const runKey = `${xref}:${evt.event_idx}`;
+                    const isExpanded = _expandedResiRuns.has(runKey);
+                    const tagAbbr = 'RESI';
+
+                    if (isExpanded) {
+                        for (let ri = 0; ri < evt._run.length; ri++) {
+                            const re = evt._run[ri];
+                            const reYear = re.date ? ((_YR_RE.exec(re.date) || [, 0])[1] | 0) : null;
+                            const reYearStr = reYear ? `<span class="evt-year">${reYear}</span>` : '';
+                            const { prose: reProse, meta: reMeta } = buildProse(re);
+                            const reEditBtn = re.event_idx !== null && re.event_idx !== undefined
+                                ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${re.event_idx},'RESI')">\u270f</button>`
+                                : '';
+                            const reDelBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${re._origIdx}])">\u2715</button>`;
+                            const collapseBtn = ri === 0
+                                ? `<button class="evt-edit-btn" title="Collapse" onclick="toggleResiExpand(${xrefQ},${evt.event_idx})">\u25b4</button>`
+                                : '';
+                            const reSrcBadge = buildSourceBadgeHtml(re.citations, xref, re._origIdx);
+                            html +=
+                                `<div class="evt-entry evt-entry-expanded">` +
+                                `<div class="evt-year-col">${reYearStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
+                                `<div class="evt-content">` +
+                                `<span class="evt-prose-text">${escHtml(reProse)}</span>` +
+                                (reMeta && reMeta !== String(reYear) ? `<div class="evt-meta">${escHtml(reMeta)}</div>` : '') +
+                                `<div class="evt-actions">${collapseBtn}${reEditBtn}${reDelBtn}</div>` +
+                                `</div>` +
+                                reSrcBadge +
+                                `</div>`;
+                        }
+                    } else {
+                        const yearStr = `<span class="evt-year">${escHtml(evt._yearRange)}</span>`;
+                        const expandBtn = `<button class="evt-edit-btn" title="Expand to edit" onclick="toggleResiExpand(${xrefQ},${evt.event_idx})">\u270f</button>`;
+                        const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
+                        const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
+                        html +=
+                            `<div class="evt-entry">` +
+                            `<div class="evt-year-col">${yearStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
+                            `<div class="evt-content">` +
+                            `<span class="evt-prose-text">${escHtml(prose)}</span>` +
+                            (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
+                            noteInl +
+                            `<div class="evt-actions">${expandBtn}${delBtn}</div>` +
+                            `</div>` +
+                            srcBadge +
+                            `</div>`;
+                    }
+                    continue;
+                }
+
                 const isAnch = evt.tag === 'BIRT' || evt.tag === 'DEAT';
                 const dotCls = isAnch ? 'evt-dot dot-anchor' : 'evt-dot';
-                const yearStr = evt._yearRange ?
-                    `<span class="evt-year">${escHtml(evt._yearRange)}</span>` :
-                    (evtYear ? `<span class="evt-year">${evtYear}</span>` : '');
+                const yearStr = evtYear ? `<span class="evt-year">${evtYear}</span>` : '';
                 const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
                 const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
                     `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` :
@@ -965,6 +1024,7 @@ if (typeof module !== 'undefined') {
         buildProse,
         dotColor,
         collapseResidences,
+        toggleResiExpand,
         buildSourceBadgeHtml,
         buildNoteSourceBadgeHtml,
         _handleGodparentClick,

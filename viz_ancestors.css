@@ -1820,6 +1820,11 @@ header h1 .root-name-accent {
     overflow: hidden;
 }
 
+.evt-entry-expanded {
+    border-left: 2px solid var(--accent, #818cf8);
+    margin-left: 4px;
+}
+
 .evt-year-col {
     width: 46px;
     flex-shrink: 0;
