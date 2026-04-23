@@ -1132,6 +1132,18 @@ class TestAddEventModalSourceSection:
             'submitEventModal() must call apiAddCitation() when a source is selected in the event modal'
         )
 
+    def test_submit_uses_paste_fields_when_armed(self):
+        """submitEventModal must use _copiedCitation fields when _eventModalPasteOnSave is true."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        submit_fn_start = modals_src.index('async function submitEventModal()')
+        submit_fn_body = modals_src[submit_fn_start:submit_fn_start + 8000]
+        assert '_eventModalPasteOnSave' in submit_fn_body, (
+            'submitEventModal() must check _eventModalPasteOnSave before attaching citation'
+        )
+        assert '_copiedCitation' in submit_fn_body, (
+            'submitEventModal() must read _copiedCitation fields when paste is armed'
+        )
+
     def test_refresh_paste_btn_defined(self):
         """viz_modals.js must define _refreshEventModalPasteBtn."""
         modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()

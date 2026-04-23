@@ -543,18 +543,27 @@ async function submitEventModal() {
             if (data.people) {
                 for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
             }
-            // If the user chose a source, attach it to the newly created event.
-            if (isAdd) {
-                const sourXref = document.getElementById('event-modal-source').value;
-                const page = document.getElementById('event-modal-page').value.trim();
-                if (sourXref && data.people && data.people[xref]) {
-                    const events = (data.people[xref].events || []).filter(e => e.tag === tag);
-                    if (events.length > 0) {
-                        const newEvent = events.reduce((max, e) =>
-                            (e.event_idx > max.event_idx ? e : max), events[0]);
-                        const factKey = `${tag}:${newEvent.event_idx}`;
+            // If the user chose a source or pasted a citation, attach it to the newly created event.
+            if (isAdd && data.people && data.people[xref]) {
+                const events = (data.people[xref].events || []).filter(e => e.tag === tag);
+                if (events.length > 0) {
+                    const newEvent = events.reduce((max, e) =>
+                        (e.event_idx > max.event_idx ? e : max), events[0]);
+                    const factKey = `${tag}:${newEvent.event_idx}`;
+                    let citArgs = null;
+                    if (_eventModalPasteOnSave && _copiedCitation) {
+                        const c = _copiedCitation;
+                        citArgs = [xref, c.sourceXref, factKey, c.page || '', c.text || '', c.note || '', c.url || '', c.quay || '', c.date || ''];
+                    } else {
+                        const sourXref = document.getElementById('event-modal-source').value;
+                        const page = document.getElementById('event-modal-page').value.trim();
+                        if (sourXref) {
+                            citArgs = [xref, sourXref, factKey, page, '', '', '', '', ''];
+                        }
+                    }
+                    if (citArgs) {
                         try {
-                            const citResp = await apiAddCitation(xref, sourXref, factKey, page, '', '', '', '', '');
+                            const citResp = await apiAddCitation(...citArgs);
                             if (citResp && citResp.people) {
                                 for (const [k, v] of Object.entries(citResp.people)) PEOPLE[k] = v;
                             }
