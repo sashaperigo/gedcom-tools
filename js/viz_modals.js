@@ -54,6 +54,7 @@ let _noteEditXref = null,
 
 // Citation clipboard — persists across modal opens within the same page session.
 let _copiedCitation = null;
+let _eventModalPasteOnSave = false;
 
 function copyCitation(citationFields, label) {
     _copiedCitation = { ...citationFields, label };
@@ -239,6 +240,36 @@ function _toggleEventModalSourceSection() {
     }
 }
 
+function _refreshEventModalPasteBtn() {
+    const btn = document.getElementById('event-modal-paste-citation-btn');
+    if (!btn) return;
+    const c = _copiedCitation;
+    if (!c) {
+        btn.style.display = 'none';
+        return;
+    }
+    btn.style.display = '';
+    const label = (c.label || '').slice(0, 50) || 'citation';
+    if (_eventModalPasteOnSave) {
+        btn.textContent = '✓ ' + label;
+        btn.classList.add('armed');
+    } else {
+        btn.textContent = 'Paste: ' + label;
+        btn.classList.remove('armed');
+    }
+}
+
+function _toggleEventModalPasteBtn() {
+    _eventModalPasteOnSave = !_eventModalPasteOnSave;
+    // Collapse the manual source section when arming — they're mutually exclusive.
+    if (_eventModalPasteOnSave) {
+        document.getElementById('event-modal-source-row').style.display = 'none';
+        document.getElementById('event-modal-page-row').style.display = 'none';
+        document.getElementById('event-modal-source-toggle').textContent = '+ Add source citation (optional)';
+    }
+    _refreshEventModalPasteBtn();
+}
+
 function _populateEventModalSources() {
     const sourceEl = document.getElementById('event-modal-source');
     if (!sourceEl) return;
@@ -385,6 +416,8 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
     document.getElementById('event-modal-source-toggle').textContent = '+ Add source citation (optional)';
     document.getElementById('event-modal-source').value = '';
     document.getElementById('event-modal-page').value = '';
+    _eventModalPasteOnSave = false;
+    _refreshEventModalPasteBtn();
     const spouseInp = document.getElementById('event-modal-spouse-input');
     const spouseRes = document.getElementById('event-modal-spouse-results');
     if (spouseInp) spouseInp.value = '';

@@ -1132,6 +1132,30 @@ class TestAddEventModalSourceSection:
             'submitEventModal() must call apiAddCitation() when a source is selected in the event modal'
         )
 
+    def test_refresh_paste_btn_defined(self):
+        """viz_modals.js must define _refreshEventModalPasteBtn."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        assert '_refreshEventModalPasteBtn' in modals_src, (
+            'js/viz_modals.js must define _refreshEventModalPasteBtn()'
+        )
+
+    def test_toggle_paste_btn_defined(self):
+        """viz_modals.js must define _toggleEventModalPasteBtn."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        assert '_toggleEventModalPasteBtn' in modals_src, (
+            'js/viz_modals.js must define _toggleEventModalPasteBtn()'
+        )
+
+    def test_addEvent_resets_paste_flag(self):
+        """addEvent() must reset _eventModalPasteOnSave and call _refreshEventModalPasteBtn."""
+        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        assert '_eventModalPasteOnSave' in modals_src, (
+            'js/viz_modals.js must declare _eventModalPasteOnSave'
+        )
+        assert '_refreshEventModalPasteBtn' in modals_src, (
+            'addEvent() must call _refreshEventModalPasteBtn()'
+        )
+
     def test_paste_citation_btn_exists(self, _html):
         """Modal must have a paste citation button alongside the source toggle."""
         assert 'event-modal-paste-citation-btn' in _html, (
