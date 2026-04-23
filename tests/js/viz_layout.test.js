@@ -3294,6 +3294,65 @@ describe('_placeChildrenOfPerson — visible spouse LEFT enforces INTER_FAM_GAP 
     });
 });
 
+// ── Polycarpe real-world scenario: obstacle (Michael+Monica) sits between the ──
+// two clusters' ideal positions. The visible cluster must be pre-nudged left so
+// the other cluster can land BETWEEN the two families, not past the obstacle.
+describe('_placeChildrenOfPerson — pre-nudge to open gap when obstacle is between ideal positions', () => {
+    function setupPolycarpeWithObstacle() {
+        resetGlobals({
+            people: {
+                '@POLYCARPE@': { birth_year: 1923 },
+                '@MARION@': { birth_year: 1929 },
+                '@ADRIAN@': { birth_year: 1955 },  // visible-FAM child (with Marion)
+                '@ELAINE@': { birth_year: 1958 },  // Adrian's spouse in child row
+                '@SANDRA@': { birth_year: 1965 },  // other-FAM child
+                '@JIM@': { birth_year: 1966 },     // Sandra's spouse in child row
+            },
+            relatives: {
+                '@POLYCARPE@': { siblings: [], spouses: ['@MARION@'] },
+                '@ADRIAN@': { siblings: [], spouses: ['@ELAINE@'] },
+                '@SANDRA@': { siblings: [], spouses: ['@JIM@'] },
+            },
+            families: {
+                '@F_PM@': { husb: '@POLYCARPE@', wife: '@MARION@', chil: ['@ADRIAN@'] },
+                '@F_PX@': { husb: '@POLYCARPE@', wife: null, chil: ['@SANDRA@'] },
+            },
+        });
+    }
+
+    it('other-FAM cluster lands between visible cluster and obstacle, not past it', () => {
+        setupPolycarpeWithObstacle();
+        const marionX = -(NODE_W + MARRIAGE_GAP);
+        const childY = ROW_HEIGHT;
+        // Place the obstacle to the RIGHT of the visible cluster's ideal right edge
+        // (visibleIdealStart=-116, right edge=96) so it is found by the pre-nudge filter.
+        // At x=260: maxStart=260-2*40-212-212=-244; visible shifts from -116 to -244;
+        // this opens a 212px gap for Sandra between the shifted Elaine and the obstacle.
+        const obstacleX = 260;
+        const nodes = [
+            { xref: '@POLYCARPE@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@MARION@', x: marionX, y: 0, generation: 0, role: 'spouse' },
+            { xref: '@OBSTACLE@', x: obstacleX, y: childY, generation: 1, role: 'ancestor' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@POLYCARPE@', new Set(), '@POLYCARPE@', nodes, edges);
+
+        const atChildY = nodes.filter(n => n.y === childY);
+        const adrianNode = atChildY.find(n => n.xref === '@ADRIAN@');
+        const elaineNode = atChildY.find(n => n.xref === '@ELAINE@');
+        const sandraNode = atChildY.find(n => n.xref === '@SANDRA@');
+
+        expect(adrianNode).toBeDefined();
+        expect(sandraNode).toBeDefined();
+
+        // Sandra (other-FAM) must appear BETWEEN the visible cluster's right edge
+        // and the obstacle — not past the obstacle.
+        const visibleClusterRight = elaineNode.x + NODE_W;
+        expect(sandraNode.x).toBeGreaterThan(visibleClusterRight);
+        expect(sandraNode.x).toBeLessThan(obstacleX);
+    });
+});
+
 describe('computeLayout — focus spouse parent expansion', () => {
     beforeEach(() => {
         resetGlobals({

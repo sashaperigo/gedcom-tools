@@ -727,12 +727,12 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     // Ideal start positions. Other cluster goes on the opposite side of
     // personCenter from the visible spouse so its umbrella horizontal can
     // never extend past personCenter into the visible-FAM drop's territory.
-    const visibleIdealStart = marriageMidpointX !== null
+    let visibleIdealStart = marriageMidpointX !== null
         ? marriageMidpointX - visibleWidth / 2
         : null;
+    const spouseRight = !!(visibleSpouseNode && visibleSpouseNode.x > personNode.x);
     let otherIdealStart;
     if (visibleSpouseNode) {
-        const spouseRight = visibleSpouseNode.x > personNode.x;
         otherIdealStart = spouseRight
             ? personCenter - otherWidth  // right edge at personCenter
             : personCenter;              // left edge at personCenter
@@ -828,6 +828,41 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
         });
     };
 
+    // Pre-nudge: when the gap between the visible cluster's ideal right edge and
+    // the nearest obstacle on the other side is too narrow for the other cluster,
+    // shift visibleIdealStart toward the obstacle to open the gap. This lets the
+    // other cluster land between the two families instead of being pushed past
+    // the obstacle entirely.
+    let shiftedForGap = false;
+    if (visibleGroups.length > 0 && otherGroups.length > 0 && visibleIdealStart !== null) {
+        if (!spouseRight) {
+            // Visible goes LEFT → other fills gap to the RIGHT. Find nearest right obstacle.
+            const visibleRightEdge = visibleIdealStart + visibleWidth;
+            const rightObstacle = nodes
+                .filter(n => n.y === childY && n.x > visibleRightEdge - CHEVRON_CLEARANCE)
+                .reduce((best, n) => (!best || n.x < best.x) ? n : best, null);
+            if (rightObstacle) {
+                const maxStart = rightObstacle.x - 2 * CHEVRON_CLEARANCE - otherWidth - visibleWidth;
+                if (visibleIdealStart > maxStart) {
+                    visibleIdealStart = maxStart;
+                    shiftedForGap = true;
+                }
+            }
+        } else {
+            // Visible goes RIGHT → other fills gap to the LEFT. Find nearest left obstacle.
+            const leftObstacle = nodes
+                .filter(n => n.y === childY && n.x + NODE_W < visibleIdealStart + CHEVRON_CLEARANCE)
+                .reduce((best, n) => (!best || n.x + NODE_W > best.x + NODE_W) ? n : best, null);
+            if (leftObstacle) {
+                const minStart = leftObstacle.x + NODE_W + 2 * CHEVRON_CLEARANCE + otherWidth;
+                if (visibleIdealStart < minStart) {
+                    visibleIdealStart = minStart;
+                    shiftedForGap = true;
+                }
+            }
+        }
+    }
+
     let actualVisibleStart = visibleIdealStart;
     if (visibleGroups.length > 0) {
         actualVisibleStart = pickStartInFreeGap(visibleIdealStart, visibleWidth);
@@ -835,16 +870,13 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
         emitUmbrella(marriageMidpointX, personY + NODE_H / 2, centers);
     }
     if (otherGroups.length > 0) {
-        if (visibleGroups.length > 0) {
-            const spouseRight = visibleSpouseNode && visibleSpouseNode.x > personNode.x;
-            // Only enforce the inter-cluster gap when the visible cluster landed on its
-            // expected side of personCenter. If obstacles pushed it to the wrong side,
-            // skip the adjustment — further pushing other away compounds the displacement.
+        // When we pre-shifted the visible cluster to make room, the other cluster
+        // finds the natural gap via pickStartInFreeGap — no additional push needed.
+        // Only enforce INTER_FAM_GAP when no shift occurred (open space, no obstacle).
+        if (visibleGroups.length > 0 && !shiftedForGap) {
             if (spouseRight && actualVisibleStart + visibleWidth > personCenter) {
-                // Visible on right (expected): other goes LEFT; keep INTER_FAM_GAP before visible start
                 otherIdealStart = Math.min(otherIdealStart, actualVisibleStart - INTER_FAM_GAP - otherWidth);
             } else if (!spouseRight && actualVisibleStart < personCenter) {
-                // Visible on left (expected): other goes RIGHT; keep INTER_FAM_GAP after visible end
                 otherIdealStart = Math.max(otherIdealStart, actualVisibleStart + visibleWidth + INTER_FAM_GAP);
             }
         }
