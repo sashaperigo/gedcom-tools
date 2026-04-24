@@ -3231,6 +3231,141 @@ def fix_bapm_without_birth(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Presumed deceased  (birth date ≥ 120 years ago, no DEAT record)
+# ---------------------------------------------------------------------------
+
+def scan_presumed_deceased(path: str) -> list[tuple[str, int, int]]:
+    """
+    Find INDI records whose BIRT DATE year is at least 120 years before today
+    and that have no DEAT record of any kind.
+
+    Returns a list of (xref, birt_lineno, birth_year) tuples where:
+      xref        : individual cross-reference (e.g. '@I42@')
+      birt_lineno : 1-based line number of the BIRT DATE line
+      birth_year  : four-digit year extracted from the birth date
+    """
+    import datetime
+    cutoff_year = datetime.date.today().year - 120
+
+    results: list[tuple[str, int, int]] = []
+
+    current_xref: str | None = None
+    birt_year: int | None = None
+    birt_lineno: int | None = None
+    has_deat = False
+    current_event: str | None = None
+
+    def _flush() -> None:
+        if current_xref and birt_year is not None and birt_year <= cutoff_year and not has_deat:
+            results.append((current_xref, birt_lineno, birt_year))
+
+    with open(path, encoding='utf-8') as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.rstrip('\n')
+
+            m0 = re.match(r'^0 (@\S+@) INDI\s*$', line)
+            if m0:
+                _flush()
+                current_xref = m0.group(1)
+                birt_year = None
+                birt_lineno = None
+                has_deat = False
+                current_event = None
+                continue
+
+            if re.match(r'^0 ', line):
+                _flush()
+                current_xref = None
+                birt_year = None
+                birt_lineno = None
+                has_deat = False
+                current_event = None
+                continue
+
+            if current_xref is None:
+                continue
+
+            m1 = re.match(r'^1 ([A-Z]+)', line)
+            if m1:
+                tag = m1.group(1)
+                if tag == 'BIRT':
+                    current_event = 'BIRT'
+                elif tag == 'DEAT':
+                    has_deat = True
+                    current_event = None
+                else:
+                    current_event = None
+                continue
+
+            m2 = re.match(r'^2 DATE (.+)$', line)
+            if m2 and current_event == 'BIRT' and birt_year is None:
+                val = m2.group(1).strip()
+                ym = re.search(r'\b(\d{4})\b', val)
+                if ym:
+                    birt_year = int(ym.group(1))
+                    birt_lineno = lineno
+
+    _flush()
+    return results
+
+
+def fix_presumed_deceased(path: str, dry_run: bool = False) -> int:
+    """
+    For each INDI that has a BIRT DATE at least 120 years before today and no
+    existing DEAT record of any kind, append ``1 DEAT Y`` at the end of their
+    INDI block.
+
+    Returns the number of individuals updated.
+    """
+    candidates = scan_presumed_deceased(path)
+    if not candidates:
+        return 0
+
+    fix_xrefs = {xref for xref, _ln, _yr in candidates}
+
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    changes: list[tuple[int, list[str], str]] = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip('\n')
+        m0 = re.match(r'^0 (@\S+@) INDI\s*$', line)
+        if m0 and m0.group(1) in fix_xrefs:
+            xref = m0.group(1)
+            j = i + 1
+            while j < len(lines) and not re.match(r'^0 ', lines[j].rstrip('\n')):
+                j += 1
+            insert_after = j - 1
+            desc = f'{xref}: insert 1 DEAT Y'
+            changes.append((insert_after, ['1 DEAT Y\n'], desc))
+            i = j
+            continue
+        i += 1
+
+    if not changes:
+        return 0
+
+    if dry_run:
+        for _idx, new_lines, desc in sorted(changes, key=lambda c: c[0]):
+            print(f'  {desc}')
+            for nl in new_lines:
+                print(f'    + {nl.rstrip()}')
+        return len(changes)
+
+    for insert_after, new_lines, _desc in sorted(changes, key=lambda c: c[0], reverse=True):
+        lines[insert_after + 1:insert_after + 1] = new_lines
+
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+    os.replace(tmp, path)
+
+    return len(changes)
+
+
+# ---------------------------------------------------------------------------
 # Bidirectional pointer consistency  (spec 1.13)
 # ---------------------------------------------------------------------------
 
@@ -4941,6 +5076,11 @@ def main():
              'baptism/christening date but no birth date',
     )
     parser.add_argument(
+        '--fix-presumed-deceased', action='store_true',
+        help='Add 1 DEAT Y to individuals whose birth year is at least 120 years '
+             'before today and who have no death record',
+    )
+    parser.add_argument(
         '--merge-sources', nargs=2, metavar=('KEEP', 'REMOVE'),
         help='Remap all citations from REMOVE xref to KEEP xref and delete REMOVE. '
              'Example: --merge-sources @S100@ @S200@',
@@ -4981,6 +5121,7 @@ def main():
         args.fix_duplicate_resi = True
         args.fix_bare_events = True
         args.fix_birth_from_bapm = True
+        args.fix_presumed_deceased = True
         args.fix_record_order = True
         args.fix_sort_events = True
         args.fix_conc_cont_levels = True
@@ -5245,6 +5386,15 @@ def main():
             print(f'  {fixed} individual(s) would have EST birth date added.')
         else:
             print(f'  {fixed} individual(s) given estimated birth date from baptism.')
+
+    if args.fix_presumed_deceased:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Marking presumed-deceased individuals (birth ≥ 120 years ago): {args.gedfile}')
+        fixed = fix_presumed_deceased(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {fixed} individual(s) would have 1 DEAT Y added.')
+        else:
+            print(f'  {fixed} individual(s) marked as presumed deceased.')
 
     if args.merge_sources:
         keep, remove = args.merge_sources

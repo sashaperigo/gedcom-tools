@@ -57,6 +57,8 @@ from gedcom_linter import (
     scan_short_conc,
     scan_mid_word_conc,
     fix_note_reflow,
+    scan_presumed_deceased,
+    fix_presumed_deceased,
 )
 
 
@@ -3266,3 +3268,201 @@ class TestFixNoteReflowMidWord:
         fix_note_reflow(str(p))
         for line in p.read_text(encoding='utf-8').splitlines():
             assert len(line) <= 255, f'Line too long ({len(line)}): {line!r}'
+
+
+# ===========================================================================
+# scan_presumed_deceased / fix_presumed_deceased
+# ===========================================================================
+
+class TestPresumedDeceased:
+    """Birth year <= today.year - 120 with no DEAT record → add 1 DEAT Y."""
+
+    # --- scan ---
+
+    def test_scan_finds_old_birth_no_deat(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 15 MAR 1900
+            0 TRLR
+        """)
+        result = scan_presumed_deceased(str(p))
+        assert len(result) == 1
+        xref, _lineno, year = result[0]
+        assert xref == '@I1@'
+        assert year == 1900
+
+    def test_scan_ignores_recent_birth(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 10 JUN 1950
+            0 TRLR
+        """)
+        assert scan_presumed_deceased(str(p)) == []
+
+    def test_scan_ignores_indi_with_deat_y(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 5 APR 1880
+            1 DEAT Y
+            0 TRLR
+        """)
+        assert scan_presumed_deceased(str(p)) == []
+
+    def test_scan_ignores_indi_with_deat_date(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 5 APR 1880
+            1 DEAT
+            2 DATE 12 NOV 1952
+            0 TRLR
+        """)
+        assert scan_presumed_deceased(str(p)) == []
+
+    def test_scan_ignores_bare_deat_tag(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1895
+            1 DEAT
+            0 TRLR
+        """)
+        assert scan_presumed_deceased(str(p)) == []
+
+    def test_scan_ignores_indi_with_no_birt_date(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 PLAC London, England
+            0 TRLR
+        """)
+        assert scan_presumed_deceased(str(p)) == []
+
+    def test_scan_handles_approximate_date(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE ABT 1890
+            0 TRLR
+        """)
+        result = scan_presumed_deceased(str(p))
+        assert len(result) == 1
+        assert result[0][2] == 1890
+
+    def test_scan_boundary_year_flagged(self, tmp_path):
+        import datetime
+        cutoff = datetime.date.today().year - 120
+        p = write_ged(tmp_path, f"""\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE {cutoff}
+            0 TRLR
+        """)
+        result = scan_presumed_deceased(str(p))
+        assert len(result) == 1
+        assert result[0][2] == cutoff
+
+    def test_scan_year_just_inside_cutoff_not_flagged(self, tmp_path):
+        import datetime
+        not_old_enough = datetime.date.today().year - 119
+        p = write_ged(tmp_path, f"""\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE {not_old_enough}
+            0 TRLR
+        """)
+        assert scan_presumed_deceased(str(p)) == []
+
+    # --- fix ---
+
+    def test_fix_inserts_deat_y(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 NAME John /Smith/
+            1 BIRT
+            2 DATE 1 JAN 1900
+            0 TRLR
+        """)
+        count = fix_presumed_deceased(str(p))
+        assert count == 1
+        lines = p.read_text(encoding='utf-8').splitlines()
+        assert any(l.strip() == '1 DEAT Y' for l in lines)
+
+    def test_fix_deat_y_inside_indi_block(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1900
+            0 @I2@ INDI
+            1 BIRT
+            2 DATE 1960
+            0 TRLR
+        """)
+        fix_presumed_deceased(str(p))
+        content = p.read_text(encoding='utf-8')
+        lines = content.splitlines()
+        deat_idx = next(i for i, l in enumerate(lines) if l.strip() == '1 DEAT Y')
+        trlr_idx = next(i for i, l in enumerate(lines) if l.strip() == '0 @I2@ INDI')
+        # DEAT Y must appear before I2 (inside I1 block)
+        assert deat_idx < trlr_idx
+
+    def test_fix_dry_run_makes_no_changes(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1 MAR 1885
+            0 TRLR
+        """)
+        original = p.read_text(encoding='utf-8')
+        count = fix_presumed_deceased(str(p), dry_run=True)
+        assert count == 1
+        assert p.read_text(encoding='utf-8') == original
+
+    def test_fix_idempotent(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1890
+            0 TRLR
+        """)
+        fix_presumed_deceased(str(p))
+        count2 = fix_presumed_deceased(str(p))
+        assert count2 == 0
+
+    def test_fix_only_modifies_old_individuals(self, tmp_path):
+        p = write_ged(tmp_path, """\
+            0 HEAD
+            0 @I1@ INDI
+            1 BIRT
+            2 DATE 1900
+            0 @I2@ INDI
+            1 BIRT
+            2 DATE 1970
+            0 TRLR
+        """)
+        count = fix_presumed_deceased(str(p))
+        assert count == 1
+        content = p.read_text(encoding='utf-8')
+        # Only one DEAT Y in the whole file
+        assert content.count('1 DEAT Y') == 1
+        # I2 block should not contain DEAT
+        lines = content.splitlines()
+        i2_idx = next(i for i, l in enumerate(lines) if '0 @I2@ INDI' in l)
+        i2_block = lines[i2_idx:]
+        assert not any(l.strip() == '1 DEAT Y' for l in i2_block)
