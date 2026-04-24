@@ -1388,6 +1388,63 @@ header h1 .root-name-accent {
     font-size: 12px;
 }
 
+/* ── Divorce card — mirrors marr-card with amber tint ───────── */
+.div-card {
+    position: relative;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid var(--border);
+    border-left: 3px solid rgba(251, 191, 36, 0.45);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    overflow: hidden;
+}
+
+.div-card:hover .marr-edit-btn,
+.div-card:hover .marr-del-btn {
+    opacity: 1;
+}
+
+.div-card .marr-year {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    letter-spacing: -0.2px;
+}
+
+.div-card .marr-prose {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.div-card .marr-link {
+    color: var(--accent-light);
+    text-decoration: underline;
+    text-decoration-color: rgba(147, 197, 253, 0.4);
+}
+
+.div-card:has(.marr-link):hover {
+    background: rgba(251, 191, 36, 0.1);
+}
+
+.div-card .marr-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 3px;
+}
+
+.div-card .evt-note-inline {
+    font-size: 12px;
+}
+
 /* ── Autocomplete pickers ────────────────────────────────── */
 #event-modal-spouse-results,
 #event-modal-place-results,
