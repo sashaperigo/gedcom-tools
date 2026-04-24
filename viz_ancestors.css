@@ -1114,7 +1114,8 @@ header h1 .root-name-accent {
 }
 
 .evt-entry:hover .evt-actions,
-.marr-card:hover .evt-actions {
+.marr-card:hover .evt-actions,
+.fact-row:hover .evt-actions {
     display: flex;
 }
 
@@ -1127,7 +1128,9 @@ header h1 .root-name-accent {
 
 .evt-entry:hover .evt-edit-btn,
 .evt-entry:hover .evt-convert-btn,
-.evt-entry:hover .fact-del {
+.evt-entry:hover .fact-del,
+.fact-row:hover .evt-edit-btn,
+.fact-row:hover .fact-del {
     opacity: 1;
 }
 

@@ -308,12 +308,11 @@ function collapseResidences(events) {
         }
         if (run.length < 2) { result.push(evt);
             i = j; continue; }
-        const years = run.map(e => (_YR_RE.exec(e.date || '') || [, null])[1]).filter(Boolean);
-        // For BET ranges, _YR_RE only grabs the first year; extract the last 4-digit year
-        // from the last event's date to use as the end of the displayed range.
-        const lastDateYears = [...(run[run.length - 1].date || '').matchAll(/\b(\d{4})\b/g)];
-        const endYear = lastDateYears.length ? lastDateYears[lastDateYears.length - 1][1] : years[years.length - 1];
-        const startYear = years[0];
+        const allYearNums = run.flatMap(e =>
+            [...(e.date || '').matchAll(/\b(\d{4})\b/g)].map(m => parseInt(m[1], 10))
+        );
+        const startYear = allYearNums.length ? String(Math.min(...allYearNums)) : null;
+        const endYear   = allYearNums.length ? String(Math.max(...allYearNums)) : null;
         const yearRange = (startYear && endYear && startYear !== endYear)
             ? `${startYear}\u2013${endYear}`
             : (startYear || endYear || '');
@@ -820,6 +819,7 @@ function renderPanel() {
                         `<span class="fact-row-label" style="margin-bottom:0;">${escHtml(labelTag)}</span>` +
                         `<span class="fact-row-value">${escHtml(valueText)}</span>` +
                         `</div>` +
+                        `<div class="evt-actions">${editBtn}${delBtn}</div>` +
                         srcBadgeInline +
                         `</div>`;
                 }
@@ -831,6 +831,7 @@ function renderPanel() {
                     `<span class="fact-row-value">${escHtml(valueText)}</span>` +
                     noteInl +
                     `</div>` +
+                    `<div class="evt-actions">${editBtn}${delBtn}</div>` +
                     srcBadgeInline +
                     `</div>`;
             }).join('');
