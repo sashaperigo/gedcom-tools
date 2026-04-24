@@ -1457,3 +1457,99 @@ describe('renderPanel — no-year class on dateless main-timeline events', () =>
         expect(eventsEl.innerHTML).toContain('no-year');
     });
 });
+
+describe('renderPanel — family toggle arrow before text', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+    });
+
+    it('family toggle has arrow (▼ or ▶) before "Family" text', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const familyEl = makeFakeEl('detail-family');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-family') return familyEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = { '@I1@': { name: 'T', sex: 'M', events: [], notes: [], sources: [] } };
+        global.PARENTS = {};
+        global.CHILDREN = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        const html = familyEl.innerHTML;
+        // Extract the button's inner content (text between > and </button>)
+        const btnMatch = html.match(/class="family-toggle-btn"[^>]*>([^<]*)</);
+        expect(btnMatch).not.toBeNull();
+        const btnText = btnMatch[1];
+        const downArrowPos = btnText.indexOf('▼');
+        const rightArrowPos = btnText.indexOf('▶');
+        const arrowPos = Math.min(
+            downArrowPos !== -1 ? downArrowPos : Infinity,
+            rightArrowPos !== -1 ? rightArrowPos : Infinity
+        );
+        const familyTextPos = btnText.indexOf('Family');
+        expect(arrowPos).toBeLessThan(familyTextPos);
+    });
+});
+
+describe('renderPanel — source card page reference', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+    });
+
+    it('renders source-card-page div when s.page is present', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const sourcesEl = makeFakeEl('detail-sources');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-sources') return sourcesEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'T', sex: 'M', events: [], notes: [],
+                sources: [{ title: 'Census 1880', page: 'p. 42', url: null }]
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(sourcesEl.innerHTML).toContain('source-card-page');
+        expect(sourcesEl.innerHTML).toContain('p. 42');
+    });
+
+    it('does not render source-card-page when page is absent', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const sourcesEl = makeFakeEl('detail-sources');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-sources') return sourcesEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'T', sex: 'M', events: [], notes: [],
+                sources: [{ title: 'Census 1880', url: null }]
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(sourcesEl.innerHTML).not.toContain('source-card-page');
+    });
+});

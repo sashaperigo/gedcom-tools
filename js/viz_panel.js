@@ -956,7 +956,7 @@ function renderPanel() {
 
         const _hasFamily = _parHtml || _sibHtml || _spChHtml;
         const _arr = _familyOpen ? '\u25bc' : '\u25b6';
-        const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.08em;padding:0 0 10px 0">Family ${_arr}</button>`;
+        const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()">${_arr} Family</button>`;
         const _subStyle = _familyOpen ? '' : ' style="display:none"';
         const _wrapSub = (html) => html ? html.replace(/<div class="family-sub"/g, `<div class="family-sub"${_subStyle}`) : '';
         const _addBtnsWrapped = _familyOpen || !_hasFamily ? _addBtns : `<div${_subStyle}>${_addBtns}</div>`;
@@ -982,15 +982,21 @@ function renderPanel() {
 
         if (srcs.length) {
             const count = srcs.length;
-            const cards = srcs.map(s =>
-                `<div class="source-card">` +
-                `<div class="source-card-icon">${bookIconSvg}</div>` +
-                `<div class="source-card-body"><div class="source-card-title">${_srcTitleHtml(s)}</div></div>` +
-                `<div class="source-card-actions">` +
-                `<button class="source-card-action" title="Edit" onclick="openIndiSourcesModal(${xrefQ})">✎</button>` +
-                `</div>` +
-                `</div>`
-            ).join('');
+            const cards = srcs.map(s => {
+                const pageHtml = s.page
+                    ? `<div class="source-card-page">${escHtml(s.page)}</div>`
+                    : '';
+                return `<div class="source-card">` +
+                    `<div class="source-card-icon">${bookIconSvg}</div>` +
+                    `<div class="source-card-body">` +
+                    `<div class="source-card-title">${_srcTitleHtml(s)}</div>` +
+                    pageHtml +
+                    `</div>` +
+                    `<div class="source-card-actions">` +
+                    `<button class="source-card-action" title="Edit" onclick="openIndiSourcesModal(${xrefQ})">✎</button>` +
+                    `</div>` +
+                    `</div>`;
+            }).join('');
             sourcesDiv.className = 'sources-collapsed';
             sourcesDiv.innerHTML =
                 `<div class="sources-section-header">` +
