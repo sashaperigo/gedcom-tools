@@ -1602,10 +1602,10 @@ describe('renderPanel — source card page reference', () => {
     });
 });
 
-// ── allVisible — undated DEAT ─────────────────────────────────────────────
+// ── allVisible — bare DEAT Y ──────────────────────────────────────────────
 
-describe('renderPanel — undated DEAT Y appears in timeline', () => {
-    it('renders a Death event card even when DEAT has no date, place, or note', () => {
+describe('renderPanel — bare DEAT Y produces no timeline card', () => {
+    it('does not render a Death card when DEAT has no date, place, note, or cause', () => {
         const panelEl = makeFakeEl('detail-panel');
         const eventsEl = makeFakeEl('detail-events');
         _state = { panelOpen: true, panelXref: '@UNDEAD@' };
@@ -1619,7 +1619,8 @@ describe('renderPanel — undated DEAT Y appears in timeline', () => {
             sex: 'M',
             events: [
                 { tag: 'BIRT', date: '1900', place: '', citations: [], event_idx: 0 },
-                // DEAT Y — no date, no place, no note, no type
+                // DEAT Y — all content fields null: has_death suppresses "Living",
+                // but the empty event should not produce a timeline card.
                 { tag: 'DEAT', date: null, place: null, note: null, type: null,
                   cause: null, addr: null, inline_val: null, citations: [], event_idx: 1 },
             ],
@@ -1640,6 +1641,9 @@ describe('renderPanel — undated DEAT Y appears in timeline', () => {
         initPanel(panelEl);
         renderPanel();
 
-        expect(eventsEl.innerHTML).toContain('Death');
+        // BIRT renders; the bare DEAT Y should not add a second evt-entry
+        const entries = (eventsEl.innerHTML.match(/class="evt-entry"/g) || []);
+        expect(entries.length).toBe(1);
+        expect(eventsEl.innerHTML).not.toContain('Death');
     });
 });
