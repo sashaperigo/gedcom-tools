@@ -108,9 +108,10 @@
                 <label for="event-modal-date">Date</label>
                 <input type="text" id="event-modal-date" placeholder="e.g. 26 FEB 1785" onkeydown="if(event.key==='Escape')closeEventModal()">
             </div>
-            <div class="event-modal-field" id="event-modal-date-unknown-row" style="display:none">
-                <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer">
+            <div id="event-modal-date-unknown-row" style="display:none;margin:-6px 0 10px">
+                <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;color:var(--text-secondary)">
                     <input type="checkbox" id="event-modal-date-unknown"
+                        style="width:auto;margin:0"
                         onchange="_onDateUnknownChange(this.checked)"
                         onkeydown="if(event.key==='Escape')closeEventModal()">
                     Date unknown
