@@ -2302,15 +2302,25 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .family-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     background: none;
     border: none;
-    cursor: pointer;
-    color: var(--text-disabled);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
     padding: 0 0 10px 0;
+    margin: 0;
+    cursor: pointer;
     font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    transition: color 0.12s;
+}
+
+.family-toggle-btn:hover {
+    color: var(--text-secondary);
 }
 
 .family-sub {
