@@ -931,6 +931,7 @@ async function deleteFact(xref, evt) {
                 place: evt.place || null,
                 type: evt.type || null,
                 inline_val: evt.inline_val || null,
+                ...(evt.event_idx != null ? { event_idx: evt.event_idx } : {}),
                 current_person: xref,
             }),
         });

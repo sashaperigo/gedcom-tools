@@ -125,6 +125,16 @@ def _apply_deletion(lines: list[str], d: dict) -> tuple[list[str], str | None]:
     place = d.get('place') or None
     fact_type = d.get('type') or None
     inline_val = d.get('inline_val') or None
+    event_idx = d.get('event_idx')
+
+    # When event_idx is provided, use it for exact occurrence-based lookup so that
+    # ambiguous events (same tag+place, different dates; or two undated events at
+    # the same place) are always resolved correctly.
+    if event_idx is not None:
+        start, end, err = _find_event_block(lines, xref, tag, int(event_idx))
+        if err:
+            return lines, err
+        return lines[:start] + lines[end:], None
 
     indi_start, indi_end, err = _find_indi_block(lines, xref)
     if err:

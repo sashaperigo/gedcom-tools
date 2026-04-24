@@ -256,4 +256,34 @@ The canonical pattern elsewhere in the file is `raw.startswith('0 ')` for bounda
 
 ---
 
-**Last Updated**: 2026-04-24 (added #17 _TAG_RE misses xref-style level-0 lines)
+---
+
+## 18. `:first-child` fails when a sibling element precedes the target class
+
+If you write `.family-sub:first-child .family-sub-heading` to style the first section after a toggle button, it will never match — because the button element precedes all `.family-sub` divs, so no `.family-sub` is ever `:first-child` of its parent.
+
+**Fix**: Use the adjacent sibling combinator instead:
+```css
+.family-toggle-btn + .family-sub .family-sub-heading { … }
+```
+This matches the first `.family-sub` immediately following the button, regardless of DOM position.
+
+**Applies whenever**: you're styling the "first item of class X" but another element type always appears before it in the parent.
+
+---
+
+---
+
+## 19. `editEvent` vs `addEvent` — only `addEvent` resets DOM input state
+
+`addEvent()` explicitly resets every field including `dateInp.disabled = false` and unchecks the date-unknown checkbox. `editEvent()` only sets field *values*. Any `disabled`, `checked`, or `readOnly` state set during a previous `addEvent` call persists into the next `editEvent` call.
+
+**Concrete failure**: user checks "Date unknown" in an Add Death modal → date input becomes `disabled`. They close that modal. They then click ✏ on a marriage card. `editEvent` opens the modal, sets `value = ''`, but leaves `disabled = true`. The date field is uneditable — the user cannot type a date.
+
+**Fix pattern**: when adding a new toggle or "field unknown" control, add a matching reset inside `editEvent` (or a shared `_resetModalFieldState()` helper). The reset must run even when the corresponding row is hidden, because the field's DOM state persists across modal opens regardless of visibility.
+
+**Fixed in**: commit `da38b09` — added `_duCb.checked = false` and `_dateInp.disabled = false` to `editEvent()` after hiding the date-unknown row.
+
+---
+
+**Last Updated**: 2026-04-24 (added #19 editEvent vs addEvent DOM state divergence)

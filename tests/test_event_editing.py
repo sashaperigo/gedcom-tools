@@ -452,6 +452,53 @@ class TestApplyDeletionRefactor:
         assert err is not None
 
 
+SAME_PLACE_RESI_GED = """\
+0 HEAD
+1 GEDC
+2 VERS 5.5.1
+0 @I1@ INDI
+1 NAME Test /Person/
+1 RESI
+2 DATE 1920
+2 PLAC Paris, France
+1 RESI
+2 PLAC Paris, France
+0 TRLR
+""".splitlines()
+
+
+# ---------------------------------------------------------------------------
+# TestApplyDeletionByEventIdx
+# ---------------------------------------------------------------------------
+
+class TestApplyDeletionByEventIdx:
+    """event_idx must be used to select the correct occurrence when events are ambiguous."""
+
+    def test_event_idx_1_deletes_undated_not_dated(self):
+        # Bug repro: two RESI at same place, delete undated one (event_idx=1)
+        # Without the fix, date=None acts as wildcard and deletes the 1920 RESI first.
+        d = {'xref': '@I1@', 'tag': 'RESI', 'date': None, 'place': 'Paris, France',
+             'type': None, 'inline_val': None, 'event_idx': 1}
+        new_lines, err = _apply_deletion(SAME_PLACE_RESI_GED, d)
+        assert err is None
+        assert any('1920' in l for l in new_lines), '1920 RESI should survive'
+        assert sum(1 for l in new_lines if l.strip() == '1 RESI') == 1
+
+    def test_event_idx_0_deletes_first_occurrence(self):
+        d = {'xref': '@I1@', 'tag': 'RESI', 'date': None, 'place': 'Paris, France',
+             'type': None, 'inline_val': None, 'event_idx': 0}
+        new_lines, err = _apply_deletion(SAME_PLACE_RESI_GED, d)
+        assert err is None
+        assert not any('1920' in l for l in new_lines), '1920 RESI should be gone'
+        assert sum(1 for l in new_lines if l.strip() == '1 RESI') == 1
+
+    def test_event_idx_out_of_range_returns_error(self):
+        d = {'xref': '@I1@', 'tag': 'RESI', 'date': None, 'place': None,
+             'type': None, 'inline_val': None, 'event_idx': 99}
+        _, err = _apply_deletion(SAME_PLACE_RESI_GED, d)
+        assert err is not None
+
+
 # ---------------------------------------------------------------------------
 # TestEventIdxInBuildPeopleJson
 # ---------------------------------------------------------------------------

@@ -486,6 +486,28 @@ describe('deleteNote / submitNoteEdit / deleteFact use setState not showDetail (
         expect(global.setState).toHaveBeenCalledWith({ panelXref: '@I1@', panelOpen: true });
     });
 
+    it('deleteFact includes event_idx in request body when set', async () => {
+        global.fetch = vi.fn(() =>
+            Promise.resolve({ json: () => Promise.resolve({ ok: true, people: { '@I1@': {} } }) })
+        );
+        const { deleteFact } = require('../../js/viz_modals.js');
+        await deleteFact('@I1@', { tag: 'RESI', date: null, place: 'Paris, France',
+                                   type: null, inline_val: null, event_idx: 1 });
+        const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+        expect(body.event_idx).toBe(1);
+    });
+
+    it('deleteFact omits event_idx from request body when null', async () => {
+        global.fetch = vi.fn(() =>
+            Promise.resolve({ json: () => Promise.resolve({ ok: true, people: { '@I1@': {} } }) })
+        );
+        const { deleteFact } = require('../../js/viz_modals.js');
+        await deleteFact('@I1@', { tag: 'RESI', date: '1900', place: null,
+                                   type: null, inline_val: null, event_idx: null });
+        const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+        expect('event_idx' in body).toBe(false);
+    });
+
     it('does not call showDetail anywhere', async () => {
         // showDetail is not defined globally; if called, it would throw ReferenceError.
         // The test above would fail if that happens — this test makes it explicit.
