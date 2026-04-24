@@ -185,6 +185,33 @@ const allVisible = (data.events || []).map((e, i) => ({ ...e, _origIdx: i })).fi
 
 ---
 
+## 14. CSS stacking contexts trap child z-index values
+
+Any element with `position` + `z-index` (or certain other properties like `transform`, `filter`, `opacity < 1`) creates a **stacking context**. A child's `z-index` is only meaningful *within* that context — it cannot escape it to paint above a sibling element with a higher z-index in the parent context.
+
+**Symptom:** A dropdown or overlay with `z-index: 500` renders *below* a panel with `z-index: 50`, even though 500 > 50. This happens when the dropdown is a descendant of a stacking context whose own z-index (e.g. 2) is lower than the panel's.
+
+**Diagnosis pattern:**
+1. Identify the element that should be on top (e.g. `#search-results`, `z-index: 500`).
+2. Walk up its DOM ancestors looking for any element with `position` + `z-index` set — that ancestor's z-index is the effective ceiling.
+3. Compare that ceiling against the z-index of the element it must paint above.
+
+**Fix:** Raise the ancestor's z-index so its stacking context wins. Alternatively, restructure the DOM so the floating element is not nested inside a stacking context at all.
+
+**Case study:** `header` had `z-index: 2`; `#detail-panel` had `z-index: 50`. The search dropdown (`#search-results`, `z-index: 500`) lived inside the header — so it was capped at z-index 2 in the root context and always painted below the panel. Fix: set `header { z-index: 100 }` (commit `e820d36`).
+
+---
+
+## 15. Conflating "no death year" with "person is living"
+
+`death_year` is `None` for anyone who has a `DEAT` record without a `DATE` subfield (e.g. `1 DEAT Y` with only `AGE`). Code that gates "Living" on `!death_year` will wrongly label deceased people as alive.
+
+**Correct pattern:** Use `has_death` (a boolean set `True` whenever a `DEAT` event is opened) alongside `death_year`. Only show "Living" when both `!death_year` and `!has_death`.
+
+Both `indis` (parse layer) and the `build_people_json` output carry `has_death`. The JS panel reads `data.has_death`.
+
+---
+
 ## Testing pitfalls
 
 - Tests with a module-level `GED_PATH` variable are skipped when `GED_FILE` is not set — this is intentional, not a test framework bug.
@@ -193,4 +220,4 @@ const allVisible = (data.events || []).map((e, i) => ({ ...e, _origIdx: i })).fi
 
 ---
 
-**Last Updated**: 2026-04-23 (added #12 inter-cluster gap + pre-nudge corollary)
+**Last Updated**: 2026-04-24 (added #15 conflating no death year with living)
