@@ -6,10 +6,14 @@ const require = createRequire(
 // ── DOM / global stubs ────────────────────────────────────────────────────
 
 function makeFakeEl(id = '') {
+    const _styleProps = {};
     return {
         id,
         innerHTML: '',
-        style: {},
+        style: {
+            setProperty(prop, val) { _styleProps[prop] = val; },
+            getPropertyValue(prop) { return _styleProps[prop] || ''; },
+        },
         classList: {
             _classes: new Set(),
             add(c) { this._classes.add(c); },
@@ -1189,5 +1193,76 @@ describe('_buildGodparentPillsHtml', () => {
         // inside the attribute value; it must be &quot;-escaped.
         expect(html).not.toMatch(/onclick="[^"]*"@I5@"/);
         expect(html).toMatch(/onclick="[^"]*&quot;@I5@&quot;/);
+    });
+});
+
+describe('renderPanel — accent bar color by sex', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+    });
+
+    it('sets blue accent for male', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        let _accentBarColor = null;
+        const accentEl = {
+            id: 'detail-accent-bar',
+            style: { setProperty: (prop, val) => { if (prop === '--accent-bar-color') _accentBarColor = val; } }
+        };
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-accent-bar') return accentEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = { '@I1@': { name: 'Test', sex: 'M', events: [], notes: [], sources: [] } };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(_accentBarColor).toBe('#7db4e8');
+    });
+
+    it('sets salmon accent for female', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        let _accentBarColor = null;
+        const accentEl = {
+            id: 'detail-accent-bar',
+            style: { setProperty: (prop, val) => { if (prop === '--accent-bar-color') _accentBarColor = val; } }
+        };
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-accent-bar') return accentEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = { '@I1@': { name: 'Test', sex: 'F', events: [], notes: [], sources: [] } };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(_accentBarColor).toBe('#f4876a');
+    });
+
+    it('no sex-sym span in name HTML', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const nameEl = makeFakeEl('detail-name');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-name') return nameEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = { '@I1@': { name: 'Test', sex: 'M', events: [], notes: [], sources: [] } };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(nameEl.innerHTML).not.toContain('sex-sym');
     });
 });

@@ -406,12 +406,15 @@ function renderPanel() {
         return;
     }
 
-    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#818cf8';
     const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
 
     // ── Accent bar ────────────────────────────────────────────────────────
     const accentEl = document.getElementById('detail-accent-bar');
-    if (accentEl) accentEl.style.background = '';
+    if (accentEl) {
+        const sexColors = { 'M': '#7db4e8', 'F': '#f4876a' };
+        const accentColor = sexColors[data.sex] || '#2dd4bf';
+        accentEl.style.setProperty('--accent-bar-color', accentColor);
+    }
 
     // ── ID badge ──────────────────────────────────────────────────────────
     const headerInner = document.getElementById('detail-header-inner');
@@ -424,14 +427,12 @@ function renderPanel() {
         headerInner.insertBefore(idBadge, headerInner.firstChild);
     }
 
-    // ── Name + sex symbol + edit button ──────────────────────────────────
+    // ── Name + edit button ────────────────────────────────────────────
     const nameEl = document.getElementById('detail-name');
     if (nameEl) {
-        const sexSym = { 'M': '\u2642', 'F': '\u2640' } [data.sex] || '';
         nameEl.innerHTML =
             escHtml(data.name || '') +
-            (sexSym ? `<span class="sex-sym">${sexSym}</span>` : '') +
-            `<button class="name-edit-btn" title="Edit name" onclick="editName(${xrefQ})">\u270f</button>`;
+            `<button class="name-edit-btn" title="Edit name" onclick="editName(${xrefQ})">✏</button>`;
     }
 
     // ── Close button ──────────────────────────────────────────────────────
