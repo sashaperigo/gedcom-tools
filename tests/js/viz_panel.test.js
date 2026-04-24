@@ -692,6 +692,43 @@ describe('renderPanel — marriage card', () => {
     });
 });
 
+describe('renderPanel — marriage card uses evt-year-col layout', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+    });
+
+    it('wraps year in evt-year-col and prose in evt-content', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Test',
+                sex: 'M',
+                events: [{ tag: 'MARR', date: '1864', place: '', fam_xref: '@F1@', marr_idx: 0, _origIdx: 0, event_idx: null }],
+                notes: [],
+                sources: [],
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(eventsEl.innerHTML).toContain('evt-year-col');
+        expect(eventsEl.innerHTML).toContain('evt-content');
+        expect(eventsEl.innerHTML).toContain('marr-card');
+    });
+});
+
 describe('renderPanel — event note in italics', () => {
     it('event note is wrapped in italic element or evt-note-inline class', () => {
         const panelEl = makeFakeEl('detail-panel');

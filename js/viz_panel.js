@@ -619,7 +619,6 @@ function renderPanel() {
                     evt.note.split('\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
 
                 if (evt.tag === 'MARR') {
-                    const yearLabel = evtYear ? `<div class="marr-year">${evtYear}</div>` : '';
                     const spXref = evt.spouse_xref;
                     const spClickable = spXref && (typeof PARENTS !== 'undefined') && PARENTS[spXref];
                     const spXrefAttr = spClickable ? escHtml(spXref) : '';
@@ -635,14 +634,17 @@ function renderPanel() {
                         `<button class="marr-del-btn" title="Delete marriage" onclick="event.stopPropagation();deleteMarriage(${xrefQ},${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.marr_idx ?? 0})">\u2715</button>` :
                         '';
                     const marrSrcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
+                    const yearLabelSpan = evtYear ? `<span class="marr-year">${evtYear}</span>` : '';
                     html +=
                         `<div class="marr-card"${marrClick}>` +
                         marrEditBtn +
                         marrDelBtn +
-                        yearLabel +
+                        `<div class="evt-year-col">${yearLabelSpan}<span class="evt-tag-abbrev">MARR</span></div>` +
+                        `<div class="evt-content">` +
                         proseHtml +
                         (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
                         noteInl +
+                        `</div>` +
                         marrSrcBadge +
                         `</div>`;
                     continue;
