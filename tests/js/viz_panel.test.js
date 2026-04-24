@@ -1430,6 +1430,41 @@ describe('renderPanel — fact-row layout for undated facts', () => {
         expect(alsoLivedEl.innerHTML).toContain('evt-entry');
         expect(alsoLivedEl.innerHTML).toContain('no-year');
     });
+    it('RELI shows tag label on top and value on bottom (not reversed)', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const alsoLivedEl = makeFakeEl('detail-also-lived');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-also-lived') return alsoLivedEl;
+                return null;
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Test', sex: 'M',
+                events: [{ tag: 'RELI', type: 'Armenian Catholic', inline_val: 'Armenian Catholic', date: null, place: '', _origIdx: 0, event_idx: 0, citations: [] }],
+                notes: [], sources: []
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        const html = alsoLivedEl.innerHTML;
+        const labelIdx = html.indexOf('fact-row-label');
+        const valueIdx = html.indexOf('fact-row-value');
+        const religionLabelIdx = html.indexOf('>Religion<');
+        const armenianValueIdx = html.indexOf('>Armenian Catholic<');
+        // fact-row-label must appear before fact-row-value in DOM order
+        expect(labelIdx).toBeLessThan(valueIdx);
+        // 'Religion' must be the label (appears before the value span)
+        expect(religionLabelIdx).toBeLessThan(armenianValueIdx);
+        expect(html).toContain('fact-row-label');
+        expect(html).toContain('>Religion<');
+        expect(html).toContain('>Armenian Catholic<');
+    });
 });
 
 describe('renderPanel — note badge inside note-card', () => {

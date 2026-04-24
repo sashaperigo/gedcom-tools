@@ -807,13 +807,18 @@ function renderPanel() {
                         `</div>`;
                 }
 
-                const labelTag = evt.type || evt.tag || '';
+                // For tags with a known label (not FACT), the tag name is the label
+                // and evt.type holds the actual value (e.g. RELI → label="Religion", value="Armenian Catholic").
+                // For FACT, evt.type is itself the category label (e.g. "Languages").
+                const isNamedTag = evt.tag !== 'FACT' && EVENT_LABELS[evt.tag];
+                const labelTag = isNamedTag ? EVENT_LABELS[evt.tag] : (evt.type || evt.tag || '');
+                const valueText = isNamedTag ? (evt.type || '') : prose;
                 if (evt.tag === 'NCHI') {
                     return `<div class="fact-row" style="align-items:center;">` +
                         `<div class="fact-dot" style="background:${color};"></div>` +
                         `<div class="fact-row-content" style="display:flex;align-items:baseline;gap:6px;">` +
                         `<span class="fact-row-label" style="margin-bottom:0;">${escHtml(labelTag)}</span>` +
-                        `<span class="fact-row-value">${escHtml(prose)}</span>` +
+                        `<span class="fact-row-value">${escHtml(valueText)}</span>` +
                         `</div>` +
                         srcBadgeInline +
                         `</div>`;
@@ -823,7 +828,7 @@ function renderPanel() {
                     `<div class="fact-dot" style="background:${color};"></div>` +
                     `<div class="fact-row-content">` +
                     `<span class="fact-row-label">${escHtml(labelTag)}</span>` +
-                    `<span class="fact-row-value">${escHtml(prose)}</span>` +
+                    `<span class="fact-row-value">${escHtml(valueText)}</span>` +
                     noteInl +
                     `</div>` +
                     srcBadgeInline +
