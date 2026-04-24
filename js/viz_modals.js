@@ -1138,11 +1138,11 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
                 `<div class="citation-card-icon">${bookIconSvg}</div>` +
                 `<div class="citation-card-body"><div class="citation-title">${titleHtml}</div>${fieldsHtml}</div>` +
                 `<div class="citation-card-actions">` +
-                `<button class="citation-action copy" title="Copy citation" ` +
+                `<button type="button" class="citation-action copy" title="Copy citation" ` +
                 `${copyDataAttrs} onclick="handleCitationCopy(this)">\u29c9</button>` +
-                `<button class="citation-action" title="Edit this citation" ` +
+                `<button type="button" class="citation-action" title="Edit this citation" ` +
                 `onclick="${editOnclick}">\u270f</button>` +
-                `<button class="citation-action del" title="Remove this citation" ` +
+                `<button type="button" class="citation-action del" title="Remove this citation" ` +
                 `onclick="deleteSourceFromModal(${xrefQ},${citeKeyQ})">\u00d7</button>` +
                 `</div>` +
                 `</div>`
@@ -1155,9 +1155,9 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
     const pasteHidden = _copiedCitation ? '' : ' hidden';
     const noBorder = (!citations || citations.length === 0) ? ' no-border' : '';
     html += `<div class="citation-add-row${noBorder}">` +
-        `<button class="citation-add-primary" ` +
+        `<button type="button" class="citation-add-primary" ` +
         `onclick="showAddCitationModal(${xrefQ},${factKeyQ})">${plusIconSvg}Add source</button>` +
-        `<button class="citation-paste-btn${pasteHidden}" ` +
+        `<button type="button" class="citation-paste-btn${pasteHidden}" ` +
         `onclick="handleCitationPaste(${xrefQ},${factKeyQ})">` +
         `${pasteIconSvg}Paste: \u201c${pasteLabel}\u201d</button>` +
         `</div>`;
