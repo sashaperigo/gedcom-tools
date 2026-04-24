@@ -187,8 +187,11 @@ function buildProse(evt) {
             return { prose: type ? `Nationality: ${type}` : (short ? `Nationality: ${short}` : 'Nationality'), meta: date };
         case 'RELI':
             return { prose: 'Religion', meta: type || date };
-        case 'DIV':
-            return { prose: date ? `Divorced ${date}` : 'Divorce', meta: short };
+        case 'DIV': {
+            const who = evt.spouse || '';
+            const prose = who ? `Divorced ${who}` : (date ? `Divorced ${date}` : 'Divorce');
+            return { prose, meta: meta() };
+        }
         case 'FACT':
             {
                 if (type && type.toUpperCase() === 'AKA')
