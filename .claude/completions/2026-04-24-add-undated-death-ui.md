@@ -14,7 +14,7 @@ Added a "Date unknown" checkbox to the Add Event modal that appears only when th
 - `js/viz_modals.js` — `_updateEventModalFields` shows/hides row for DEAT; `_onDateUnknownChange` disables date input; `submitEventModal` sends `DATE:'Y'` when checked and validates that DEAT adds without a date or checkbox are rejected; `editEvent` always hides the row (adds only); `_onDateUnknownChange` and `_updateEventModalFields` exported for testing
 - `serve_viz.py` — `/api/add_event` skips date normalization for `DATE='Y'` on DEAT; `_insert_new_event` writes `1 DEAT Y` as inline value (not `2 DATE Y` subline) and skips the DATE subtag loop entry when `deat_y` is set
 - `viz_ancestors.py` — `_indi_open_event` detects `DEAT Y` and clears both `note` and `inline_val` so the `Y` sentinel never renders as user-visible text
-- `js/viz_panel.js` — `allVisible` now unconditionally includes `DEAT` events (bare `DEAT Y` had no date/place/note and was previously filtered out)
+- `js/viz_panel.js` — `allVisible` does NOT unconditionally include DEAT; bare `DEAT Y` (no date/place/note/cause) is filtered out so no empty card appears; `has_death` on the person data is what suppresses "Living" in the lifespan bar
 
 ## Key decisions
 
@@ -26,7 +26,7 @@ Added a "Date unknown" checkbox to the Add Event modal that appears only when th
 ## Tests added/modified
 
 - `tests/test_serve_viz_http.py::TestAddEventEndpoint` — 3 new tests: `1 DEAT Y` written correctly (not `2 DATE Y`), `has_death=True` in refreshed payload, DEAT event appears in refreshed events list
-- `tests/js/viz_panel.test.js` — 1 new test: `renderPanel` shows Death card for undated DEAT with no date/place/note (verifies `allVisible` fix)
+- `tests/js/viz_panel.test.js` — 1 new test: bare `DEAT Y` produces no timeline card (only one `evt-entry` for BIRT, no "Death" text)
 - `tests/js/viz_modals.test.js` — 3 new tests: `_updateEventModalFields` shows date-unknown row for DEAT, hides for RESI and BIRT
 
 ## Follow-up / known gaps
