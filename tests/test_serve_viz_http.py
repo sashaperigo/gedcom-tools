@@ -935,6 +935,36 @@ class TestAddCitationEndpoint:
         text = _ged_text(ged)
         assert f'1 SOUR {sour_xref}' in text
 
+    def test_person_level_citation_not_blocked_by_same_source_in_earlier_record(self, live_server):
+        """
+        _citation_already_exists must not scan past the INDI record boundary.
+
+        xref-style level-0 lines ('0 @I1@ INDI') are not matched by _TAG_RE
+        because '@' is not a word character.  Without an explicit break for these
+        lines, the backward scan crosses into earlier records and incorrectly
+        treats a citation in a *different* person's record as a duplicate,
+        silently refusing to add the citation while still returning ok=true.
+        """
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        # Add the citation to @I1@ first.
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': None, 'page': 'p. 42', 'text': '', 'note': '',
+        })
+        # Now add the same source+page to @I2@, which comes AFTER @I1@ in the
+        # file.  The duplicate check must stop at the @I2@ record boundary and
+        # not mistake the citation in @I1@ for a duplicate.
+        resp = post('/api/add_citation', {
+            'xref': '@I2@', 'sour_xref': sour_xref,
+            'fact_key': None, 'page': 'p. 42', 'text': '', 'note': '',
+        })
+        assert resp.get('ok') is True
+        sources = resp.get('people', {}).get('@I2@', {}).get('sources', [])
+        assert any(s['sourceXref'] == sour_xref for s in sources), (
+            f'Citation not added to @I2@ sources: {sources}'
+        )
+
     def test_missing_xref_returns_400(self, live_server):
         ged, post, _, _ = live_server
         import urllib.error

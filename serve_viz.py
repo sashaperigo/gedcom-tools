@@ -1002,6 +1002,11 @@ def _citation_already_exists(lines: list[str], insert_pos: int, sour_xref: str, 
         m = _TAG_RE.match(raw)
         if m and int(m.group(1)) <= boundary:
             break
+        # _TAG_RE requires \w+ for the tag so it cannot match xref-style level-0
+        # lines like '0 @I123@ INDI'. Catch those explicitly to avoid scanning
+        # past record boundaries into unrelated records.
+        if not m and raw.startswith('0 '):
+            break
         if raw == sour_prefix or raw.startswith(sour_prefix + ' '):
             # Matching source found — now check whether the page also matches.
             next_line = lines[i + 1].rstrip() if (i + 1 < insert_pos) else ''
