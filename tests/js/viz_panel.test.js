@@ -1303,3 +1303,86 @@ describe('renderPanel — accent bar color by sex', () => {
         expect(nameEl.innerHTML).not.toContain('sex-sym');
     });
 });
+
+describe('renderPanel — fact-row layout for undated facts', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+    });
+
+    it('OCCU renders as fact-row, not evt-entry', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const alsoLivedEl = makeFakeEl('detail-also-lived');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-also-lived') return alsoLivedEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Test', sex: 'M',
+                events: [{ tag: 'OCCU', inline_val: 'Merchant', date: null, place: '', _origIdx: 0, event_idx: 0, citations: [] }],
+                notes: [], sources: []
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(alsoLivedEl.innerHTML).toContain('fact-row');
+        expect(alsoLivedEl.innerHTML).not.toContain('"evt-entry"');
+    });
+
+    it('OCCU dot color is #fbbf24', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const alsoLivedEl = makeFakeEl('detail-also-lived');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-also-lived') return alsoLivedEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Test', sex: 'M',
+                events: [{ tag: 'OCCU', inline_val: 'Merchant', date: null, place: '', _origIdx: 0, event_idx: 0, citations: [] }],
+                notes: [], sources: []
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(alsoLivedEl.innerHTML).toContain('#fbbf24');
+    });
+
+    it('undated RESI renders as evt-entry with no-year class', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const alsoLivedEl = makeFakeEl('detail-also-lived');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-also-lived') return alsoLivedEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'T', sex: 'M',
+                events: [{ tag: 'RESI', date: null, place: 'Paris', _origIdx: 0, event_idx: 0, citations: [] }],
+                notes: [], sources: []
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(alsoLivedEl.innerHTML).toContain('evt-entry');
+        expect(alsoLivedEl.innerHTML).toContain('no-year');
+    });
+});

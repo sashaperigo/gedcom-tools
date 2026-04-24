@@ -237,6 +237,12 @@ function buildProse(evt) {
 function dotColor(evt) {
     if (evt.type === 'Name Change') return '#f97316';
     if (evt.tag === 'MARR') return '#e879f9';
+    if (evt.tag === 'FACT') {
+        const t = (evt.type || '').toLowerCase();
+        if (t === 'languages' || t === 'literacy') return '#818cf8';
+        if (t === 'politics') return '#38bdf8';
+        if (t === 'medical condition') return '#fb7185';
+    }
     switch (evt.tag) {
         case 'BIRT':
         case 'DEAT':
@@ -247,6 +253,7 @@ function dotColor(evt) {
             return '#38bdf8';
         case 'OCCU':
         case 'RETI':
+        case 'TITL':
             return '#fbbf24';
         case 'IMMI':
         case 'NATU':
@@ -258,6 +265,10 @@ function dotColor(evt) {
             return '#2dd4bf';
         case 'EDUC':
             return '#818cf8';
+        case 'DSCR':
+            return '#fb7185';
+        case 'NCHI':
+            return '#e879f9';
         default:
             return '#727298';
     }
@@ -581,7 +592,7 @@ function renderPanel() {
     // Filter: exclude NATI (shown above), name records, and blank events
     const allVisible = (data.events || []).map((e, i) => ({ ...e, _origIdx: i })).filter(e =>
         e.tag !== 'NATI' &&
-        (e.tag === 'MARR' || e.date || e.place || e.note || e.type || e.cause || e.addr) &&
+        (e.tag === 'MARR' || e.date || e.place || e.note || e.type || e.cause || e.addr || e.inline_val) &&
         !e._name_record
     );
     const _keepInTimeline = e =>
@@ -741,24 +752,45 @@ function renderPanel() {
             return evts.map(evt => {
                 const { prose, meta } = buildProse(evt);
                 const color = dotColor(evt);
-                const noteInl = evt.note ? evt.note.split('\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
+                const noteInl = evt.note ? evt.note.split('\n').map(l => `<div class="fact-row-note">${escHtml(l)}</div>`).join('') : '';
                 const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
                 const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
-                    `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` :
-                    '';
+                    `<button class="evt-edit-btn" title="Edit" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` : '';
                 const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
-                const undGpHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
-                const undTagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
-                return `<div class="evt-entry">` +
-                    `<div class="evt-year-col"><span class="evt-tag-abbrev">${undTagAbbr}</span></div>` +
-                    `<div class="evt-content">` +
-                    `<span class="evt-prose-text">${escHtml(prose)}</span>` +
-                    (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
+                const srcBadgeInline = `<span class="fact-row-src" onclick="event.stopPropagation();openSourcesModal(${JSON.stringify(String(xref)).replace(/"/g,'&quot;')},${evt._origIdx})">+ src</span>`;
+
+                if (evt.tag === 'RESI') {
+                    return `<div class="evt-entry no-year">` +
+                        `<div class="evt-content">` +
+                        `<span class="evt-prose-text">${escHtml(prose)}</span>` +
+                        (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
+                        noteInl +
+                        `<div class="evt-actions">${editBtn}${delBtn}</div>` +
+                        `</div>` +
+                        srcBadge +
+                        `</div>`;
+                }
+
+                const labelTag = evt.type || evt.tag || '';
+                if (evt.tag === 'NCHI') {
+                    return `<div class="fact-row" style="align-items:center;">` +
+                        `<div class="fact-dot" style="background:${color};"></div>` +
+                        `<div class="fact-row-content" style="display:flex;align-items:baseline;gap:6px;">` +
+                        `<span class="fact-row-label" style="margin-bottom:0;">${escHtml(labelTag)}</span>` +
+                        `<span class="fact-row-value">${escHtml(prose)}</span>` +
+                        `</div>` +
+                        srcBadgeInline +
+                        `</div>`;
+                }
+
+                return `<div class="fact-row">` +
+                    `<div class="fact-dot" style="background:${color};"></div>` +
+                    `<div class="fact-row-content">` +
+                    `<span class="fact-row-label">${escHtml(labelTag)}</span>` +
+                    `<span class="fact-row-value">${escHtml(prose)}</span>` +
                     noteInl +
-                    undGpHtml +
-                    `<div class="evt-actions">${editBtn}${delBtn}</div>` +
                     `</div>` +
-                    srcBadge +
+                    srcBadgeInline +
                     `</div>`;
             }).join('');
         }
