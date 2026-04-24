@@ -601,15 +601,6 @@ header h1 .root-name-accent {
 .lifespan-year {
     color: var(--text-muted);
     white-space: nowrap;
-    flex-shrink: 0;
-}
-
-.lifespan-bar-track {
-    display: none;
-}
-
-.lifespan-bar-fill {
-    display: none;
 }
 
 .lifespan-sep {
@@ -621,7 +612,6 @@ header h1 .root-name-accent {
     font-size: 11px;
     color: var(--text-muted);
     white-space: nowrap;
-    flex-shrink: 0;
 }
 
 /* ── Body ───────────────────────────────────────────────── */
@@ -896,7 +886,8 @@ header h1 .root-name-accent {
 #note-modal h3,
 #add-citation-modal h3,
 #edit-citation-modal h3,
-#edit-source-modal h3 {
+#edit-source-modal h3,
+#spouse-menu-modal h3 {
     margin: 0 0 12px;
     font-size: 14px;
     color: var(--text-secondary);
@@ -931,13 +922,6 @@ header h1 .root-name-accent {
     text-transform: uppercase;
     color: var(--text-disabled);
     margin-bottom: 3px;
-}
-
-#spouse-menu-modal h3 {
-    margin: 0 0 12px;
-    font-size: 14px;
-    color: var(--text-secondary);
-    font-weight: 600;
 }
 
 .spouse-menu-row {
@@ -1503,11 +1487,10 @@ header h1 .root-name-accent {
 }
 
 #sources-modal-list {
-    margin: 0;
+    margin: 0 0 14px;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    margin-bottom: 14px;
 }
 
 .citation-card {
@@ -1547,7 +1530,9 @@ header h1 .root-name-accent {
     opacity: 0.75;
 }
 
-.citation-card-body {
+.citation-card-body,
+.evt-content,
+.fact-row-content {
     flex: 1;
     min-width: 0;
 }
@@ -1805,10 +1790,6 @@ header h1 .root-name-accent {
     padding-left: 0;
 }
 
-.timeline-spine {
-    display: none;
-}
-
 /* Event card layout */
 .evt-entry {
     position: relative;
@@ -1859,11 +1840,6 @@ header h1 .root-name-accent {
     display: none;
 }
 
-.evt-content {
-    flex: 1;
-    min-width: 0;
-}
-
 .fact-del {
     background: none;
     border: none;
@@ -1879,14 +1855,6 @@ header h1 .root-name-accent {
     color: var(--danger);
 }
 
-.evt-dot {
-    display: none;
-}
-
-.evt-dot.dot-anchor {
-    display: none;
-}
-
 .evt-prose-text {
     display: block;
     font-size: 13px;
@@ -1896,17 +1864,16 @@ header h1 .root-name-accent {
     margin-top: 1px;
 }
 
-.evt-meta {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 3px;
-    line-height: 1.4;
-}
-
+.evt-meta,
 .evt-note-inline {
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 3px;
+}
+
+.evt-meta { line-height: 1.4; }
+
+.evt-note-inline {
     font-style: italic;
     line-height: 1.5;
 }
@@ -2121,7 +2088,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
 .source-card-icon svg {
     width: 12px;
     height: 12px;
-    color: #818cf8;
+    color: var(--accent);
     opacity: 0.7;
 }
 
@@ -2207,7 +2174,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
     align-items: center;
     gap: 5px;
     background: none;
-    border: 1px dashed var(--bg-hover);
+    border: 1px dashed var(--border);
     border-radius: 6px;
     color: var(--text-disabled);
     font-size: 12px;
@@ -2282,11 +2249,6 @@ button.sources-section-title:hover .sources-toggle-arrow {
     border-radius: 50%;
     flex-shrink: 0;
     margin-top: 4px;
-}
-
-.fact-row-content {
-    flex: 1;
-    min-width: 0;
 }
 
 .fact-row-label {
@@ -2409,13 +2371,13 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .family-link {
-    color: #818cf8;
+    color: var(--accent);
     text-decoration: none;
     cursor: pointer;
 }
 
 .family-link:hover {
-    color: #a5b4fc;
+    color: var(--accent-light);
     text-decoration: underline;
 }
 
@@ -2425,17 +2387,14 @@ button.sources-section-title:hover .sources-toggle-arrow {
     white-space: nowrap;
 }
 
-.family-sex-m {
-    color: var(--sex-m);
+.family-sex-m,
+.family-sex-f {
     font-size: 9px;
     opacity: 0.8;
 }
 
-.family-sex-f {
-    color: var(--sex-f);
-    font-size: 9px;
-    opacity: 0.8;
-}
+.family-sex-m { color: var(--sex-m); }
+.family-sex-f { color: var(--sex-f); }
 
 .family-marr-meta {
     color: var(--text-muted);
@@ -2490,27 +2449,17 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 /* ── SVG tree element colors — Dark Editorial ───────────── */
-.edge-ancestor {
-    stroke: rgba(148, 163, 184, 0.3);
-    stroke-width: 1.2;
-}
-
-.edge-descendant {
-    stroke: rgba(148, 163, 184, 0.2);
-    stroke-width: 1.2;
-}
-
+.edge-ancestor,
+.edge-descendant,
 .edge-marriage {
-    stroke: rgba(148, 163, 184, 0.25);
     stroke-width: 1.2;
 }
 
-.btn-expand {
-    fill: var(--bg-surface);
-    stroke: rgba(110, 231, 183, 0.5);
-    stroke-width: 1;
-}
+.edge-ancestor { stroke: rgba(148, 163, 184, 0.3); }
+.edge-descendant { stroke: rgba(148, 163, 184, 0.2); }
+.edge-marriage { stroke: rgba(148, 163, 184, 0.25); }
 
+.btn-expand,
 .btn-collapse {
     fill: var(--bg-surface);
     stroke: rgba(110, 231, 183, 0.5);
@@ -2518,7 +2467,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .btn-chevron {
-    stroke: #6ee7b7;
+    stroke: var(--emerald);
 }
 
 .spouse-menu-btn {
@@ -2536,9 +2485,8 @@ button.sources-section-title:hover .sources-toggle-arrow {
 
 .delete-person-btn {
     display: block;
-    width: auto;
-    margin: 1.5rem 1rem 1rem auto;
-    padding: 0.25rem 0.6rem;
+    margin: 24px 16px 16px auto;
+    padding: 4px 10px;
     background: transparent;
     border: 1px solid var(--danger);
     color: var(--danger);
