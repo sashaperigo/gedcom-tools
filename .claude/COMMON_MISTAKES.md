@@ -220,4 +220,26 @@ Both `indis` (parse layer) and the `build_people_json` output carry `has_death`.
 
 ---
 
-**Last Updated**: 2026-04-24 (added #15 conflating no death year with living)
+---
+
+## 16. Dynamically-generated `<button>` elements without `type="button"` are silently treated as form-submit
+
+Any `<button>` element without an explicit `type` defaults to `type="submit"`. In Chrome, when such a button is clicked and there are form fields (`<input>`, `<select>`, `<textarea>`) anywhere in the DOM — including inside *hidden* modals — Chrome creates an implicit form, treats the button as its submit control, and intercepts the click before the `onclick` handler completes. The symptom is **"nothing happens"** with a Chrome console warning: "A form field element should have an id or name attribute."
+
+**This is especially treacherous with dynamically-generated HTML** (JS template literals building `innerHTML`). Static HTML in `viz_ancestors.html` already uses `type="button"` explicitly, but dynamically-generated buttons in `_buildSourcesModalContent` were missing it — allowing hidden modals' form fields to intercept clicks.
+
+**Fix:** Always include `type="button"` in dynamically-generated button HTML:
+```js
+`<button type="button" class="citation-paste-btn" onclick="...">`
+```
+
+**Symptom checklist:**
+- User clicks a button → nothing visible happens
+- No alert, no error shown, no network request
+- Chrome DevTools console shows "A form field element should have an id or name attribute"
+
+Case study: `js/viz_modals.js` `_buildSourcesModalContent` — paste/copy/edit/delete/add buttons lacked `type="button"`. The hidden `add-citation-modal` and `edit-citation-modal` form fields in the DOM caused Chrome to intercept the paste click as a form submission. Fixed in commit `8d48bcb`.
+
+---
+
+**Last Updated**: 2026-04-24 (added #16 dynamically-generated buttons without type=button)
