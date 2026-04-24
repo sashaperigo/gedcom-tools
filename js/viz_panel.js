@@ -957,7 +957,7 @@ function renderPanel() {
 
         const _hasFamily = _parHtml || _sibHtml || _spChHtml;
         const _arr = _familyOpen ? '\u25bc' : '\u25b6';
-        const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()">${_arr} Family</button>`;
+        const _toggleHtml = `<button class="family-toggle-btn" onclick="_toggleFamily()"><span class="sources-toggle-arrow">${_arr}</span> Family</button>`;
         const _subStyle = _familyOpen ? '' : ' style="display:none"';
         const _wrapSub = (html) => html ? html.replace(/<div class="family-sub"/g, `<div class="family-sub"${_subStyle}`) : '';
         const _addBtnsWrapped = _familyOpen || !_hasFamily ? _addBtns : `<div${_subStyle}>${_addBtns}</div>`;

@@ -2341,6 +2341,8 @@ button.sources-section-title:hover .sources-toggle-arrow {
 
 .family-sub:first-child .family-sub-heading {
     margin-top: 0;
+    border-top: none;
+    padding-top: 0;
 }
 
 .family-row {

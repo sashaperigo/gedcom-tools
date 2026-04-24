@@ -1006,7 +1006,9 @@ describe('renderPanel — collapsible family section (C3)', () => {
 
         const html = familyEl.innerHTML;
         // Toggle button with collapsed arrow must be present
-        expect(html).toContain('▶ Family');
+        expect(html).toContain('sources-toggle-arrow');
+        expect(html).toContain('▶');
+        expect(html).toContain('Family');
     });
 
     it('all 3 subsections (parents, siblings/spouses, children) hidden when collapsed', () => {
@@ -1530,16 +1532,16 @@ describe('renderPanel — family toggle arrow before text', () => {
         renderPanel();
         const html = familyEl.innerHTML;
         // Extract the button's inner content (text between > and </button>)
-        const btnMatch = html.match(/class="family-toggle-btn"[^>]*>([^<]*)</);
+        const btnMatch = html.match(/class="family-toggle-btn"[^>]*>([\s\S]*?)<\/button>/);
         expect(btnMatch).not.toBeNull();
-        const btnText = btnMatch[1];
-        const downArrowPos = btnText.indexOf('▼');
-        const rightArrowPos = btnText.indexOf('▶');
+        const btnHtml = btnMatch[1];
+        const downArrowPos = btnHtml.indexOf('▼');
+        const rightArrowPos = btnHtml.indexOf('▶');
         const arrowPos = Math.min(
             downArrowPos !== -1 ? downArrowPos : Infinity,
             rightArrowPos !== -1 ? rightArrowPos : Infinity
         );
-        const familyTextPos = btnText.indexOf('Family');
+        const familyTextPos = btnHtml.indexOf('Family');
         expect(arrowPos).toBeLessThan(familyTextPos);
     });
 });
