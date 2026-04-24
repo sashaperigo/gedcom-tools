@@ -664,6 +664,38 @@ function renderPanel() {
                     continue;
                 }
 
+                if (evt.tag === 'DIV') {
+                    const spXref = evt.spouse_xref;
+                    const spClickable = spXref && (typeof PARENTS !== 'undefined') && PARENTS[spXref];
+                    const spXrefAttr = spClickable ? escHtml(spXref) : '';
+                    const divClick = spClickable ?
+                        ` style="cursor:pointer" data-spouse-xref="${spXrefAttr}" onclick="setState({focusXref:this.dataset.spouseXref,panelXref:this.dataset.spouseXref,panelOpen:true})"` : '';
+                    const proseHtml = spClickable ?
+                        `<div class="marr-prose marr-link">${escHtml(prose)}</div>` :
+                        `<div class="marr-prose">${escHtml(prose)}</div>`;
+                    const divEditBtn = evt.fam_xref ?
+                        `<button class="marr-edit-btn" title="Edit divorce" onclick="event.stopPropagation();editEvent(${xrefQ},null,'DIV',${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.div_idx ?? 0})">\u270f</button>` :
+                        '';
+                    const divDelBtn = evt.fam_xref ?
+                        `<button class="marr-del-btn" title="Delete divorce" onclick="event.stopPropagation();deleteMarriage(${xrefQ},${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.div_idx ?? 0},'DIV')">\u2715</button>` :
+                        '';
+                    const divSrcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
+                    const yearLabelSpan = evtYear ? `<span class="marr-year">${evtYear}</span>` : '';
+                    html +=
+                        `<div class="div-card"${divClick}>` +
+                        divEditBtn +
+                        divDelBtn +
+                        `<div class="evt-year-col">${yearLabelSpan}<span class="evt-tag-abbrev">DIV</span></div>` +
+                        `<div class="evt-content">` +
+                        proseHtml +
+                        (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
+                        noteInl +
+                        `</div>` +
+                        divSrcBadge +
+                        `</div>`;
+                    continue;
+                }
+
                 // Collapsed RESI run \u2014 expand-to-edit
                 if (evt._run) {
                     const runKey = `${xref}:${evt.event_idx}`;

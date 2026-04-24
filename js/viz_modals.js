@@ -372,7 +372,8 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
     const events = (PEOPLE[xref] && PEOPLE[xref].events) || [];
     // For FAM events (MARR), match by fam_xref + marr_idx; otherwise match by tag + event_idx
     const evt = famXref ?
-        (events.find(e => e.fam_xref === famXref && e.tag === tag && (marrIdx == null || e.marr_idx === marrIdx)) || {}) :
+        (events.find(e => e.fam_xref === famXref && e.tag === tag &&
+            (marrIdx == null || (e.marr_idx ?? e.div_idx) === marrIdx)) || {}) :
         (events.find(e => e.tag === tag && e.event_idx === eventIdx) || {});
     document.getElementById('event-modal-title').textContent = 'Edit ' + _evtLabel(tag, evt.type) + ' \u2014 ' + _personName(xref);
     const placeVal = evt.place || '';
@@ -879,8 +880,9 @@ document.addEventListener('click', e => {
     if (item) _selectSpouse(item.dataset.xref, item.dataset.name);
 });
 
-async function deleteMarriage(xref, famXref, marrIdx) {
-    if (!confirm('Delete this marriage record? The GEDCOM file will be updated immediately (a backup will be saved).')) return;
+async function deleteMarriage(xref, famXref, marrIdx, tag = 'MARR') {
+    const label = tag === 'DIV' ? 'divorce' : 'marriage';
+    if (!confirm(`Delete this ${label} record? The GEDCOM file will be updated immediately (a backup will be saved).`)) return;
     try {
         const resp = await fetch('/api/delete_marriage', {
             method: 'POST',
@@ -889,6 +891,7 @@ async function deleteMarriage(xref, famXref, marrIdx) {
                 xref,
                 fam_xref: famXref,
                 marr_occurrence: marrIdx,
+                tag,
                 current_person: xref,
             }),
         });
