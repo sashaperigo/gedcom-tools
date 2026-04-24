@@ -196,7 +196,7 @@ function buildProse(evt) {
             {
                 if (type && type.toUpperCase() === 'AKA')
                     return { prose: `Also known as: ${evt.note || ''}`, meta: date };
-                return { prose: type || short || 'Fact', meta: date };
+                return { prose: evt.note || type || short || 'Fact', meta: date };
             }
         case 'MARR':
             {
@@ -628,7 +628,7 @@ function renderPanel() {
 
                 const { prose, meta } = buildProse(evt);
                 const color = dotColor(evt);
-                const noteInl = evt.note ?
+                const noteInl = (evt.note && evt.tag !== 'FACT') ?
                     evt.note.split('\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
 
                 if (evt.tag === 'MARR') {
@@ -787,7 +787,7 @@ function renderPanel() {
             return evts.map(evt => {
                 const { prose, meta } = buildProse(evt);
                 const color = dotColor(evt);
-                const noteInl = evt.note ? evt.note.split('\n').map(l => `<div class="fact-row-note">${escHtml(l)}</div>`).join('') : '';
+                const noteInl = (evt.note && evt.tag !== 'FACT') ? evt.note.split('\n').map(l => `<div class="fact-row-note">${escHtml(l)}</div>`).join('') : '';
                 const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
                 const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
                     `<button class="evt-edit-btn" title="Edit" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` : '';
@@ -840,9 +840,7 @@ function renderPanel() {
         const _xrefQ2 = JSON.stringify(xref).replace(/"/g, '&quot;');
         const _addFactBtn = `<select class="add-fact-select" onchange="if(this.value){addEvent(${_xrefQ2},this.value);this.selectedIndex=0}">` +
             `<option value="" disabled selected>&#43; Add fact\u2026</option>` +
-            `<option value="ADOP">Adoption</option>` +
             `<option value="NCHI">Children (count)</option>` +
-            `<option value="CHR">Christening</option>` +
             `<option value="EDUC">Education</option>` +
             `<option value="FACT:Languages">Languages</option>` +
             `<option value="FACT:Literacy">Literacy</option>` +
@@ -851,7 +849,6 @@ function renderPanel() {
             `<option value="DSCR">Physical Description</option>` +
             `<option value="FACT:Politics">Politics</option>` +
             `<option value="RELI">Religion</option>` +
-            `<option value="RETI">Retirement</option>` +
             `<option value="TITL">Title</option>` +
             `</select>`;
 

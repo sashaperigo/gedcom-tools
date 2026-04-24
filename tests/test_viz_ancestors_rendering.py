@@ -705,6 +705,23 @@ class TestPanelFactRendering:
             'viz_panel.js must define buildProse for event rendering (ported from viz_detail.js)'
         )
 
+    def test_buildProse_fact_uses_note_as_value(self):
+        """buildProse non-AKA FACT return must lead with evt.note, not type.
+
+        Medical Condition facts store meaningful content (e.g. 'Mental Illness')
+        in evt.note.  evt.type ('Medical condition') is already used as the label.
+        The non-AKA return path must prefer evt.note so the value displayed is
+        the actual condition, not a repetition of the label.
+        """
+        import re
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        # The non-AKA FACT return must have evt.note before type in the prose chain.
+        # Pattern: return { prose: evt.note || type  (within the FACT case)
+        assert re.search(r"prose:\s*evt\.note\s*\|\|", panel_src), (
+            "buildProse FACT case non-AKA return must start prose chain with evt.note "
+            "so 'Mental Illness' shows as the value, not the label 'Medical condition'"
+        )
+
     def test_panel_renders_section_headers(self):
         """viz_panel.js must emit section headers like EARLY LIFE / LIFE / LATER LIFE."""
         panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
