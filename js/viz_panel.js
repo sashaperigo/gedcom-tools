@@ -788,6 +788,8 @@ function renderPanel() {
                 const { prose, meta } = buildProse(evt);
                 const color = dotColor(evt);
                 const noteInl = (evt.note && evt.tag !== 'FACT') ? evt.note.split('\n').map(l => `<div class="fact-row-note">${escHtml(l)}</div>`).join('') : '';
+                const subMeta = [fmtPlace(evt.place || ''), fmtDate(evt.date)].filter(Boolean).join(' \u00b7 ');
+                const subMetaInl = subMeta ? `<div class="fact-row-meta">${escHtml(subMeta)}</div>` : '';
                 const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
                 const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
                     `<button class="evt-edit-btn" title="Edit" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` : '';
@@ -829,6 +831,7 @@ function renderPanel() {
                     `<div class="fact-row-content">` +
                     `<span class="fact-row-label">${escHtml(labelTag)}</span>` +
                     `<span class="fact-row-value">${escHtml(valueText)}</span>` +
+                    subMetaInl +
                     noteInl +
                     `</div>` +
                     `<div class="evt-actions">${editBtn}${delBtn}</div>` +

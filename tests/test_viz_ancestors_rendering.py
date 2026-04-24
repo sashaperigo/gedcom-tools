@@ -731,6 +731,46 @@ class TestPanelFactRendering:
 
 
 # ---------------------------------------------------------------------------
+# B9  Undated fact rows show place and date when present
+# ---------------------------------------------------------------------------
+
+class TestUndatedFactRowMeta:
+    """
+    B9: Undated fact rows (bottom section of the info panel) did not display
+    place or date even when the event had them.  For example, Education facts
+    with a PLAC subtag showed only the institution name; the city/country was
+    silently dropped.  A fact-row-meta sub-line must now appear whenever
+    evt.place or evt.date is present.
+    """
+
+    def test_undated_rows_emit_fact_row_meta_class(self):
+        """undatedRows() must render a fact-row-meta element for place/date."""
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        assert 'fact-row-meta' in panel_src, (
+            'undatedRows() must emit a fact-row-meta div for place/date sub-metadata'
+        )
+
+    def test_fact_row_meta_built_from_place_and_date(self):
+        """undatedRows() must build subMeta from evt.place and evt.date."""
+        import re
+        panel_src = (Path(__file__).parent.parent / 'js' / 'viz_panel.js').read_text()
+        # subMeta must reference both fmtPlace (for place) and fmtDate (for date)
+        # in the undatedRows function body
+        undated_match = re.search(r'function undatedRows\((.+?)(?=\n        const _xrefQ2)', panel_src, re.DOTALL)
+        assert undated_match, 'Could not find undatedRows function body'
+        body = undated_match.group(0)
+        assert 'fmtPlace' in body, 'undatedRows must use fmtPlace to format place for subMeta'
+        assert 'fmtDate' in body or 'evt.date' in body, 'undatedRows must include date in subMeta'
+
+    def test_fact_row_meta_css_defined(self):
+        """.fact-row-meta must be defined in viz_ancestors.css."""
+        css_src = (Path(__file__).parent.parent / 'viz_ancestors.css').read_text()
+        assert '.fact-row-meta' in css_src, (
+            '.fact-row-meta CSS class must be defined so place/date sub-lines are styled correctly'
+        )
+
+
+# ---------------------------------------------------------------------------
 # B8  Marriage ADDR parsing from FAM blocks
 # ---------------------------------------------------------------------------
 

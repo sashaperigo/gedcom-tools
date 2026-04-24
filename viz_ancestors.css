@@ -2336,6 +2336,13 @@ button.sources-section-title:hover .sources-toggle-arrow {
     line-height: 1.5;
 }
 
+.fact-row-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    line-height: 1.4;
+}
+
 .fact-row-src {
     flex-shrink: 0;
     display: inline-flex;
