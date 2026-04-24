@@ -330,6 +330,47 @@ class TestEditEventEndpoint:
         assert '@I12@' in resp['people'], \
             'Husband xref must also be in the response so his panel can be refreshed'
 
+    # (3) Synthetic/placeholder marriage: @F1@ has HUSB @I2@ and WIFE @I3@ but NO MARR record.
+    # edit_event must INSERT a new MARR block rather than failing.
+    def test_synthetic_marr_date_inserted_into_fam(self, live_server):
+        """Adding a date to a FAM with no MARR record inserts a 1 MARR block."""
+        ged, post, _, _ = live_server
+        resp = post('/api/edit_event', {
+            'xref': '@I2@', 'tag': 'MARR', 'fam_xref': '@F1@',
+            'marr_occurrence': 0,
+            'updates': {'DATE': '1 JAN 1985', 'PLAC': '', 'NOTE': '', 'ADDR': ''},
+        })
+        assert resp['ok'] is True
+        text = _ged_text(ged)
+        assert '1 MARR' in text
+        assert '2 DATE 1 JAN 1985' in text
+
+    def test_synthetic_marr_returns_updated_date_in_response(self, live_server):
+        """The response people dict must include the newly-set MARR date."""
+        ged, post, _, _ = live_server
+        resp = post('/api/edit_event', {
+            'xref': '@I2@', 'tag': 'MARR', 'fam_xref': '@F1@',
+            'marr_occurrence': 0,
+            'updates': {'DATE': '1 JAN 1985', 'PLAC': '', 'NOTE': '', 'ADDR': ''},
+        })
+        assert resp['ok'] is True
+        marr_evts = [e for e in resp['people']['@I2@']['events'] if e['tag'] == 'MARR']
+        f1_marr = next((e for e in marr_evts if e.get('fam_xref') == '@F1@'), None)
+        assert f1_marr is not None
+        assert f1_marr['date'] == '1 JAN 1985'
+
+    def test_synthetic_marr_refreshes_both_spouses(self, live_server):
+        """Adding a date to a synthetic MARR must return data for both spouses."""
+        ged, post, _, _ = live_server
+        resp = post('/api/edit_event', {
+            'xref': '@I2@', 'tag': 'MARR', 'fam_xref': '@F1@',
+            'marr_occurrence': 0,
+            'updates': {'DATE': '1 JAN 1985'},
+        })
+        assert resp['ok'] is True
+        assert '@I2@' in resp['people'], 'husb (@I2@) must be in response'
+        assert '@I3@' in resp['people'], 'wife (@I3@) must be in response'
+
     def test_individual_event_unknown_xref_returns_error(self, live_server):
         ged, post, _, _ = live_server
         resp = post('/api/edit_event', {

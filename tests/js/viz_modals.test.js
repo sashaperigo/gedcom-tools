@@ -668,6 +668,42 @@ describe('editEvent pre-fills spouse for MARR (B4)', () => {
     });
 });
 
+// ── editEvent re-enables date field disabled by "date unknown" checkbox ───────
+
+describe('editEvent resets date-unknown state (B5)', () => {
+    function _fakeEl(id, extras = {}) {
+        return { id, innerHTML: '', textContent: '', style: {}, value: '', options: [], readOnly: false, checked: false, disabled: false, classList: { _classes: new Set(), add(c) { this._classes.add(c); }, remove(c) { this._classes.delete(c); }, contains(c) { return this._classes.has(c); } }, ...extras };
+    }
+
+    let dateInp, dateUnknownCb;
+
+    beforeEach(() => {
+        dateInp = _fakeEl('event-modal-date');
+        dateUnknownCb = _fakeEl('event-modal-date-unknown');
+
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Helena Vitali',
+                events: [{ tag: 'MARR', fam_xref: '@F1@', marr_idx: 0, date: null, place: null, spouse: 'George Papadopoulos', spouse_xref: '@I2@' }],
+            },
+        };
+        global.ALL_PEOPLE = [];
+        global.ADDR_BY_PLACE = {};
+        global.ALL_PLACES = {};
+        global.document = { getElementById(id) { if (id === 'event-modal-date') return dateInp; if (id === 'event-modal-date-unknown') return dateUnknownCb; return _fakeEl(id); }, addEventListener: () => {} };
+        global.setState = vi.fn();
+    });
+
+    it('re-enables date input even if it was disabled by date-unknown checkbox', () => {
+        const { editEvent } = require('../../js/viz_modals.js');
+        dateInp.disabled = true;
+        dateUnknownCb.checked = true;
+        editEvent('@I1@', null, 'MARR', '@F1@', 0);
+        expect(dateInp.disabled).toBe(false);
+        expect(dateUnknownCb.checked).toBe(false);
+    });
+});
+
 // ── New modal exports (Task 14) ────────────────────────────────────────────
 
 // Re-require to pick up new exports without polluting scope above.

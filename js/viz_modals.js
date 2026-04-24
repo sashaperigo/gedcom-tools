@@ -399,9 +399,15 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
         _eventModalSpouseXref = null;
     }
     _updateEventModalFields(tag);
-    // Date-unknown checkbox is for adds only — hide when editing an existing event.
+    // Date-unknown checkbox is for adds only — hide it and reset its state when editing.
+    // The disabled state of the date input persists across modal opens, so we must
+    // explicitly re-enable it here even though the checkbox row is hidden.
     const _duRow = document.getElementById('event-modal-date-unknown-row');
     if (_duRow) _duRow.style.display = 'none';
+    const _duCb = document.getElementById('event-modal-date-unknown');
+    if (_duCb) _duCb.checked = false;
+    const _dateInp = document.getElementById('event-modal-date');
+    if (_dateInp) _dateInp.disabled = false;
     // Set type AFTER _updateEventModalFields so its reset-from-preset logic doesn't wipe the prefill.
     document.getElementById('event-modal-type').value = evt.type || '';
     document.getElementById('event-modal-overlay').classList.add('open');
