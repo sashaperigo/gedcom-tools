@@ -163,6 +163,8 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             'sibling',
             expandedChildrenPersons,
             { type: 'lastLeftEdge', value: olderSibsAnchor },
+            visibleSpouseFams,
+            focusXref,
         );
         // Insert spouses of older focus-row siblings. Process right→left so that
         // each sib's spouse goes to its LEFT and more-left sibs are shifted left.
@@ -298,6 +300,8 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             'sibling',
             expandedChildrenPersons,
             { type: 'firstLeftEdge', value: youngerSibStartX },
+            visibleSpouseFams,
+            focusXref,
         );
         // Insert spouses of younger focus-row siblings. Process left→right so that
         // each sib's spouse goes to its RIGHT and more-right sibs are shifted right.
@@ -1068,8 +1072,8 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
     // Extra padding beyond pill edge to reserve space for a sibling's expanded-
     // descendant subtree poking out past the pill. Only a sibling's OWN pill
     // carries this (descendants hang under the sibling, not spouses).
-    const extraRight = (sx) => Math.max(0, _descendantHalfwidth(sx, 'right', expandedChildrenPersons) - NODE_W / 2);
-    const extraLeft = (sx) => Math.max(0, _descendantHalfwidth(sx, 'left', expandedChildrenPersons) - NODE_W / 2);
+    const extraRight = (sx) => Math.max(0, _descendantHalfwidth(sx, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref) - NODE_W / 2);
+    const extraLeft = (sx) => Math.max(0, _descendantHalfwidth(sx, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref) - NODE_W / 2);
 
     // If a sibling has an expanded FAM, its children will be placed on the
     // child row (ancY + ROW_HEIGHT) centered under that sibling. Those
@@ -1106,7 +1110,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
             // that will land on childY, make sure the leftmost kid clears the
             // left barrier from pre-existing child-row nodes.
             if (childRowLeftBarrier > -Infinity) {
-                const halfLeft = _descendantHalfwidth(sibXref, 'left', expandedChildrenPersons);
+                const halfLeft = _descendantHalfwidth(sibXref, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
                 if (halfLeft > NODE_W / 2) {
                     const minSibX = childRowLeftBarrier + H_GAP + halfLeft - NODE_W / 2;
                     if (minSibX > cursor) cursor = minSibX;
@@ -1122,7 +1126,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                 edges.push({ x1: cursor, y1: midY, x2: spX, y2: midY, type: 'marriage' });
                 cursor = spX + NODE_W;
             });
-            cursor = Math.max(cursor, sibX + NODE_W / 2 + _descendantHalfwidth(sibXref, 'right', expandedChildrenPersons));
+            cursor = Math.max(cursor, sibX + NODE_W / 2 + _descendantHalfwidth(sibXref, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref));
         });
     } else {
         // Siblings fan left of ancestor, chronological L→R (youngest closest to ancestor).
@@ -1135,7 +1139,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                 rightEdge -= extraRight(sibXref);
             }
             if (childRowRightBarrier < Infinity) {
-                const halfRight = _descendantHalfwidth(sibXref, 'right', expandedChildrenPersons);
+                const halfRight = _descendantHalfwidth(sibXref, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
                 if (halfRight > NODE_W / 2) {
                     const maxSibRight = childRowRightBarrier - H_GAP - halfRight + NODE_W / 2;
                     if (maxSibRight < rightEdge) rightEdge = maxSibRight;
@@ -1151,7 +1155,7 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
                 edges.push({ x1: spX + NODE_W, y1: midY, x2: cursorLeft, y2: midY, type: 'marriage' });
                 cursorLeft = spX;
             });
-            rightEdge = Math.min(cursorLeft, sibX + NODE_W / 2 - _descendantHalfwidth(sibXref, 'left', expandedChildrenPersons));
+            rightEdge = Math.min(cursorLeft, sibX + NODE_W / 2 - _descendantHalfwidth(sibXref, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref));
         });
     }
 }
@@ -1430,8 +1434,9 @@ function _shiftFocusSpouseSubtree(nodes, edges, entry, dx) {
 //
 // Used by sibling-row packing so that two adjacent siblings who both expand
 // their kids leave enough horizontal room for their cousin subtrees.
-function _descendantHalfwidth(xref, side, expandedChildrenPersons, visited) {
+function _descendantHalfwidth(xref, side, expandedChildrenPersons, visited, visibleSpouseFams, focusXref) {
     const { NODE_W, H_GAP } = DESIGN;
+    const CHILD_MARRIAGE_GAP = H_GAP;
     if (!expandedChildrenPersons || expandedChildrenPersons.size === 0) return NODE_W / 2;
     if (typeof FAMILIES === 'undefined' || !FAMILIES) return NODE_W / 2;
     if (!expandedChildrenPersons.has(xref)) return NODE_W / 2;
@@ -1451,16 +1456,51 @@ function _descendantHalfwidth(xref, side, expandedChildrenPersons, visited) {
     let extent = NODE_W / 2;
     if (allChil.length > 0) {
         const sorted = _sortByBirthYear(allChil);
-        const totalWidth = sorted.length * NODE_W + (sorted.length - 1) * H_GAP;
-        const groupStart = -totalWidth / 2; // relative to xref center
-        sorted.forEach((cx, i) => {
-            const childCenterOffset = groupStart + i * (NODE_W + H_GAP) + NODE_W / 2;
-            const childHalf = _descendantHalfwidth(cx, side, expandedChildrenPersons, visited);
-            const reach = side === 'right' ?
-                childCenterOffset + childHalf :
-                -childCenterOffset + childHalf;
-            if (reach > extent) extent = reach;
+
+        // Compute per-child slot widths (pill + visible spouses).
+        // This matches _placeChildrenOfPerson's buildGroupsForFam width formula
+        // so the parent-row spacing reflects the actual child cluster width.
+        const childWidths = sorted.map(cx => {
+            const spouses = (visibleSpouseFams !== undefined && focusXref !== undefined &&
+                            typeof RELATIVES !== 'undefined' && RELATIVES[cx])
+                ? _visibleSpousesFor(cx, RELATIVES[cx]?.spouses ?? [], visibleSpouseFams, focusXref)
+                : [];
+            return NODE_W + spouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
         });
+
+        const totalWidth = childWidths.reduce((sum, cw, i) => sum + cw + (i > 0 ? H_GAP : 0), 0);
+        const groupStart = -totalWidth / 2; // relative to xref center
+
+        // Per-child reach, accounting for variable slot widths and recursive grandchildren.
+        let cursor = 0;
+        sorted.forEach((cx, i) => {
+            if (i > 0) cursor += H_GAP;
+            const childPillCenter = groupStart + cursor + NODE_W / 2;
+            const childHalf = _descendantHalfwidth(cx, side, expandedChildrenPersons, visited, visibleSpouseFams, focusXref);
+            const reach = side === 'right' ? childPillCenter + childHalf : -childPillCenter + childHalf;
+            if (reach > extent) extent = reach;
+            // The full slot (including spouse pills) also contributes to extent.
+            const slotExtent = side === 'right'
+                ? groupStart + cursor + childWidths[i]
+                : -(groupStart + cursor);
+            if (slotExtent > extent) extent = slotExtent;
+            cursor += childWidths[i];
+        });
+
+        // Centering correction: _placeChildrenOfPerson centers the cluster under the
+        // marriage midpoint (between xref and their on-row spouse), not under xref itself.
+        // When a spouse exists, this shifts the cluster left or right by roughly
+        // (SIB_MARRIAGE_GAP + NODE_W) / 2. To guarantee enough room on both sides
+        // regardless of which direction the spouse lies, conservatively add this offset
+        // to the extent in both directions.
+        const personSpouses = (visibleSpouseFams !== undefined && focusXref !== undefined &&
+                              typeof RELATIVES !== 'undefined' && RELATIVES[xref])
+            ? _visibleSpousesFor(xref, RELATIVES[xref]?.spouses ?? [], visibleSpouseFams, focusXref)
+            : [];
+        if (personSpouses.length > 0) {
+            const spousalOffset = (SIB_MARRIAGE_GAP + NODE_W) / 2;
+            if (totalWidth / 2 + spousalOffset > extent) extent = totalWidth / 2 + spousalOffset;
+        }
     }
     visited.delete(xref);
     return extent;
@@ -1476,15 +1516,15 @@ function _descendantHalfwidth(xref, side, expandedChildrenPersons, visited) {
 //   { type: 'leftEdgeCenter', value: cx }  — first node's CENTER at cx
 //   { type: 'rightEdgeCenter', value: cx } — last node's CENTER at cx
 //   { type: 'leftEdgeX', value: x }        — first node's LEFT EDGE at x
-function _packRowWithDescendants(items, y, role, expandedChildrenPersons, anchor) {
+function _packRowWithDescendants(items, y, role, expandedChildrenPersons, anchor, visibleSpouseFams, focusXref) {
     const { NODE_W, H_GAP, ROW_HEIGHT } = DESIGN;
     const xs = [];
     items.forEach((it, i) => {
         if (i === 0) {
             xs.push(0);
         } else {
-            const prevRight = _descendantHalfwidth(items[i - 1].xref, 'right', expandedChildrenPersons);
-            const currLeft = _descendantHalfwidth(it.xref, 'left', expandedChildrenPersons);
+            const prevRight = _descendantHalfwidth(items[i - 1].xref, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
+            const currLeft = _descendantHalfwidth(it.xref, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
             const prevCenter = xs[i - 1] + NODE_W / 2;
             const currCenter = prevCenter + prevRight + currLeft + H_GAP;
             xs.push(currCenter - NODE_W / 2);

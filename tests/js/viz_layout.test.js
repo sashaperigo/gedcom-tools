@@ -3510,3 +3510,88 @@ describe('computeLayout — focus-parents ↔ spouse-parents collision avoidance
         expect(sib.x).toBeGreaterThan(spouse.x + NODE_W);
     });
 });
+
+// ── Regression: middle sibling's children (with child spouses) must land between ──
+// outer sibling children, not spill to the right of all existing children.
+// Root cause: _descendantHalfwidth was computing the cluster width ignoring
+// child spouses, causing the parent-row gap to be too small and pickStartInFreeGap
+// to fall back to the rightmost available gap.
+describe('computeLayout — middle sibling children land between outer sibling children', () => {
+    beforeEach(() => {
+        // Layout:
+        //   Row 0: @LEFTSIB@  @MIDSIB@—@MIDSPOUSE@  @FOCUS@—@FSPOUSE@
+        //   Row 1: @LC1@ @LC2@  ...gap for @MC*@...  @FCHILD1@ @FCHILD2@
+        //
+        // @MC1@ has a visible spouse (@MC1SP@), making the @MIDSIB@ cluster
+        // wider than bare-pill estimates. Without the fix, pickStartInFreeGap
+        // cannot fit @MC*@ in the interior gap and puts them right of @FCHILD*@.
+        resetGlobals({
+            people: {
+                '@FOCUS@':     { birth_year: 1912 },
+                '@FSPOUSE@':   { birth_year: 1910 },
+                '@FCHILD1@':   { birth_year: 1935 },
+                '@FCHILD2@':   { birth_year: 1937 },
+                '@LEFTSIB@':   { birth_year: 1895 },
+                '@LC1@':       { birth_year: 1920 },
+                '@LC2@':       { birth_year: 1922 },
+                '@MIDSIB@':    { birth_year: 1901 },
+                '@MIDSPOUSE@': { birth_year: 1905 },
+                '@MC1@':       { birth_year: 1928 },
+                '@MC1SP@':     { birth_year: 1930 },
+                '@MC2@':       { birth_year: 1932 },
+            },
+            relatives: {
+                '@FOCUS@':     { siblings: ['@LEFTSIB@', '@MIDSIB@'], spouses: ['@FSPOUSE@'] },
+                '@MIDSIB@':    { siblings: ['@FOCUS@', '@LEFTSIB@'], spouses: ['@MIDSPOUSE@'] },
+                '@MC1@':       { siblings: ['@MC2@'], spouses: ['@MC1SP@'] },
+                '@MC2@':       { siblings: ['@MC1@'], spouses: [] },
+            },
+            children: {
+                '@FOCUS@': ['@FCHILD1@', '@FCHILD2@'],
+            },
+            families: {
+                '@LEFTFAM@':  { husb: '@LEFTSIB@',  wife: null,        chil: ['@LC1@', '@LC2@'] },
+                '@MIDFAM@':   { husb: '@MIDSIB@',   wife: '@MIDSPOUSE@', chil: ['@MC1@', '@MC2@'] },
+                '@FOCUSFAM@': { husb: '@FOCUS@',    wife: '@FSPOUSE@',  chil: ['@FCHILD1@', '@FCHILD2@'] },
+            },
+        });
+    });
+
+    it('middle sibling (@MIDSIB@) children appear between left-sib and focus children', () => {
+        const expandedChildrenPersons = new Set(['@LEFTSIB@', '@MIDSIB@']);
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
+
+        const lc1 = nodes.find(n => n.xref === '@LC1@');
+        const lc2 = nodes.find(n => n.xref === '@LC2@');
+        const mc1 = nodes.find(n => n.xref === '@MC1@');
+        const mc2 = nodes.find(n => n.xref === '@MC2@');
+        const mc1sp = nodes.find(n => n.xref === '@MC1SP@');
+        const fc1 = nodes.find(n => n.xref === '@FCHILD1@');
+        const fc2 = nodes.find(n => n.xref === '@FCHILD2@');
+
+        // All child nodes must be present
+        expect(lc1).toBeDefined();
+        expect(lc2).toBeDefined();
+        expect(mc1).toBeDefined();
+        expect(mc2).toBeDefined();
+        expect(mc1sp).toBeDefined();
+        expect(fc1).toBeDefined();
+        expect(fc2).toBeDefined();
+
+        // All on the child row
+        [lc1, lc2, mc1, mc2, mc1sp, fc1, fc2].forEach(n => {
+            expect(n.y).toBe(ROW_HEIGHT);
+        });
+
+        // The left-group right edge (rightmost left-sib child right edge)
+        const leftGroupRight = Math.max(lc1.x + NODE_W, lc2.x + NODE_W);
+        // The right-group left edge (leftmost focus child left edge)
+        const rightGroupLeft = Math.min(fc1.x, fc2.x);
+
+        // Every middle-sibling child node must fall strictly between the two groups
+        [mc1, mc2, mc1sp].forEach(mc => {
+            expect(mc.x).toBeGreaterThan(leftGroupRight);
+            expect(mc.x + NODE_W).toBeLessThan(rightGroupLeft);
+        });
+    });
+});
