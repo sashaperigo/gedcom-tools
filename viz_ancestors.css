@@ -1372,6 +1372,7 @@ header h1 .root-name-accent {
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.2;
+    font-variant-numeric: tabular-nums;
     display: block;
     letter-spacing: -0.2px;
 }
@@ -1834,7 +1835,9 @@ header h1 .root-name-accent {
     padding-right: 10px;
 }
 
-.evt-entry.no-year .evt-year-col { display: none; }
+.evt-entry.no-year .evt-year-col {
+    display: none;
+}
 
 .evt-year {
     font-size: 12px;
@@ -2268,7 +2271,10 @@ button.sources-section-title:hover .sources-toggle-arrow {
     padding: 11px 0 8px;
     border-bottom: 1px solid var(--border-subtle, #1a2540);
 }
-.fact-row:last-of-type { border-bottom: none; }
+
+.fact-row:last-of-type {
+    border-bottom: none;
+}
 
 .fact-dot {
     width: 7px;
@@ -2278,7 +2284,10 @@ button.sources-section-title:hover .sources-toggle-arrow {
     margin-top: 4px;
 }
 
-.fact-row-content { flex: 1; min-width: 0; }
+.fact-row-content {
+    flex: 1;
+    min-width: 0;
+}
 
 .fact-row-label {
     font-size: 10px;
