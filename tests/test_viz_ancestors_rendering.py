@@ -456,6 +456,53 @@ class TestMarriageEventSpouseXref:
 
 
 # ---------------------------------------------------------------------------
+# B7  DIV events carry spouse_xref and display spouse name
+# ---------------------------------------------------------------------------
+
+class TestDivorceEventSpouseXref:
+    """
+    B7: DIV event cards show "Divorced [spouse name]" with a clickable link.
+    The data (spouse, spouse_xref) is already attached in viz_ancestors.py;
+    this ensures it survives the JSON serialisation step.
+    """
+
+    def test_div_events_have_spouse_xref_field(self, people):
+        """Every DIV event that has a named spouse must also carry spouse_xref."""
+        for xref, person in people.items():
+            for evt in person.get('events', []):
+                if evt.get('tag') == 'DIV' and evt.get('spouse'):
+                    assert 'spouse_xref' in evt, (
+                        f'DIV event for {xref} names spouse '
+                        f'"{evt["spouse"]}" but has no spouse_xref field'
+                    )
+
+    def test_div_spouse_xref_is_valid_xref_or_none(self, people, indis):
+        """spouse_xref on DIV events must be None or a valid individual xref."""
+        for xref, person in people.items():
+            for evt in person.get('events', []):
+                if evt.get('tag') == 'DIV':
+                    sp = evt.get('spouse_xref')
+                    if sp is not None:
+                        assert sp in indis, (
+                            f'DIV event for {xref} has spouse_xref={sp!r} '
+                            'which is not a known individual'
+                        )
+
+    def test_rose_div_spouse_xref_is_mark(self, people):
+        """Rose (@I1@) divorced Mark Davis (@I12@) per @F5@."""
+        rose_div = [e for e in people['@I1@']['events'] if e['tag'] == 'DIV']
+        assert rose_div, '@I1@ has no DIV events despite @F5@ having 1 DIV'
+        assert rose_div[0]['spouse_xref'] == '@I12@'
+
+    def test_div_spouse_xref_reciprocal(self, people):
+        """Mark (@I12@) should also have a DIV event pointing back to Rose."""
+        mark_div = [e for e in people.get('@I12@', {}).get('events', [])
+                    if e['tag'] == 'DIV']
+        if mark_div:
+            assert mark_div[0]['spouse_xref'] == '@I1@'
+
+
+# ---------------------------------------------------------------------------
 # Expansion-button logic
 # ---------------------------------------------------------------------------
 #
