@@ -555,6 +555,18 @@ describe('renderPanel — RESI rollup', () => {
         expect(collapsed[0]._run[0].event_idx).toBe(0);
         expect(collapsed[0]._run[1].event_idx).toBe(1);
     });
+
+    it('uses max year across all events when first event spans a range', () => {
+        const events = [
+            { tag: 'RESI', date: 'FROM 2017 TO 2026',
+              place: 'San Francisco, San Francisco, California, USA', citations: [], event_idx: 0 },
+            { tag: 'RESI', date: '2019',
+              place: 'San Francisco, San Francisco, California, USA', citations: [], event_idx: 1 },
+        ];
+        const collapsed = collapseResidences(events);
+        expect(collapsed).toHaveLength(1);
+        expect(collapsed[0]._yearRange).toBe('2017–2026');
+    });
 });
 
 describe('renderPanel — EVEN tag uses type label', () => {

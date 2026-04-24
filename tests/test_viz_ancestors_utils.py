@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from viz_ancestors import parse_gedcom, build_addr_by_place, build_all_places, _find_person, _normalize_citation, _spouse_of
+from viz_ancestors import parse_gedcom, build_addr_by_place, build_all_places, _find_person, _normalize_citation, _spouse_of, _dedup_subsumed_resi
 
 _FIXTURE_GED = str(Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged')
 
@@ -538,3 +538,39 @@ class TestSpouseOf:
     def test_returns_none_when_both_missing(self):
         fam = {'husb': None, 'wife': None, 'chil': []}
         assert _spouse_of(fam, '@I1@') is None
+
+
+class TestDedupSubsumedResi:
+    def test_removes_subsumed_resi(self):
+        events = [
+            {'tag': 'RESI', 'date': 'FROM 2017 TO 2026', 'place': 'San Francisco, California', 'event_idx': 0},
+            {'tag': 'RESI', 'date': '2019',               'place': 'San Francisco, California', 'event_idx': 1},
+        ]
+        result = _dedup_subsumed_resi(events)
+        assert len(result) == 1
+        assert result[0]['event_idx'] == 0  # broader event kept
+
+    def test_keeps_non_overlapping_resi_at_different_places(self):
+        events = [
+            {'tag': 'RESI', 'date': '2010', 'place': 'New York', 'event_idx': 0},
+            {'tag': 'RESI', 'date': '2017', 'place': 'San Francisco', 'event_idx': 1},
+        ]
+        result = _dedup_subsumed_resi(events)
+        assert len(result) == 2
+
+    def test_keeps_non_resi_events_untouched(self):
+        events = [
+            {'tag': 'BIRT', 'date': '2019', 'place': 'X', 'event_idx': 0},
+            {'tag': 'RESI', 'date': 'FROM 2017 TO 2026', 'place': 'X', 'event_idx': 1},
+        ]
+        result = _dedup_subsumed_resi(events)
+        assert len(result) == 2
+
+    def test_equal_range_events_are_not_deduplicated(self):
+        # Two identical date ranges — neither strictly subsumes the other
+        events = [
+            {'tag': 'RESI', 'date': '2019', 'place': 'X', 'event_idx': 0},
+            {'tag': 'RESI', 'date': '2019', 'place': 'X', 'event_idx': 1},
+        ]
+        result = _dedup_subsumed_resi(events)
+        assert len(result) == 2

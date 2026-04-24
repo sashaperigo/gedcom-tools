@@ -652,6 +652,38 @@ def sort_events(events: list) -> list:
     return sorted(events, key=lambda e: (_event_sort_order(e),) + _date_sort_key(e.get('date')))
 
 
+def _event_year_range(date_str: str) -> tuple[int, int] | None:
+    """Return (min_year, max_year) from a GEDCOM date string, or None if no years found."""
+    years = [int(m) for m in re.findall(r'\b\d{4}\b', date_str or '')]
+    return (min(years), max(years)) if years else None
+
+
+def _dedup_subsumed_resi(events: list) -> list:
+    """Remove RESI events whose date range is strictly contained in another RESI at the same place."""
+    resi_by_place: dict[str, list[int]] = {}
+    for i, e in enumerate(events):
+        if e.get('tag') == 'RESI':
+            place = (e.get('place') or '').strip()
+            resi_by_place.setdefault(place, []).append(i)
+
+    subsumed: set[int] = set()
+    for idxs in resi_by_place.values():
+        if len(idxs) < 2:
+            continue
+        ranges = [(i, _event_year_range(events[i].get('date') or '')) for i in idxs]
+        for i, ri in ranges:
+            if ri is None or i in subsumed:
+                continue
+            for j, rj in ranges:
+                if i == j or rj is None or j in subsumed:
+                    continue
+                if rj[0] <= ri[0] and rj[1] >= ri[1] and (rj[0] < ri[0] or rj[1] > ri[1]):
+                    subsumed.add(i)
+                    break
+
+    return [e for i, e in enumerate(events) if i not in subsumed]
+
+
 def _matches_exclusion(evt: dict, excl: dict) -> bool:
     """Return True if evt matches an exclusion entry (same xref checked by caller)."""
     if evt.get('tag') != excl.get('tag'):
@@ -742,6 +774,7 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
             e for e in tagged_events
             if not any(_matches_exclusion(e, ex) for ex in excl_list)
         ]
+        events = _dedup_subsumed_resi(events)
         if fams:
             for fam_xref in info.get('fams', []):
                 fam = fams.get(fam_xref, {})
