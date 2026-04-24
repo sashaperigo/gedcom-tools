@@ -650,8 +650,9 @@ header h1 .root-name-accent {
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--text-muted);
+    color: var(--text-disabled);
     font-size: 10px;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     padding: 0;
@@ -1881,7 +1882,7 @@ header h1 .root-name-accent {
 .evt-prose-text {
     display: block;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--text-primary);
     line-height: 1.3;
     margin-top: 1px;
@@ -2003,8 +2004,8 @@ header h1 .root-name-accent {
     align-items: center;
     gap: 7px;
     font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.09em;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-disabled);
 }
@@ -2249,6 +2250,18 @@ button.sources-section-title:hover .sources-toggle-arrow {
     margin-top: 16px;
 }
 
+.family-toggle-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-disabled);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0 0 10px 0;
+    font-family: inherit;
+}
+
 .family-sub {
     margin-bottom: 0;
 }
@@ -2256,10 +2269,10 @@ button.sources-section-title:hover .sources-toggle-arrow {
 .family-sub-heading {
     display: block;
     font-size: 10px;
-    font-weight: 700;
-    color: var(--text-disabled);
+    font-weight: 600;
+    color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     border-top: 1px solid var(--border-deep);
     padding-top: 12px;
     margin: 18px 0 10px 0;
