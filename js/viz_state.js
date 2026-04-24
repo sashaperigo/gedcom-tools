@@ -123,7 +123,7 @@ function _xrefFromUrl(search) {
     const p = params.get('p');
     if (p) return _tokenToXref(p);
     const person = params.get('person');
-    if (person) return '@' + person + '@';
+    if (person) return person.startsWith('@') ? person : '@' + person + '@';
     return null;
 }
 

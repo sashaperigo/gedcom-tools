@@ -157,6 +157,12 @@ describe('initState', () => {
         expect(mod.getState().focusXref).toBe('@I42@');
     });
 
+    it('handles ?person=@I42@ (full xref) without double-wrapping — as sent by delete redirect', () => {
+        const mod = loadModule('?person=@I42@');
+        mod.initState('@I1@');
+        expect(mod.getState().focusXref).toBe('@I42@');
+    });
+
     it('does NOT push to history on initState', () => {
         const mod = loadModule('?p=G');
         mod.initState('@I1@');
