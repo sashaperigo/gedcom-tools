@@ -1122,12 +1122,15 @@ header h1 .root-name-accent {
 
 /* ── Inline event actions ───────────────────────────────── */
 .evt-actions {
-    position: absolute;
-    right: 0;
-    top: 2px;
-    display: flex;
+    display: none;
     align-items: center;
     gap: 2px;
+    flex-shrink: 0;
+}
+
+.evt-entry:hover .evt-actions,
+.marr-card:hover .evt-actions {
+    display: flex;
 }
 
 .evt-edit-btn,
@@ -1319,13 +1322,6 @@ header h1 .root-name-accent {
     margin-bottom: 14px;
     background: rgba(232, 121, 249, 0.08);
     border-left: 3px solid rgba(232, 121, 249, 0.5);
-}
-
-.marr-card .evt-src-badge,
-.evt-entry .evt-src-badge {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
 }
 
 .marr-edit-btn,
@@ -1810,11 +1806,11 @@ header h1 .root-name-accent {
     position: relative;
     display: flex;
     gap: 12px;
-    align-items: flex-start;
+    align-items: center;
     background: var(--bg-node, #131c30);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 10px 14px 32px;
+    padding: 8px 12px;
     margin-bottom: 6px;
     overflow: hidden;
 }
@@ -1830,6 +1826,8 @@ header h1 .root-name-accent {
     border-right: 1px solid var(--border);
     padding-right: 10px;
 }
+
+.evt-entry.no-year .evt-year-col { display: none; }
 
 .evt-year {
     font-size: 12px;
@@ -1848,7 +1846,7 @@ header h1 .root-name-accent {
     text-transform: uppercase;
     margin-top: 2px;
     font-family: 'IBM Plex Mono', monospace;
-    display: block;
+    display: none;
 }
 
 .evt-content {
