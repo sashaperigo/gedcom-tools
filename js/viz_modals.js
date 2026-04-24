@@ -228,10 +228,23 @@ function _updateEventModalFields(tag) {
     typeRow.style.display = (_TYPE_TAGS.has(tag) && !_INLINE_TYPE_TAGS.has(tag)) ? '' : 'none';
     if (ageRow) ageRow.style.display = (tag === 'DEAT') ? '' : 'none';
     causeRow.style.display = (tag === 'DEAT') ? '' : 'none';
+    const dateUnknownRow = document.getElementById('event-modal-date-unknown-row');
+    if (dateUnknownRow) dateUnknownRow.style.display = (tag === 'DEAT') ? '' : 'none';
     const hidePlaceAddr = (tag === 'NATI');
     if (placeRow) placeRow.style.display = hidePlaceAddr ? 'none' : '';
     if (addrRow) addrRow.style.display = hidePlaceAddr ? 'none' : '';
     _updateSpouseRow(tag);
+}
+
+function _onDateUnknownChange(checked) {
+    const dateInp = document.getElementById('event-modal-date');
+    if (!dateInp) return;
+    if (checked) {
+        dateInp.value = '';
+        dateInp.disabled = true;
+    } else {
+        dateInp.disabled = false;
+    }
 }
 
 function _toggleEventModalSourceSection() {
@@ -386,6 +399,9 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
         _eventModalSpouseXref = null;
     }
     _updateEventModalFields(tag);
+    // Date-unknown checkbox is for adds only — hide when editing an existing event.
+    const _duRow = document.getElementById('event-modal-date-unknown-row');
+    if (_duRow) _duRow.style.display = 'none';
     // Set type AFTER _updateEventModalFields so its reset-from-preset logic doesn't wipe the prefill.
     document.getElementById('event-modal-type').value = evt.type || '';
     document.getElementById('event-modal-overlay').classList.add('open');
@@ -414,6 +430,9 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
     document.getElementById('event-modal-inline').value = '';
     document.getElementById('event-modal-type').value = prefillType || '';
     document.getElementById('event-modal-date').value = '';
+    document.getElementById('event-modal-date').disabled = false;
+    const _duCb = document.getElementById('event-modal-date-unknown');
+    if (_duCb) { _duCb.checked = false; }
     document.getElementById('event-modal-place').value = '';
     document.getElementById('event-modal-age').value = '';
     document.getElementById('event-modal-cause').value = '';
@@ -464,9 +483,19 @@ async function submitEventModal() {
     const typeRow = document.getElementById('event-modal-type-row');
     const ageRow = document.getElementById('event-modal-age-row');
     const causeRow = document.getElementById('event-modal-cause-row');
+    const _dateUnknownCb = document.getElementById('event-modal-date-unknown');
+    const _dateUnknown = isAdd && tag === 'DEAT' && _dateUnknownCb && _dateUnknownCb.checked;
+    // Validate: adding a DEAT without a date requires the "Date unknown" checkbox.
+    if (isAdd && tag === 'DEAT' && !_dateUnknown) {
+        const _dateVal = document.getElementById('event-modal-date').value.trim();
+        if (!_dateVal) {
+            alert('Please enter a date, or check “Date unknown” to record death without a date.');
+            return;
+        }
+    }
     const fields = {
         inline_val: document.getElementById('event-modal-inline').value.trim(),
-        DATE: document.getElementById('event-modal-date').value.trim(),
+        DATE: _dateUnknown ? 'Y' : document.getElementById('event-modal-date').value.trim(),
         PLAC: document.getElementById('event-modal-place').value.trim(),
         NOTE: document.getElementById('event-modal-note').value.trim(),
         ADDR: document.getElementById('event-modal-addr').value.trim(),
@@ -2093,5 +2122,7 @@ if (typeof module !== 'undefined' && module.exports) {
         toggleSpouseMenuFam,
         _buildSpouseMenuRows,
         deletePerson,
+        _updateEventModalFields,
+        _onDateUnknownChange,
     };
 }

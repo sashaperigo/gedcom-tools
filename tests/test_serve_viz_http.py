@@ -603,6 +603,42 @@ class TestAddEventEndpoint:
         assert '2 TYPE Languages' in text
         assert '2 NOTE French, Italian' in text
 
+    def test_deat_y_writes_inline_value_not_subline(self, live_server):
+        """DATE='Y' on a DEAT event must write '1 DEAT Y', not '1 DEAT' + '2 DATE Y'."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I3@', 'tag': 'DEAT',
+            'fields': {'DATE': 'Y'},
+        })
+        assert resp['ok'] is True
+        text = _ged_text(ged)
+        assert '1 DEAT Y' in text
+        assert '2 DATE Y' not in text
+
+    def test_deat_y_sets_has_death_in_refreshed_people(self, live_server):
+        """After adding DEAT Y, the refreshed people payload has has_death=True and death_year=None."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I3@', 'tag': 'DEAT',
+            'fields': {'DATE': 'Y'},
+        })
+        assert resp['ok'] is True
+        person = resp['people']['@I3@']
+        assert person['has_death'] is True
+        assert person['death_year'] is None
+
+    def test_deat_y_event_appears_in_refreshed_events(self, live_server):
+        """DEAT Y event must appear in the refreshed people event list."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I3@', 'tag': 'DEAT',
+            'fields': {'DATE': 'Y'},
+        })
+        assert resp['ok'] is True
+        events = resp['people']['@I3@']['events']
+        deat = next((e for e in events if e['tag'] == 'DEAT'), None)
+        assert deat is not None, 'DEAT event missing from refreshed panel data'
+
 # ===========================================================================
 # /api/edit_name
 # ===========================================================================

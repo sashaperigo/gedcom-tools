@@ -205,11 +205,15 @@ def _indi_handle_name(state: dict, val: str, rec: dict) -> None:
 
 
 def _indi_open_event(state: dict, tag: str, val: str, rec: dict) -> None:
+    # 'DEAT Y' is the GEDCOM sentinel for "confirmed deceased, date unknown".
+    # 'Y' is a structural flag, not a user-visible note or inline value.
+    is_deat_y = (tag == 'DEAT' and val == 'Y')
     inline_type  = html_mod.unescape(val) if val and tag in _INLINE_TYPE_TAGS else None
-    initial_note = None if tag in _INLINE_TYPE_TAGS else (html_mod.unescape(val) if val else None)
+    initial_note = None if (tag in _INLINE_TYPE_TAGS or is_deat_y) else (html_mod.unescape(val) if val else None)
     evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None,
            'cause': None, 'addr': None, 'note': initial_note,
-           'inline_val': val if val else None, 'age': None, 'citations': []}
+           'inline_val': None if is_deat_y else (val if val else None),
+           'age': None, 'citations': []}
     if tag == 'DEAT':
         rec['has_death'] = True
     rec['events'].append(evt)

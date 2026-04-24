@@ -1601,3 +1601,45 @@ describe('renderPanel — source card page reference', () => {
         expect(sourcesEl.innerHTML).not.toContain('source-card-page');
     });
 });
+
+// ── allVisible — undated DEAT ─────────────────────────────────────────────
+
+describe('renderPanel — undated DEAT Y appears in timeline', () => {
+    it('renders a Death event card even when DEAT has no date, place, or note', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@UNDEAD@' };
+        global.getState = () => _state;
+
+        global.PEOPLE['@UNDEAD@'] = {
+            name: 'Unknown Death',
+            birth_year: '1900',
+            death_year: null,
+            has_death: true,
+            sex: 'M',
+            events: [
+                { tag: 'BIRT', date: '1900', place: '', citations: [], event_idx: 0 },
+                // DEAT Y — no date, no place, no note, no type
+                { tag: 'DEAT', date: null, place: null, note: null, type: null,
+                  cause: null, addr: null, inline_val: null, citations: [], event_idx: 1 },
+            ],
+            notes: [],
+            sources: [],
+        };
+
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return makeFakeEl(id);
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+
+        initPanel(panelEl);
+        renderPanel();
+
+        expect(eventsEl.innerHTML).toContain('Death');
+    });
+});

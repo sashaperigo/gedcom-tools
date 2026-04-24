@@ -2081,3 +2081,54 @@ describe('editName suffix pre-fill', () => {
         expect(suffixInp.value).toBe('');
     });
 });
+
+// ── _updateEventModalFields — date-unknown row ────────────────────────────
+
+const { _updateEventModalFields, _onDateUnknownChange } = require('../../js/viz_modals.js');
+
+describe('_updateEventModalFields — date-unknown checkbox row', () => {
+    function makeRow(id) {
+        return { id, style: { display: '' } };
+    }
+
+    function makeElements(extras = {}) {
+        const els = {
+            'event-modal-inline-row':   { style: { display: '' } },
+            'event-modal-inline-label': { textContent: '' },
+            'event-modal-type-row':     { style: { display: '' } },
+            'event-modal-age-row':      { style: { display: '' } },
+            'event-modal-cause-row':    { style: { display: '' } },
+            'event-modal-place-row':    { style: { display: '' } },
+            'event-modal-addr-row':     { style: { display: '' } },
+            'event-modal-type':         { readOnly: false, value: '' },
+            'event-modal-spouse-row':   { style: { display: '' } },
+            'event-modal-date-unknown-row': makeRow('event-modal-date-unknown-row'),
+            'event-modal-date-unknown': { checked: false, disabled: false },
+            'event-modal-date':         { disabled: false, value: '' },
+            ...extras,
+        };
+        global.document = {
+            getElementById: (id) => els[id] || null,
+            addEventListener: () => {},
+        };
+        return els;
+    }
+
+    it('shows date-unknown row when tag is DEAT', () => {
+        const els = makeElements();
+        _updateEventModalFields('DEAT');
+        expect(els['event-modal-date-unknown-row'].style.display).toBe('');
+    });
+
+    it('hides date-unknown row when tag is RESI', () => {
+        const els = makeElements();
+        _updateEventModalFields('RESI');
+        expect(els['event-modal-date-unknown-row'].style.display).toBe('none');
+    });
+
+    it('hides date-unknown row when tag is BIRT', () => {
+        const els = makeElements();
+        _updateEventModalFields('BIRT');
+        expect(els['event-modal-date-unknown-row'].style.display).toBe('none');
+    });
+});

@@ -736,12 +736,17 @@ def _insert_new_event(
     if err:
         return lines, err
     inline_val = (fields.get('inline_val') or '').strip()
+    deat_y = (event_tag == 'DEAT' and (fields.get('DATE') or '').strip() == 'Y')
     if event_tag in _INLINE_TYPE_TAGS and inline_val:
         header = f'1 {event_tag} {inline_val}'
+    elif deat_y:
+        header = f'1 {event_tag} Y'
     else:
         header = f'1 {event_tag}'
     new_block = [header]
     for subtag in ('DATE', 'PLAC', 'ADDR', 'TYPE', 'NOTE', 'CAUS', 'AGE'):
+        if subtag == 'DATE' and deat_y:
+            continue  # Y is already encoded on the tag line
         val = (fields.get(subtag) or '').strip()
         if val:
             if subtag == 'NOTE':
@@ -1461,7 +1466,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             xref   = body['xref']
             tag    = body['tag']
             fields = body.get('fields', {})
-            if 'DATE' in fields:
+            # 'Y' is the GEDCOM sentinel for "confirmed deceased, date unknown" (1 DEAT Y).
+            # It is not a date value and must not be passed through the date normalizer.
+            _is_deat_y = (tag == 'DEAT' and fields.get('DATE') == 'Y')
+            if 'DATE' in fields and not _is_deat_y:
                 fields['DATE'], _date_err = _normalize_event_date(fields['DATE'])
             else:
                 _date_err = None

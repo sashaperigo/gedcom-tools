@@ -592,7 +592,7 @@ function renderPanel() {
     // Filter: exclude NATI (shown above), name records, and blank events
     const allVisible = (data.events || []).map((e, i) => ({ ...e, _origIdx: i })).filter(e =>
         e.tag !== 'NATI' &&
-        (e.tag === 'MARR' || e.date || e.place || e.note || e.type || e.cause || e.addr || e.inline_val) &&
+        (e.tag === 'MARR' || e.tag === 'DEAT' || e.date || e.place || e.note || e.type || e.cause || e.addr || e.inline_val) &&
         !e._name_record
     );
     const _keepInTimeline = e =>
