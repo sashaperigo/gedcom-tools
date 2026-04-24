@@ -2339,7 +2339,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
     margin: 18px 0 10px 0;
 }
 
-.family-sub:first-child .family-sub-heading {
+.family-toggle-btn + .family-sub .family-sub-heading {
     margin-top: 0;
     border-top: none;
     padding-top: 0;
