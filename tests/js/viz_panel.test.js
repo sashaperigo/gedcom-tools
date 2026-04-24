@@ -10,6 +10,9 @@ function makeFakeEl(id = '') {
     return {
         id,
         innerHTML: '',
+        className: '',
+        textContent: '',
+        firstChild: null,
         style: {
             setProperty(prop, val) { _styleProps[prop] = val; },
             getPropertyValue(prop) { return _styleProps[prop] || ''; },
@@ -22,6 +25,11 @@ function makeFakeEl(id = '') {
             toggle(c) { if (this._classes.has(c)) this._classes.delete(c);
                 else this._classes.add(c); },
         },
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        insertBefore: () => {},
+        appendChild: () => {},
+        remove: () => {},
     };
 }
 
@@ -31,6 +39,7 @@ const _callbacks = [];
 
 global.document = {
     getElementById: () => null,
+    createElement: (tag) => makeFakeEl(tag),
     addEventListener: () => {},
 };
 global.PEOPLE = {};
@@ -85,6 +94,7 @@ describe('initPanel', () => {
 
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : null,
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -101,6 +111,7 @@ describe('initPanel', () => {
 
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : null,
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -136,6 +147,7 @@ describe('renderPanel', () => {
                 if (id === 'detail-panel') return panelEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -152,6 +164,7 @@ describe('renderPanel', () => {
 
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : makeFakeEl(id),
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -182,6 +195,7 @@ describe('renderPanel', () => {
                 if (id === 'detail-name') return nameEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -212,6 +226,7 @@ describe('renderPanel', () => {
                 if (id === 'detail-lifespan-row') return lifespanRowEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -246,6 +261,7 @@ describe('renderPanel', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -282,6 +298,7 @@ describe('renderPanel', () => {
                 if (id === 'panel-close-btn') return closeBtn;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -331,6 +348,7 @@ describe('renderPanel', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -380,6 +398,7 @@ describe('renderPanel', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -429,6 +448,7 @@ describe('renderPanel — restored section headers', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -463,6 +483,7 @@ describe('renderPanel — restored section headers', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -499,6 +520,7 @@ describe('renderPanel — RESI rollup', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -559,6 +581,7 @@ describe('renderPanel — EVEN tag uses type label', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -598,6 +621,7 @@ describe('renderPanel — blank fact filter', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -639,6 +663,7 @@ describe('renderPanel — aliases (AKA)', () => {
                 if (id === 'detail-aka') return akaEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -682,6 +707,7 @@ describe('renderPanel — marriage card', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -709,6 +735,7 @@ describe('renderPanel — marriage card uses evt-year-col layout', () => {
                 if (id === 'detail-events') return eventsEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -753,6 +780,7 @@ describe('renderPanel — event note in italics', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -798,6 +826,7 @@ describe('renderPanel — source badge count', () => {
                 if (id === 'detail-events') return eventsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -837,6 +866,7 @@ describe('renderPanel — NATI events in detail-nationalities (C2)', () => {
                 if (id === 'detail-facts') return factsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -874,6 +904,7 @@ describe('renderPanel — NATI events in detail-nationalities (C2)', () => {
                 if (id === 'detail-facts') return factsEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -937,6 +968,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 if (id === 'detail-family') return familyEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -949,7 +981,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
         expect(html).toMatch(/display:\s*none|display:none/i);
     });
 
-    it('toggle button is present with "Family ▶" label when collapsed', () => {
+    it('toggle button is present with "▶ Family" label when collapsed', () => {
         const panelEl = makeFakeEl('detail-panel');
         const familyEl = makeFakeEl('detail-family');
         _state = { panelOpen: true, panelXref: '@FAM@' };
@@ -965,6 +997,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 if (id === 'detail-family') return familyEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -973,7 +1006,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
 
         const html = familyEl.innerHTML;
         // Toggle button with collapsed arrow must be present
-        expect(html).toContain('Family ▶');
+        expect(html).toContain('▶ Family');
     });
 
     it('all 3 subsections (parents, siblings/spouses, children) hidden when collapsed', () => {
@@ -994,6 +1027,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 if (id === 'detail-family') return familyEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -1033,6 +1067,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 if (id === 'detail-family') return familyEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -1076,6 +1111,7 @@ describe('renderPanel — person-level sources section', () => {
                 if (id === 'detail-sources') return sourcesEl;
                 return makeFakeEl(id);
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
 
@@ -1169,6 +1205,7 @@ describe('convertEventTag', () => {
         const panelEl = makeFakeEl('detail-panel');
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : makeFakeEl(id),
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         initPanel(panelEl);
@@ -1254,6 +1291,7 @@ describe('renderPanel — accent bar color by sex', () => {
                 if (id === 'detail-accent-bar') return accentEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'Test', sex: 'M', events: [], notes: [], sources: [] } };
@@ -1276,6 +1314,7 @@ describe('renderPanel — accent bar color by sex', () => {
                 if (id === 'detail-accent-bar') return accentEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'Test', sex: 'F', events: [], notes: [], sources: [] } };
@@ -1294,6 +1333,7 @@ describe('renderPanel — accent bar color by sex', () => {
                 if (id === 'detail-name') return nameEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'Test', sex: 'M', events: [], notes: [], sources: [] } };
@@ -1321,6 +1361,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 if (id === 'detail-also-lived') return alsoLivedEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1346,6 +1387,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 if (id === 'detail-also-lived') return alsoLivedEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1370,6 +1412,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 if (id === 'detail-also-lived') return alsoLivedEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1404,6 +1447,7 @@ describe('renderPanel — note badge inside note-card', () => {
                 if (id === 'detail-notes') return notesEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1442,6 +1486,7 @@ describe('renderPanel — no-year class on dateless main-timeline events', () =>
                 if (id === 'detail-events') return eventsEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1475,6 +1520,7 @@ describe('renderPanel — family toggle arrow before text', () => {
                 if (id === 'detail-family') return familyEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'T', sex: 'M', events: [], notes: [], sources: [] } };
@@ -1515,6 +1561,7 @@ describe('renderPanel — source card page reference', () => {
                 if (id === 'detail-sources') return sourcesEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1539,6 +1586,7 @@ describe('renderPanel — source card page reference', () => {
                 if (id === 'detail-sources') return sourcesEl;
                 return null;
             },
+            createElement: (tag) => makeFakeEl(tag),
             addEventListener: () => {},
         };
         global.PEOPLE = {
