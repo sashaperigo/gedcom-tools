@@ -210,6 +210,8 @@ def _indi_open_event(state: dict, tag: str, val: str, rec: dict) -> None:
     evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None,
            'cause': None, 'addr': None, 'note': initial_note,
            'inline_val': val if val else None, 'age': None, 'citations': []}
+    if tag == 'DEAT':
+        rec['has_death'] = True
     rec['events'].append(evt)
     state['current_evt'] = evt
     state['current_note'] = None
@@ -447,7 +449,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             indis[xref] = {
                 'name': None, 'name_given': None, 'name_surname': None, 'name_suffix': None,
-                'birth_year': None, 'death_year': None,
+                'birth_year': None, 'death_year': None, 'has_death': False,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [],
                 'source_xrefs': [], 'source_urls': {}, 'source_citations': [], 'asso': [],
             }
@@ -788,6 +790,7 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
             'name_suffix':  info.get('name_suffix'),
             'birth_year':   info['birth_year'],
             'death_year':   info['death_year'],
+            'has_death':    info.get('has_death', False),
             'sex':          info['sex'],
             'events':       sort_events(events),
             'notes':        normalised_notes,

@@ -78,6 +78,21 @@ class TestParsing:
         """Individual with no DEAT has death_year None."""
         assert indis['@I3@']['death_year'] is None
 
+    def test_has_death_true_when_deat_record_exists(self, indis):
+        """DEAT record without a date: has_death is True, death_year is None."""
+        # @I9@ has '1 DEAT Y' with no DATE subfield
+        assert indis['@I9@']['has_death'] is True
+        assert indis['@I9@']['death_year'] is None
+
+    def test_has_death_false_when_no_deat_record(self, indis):
+        """Individual with no DEAT record at all: has_death is False."""
+        # @I3@ has no DEAT record
+        assert indis['@I3@']['has_death'] is False
+
+    def test_has_death_true_when_deat_has_date(self, indis):
+        """Individual with dated DEAT: has_death is True."""
+        assert indis['@I4@']['has_death'] is True
+
     def test_parse_famc(self, indis):
         assert indis['@I1@']['famc'] == '@F1@'
 
@@ -340,6 +355,21 @@ class TestPeople:
         people = build_people_json({'@I11@', '@I12@'}, indis, sources)
         assert people['@I11@']['name'] == 'Alice Smith'
         assert people['@I12@']['name'] == 'Mark Davis'
+
+    def test_has_death_propagated_to_people(self, indis, parsed):
+        """has_death=True on DEAT-without-date individual propagates through build_people_json."""
+        _, _, sources = parsed
+        # @I9@ has 'DEAT Y' with no DATE — has_death True, death_year None
+        people = build_people_json({'@I9@'}, indis, sources)
+        assert people['@I9@']['has_death'] is True
+        assert people['@I9@']['death_year'] is None
+
+    def test_has_death_false_propagated_to_people(self, indis, parsed):
+        """Individual with no DEAT record has has_death=False in people output."""
+        _, _, sources = parsed
+        # @I3@ has no DEAT record
+        people = build_people_json({'@I3@'}, indis, sources)
+        assert people['@I3@']['has_death'] is False
 
     def test_unknown_xref_excluded(self, indis, parsed):
         """An xref not in indis is silently skipped."""
