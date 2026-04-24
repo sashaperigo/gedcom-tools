@@ -1317,11 +1317,16 @@ header h1 .root-name-accent {
 /* ── Marriage card ──────────────────────────────────────── */
 .marr-card {
     position: relative;
-    padding: 10px 14px 32px;
-    border-radius: 6px;
-    margin-bottom: 14px;
-    background: rgba(232, 121, 249, 0.08);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: rgba(232, 121, 249, 0.06);
+    border: 1px solid var(--border);
     border-left: 3px solid rgba(232, 121, 249, 0.5);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    overflow: hidden;
 }
 
 .marr-edit-btn,
@@ -1363,15 +1368,15 @@ header h1 .root-name-accent {
 .marr-card .marr-year {
     font-size: 12px;
     font-weight: 700;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 3px;
+    color: var(--text-primary);
+    line-height: 1.2;
+    display: block;
+    letter-spacing: -0.2px;
 }
 
 .marr-card .marr-prose {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--text-primary);
     line-height: 1.4;
 }
@@ -1387,9 +1392,9 @@ header h1 .root-name-accent {
 }
 
 .marr-card .marr-meta {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 3px;
 }
 
 .marr-card .evt-note-inline {
