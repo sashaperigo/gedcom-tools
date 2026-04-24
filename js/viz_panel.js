@@ -420,11 +420,11 @@ function renderPanel() {
     const xrefQ = JSON.stringify(xref).replace(/"/g, '&quot;');
 
     // ── Accent bar ────────────────────────────────────────────────────────
+    const sexColors = { 'M': '#7db4e8', 'F': '#f4876a' };
+    const accent = sexColors[data.sex] || '#2dd4bf';
     const accentEl = document.getElementById('detail-accent-bar');
     if (accentEl) {
-        const sexColors = { 'M': '#7db4e8', 'F': '#f4876a' };
-        const accentColor = sexColors[data.sex] || '#2dd4bf';
-        accentEl.style.setProperty('--accent-bar-color', accentColor);
+        accentEl.style.setProperty('--accent-bar-color', accent);
     }
 
     // ── ID badge ──────────────────────────────────────────────────────────
@@ -533,12 +533,11 @@ function renderPanel() {
                 const borderStyle = isShared ? '' : ` style="border-left-color:${accent}"`;
                 const srcBadge = buildNoteSourceBadgeHtml(citations, xref, i);
                 return `<div class="note-card-wrap">` +
-                    `<div class="note-card${sharedClass}"${borderStyle}>${linkify(noteText)}</div>` +
+                    `<div class="note-card${sharedClass}"${borderStyle}>${linkify(noteText)}${srcBadge}</div>` +
                     `<div class="note-actions">` +
                     `<button class="note-action-btn" title="Edit note" onclick="editNote(${xrefQN},${i})">\u270f</button>` +
                     `<button class="note-action-btn" title="Delete note" onclick="deleteNote(${xrefQN},${i})">\u2715</button>` +
                     `</div>` +
-                    srcBadge +
                     `</div>`;
             }).join('');
             notesDiv.innerHTML =
@@ -728,8 +727,9 @@ function renderPanel() {
                 const godparentHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
 
                 const tagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
+                const noYearClass = evtYear ? '' : ' no-year';
                 html +=
-                    `<div class="evt-entry">` +
+                    `<div class="evt-entry${noYearClass}">` +
                     `<div class="evt-year-col">${yearStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
                     `<div class="evt-content">` +
                     `<span class="evt-prose-text">${escHtml(prose)}</span>` +

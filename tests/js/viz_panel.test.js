@@ -1386,3 +1386,74 @@ describe('renderPanel — fact-row layout for undated facts', () => {
         expect(alsoLivedEl.innerHTML).toContain('no-year');
     });
 });
+
+describe('renderPanel — note badge inside note-card', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+    });
+
+    it('note-src-badge appears inside note-card div before note-actions', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const notesEl = makeFakeEl('detail-notes');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-notes') return notesEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'T', sex: 'M', events: [], sources: [],
+                notes: [{ text: 'Hello world', shared: false, citations: [] }]
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        const html = notesEl.innerHTML;
+        const noteCardOpenIdx = html.indexOf('class="note-card');
+        const noteCardCloseIdx = html.indexOf('</div>', noteCardOpenIdx); // first </div> after note-card opens
+        const badgeIdx = html.indexOf('note-src-badge');
+        // Badge must appear inside the note-card div (after it opens, before it closes)
+        expect(badgeIdx).toBeGreaterThan(noteCardOpenIdx);
+        expect(badgeIdx).toBeLessThan(noteCardCloseIdx);
+    });
+});
+
+describe('renderPanel — no-year class on dateless main-timeline events', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+    });
+
+    it('adds no-year class to evt-entry when main-timeline event has no date', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return null;
+            },
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'T', sex: 'M',
+                events: [{ tag: 'BIRT', date: null, place: 'Paris', _origIdx: 0, event_idx: 0, citations: [] }],
+                notes: [], sources: []
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        expect(eventsEl.innerHTML).toContain('no-year');
+    });
+});
