@@ -242,4 +242,18 @@ Case study: `js/viz_modals.js` `_buildSourcesModalContent` — paste/copy/edit/d
 
 ---
 
-**Last Updated**: 2026-04-24 (added #16 dynamically-generated buttons without type=button)
+---
+
+## 17. `_TAG_RE` does not match xref-style level-0 GEDCOM lines
+
+`_TAG_RE = re.compile(r'^(\d+)\s+(\w+)(?:\s+(.*))?$')` requires `\w+` (word characters) for the tag field. Xref-style records like `0 @I123@ INDI`, `0 @F1@ FAM`, `0 @S1@ SOUR` have `@I123@` in the tag position — `@` is not a word character — so `_TAG_RE.match(...)` returns `None` for these lines.
+
+**Any code that uses `_TAG_RE` to detect level-0 record boundaries will silently fail to stop at xref-style headers.**
+
+The canonical pattern elsewhere in the file is `raw.startswith('0 ')` for boundary detection (e.g. `_find_record_block`). Use that, not `_TAG_RE`, when you need to stop at any level-0 line.
+
+**Affected bug**: `_citation_already_exists` used `_TAG_RE` for its backward-scan boundary check. It blew past `0 @I123@ INDI` lines and scanned back into earlier records, finding the same source+page in a *different* person's citation and falsely returning True. Result: `ok: true` returned to the client but no citation written — the hardest kind of bug because there is no error. Fixed in commit `3f1149a` with `if not m and raw.startswith('0 '): break`.
+
+---
+
+**Last Updated**: 2026-04-24 (added #17 _TAG_RE misses xref-style level-0 lines)
