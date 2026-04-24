@@ -71,7 +71,7 @@ header {
     align-items: center;
     gap: 14px;
     position: relative;
-    z-index: 2;
+    z-index: 100;
 }
 
 header h1 {
