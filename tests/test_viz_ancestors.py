@@ -687,6 +687,19 @@ class TestSortEvents:
         events = [self._evt('EVEN', f'{i} JAN 1942') for i in range(1, 6)]
         assert len(sort_events(events)) == 5
 
+    def test_death_registration_pinned_after_deat(self):
+        """Death Registration EVEN must appear after DEAT even when its date is later."""
+        events = [
+            self._evt('EVEN', '15 JAN 2021', 'Death Registration'),
+            self._evt('DEAT', '1 JAN 2021'),
+            self._evt('RESI', '1 MAR 1942'),
+        ]
+        result = sort_events(events)
+        tags_types = [(e['tag'], e.get('type')) for e in result]
+        deat_idx = next(i for i, (t, _) in enumerate(tags_types) if t == 'DEAT')
+        reg_idx  = next(i for i, (t, ty) in enumerate(tags_types) if t == 'EVEN' and ty == 'Death Registration')
+        assert deat_idx < reg_idx
+
 
 # ---------------------------------------------------------------------------
 # Godparent ASSO parsing + attachment to BAPM/CHR events

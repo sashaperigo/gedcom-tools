@@ -632,7 +632,7 @@ def _date_sort_key(date_str: str | None) -> tuple:
 
 
 _EVENT_ORDER = {'BIRT': 0, 'DEAT': 2, 'BURI': 4, 'PROB': 5}
-_DEATH_RELATED_KEYWORDS = ('death announcement', 'obituar', 'avis de décès')
+_DEATH_RELATED_KEYWORDS = ('death announcement', 'obituar', 'avis de décès', 'death registration')
 
 
 def _event_sort_order(evt: dict) -> int:
