@@ -265,7 +265,7 @@ header h1 .root-name-accent {
     color: var(--text-disabled);
     letter-spacing: 0.6px;
     text-transform: uppercase;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     margin-bottom: 6px;
 }
 
@@ -294,7 +294,6 @@ header h1 .root-name-accent {
     font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
-    font-family: 'JetBrains Mono', monospace;
     line-height: 1.5;
 }
 
@@ -362,7 +361,7 @@ header h1 .root-name-accent {
     border: 1px solid var(--border);
     color: var(--text-muted);
     font-size: 10px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     border-radius: 0;
     padding: 1px 7px;
 }
@@ -595,7 +594,7 @@ header h1 .root-name-accent {
 #detail-lifespan-row {
     font-size: 12px;
     color: var(--text-muted);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     margin-top: 6px;
 }
 
@@ -656,7 +655,6 @@ header h1 .root-name-accent {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     padding: 0;
-    font-family: 'JetBrains Mono', monospace;
 }
 
 .notes-toggle:hover {
@@ -1745,7 +1743,7 @@ header h1 .root-name-accent {
     letter-spacing: 0.01em;
     transition: color 0.15s, border-color 0.15s, background 0.15s;
     flex-shrink: 0;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
 }
 
 .evt-src-badge::before,
@@ -1791,7 +1789,7 @@ header h1 .root-name-accent {
     color: var(--text-disabled);
     letter-spacing: 0.8px;
     text-transform: uppercase;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     margin-bottom: 10px;
     display: block;
 }
@@ -1848,7 +1846,7 @@ header h1 .root-name-accent {
     letter-spacing: 0.5px;
     text-transform: uppercase;
     margin-top: 2px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
     display: block;
 }
 
@@ -1932,7 +1930,7 @@ header h1 .root-name-accent {
     color: var(--text-disabled);
     margin-bottom: 10px;
     display: block;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
 }
 
 .facts-subheading {
@@ -1943,7 +1941,7 @@ header h1 .root-name-accent {
     margin-bottom: 5px;
     margin-top: 10px;
     display: block;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'IBM Plex Mono', monospace;
 }
 
 .facts-subheading:first-of-type {
@@ -2240,7 +2238,6 @@ button.sources-section-title:hover .sources-toggle-arrow {
     margin-bottom: 10px;
     margin-top: 16px;
     display: block;
-    font-family: 'JetBrains Mono', monospace;
 }
 
 .also-lived-heading:first-child {
