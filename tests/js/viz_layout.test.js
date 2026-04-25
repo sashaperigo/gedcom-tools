@@ -3649,3 +3649,118 @@ describe('computeLayout — middle sibling children land between outer sibling c
         });
     });
 });
+
+// ── Regression: right sibling expanded before middle sibling must not push
+// middle sibling's children past the right sibling's children.
+//
+// Root cause: Phase 3 iterated expandedChildrenPersons in Set insertion order
+// (click order). MIDSIB and RIGHTSIB are focus CHILDREN placed by Phase 2's
+// emitGroup with flat H_GAP spacing — no accounting for expanded subtrees. So
+// when RIGHTSIB has 5 children and MIDSIB has 3 (with a spouse), their ideal
+// child ranges overlap. When RIGHTSIB is placed first (Elizabeth-before-Max
+// scenario), it occupies the ideal gap for MIDSIB. pickStartInFreeGap then
+// finds the interior gap too small and falls back to the far-right infinite gap.
+//
+// Fix: sort Phase 3 by parent node x-position (left→right) so MIDSIB is
+// always placed before RIGHTSIB regardless of click order.
+describe('computeLayout — Phase 3 children of focus-children land in x-order regardless of expansion click order', () => {
+    // Layout: FOCUS+FSPOUSE have children placed by Phase 2 at ROW_HEIGHT.
+    // Some of those children are expanded; their sub-children land at 2*ROW_HEIGHT.
+    //
+    //   y=0:          @FOCUS@—@FSPOUSE@
+    //   y=ROW_HEIGHT: @LEFTSIB@ | @MIDSIB@—@MIDSPOUSE@ | @ALONSO@ | @RIGHTSIB@—@RIGHTSPOUSE@
+    //   y=2*ROW_HEIGHT: @LC*@ | [gap for @MC*@] | @RC*@
+    //
+    // Phase 2 packs the y=ROW_HEIGHT row with H_GAP spacing (no descendant
+    // halfwidth), so MIDSIB and RIGHTSIB are close enough that their ideal
+    // child ranges overlap. RIGHTSIB has 5 children; MIDSIB has 3 (+ 1 spouse)
+    // — the overlap is wide enough to trigger the bug.
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@':       { birth_year: 1900, sex: 'M' },
+                '@FSPOUSE@':     { birth_year: 1902, sex: 'F' },
+                '@LEFTSIB@':     { birth_year: 1925, sex: 'M' },
+                '@LC1@':         { birth_year: 1950 },
+                '@LC2@':         { birth_year: 1952 },
+                '@LC3@':         { birth_year: 1955 },
+                '@MIDSIB@':      { birth_year: 1928, sex: 'M' },
+                '@MIDSPOUSE@':   { birth_year: 1930, sex: 'F' },
+                '@MC1@':         { birth_year: 1953 },
+                '@MC1SP@':       { birth_year: 1955 },
+                '@MC2@':         { birth_year: 1957 },
+                '@MC3@':         { birth_year: 1960 },
+                '@ALONSO@':      { birth_year: 1931, sex: 'M' },
+                '@RIGHTSIB@':    { birth_year: 1934, sex: 'M' },
+                '@RIGHTSPOUSE@': { birth_year: 1936, sex: 'F' },
+                '@RC1@':         { birth_year: 1957 },
+                '@RC1SP@':       { birth_year: 1959 },
+                '@RC2@':         { birth_year: 1960 },
+                '@RC3@':         { birth_year: 1962 },
+                '@RC4@':         { birth_year: 1965 },
+                '@RC5@':         { birth_year: 1967 },
+            },
+            relatives: {
+                '@FOCUS@':    { siblings: [], spouses: ['@FSPOUSE@'] },
+                '@MIDSIB@':   { siblings: [], spouses: ['@MIDSPOUSE@'] },
+                '@RIGHTSIB@': { siblings: [], spouses: ['@RIGHTSPOUSE@'] },
+                '@MC1@':      { siblings: ['@MC2@', '@MC3@'], spouses: ['@MC1SP@'] },
+                '@MC2@':      { siblings: ['@MC1@', '@MC3@'], spouses: [] },
+                '@MC3@':      { siblings: ['@MC1@', '@MC2@'], spouses: [] },
+                '@RC1@':      { siblings: ['@RC2@', '@RC3@', '@RC4@', '@RC5@'], spouses: ['@RC1SP@'] },
+                '@RC2@':      { siblings: ['@RC1@', '@RC3@', '@RC4@', '@RC5@'], spouses: [] },
+                '@RC3@':      { siblings: ['@RC1@', '@RC2@', '@RC4@', '@RC5@'], spouses: [] },
+                '@RC4@':      { siblings: ['@RC1@', '@RC2@', '@RC3@', '@RC5@'], spouses: [] },
+                '@RC5@':      { siblings: ['@RC1@', '@RC2@', '@RC3@', '@RC4@'], spouses: [] },
+            },
+            children: {
+                '@FOCUS@': ['@LEFTSIB@', '@MIDSIB@', '@ALONSO@', '@RIGHTSIB@'],
+            },
+            families: {
+                '@FOCUSFAM@': { husb: '@FOCUS@',    wife: '@FSPOUSE@',     chil: ['@LEFTSIB@', '@MIDSIB@', '@ALONSO@', '@RIGHTSIB@'] },
+                '@LEFTFAM@':  { husb: '@LEFTSIB@',  wife: null,            chil: ['@LC1@', '@LC2@', '@LC3@'] },
+                '@MIDFAM@':   { husb: '@MIDSIB@',   wife: '@MIDSPOUSE@',   chil: ['@MC1@', '@MC2@', '@MC3@'] },
+                '@RIGHTFAM@': { husb: '@RIGHTSIB@', wife: '@RIGHTSPOUSE@', chil: ['@RC1@', '@RC2@', '@RC3@', '@RC4@', '@RC5@'] },
+            },
+        });
+    });
+
+    it('MC children land between LC and RC when RIGHTSIB expanded first (bug-order Set)', () => {
+        // Bug order: RIGHTSIB before MIDSIB
+        const expandedChildrenPersons = new Set(['@RIGHTSIB@', '@LEFTSIB@', '@MIDSIB@']);
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
+
+        const mc1 = nodes.find(n => n.xref === '@MC1@');
+        const mc2 = nodes.find(n => n.xref === '@MC2@');
+        const mc3 = nodes.find(n => n.xref === '@MC3@');
+        const rc1 = nodes.find(n => n.xref === '@RC1@');
+        const lc3 = nodes.find(n => n.xref === '@LC3@');
+
+        [mc1, mc2, mc3, rc1, lc3].forEach(n => expect(n).toBeDefined());
+
+        // MC nodes must be to the right of LC nodes and to the left of RC nodes
+        const lcRight = lc3.x + NODE_W;
+        const rcLeft = rc1.x;
+        [mc1, mc2, mc3].forEach(mc => {
+            expect(mc.x, `${mc.xref} must be right of LC cluster`).toBeGreaterThan(lcRight);
+            expect(mc.x + NODE_W, `${mc.xref} must be left of RC cluster`).toBeLessThan(rcLeft);
+        });
+    });
+
+    it('MC children land between LC and RC when MIDSIB expanded first (natural-order Set)', () => {
+        const expandedChildrenPersons = new Set(['@LEFTSIB@', '@MIDSIB@', '@RIGHTSIB@']);
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
+
+        const mc1 = nodes.find(n => n.xref === '@MC1@');
+        const mc3 = nodes.find(n => n.xref === '@MC3@');
+        const rc1 = nodes.find(n => n.xref === '@RC1@');
+        const lc3 = nodes.find(n => n.xref === '@LC3@');
+
+        const lcRight = lc3.x + NODE_W;
+        const rcLeft = rc1.x;
+        [mc1, mc3].forEach(mc => {
+            expect(mc.x).toBeGreaterThan(lcRight);
+            expect(mc.x + NODE_W).toBeLessThan(rcLeft);
+        });
+    });
+});

@@ -613,8 +613,18 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 
     // ── Phase 3: Expanded children of non-focus persons ─────────────────────
     // Skip focusXref — Phase 2 already placed the focus person's children.
-    expandedChildrenPersons.forEach(personXref => {
-        if (personXref === focusXref) return;
+    // Sort by parent x-position (left→right) so that left-side parents always
+    // have their children placed first. Without this, a right-side parent
+    // expanded before a middle parent (click order) would occupy the ideal
+    // interior gap, forcing pickStartInFreeGap to push the middle parent's
+    // children far outside their natural position.
+    const phase3Persons = [...expandedChildrenPersons].filter(xref => xref !== focusXref);
+    phase3Persons.sort((a, b) => {
+        const na = nodes.find(n => n.xref === a);
+        const nb = nodes.find(n => n.xref === b);
+        return (na?.x ?? 0) - (nb?.x ?? 0);
+    });
+    phase3Persons.forEach(personXref => {
         _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges);
     });
 
