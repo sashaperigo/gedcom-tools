@@ -58,6 +58,15 @@ Data-structure tests (edge objects per FAM, children grouped by FAM) can pass wh
 
 ---
 
+### 6. expandedChildrenPersons persists across focus changes (can duplicate focus-row nodes)
+
+**Symptom**: A person and all their siblings appear twice in the focus row — once with role `sibling`/`focus`, once with role `descendant`.
+**Check**: Is a parent of the focus person in `expandedChildrenPersons`? The parent is at y=−ROW_HEIGHT; `_placeChildrenOfPerson` places their children at y=0, duplicating Phase 1.
+**Root cause**: `setState({ focusXref })` does NOT reset `expandedChildrenPersons` (intentional — sibling chevrons should stay open during navigation). So a parent expanded in a prior view stays in the set.
+**Fix location**: `_placeChildrenOfPerson` — `activeFams` filter skips FAMs whose children are all already placed at `childY`. Do NOT reset state on focus change.
+
+---
+
 **Update this file when:**
 - Bug took >1 hour to debug
 - Error could cause production issue
