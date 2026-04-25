@@ -2599,11 +2599,10 @@ describe('computeLayout — one sibling, two expanded FAMs (multi-marriage)', ()
         }
     });
 
-    // Regression: with two FAMs under the same person, siblings from each FAM
-    // must be visually segregated — no cross-FAM interleaving by birth year.
-    // FAM1's kids should be contiguous, FAM2's kids should be contiguous,
-    // with a visible gap (larger than normal sibling spacing) between them.
-    it('kids stay grouped by FAM (no birth-year interleaving across FAMs)', () => {
+    it('kids from multiple non-visible FAMs are sorted by birth year (no FAM-boundary gaps)', () => {
+        // FAM1: K1(2015), K3(2019); FAM2: K2(2017), K4(2021). All are "other"
+        // FAMs (no visible spouse). They should be merged and ordered by birth:
+        // K1, K2, K3, K4 — with H_GAP between all, not INTER_FAM_GAP.
         const { nodes } = computeLayout(
             '@FOCUS@',
             new Set(), new Set(),
@@ -2611,40 +2610,20 @@ describe('computeLayout — one sibling, two expanded FAMs (multi-marriage)', ()
         );
         const gen1 = nodes.filter(n => n.generation === 1).sort((a, b) => a.x - b.x);
         const xrefs = gen1.map(n => n.xref);
-        // K1, K2 are one FAM; K3, K4 another. Each FAM's kids must be adjacent
-        // in the horizontal ordering. Two valid orderings: [K1,K2,K3,K4] or
-        // [K3,K4,K1,K2]. Forbidden: anything like [K1,K3,K2,K4].
-        const famA = new Set(['@K1@', '@K3@']);
-        const famB = new Set(['@K2@', '@K4@']);
-        let transitions = 0;
-        for (let i = 1; i < xrefs.length; i++) {
-            const prevFam = famA.has(xrefs[i - 1]) ? 'A' : 'B';
-            const curFam = famA.has(xrefs[i]) ? 'A' : 'B';
-            if (prevFam !== curFam) transitions++;
-        }
-        expect(transitions).toBe(1);
+        expect(xrefs).toEqual(['@K1@', '@K2@', '@K3@', '@K4@']);
     });
 
-    it('visible gap between FAM groups is larger than gap within a FAM', () => {
-        // Place @SIB@ with a visible spouse via defaultSpouses so one FAM is
-        // the "visible" one. Here, SIB has no spouse in RELATIVES but both
-        // FAMs have wife: null, so visible FAM is the first by iteration;
-        // we only assert the cross-FAM gap is strictly larger than the
-        // within-FAM gap.
+    it('all gaps between other-cluster kids are H_GAP (no large FAM-boundary gap)', () => {
         const { nodes } = computeLayout(
             '@FOCUS@',
             new Set(), new Set(),
             new Set(['@SIB@']),
         );
         const gen1 = nodes.filter(n => n.generation === 1).sort((a, b) => a.x - b.x);
-        const gaps = [];
         for (let i = 1; i < gen1.length; i++) {
-            gaps.push(gen1[i].x - (gen1[i - 1].x + NODE_W));
+            const gap = gen1[i].x - (gen1[i - 1].x + NODE_W);
+            expect(gap, `gap between consecutive children should be H_GAP=${H_GAP}`).toBe(H_GAP);
         }
-        // One gap (the cross-FAM one) must be strictly larger than the others.
-        const maxGap = Math.max(...gaps);
-        const others = gaps.filter(g => g !== maxGap);
-        expect(others.every(g => g < maxGap)).toBe(true);
     });
 });
 
@@ -3223,6 +3202,29 @@ describe('_placeChildrenOfPerson — multi-FAM with visible spouse splits into t
             Math.min(e.x1, e.x2) === leftC && Math.max(e.x1, e.x2) === rightC
         );
         expect(crossbars.length).toBe(1);
+    });
+    it('children from different other-FAMs are spaced H_GAP apart (not INTER_FAM_GAP)', () => {
+        setupAdrianScene();
+        const elaineX = NODE_W + MARRIAGE_GAP;
+        const nodes = [
+            { xref: '@ADRIAN@', x: 0, y: 0, generation: 0, role: 'sibling' },
+            { xref: '@ELAINE@', x: elaineX, y: 0, generation: 0, role: 'spouse' },
+        ];
+        const edges = [];
+        _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
+
+        const kids = Object.fromEntries(
+            nodes.filter(n => n.y === ROW_HEIGHT && n.role === 'descendant').map(k => [k.xref, k])
+        );
+        // Wu (b.1993, F_AJ) and Teng (b.2000, F_A) are from different other-FAMs.
+        // After fix they should be sorted by birth year and spaced H_GAP apart.
+        const sortedOther = ['@WU@', '@TENG@', '@ELEANOR@']
+            .map(x => kids[x].x)
+            .sort((a, b) => a - b);
+        for (let i = 1; i < sortedOther.length; i++) {
+            const gap = sortedOther[i] - sortedOther[i - 1] - NODE_W;
+            expect(gap, `gap between consecutive other-cluster children should be H_GAP=${H_GAP}`).toBe(H_GAP);
+        }
     });
 });
 

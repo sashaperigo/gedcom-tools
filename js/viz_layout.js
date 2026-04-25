@@ -636,10 +636,8 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 //       person's own pill. Placed on the OPPOSITE side of the person from
 //       the visible spouse, keeping its horizontal reach strictly on one
 //       side of personCenter and therefore away from the visible-FAM drop.
-//
-// Within the other-FAMs cluster, kids stay grouped by FAM (INTER_FAM_GAP
-// between different FAMs, H_GAP within) so multi-marriage fatherhood is
-// still visually distinguishable.
+//       Children within this cluster are sorted by birth year with H_GAP
+//       between all of them regardless of which FAM they came from.
 
 function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges) {
     const { NODE_W, NODE_H, ROW_HEIGHT, H_GAP } = DESIGN;
@@ -724,7 +722,16 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     const otherFamsSorted = activeFams
         .filter(f => f !== visibleFamXref)
         .sort((a, b) => famEarliestBirth(a) - famEarliestBirth(b));
-    const otherGroups = otherFamsSorted.flatMap(buildGroupsForFam);
+    // Merge all non-visible-FAM children into one flat cluster sorted by birth
+    // year with uniform H_GAP between them (no FAM-boundary gaps within the
+    // other cluster).
+    const otherGroups = otherFamsSorted.flatMap(buildGroupsForFam)
+        .sort((a, b) => {
+            const ya = (typeof PEOPLE !== 'undefined' && PEOPLE[a.childXref]?.birth_year) || 9999;
+            const yb = (typeof PEOPLE !== 'undefined' && PEOPLE[b.childXref]?.birth_year) || 9999;
+            return ya - yb;
+        })
+        .map(g => ({ ...g, famXref: null }));
 
     const groupsWidth = (groups) => groups.reduce((w, g, i) => {
         if (i === 0) return g.width;
