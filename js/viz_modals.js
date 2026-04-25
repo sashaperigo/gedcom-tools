@@ -1985,10 +1985,14 @@ function _buildSpouseMenuRows(xref, visibleSpouseFams, focusXref) {
     } else {
         effectiveChecked = new Set(fams.slice(0, 1));
     }
-    return fams.map(f => {
+    return fams.filter(f => {
         const fam = FAMILIES[f];
         const other = fam.husb === xref ? fam.wife : fam.husb;
-        const otherName = (other && PEOPLE[other] && PEOPLE[other].name) || (other || '(unknown)');
+        return !!other;
+    }).map(f => {
+        const fam = FAMILIES[f];
+        const other = fam.husb === xref ? fam.wife : fam.husb;
+        const otherName = (PEOPLE[other] && PEOPLE[other].name) || other;
         const year = fam.marr_year ? ` (${fam.marr_year})` : '';
         const checked = effectiveChecked.has(f) ? ' checked' : '';
         const fQ = escHtml(f);
