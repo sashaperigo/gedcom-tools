@@ -2453,7 +2453,13 @@ def fix_note_reflow(path: str, dry_run: bool = False, min_len: int = 5) -> int:
     GEDCOM_MAX = 255
 
     def _is_mid_word(prev_tail: str, conc_val: str) -> bool:
-        return bool(prev_tail and prev_tail.isalpha() and conc_val and conc_val[0].islower())
+        # A join is mid-word when neither side has a space and both sides are
+        # alphanumeric — catches digit+letter (e.g. "18"+"th"), letter+digit,
+        # and letter+upper-case letter, in addition to the original alpha+lower case.
+        return bool(
+            prev_tail and prev_tail.isalnum()
+            and conc_val and conc_val[0].isalnum()
+        )
 
     def _chunk_paragraph(para: str, first_prefix: str) -> list[str]:
         """Split one paragraph into GEDCOM lines at word boundaries."""
