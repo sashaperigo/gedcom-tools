@@ -2142,6 +2142,58 @@ describe('computeLayout — focus person in expandedChildrenPersons does not dup
     });
 });
 
+// ── Regression: focus person's PARENT in expandedChildrenPersons must not duplicate siblings ──
+describe('computeLayout — focus parent in expandedChildrenPersons does not duplicate siblings', () => {
+    // Scenario: user had expanded a parent's children while viewing a different
+    // focus, then navigated to @FOCUS@.  The stale expandedChildrenPersons still
+    // contains @FATHER@.  Phase 3 must not re-place @FOCUS@ and her siblings as
+    // "descendant" nodes on top of the Phase-1 "focus"/"sibling" nodes.
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@':  { birth_year: 1898 },
+                '@FATHER@': { birth_year: 1870 },
+                '@MOTHER@': { birth_year: 1872 },
+                '@SIB1@':   { birth_year: 1900 },
+                '@SIB2@':   { birth_year: 1903 },
+            },
+            parents: {
+                '@FOCUS@': ['@FATHER@', '@MOTHER@'],
+            },
+            relatives: {
+                '@FOCUS@': { siblings: ['@SIB1@', '@SIB2@'], spouses: [] },
+            },
+            families: {
+                '@PFAM@': { husb: '@FATHER@', wife: '@MOTHER@', chil: ['@FOCUS@', '@SIB1@', '@SIB2@'] },
+            },
+        });
+    });
+
+    it('focus appears exactly once when father is in expandedChildrenPersons', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@', '@MOTHER@']), new Set(), new Set(['@FATHER@']));
+        expect(nodes.filter(n => n.xref === '@FOCUS@')).toHaveLength(1);
+    });
+
+    it('each sibling appears exactly once when father is in expandedChildrenPersons', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@', '@MOTHER@']), new Set(), new Set(['@FATHER@']));
+        expect(nodes.filter(n => n.xref === '@SIB1@')).toHaveLength(1);
+        expect(nodes.filter(n => n.xref === '@SIB2@')).toHaveLength(1);
+    });
+
+    it('siblings remain at y=0 (not pushed to y=+ROW_HEIGHT)', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@', '@MOTHER@']), new Set(), new Set(['@FATHER@']));
+        expect(nodes.find(n => n.xref === '@SIB1@').y).toBe(0);
+        expect(nodes.find(n => n.xref === '@SIB2@').y).toBe(0);
+    });
+
+    it('same result when mother is in expandedChildrenPersons', () => {
+        const { nodes } = computeLayout('@FOCUS@', new Set(['@FATHER@', '@MOTHER@']), new Set(), new Set(['@MOTHER@']));
+        expect(nodes.filter(n => n.xref === '@FOCUS@')).toHaveLength(1);
+        expect(nodes.filter(n => n.xref === '@SIB1@')).toHaveLength(1);
+        expect(nodes.filter(n => n.xref === '@SIB2@')).toHaveLength(1);
+    });
+});
+
 describe('computeLayout — expandedChildrenPersons: aunt\'s kids (cousins)', () => {
     beforeEach(() => {
         resetGlobals({

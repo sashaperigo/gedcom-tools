@@ -662,10 +662,19 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     const personCenter = personNode.x + NODE_W / 2;
     const umbrellaY = personY + NODE_H + (ROW_HEIGHT - NODE_H) / 2;
 
+    // Skip FAMs whose children are all already placed at childY. This prevents
+    // Phase 3 from re-rendering the focus row's siblings when a parent of the
+    // focus person is in expandedChildrenPersons (stale state from a prior focus).
+    const alreadyAtChildY = new Set(nodes.filter(n => n.y === childY).map(n => n.xref));
+    const activeFams = personFams.filter(f =>
+        (FAMILIES[f].chil || []).some(c => !alreadyAtChildY.has(c))
+    );
+    if (activeFams.length === 0) return;
+
     // Visible FAM = first childful FAM whose other-parent is on-row.
     let visibleFamXref = null;
     let visibleSpouseNode = null;
-    for (const f of personFams) {
+    for (const f of activeFams) {
         const fam = FAMILIES[f];
         const other = fam.husb === personXref ? fam.wife : fam.husb;
         if (!other) continue;
@@ -692,11 +701,13 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
 
     const buildGroupsForFam = (famXref) => {
         const fam = FAMILIES[famXref];
-        const kidsSorted = fam.chil.slice().sort((a, b) => {
-            const ya = (typeof PEOPLE !== 'undefined' && PEOPLE[a]?.birth_year) || 9999;
-            const yb = (typeof PEOPLE !== 'undefined' && PEOPLE[b]?.birth_year) || 9999;
-            return ya - yb;
-        });
+        const kidsSorted = fam.chil
+            .filter(c => !alreadyAtChildY.has(c))
+            .slice().sort((a, b) => {
+                const ya = (typeof PEOPLE !== 'undefined' && PEOPLE[a]?.birth_year) || 9999;
+                const yb = (typeof PEOPLE !== 'undefined' && PEOPLE[b]?.birth_year) || 9999;
+                return ya - yb;
+            });
         return kidsSorted.map(childXref => {
             const childSpouses = _visibleSpousesFor(
                 childXref,
@@ -710,7 +721,7 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     };
 
     const visibleGroups = visibleFamXref ? buildGroupsForFam(visibleFamXref) : [];
-    const otherFamsSorted = personFams
+    const otherFamsSorted = activeFams
         .filter(f => f !== visibleFamXref)
         .sort((a, b) => famEarliestBirth(a) - famEarliestBirth(b));
     const otherGroups = otherFamsSorted.flatMap(buildGroupsForFam);
