@@ -794,7 +794,6 @@ function renderPanel() {
                 const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
                     `<button class="evt-edit-btn" title="Edit" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` : '';
                 const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
-                const srcBadgeInline = `<span class="fact-row-src" onclick="event.stopPropagation();openSourcesModal(${JSON.stringify(String(xref)).replace(/"/g,'&quot;')},${evt._origIdx})">+ src</span>`;
 
                 if (evt.tag === 'RESI') {
                     return `<div class="evt-entry no-year">` +
@@ -822,7 +821,7 @@ function renderPanel() {
                         `<span class="fact-row-value">${escHtml(valueText)}</span>` +
                         `</div>` +
                         `<div class="evt-actions">${editBtn}${delBtn}</div>` +
-                        srcBadgeInline +
+                        srcBadge +
                         `</div>`;
                 }
 
@@ -835,7 +834,7 @@ function renderPanel() {
                     noteInl +
                     `</div>` +
                     `<div class="evt-actions">${editBtn}${delBtn}</div>` +
-                    srcBadgeInline +
+                    srcBadge +
                     `</div>`;
             }).join('');
         }

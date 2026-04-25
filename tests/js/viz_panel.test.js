@@ -1442,6 +1442,34 @@ describe('renderPanel — fact-row layout for undated facts', () => {
         expect(alsoLivedEl.innerHTML).toContain('evt-entry');
         expect(alsoLivedEl.innerHTML).toContain('no-year');
     });
+    it('undated OCCU with citation shows citation count in source badge', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const alsoLivedEl = makeFakeEl('detail-also-lived');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-also-lived') return alsoLivedEl;
+                return null;
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Test', sex: 'M',
+                events: [{ tag: 'OCCU', inline_val: 'Pharmacist', date: null, place: '', _origIdx: 0, event_idx: 0,
+                    citations: [{ sourceXref: '@S1@', page: 'p.5', text: '', note: '', url: '' }] }],
+                notes: [], sources: []
+            }
+        };
+        global.PARENTS = {};
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        const html = alsoLivedEl.innerHTML;
+        expect(html).toContain('1 src');
+        expect(html).not.toContain('+ src');
+    });
+
     it('RELI shows tag label on top and value on bottom (not reversed)', () => {
         const panelEl = makeFakeEl('detail-panel');
         const alsoLivedEl = makeFakeEl('detail-also-lived');
