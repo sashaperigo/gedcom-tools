@@ -607,6 +607,42 @@ describe('renderPanel — EVEN tag uses type label', () => {
     });
 });
 
+describe('renderPanel — BIRT event row has no inline convert button', () => {
+    it('BIRT event actions do not contain a convert-to-baptism button', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@BIRT_CVT@' };
+
+        global.PEOPLE['@BIRT_CVT@'] = {
+            name: 'Birth Person',
+            birth_year: '1900',
+            death_year: null,
+            sex: 'M',
+            events: [
+                { tag: 'BIRT', date: '1900', place: 'Smyrna', citations: [], event_idx: 0 },
+            ],
+            notes: [],
+            sources: [],
+        };
+
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return makeFakeEl(id);
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+
+        initPanel(panelEl);
+        renderPanel();
+
+        expect(eventsEl.innerHTML).not.toContain('evt-convert-btn');
+        expect(eventsEl.innerHTML).not.toContain('convertEventTag');
+    });
+});
+
 describe('renderPanel — blank fact filter', () => {
     it('event with no date, place, inline_val, or note is absent from rendered output', () => {
         const panelEl = makeFakeEl('detail-panel');
