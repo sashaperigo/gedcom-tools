@@ -824,7 +824,7 @@ describe('render — died-young badge', () => {
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
         expect(focusG).toBeDefined();
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
+        const badgeCircle = focusG.children.find(c => (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeDefined();
     });
 
@@ -836,7 +836,7 @@ describe('render — died-young badge', () => {
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
+        const badgeCircle = focusG.children.find(c => (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeDefined();
     });
 
@@ -848,7 +848,7 @@ describe('render — died-young badge', () => {
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
+        const badgeCircle = focusG.children.find(c => (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeDefined();
     });
 
@@ -861,7 +861,7 @@ describe('render — died-young badge', () => {
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
-        const badgeCircle = focusG.children.find(c => c.tagName === 'circle' && (c._attrs['class'] || '').includes('badge-died-young'));
+        const badgeCircle = focusG.children.find(c => (c._attrs['class'] || '').includes('badge-died-young'));
         expect(badgeCircle).toBeUndefined();
     });
 });

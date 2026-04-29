@@ -49,19 +49,13 @@ function _renderEdge(edge) {
 // (death_year − birth_year < 10). Placed in the top-right corner.
 function _drawDiedYoungCross(g, w, diedYoung) {
     if (!diedYoung) return;
-    const badge = _svgEl('circle', {
-        cx: w - 13, cy: 10, r: 6,
-        class: 'badge-died-young',
-        'pointer-events': 'none',
-    });
+    const cg = _svgEl('g', { transform: `translate(${w - 13}, 10)`, class: 'badge-died-young' });
     const titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
     titleEl.textContent = 'Died young';
-    badge.appendChild(titleEl);
-    g.appendChild(badge);
+    cg.appendChild(titleEl);
     const lineAttrs = { stroke: 'rgba(203,213,225,0.45)', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'pointer-events': 'none' };
-    const cg = _svgEl('g', { transform: `translate(${w - 13}, 10)` });
-    cg.appendChild(_svgEl('line', { ...lineAttrs, x1: 0, y1: -4, x2: 0, y2: 4 }));
-    cg.appendChild(_svgEl('line', { ...lineAttrs, x1: -3, y1: -1.5, x2: 3, y2: -1.5 }));
+    cg.appendChild(_svgEl('line', { ...lineAttrs, x1: 0, y1: -6, x2: 0, y2: 6 }));
+    cg.appendChild(_svgEl('line', { ...lineAttrs, x1: -3.5, y1: -2, x2: 3.5, y2: -2 }));
     g.appendChild(cg);
 }
 
