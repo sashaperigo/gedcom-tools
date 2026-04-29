@@ -618,15 +618,27 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     // expanded before a middle parent (click order) would occupy the ideal
     // interior gap, forcing pickStartInFreeGap to push the middle parent's
     // children far outside their natural position.
-    const phase3Persons = [...expandedChildrenPersons].filter(xref => xref !== focusXref);
-    phase3Persons.sort((a, b) => {
-        const na = nodes.find(n => n.xref === a);
-        const nb = nodes.find(n => n.xref === b);
-        return (na?.x ?? 0) - (nb?.x ?? 0);
-    });
-    phase3Persons.forEach(personXref => {
-        _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges);
-    });
+    // Iterate to a fixed point: an expanded person may not be present in
+    // `nodes` until another expanded ancestor has been processed first
+    // (e.g., grandma's pass places her son, then the son's pass can place
+    // his children). One linear sort by x can't satisfy that dependency.
+    const remaining = new Set([...expandedChildrenPersons].filter(xref => xref !== focusXref));
+    let progressed = true;
+    while (progressed && remaining.size > 0) {
+        progressed = false;
+        const ready = [...remaining]
+            .filter(x => nodes.find(n => n.xref === x))
+            .sort((a, b) => {
+                const na = nodes.find(n => n.xref === a);
+                const nb = nodes.find(n => n.xref === b);
+                return (na?.x ?? 0) - (nb?.x ?? 0);
+            });
+        for (const personXref of ready) {
+            _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges);
+            remaining.delete(personXref);
+            progressed = true;
+        }
+    }
 
     return { nodes, edges };
 }
