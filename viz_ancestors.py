@@ -1048,7 +1048,8 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     all_people = sorted(
         [{"id": xref, "name": info["name"] or "",
           "birth_year": info.get("birth_year") or "",
-          "death_year": info.get("death_year") or ""}
+          "death_year": info.get("death_year") or "",
+          "sex": info.get("sex") or ""}
          for xref, info in indis.items()],
         key=lambda p: p["name"].lower()
     )
