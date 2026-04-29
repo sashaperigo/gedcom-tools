@@ -798,7 +798,7 @@ function renderPanel() {
                 // Godparents (CHR/BAPM)
                 const godparentHtml = _buildGodparentPillsHtml(evt, xref, xrefQ);
 
-                const tagAbbr = evt.tag ? evt.tag.substring(0, 4) : '';
+                const tagAbbr = (evt.tag === 'EVEN' && evt.type) ? evt.type.substring(0, 4) : (evt.tag ? evt.tag.substring(0, 4) : '');
                 const noYearClass = evtYear ? '' : ' no-year';
                 html +=
                     `<div class="evt-entry${noYearClass}">` +
