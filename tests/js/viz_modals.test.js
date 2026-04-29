@@ -2190,3 +2190,68 @@ describe('_updateEventModalFields — date-unknown checkbox row', () => {
         expect(els['event-modal-date-unknown-row'].style.display).toBe('none');
     });
 });
+
+// ── editEvent — convert-to-baptism row ───────────────────────────────────
+
+describe('editEvent — convert-to-baptism row', () => {
+    function _fakeEl(id) {
+        return {
+            id,
+            innerHTML: '',
+            textContent: '',
+            style: { display: 'none' },
+            value: '',
+            options: [],
+            checked: false,
+            disabled: false,
+            classList: {
+                _classes: new Set(),
+                add(c) { this._classes.add(c); },
+                remove(c) { this._classes.delete(c); },
+                contains(c) { return this._classes.has(c); },
+            },
+        };
+    }
+
+    beforeEach(() => {
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Test Person',
+                events: [
+                    { tag: 'BIRT', event_idx: 0, date: '1900', place: '' },
+                    { tag: 'DEAT', event_idx: 1, date: '1980', place: '' },
+                ],
+            },
+        };
+        global.ALL_PEOPLE = [];
+        global.ADDR_BY_PLACE = {};
+        global.ALL_PLACES = [];
+        global.setState = vi.fn();
+        global.document = {
+            getElementById: (id) => _fakeEl(id),
+            addEventListener: () => {},
+        };
+    });
+
+    it('shows convert row when editing a BIRT event', () => {
+        const convertRow = _fakeEl('event-modal-convert-row');
+        global.document = {
+            getElementById: (id) => id === 'event-modal-convert-row' ? convertRow : _fakeEl(id),
+            addEventListener: () => {},
+        };
+        const { editEvent } = require('../../js/viz_modals.js');
+        editEvent('@I1@', 0, 'BIRT');
+        expect(convertRow.style.display).toBe('');
+    });
+
+    it('hides convert row when editing a non-BIRT event', () => {
+        const convertRow = _fakeEl('event-modal-convert-row');
+        global.document = {
+            getElementById: (id) => id === 'event-modal-convert-row' ? convertRow : _fakeEl(id),
+            addEventListener: () => {},
+        };
+        const { editEvent } = require('../../js/viz_modals.js');
+        editEvent('@I1@', 1, 'DEAT');
+        expect(convertRow.style.display).toBe('none');
+    });
+});

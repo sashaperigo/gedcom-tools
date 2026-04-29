@@ -161,6 +161,12 @@
                 <label for="event-modal-page">Page / Folio</label>
                 <input type="text" id="event-modal-page" placeholder="e.g. p. 42" onkeydown="if(event.key==='Escape')closeEventModal()">
             </div>
+            <div id="event-modal-convert-row" style="display:none">
+                <button type="button" class="event-modal-convert-btn"
+                    onclick="convertEventTag(_eventModalXref, _eventModalIdx, 'BIRT', 'BAPM')">
+                    &#8594; Convert to Baptism
+                </button>
+            </div>
             <div class="event-modal-actions">
                 <button class="event-modal-cancel" onclick="closeEventModal()">Cancel</button>
                 <button class="event-modal-save" id="event-modal-save-btn" onclick="submitEventModal()">Save</button>

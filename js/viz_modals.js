@@ -409,6 +409,8 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
     if (_duCb) _duCb.checked = false;
     const _dateInp = document.getElementById('event-modal-date');
     if (_dateInp) _dateInp.disabled = false;
+    const convertRow = document.getElementById('event-modal-convert-row');
+    if (convertRow) convertRow.style.display = tag === 'BIRT' ? '' : 'none';
     // Set type AFTER _updateEventModalFields so its reset-from-preset logic doesn't wipe the prefill.
     document.getElementById('event-modal-type').value = evt.type || '';
     document.getElementById('event-modal-overlay').classList.add('open');

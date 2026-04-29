@@ -1253,6 +1253,29 @@ describe('convertEventTag', () => {
         await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
         expect(global.alert).toHaveBeenCalledWith(expect.stringContaining('Conversion failed'));
     });
+
+    it('calls closeEventModal after successful conversion', async () => {
+        global.closeEventModal = vi.fn();
+        global.confirm.mockReturnValue(true);
+        global.apiConvertEvent.mockResolvedValue({ people: {} });
+        await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
+        expect(global.closeEventModal).toHaveBeenCalled();
+    });
+
+    it('does not call closeEventModal when user cancels', async () => {
+        global.closeEventModal = vi.fn();
+        global.confirm.mockReturnValue(false);
+        await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
+        expect(global.closeEventModal).not.toHaveBeenCalled();
+    });
+
+    it('does not call closeEventModal on API error', async () => {
+        global.closeEventModal = vi.fn();
+        global.confirm.mockReturnValue(true);
+        global.apiConvertEvent.mockRejectedValue(new Error('server error'));
+        await convertEventTag('@I1@', 0, 'BIRT', 'BAPM');
+        expect(global.closeEventModal).not.toHaveBeenCalled();
+    });
 });
 
 // ── _buildGodparentPillsHtml — onclick attribute is well-formed ──────────
