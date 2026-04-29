@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Relative life events — option mockups</title>
+<style>
+:root {
+    --bg-app: #0a0f1c;
+    --bg-surface: #0d1526;
+    --bg-node: #131c30;
+    --border: #1e2d48;
+    --border-subtle: #162038;
+    --border-deep: #1e2a42;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-disabled: #475569;
+    --accent: #818cf8;
+    --accent-light: #a5b4fc;
+    --accent-bg: #162848;
+    --rel-accent: #6b7a99;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+}
+h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.subhead {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+.cols {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    max-width: 1400px;
+}
+.col {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+}
+.col h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-light);
+    margin-bottom: 4px;
+}
+.col .desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 18px;
+    min-height: 48px;
+}
+
+/* ─── shared timeline styles (mirror viz_ancestors.css) ─── */
+.timeline-section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-disabled);
+    margin: 18px 0 10px 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-deep);
+    display: block;
+}
+.timeline-section-label:first-child {
+    margin-top: 0;
+    border-top: none;
+    padding-top: 0;
+}
+.evt-entry {
+    position: relative;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: var(--bg-node);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+}
+.evt-year-col {
+    width: 46px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    padding-right: 10px;
+}
+.evt-year {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    letter-spacing: -0.2px;
+}
+.evt-tag-abbrev {
+    font-size: 9px;
+    color: var(--text-disabled);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-top: 2px;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    display: block;
+}
+.evt-content { flex: 1; min-width: 0; }
+.evt-prose-text {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+.evt-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    line-height: 1.4;
+}
+
+/* ───── Option A: greyed text + relation tag, same row layout ───── */
+.opt-a .evt-rel {
+    background: transparent;
+    border: 1px dashed var(--border);
+}
+.opt-a .evt-rel .evt-year { color: var(--text-muted); font-weight: 600; }
+.opt-a .evt-rel .evt-tag-abbrev { color: var(--text-disabled); }
+.opt-a .evt-rel .evt-prose-text {
+    color: var(--text-muted);
+    font-style: italic;
+    font-weight: 400;
+}
+.opt-a .evt-rel .evt-meta { color: var(--text-disabled); }
+
+/* ───── Option B: compact one-liner ───── */
+.opt-b .evt-rel-row {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 4px 12px 4px 12px;
+    margin: 2px 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+.opt-b .evt-rel-row .yr {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--text-secondary);
+    width: 36px;
+    flex-shrink: 0;
+}
+.opt-b .evt-rel-row .label {
+    font-style: italic;
+}
+
+/* ───── Option C: opacity + left accent stripe, year column kept ───── */
+.opt-c .evt-rel {
+    opacity: 0.62;
+    border-left: 2px solid var(--rel-accent);
+    background: transparent;
+}
+.opt-c .evt-rel .evt-tag-abbrev { color: var(--rel-accent); }
+.opt-c .evt-rel .evt-prose-text {
+    font-weight: 400;
+    font-style: italic;
+}
+
+/* legend */
+.legend {
+    margin-top: 28px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    max-width: 1400px;
+}
+.legend code {
+    background: var(--bg-node);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text-secondary);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 10px;
+}
+</style>
+</head>
+<body>
+
+<h1>Relative life events on the timeline — three visual options</h1>
+<div class="subhead">
+    Focused person: <strong>Maria Konstantinidis</strong> (b. 1880, d. 1945).
+    Real events shown in normal style; relative events (births of children, death of spouse, death of parents, death of children) shown in the option's distinct style.
+</div>
+
+<div class="cols">
+
+<!-- ─────────── Option A ─────────── -->
+<div class="col opt-a">
+    <h2>Option A — Muted text + dashed border</h2>
+    <div class="desc">Same row layout as life events, but dashed border, italic muted prose, relation marker (<code>† SPOU</code>, <code>+ CHIL</code>, etc.) in the tag column. No edit/delete/source actions.</div>
+
+    <span class="timeline-section-label">Early Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1880</span><span class="evt-tag-abbrev">BIRT</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Born in Smyrna, Ottoman Empire</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1895</span><span class="evt-tag-abbrev">† PARE</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Death of father Dimitrios Konstantinidis</span></div>
+    </div>
+
+    <span class="timeline-section-label">Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1902</span><span class="evt-tag-abbrev">MARR</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Married Stavros Papadopoulos in Smyrna</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1904</span><span class="evt-tag-abbrev">+ CHIL</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Birth of daughter Eleni Papadopoulos</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1907</span><span class="evt-tag-abbrev">+ CHIL</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Birth of son Georgios Papadopoulos</span></div>
+    </div>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1922</span><span class="evt-tag-abbrev">EMIG</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Departed Smyrna for Athens</span><span class="evt-meta">Sept · Smyrna catastrophe</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1928</span><span class="evt-tag-abbrev">† CHIL</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Death of son Georgios Papadopoulos</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1934</span><span class="evt-tag-abbrev">† SPOU</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Death of husband Stavros Papadopoulos</span></div>
+    </div>
+
+    <span class="timeline-section-label">Later Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1945</span><span class="evt-tag-abbrev">DEAT</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Died in Athens, Greece</span></div>
+    </div>
+</div>
+
+<!-- ─────────── Option B ─────────── -->
+<div class="col opt-b">
+    <h2>Option B — Compact one-liner</h2>
+    <div class="desc">No card, no tag column. Tight greyed row with year and italic phrase. Visually subordinate; nests between the person's own events.</div>
+
+    <span class="timeline-section-label">Early Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1880</span><span class="evt-tag-abbrev">BIRT</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Born in Smyrna, Ottoman Empire</span></div>
+    </div>
+
+    <div class="evt-rel-row"><span class="yr">1895</span><span class="label">Death of father Dimitrios Konstantinidis</span></div>
+
+    <span class="timeline-section-label">Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1902</span><span class="evt-tag-abbrev">MARR</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Married Stavros Papadopoulos in Smyrna</span></div>
+    </div>
+
+    <div class="evt-rel-row"><span class="yr">1904</span><span class="label">Birth of daughter Eleni Papadopoulos</span></div>
+    <div class="evt-rel-row"><span class="yr">1907</span><span class="label">Birth of son Georgios Papadopoulos</span></div>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1922</span><span class="evt-tag-abbrev">EMIG</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Departed Smyrna for Athens</span><span class="evt-meta">Sept · Smyrna catastrophe</span></div>
+    </div>
+
+    <div class="evt-rel-row"><span class="yr">1928</span><span class="label">Death of son Georgios Papadopoulos</span></div>
+    <div class="evt-rel-row"><span class="yr">1934</span><span class="label">Death of husband Stavros Papadopoulos</span></div>
+
+    <span class="timeline-section-label">Later Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1945</span><span class="evt-tag-abbrev">DEAT</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Died in Athens, Greece</span></div>
+    </div>
+</div>
+
+<!-- ─────────── Option C ─────────── -->
+<div class="col opt-c">
+    <h2>Option C — Opacity + left stripe (recommended)</h2>
+    <div class="desc">Identical row layout, but reduced opacity (~0.62) and a 2px left accent stripe in slate-blue. Year column stays aligned. Italic prose makes the relation phrasing distinct.</div>
+
+    <span class="timeline-section-label">Early Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1880</span><span class="evt-tag-abbrev">BIRT</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Born in Smyrna, Ottoman Empire</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1895</span><span class="evt-tag-abbrev">† PARE</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Death of father Dimitrios Konstantinidis</span></div>
+    </div>
+
+    <span class="timeline-section-label">Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1902</span><span class="evt-tag-abbrev">MARR</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Married Stavros Papadopoulos in Smyrna</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1904</span><span class="evt-tag-abbrev">+ CHIL</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Birth of daughter Eleni Papadopoulos</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1907</span><span class="evt-tag-abbrev">+ CHIL</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Birth of son Georgios Papadopoulos</span></div>
+    </div>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1922</span><span class="evt-tag-abbrev">EMIG</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Departed Smyrna for Athens</span><span class="evt-meta">Sept · Smyrna catastrophe</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1928</span><span class="evt-tag-abbrev">† CHIL</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Death of son Georgios Papadopoulos</span></div>
+    </div>
+
+    <div class="evt-entry evt-rel">
+        <div class="evt-year-col"><span class="evt-year">1934</span><span class="evt-tag-abbrev">† SPOU</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Death of husband Stavros Papadopoulos</span></div>
+    </div>
+
+    <span class="timeline-section-label">Later Life</span>
+
+    <div class="evt-entry">
+        <div class="evt-year-col"><span class="evt-year">1945</span><span class="evt-tag-abbrev">DEAT</span></div>
+        <div class="evt-content"><span class="evt-prose-text">Died in Athens, Greece</span></div>
+    </div>
+</div>
+
+</div>
+
+<div class="legend">
+    <strong>Tag glyphs (proposed):</strong>
+    <code>+ CHIL</code> birth of child &nbsp;·&nbsp;
+    <code>† CHIL</code> death of child &nbsp;·&nbsp;
+    <code>† SPOU</code> death of spouse &nbsp;·&nbsp;
+    <code>† PARE</code> death of parent.
+    Person's own events keep their existing tags (<code>BIRT</code>, <code>MARR</code>, <code>EMIG</code>, <code>DEAT</code>, …).
+    Relative events are filtered to those occurring before the focused person's death (1945 here).
+</div>
+
+</body>
+</html>
