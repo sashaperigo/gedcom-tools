@@ -105,6 +105,12 @@ DOM input state (disabled flags, checked checkboxes, hidden/shown toggles) persi
 
 When adding or modifying any event row rendering in either path, always pass `evt.citations` into `buildSourceBadgeHtml` and use the return value. Never construct a badge span inline with hardcoded text.
 
+## Phase 3 child placement has dependency ordering
+
+`computeLayout` Phase 3 walks `expandedChildrenPersons` and calls `_placeChildrenOfPerson` for each. That function early-returns if the person isn't in `nodes` yet — but a person *can* be added to `nodes` by another expanded person's pass (e.g., expanding grandma and her son: grandma's pass places the son, then the son's own pass needs to place his children).
+
+A single linear pass — even one sorted by current x — only handles one level of dependency. For chains of expansions, iterate to a fixed point: each pass picks the subset currently in `nodes`, sorts by x, places them, and removes them from a remaining set; repeat until no progress. Persons that never become reachable (stale URL state) drop out naturally.
+
 ---
 
-**Last Updated**: 2026-04-24
+**Last Updated**: 2026-04-28
