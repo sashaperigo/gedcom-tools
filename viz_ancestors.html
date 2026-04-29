@@ -88,7 +88,6 @@
                     <option value="RELI">Religion</option>
                     <option value="RESI">Residence</option>
                     <option value="RETI">Retirement</option>
-                    <option value="TITL">Title</option>
                 </select>
             </div>
             <div class="event-modal-field" id="event-modal-spouse-row" style="display:none">
@@ -450,6 +449,7 @@
         for (const p of [fa, mo]) { if (p) {
                 (CHILDREN[p] = CHILDREN[p] || []).push(cx); } }
     }
+    const ALL_PEOPLE_BY_ID = Object.fromEntries(ALL_PEOPLE.map(p => [p.id, p]));
 
     function _applyFamilyMaps(fm) {
         if (!fm) return;
@@ -469,6 +469,7 @@
     <script src="/js/viz_api.js"></script>
     <script src="/js/viz_layout.js"></script>
     <script src="/js/viz_render.js"></script>
+    <script src="/js/viz_relative_events.js"></script>
     <script src="/js/viz_panel.js"></script>
     <script src="/js/viz_search.js"></script>
     <script src="/js/viz_modals.js"></script>

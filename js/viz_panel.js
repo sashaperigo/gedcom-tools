@@ -587,6 +587,14 @@ function renderPanel() {
         factsDiv.className = '';
     }
 
+    function _renderRelEventRow(rel) {
+        const role = escHtml(rel.role || '');
+        const name = rel.name ? ' ' + escHtml(rel.name) : '';
+        const verb = rel.kind === 'birth' ? 'Birth' : 'Death';
+        const label = `${verb} of ${role}${name}`;
+        return `<div class="evt-rel-row"><span class="yr">${rel.year}</span><span class="label">${label}</span></div>`;
+    }
+
     // ── Timeline events ────────────────────────────────────────────────────
     const evtDiv = document.getElementById('detail-events');
     const alsoLivedDiv = document.getElementById('detail-also-lived');
@@ -609,22 +617,51 @@ function renderPanel() {
 
     if (evtDiv) {
         const _addEvtBtn = `<button class="add-event-btn" onclick="addEvent(${xrefQ})">&#43; Add event</button>`;
-        if (!sorted.length) { evtDiv.innerHTML = _addEvtBtn; } else {
+        const relEvents = (typeof buildRelativeEvents === 'function')
+            ? buildRelativeEvents(xref)
+            : [];
+
+        const ownRows = sorted.map(evt => {
+            const evtYear = evt.date ? ((_YR_RE.exec(evt.date) || [, 0])[1] | 0) : null;
+            const _typ = (evt.type || '').toLowerCase();
+            const _isDeathRelated = evt.tag === 'DEAT' || evt.tag === 'BURI' || evt.tag === 'PROB' ||
+                (evt.tag === 'EVEN' && (_typ.includes('death') || _typ.includes('obituar') || _typ.includes('avis de d') || _typ.includes('probate')));
+            let section = 'Life';
+            if (evt.tag === 'BIRT' || (evtYear && by && evtYear <= by + 18)) section = 'Early Life';
+            else if (_isDeathRelated) section = 'Later Life';
+            return { kind: 'own', year: evtYear, section, evt };
+        });
+        const relRows = relEvents.map(r => ({ kind: 'rel', year: r.year, section: r.section, rel: r }));
+
+        // Merge: own events keep their order; relative events are inserted in year order.
+        // At equal year, own row comes first.
+        const merged = [];
+        let oi = 0, ri = 0;
+        while (oi < ownRows.length && ri < relRows.length) {
+            const o = ownRows[oi], r = relRows[ri];
+            const oy = o.year ?? Infinity;
+            const ry = r.year;
+            if (oy <= ry) { merged.push(o); oi++; }
+            else          { merged.push(r); ri++; }
+        }
+        while (oi < ownRows.length) merged.push(ownRows[oi++]);
+        while (ri < relRows.length) merged.push(relRows[ri++]);
+
+        if (!merged.length) { evtDiv.innerHTML = _addEvtBtn; } else {
             let html = '',
                 lastSection = '';
-            for (const evt of sorted) {
-                let section = 'Life';
-                const evtYear = evt.date ? ((_YR_RE.exec(evt.date) || [, 0])[1] | 0) : null;
-                const _typ = (evt.type || '').toLowerCase();
-                const _isDeathRelated = evt.tag === 'DEAT' || evt.tag === 'BURI' || evt.tag === 'PROB' ||
-                    (evt.tag === 'EVEN' && (_typ.includes('death') || _typ.includes('obituar') || _typ.includes('avis de d') || _typ.includes('probate')));
-                if (evt.tag === 'BIRT' || (evtYear && by && evtYear <= by + 18)) section = 'Early Life';
-                else if (_isDeathRelated) section = 'Later Life';
-
+            for (const row of merged) {
+                const section = row.section;
                 if (section !== lastSection) {
                     html += `<span class="timeline-section-label">${escHtml(section).toUpperCase()}</span>`;
                     lastSection = section;
                 }
+                if (row.kind === 'rel') {
+                    html += _renderRelEventRow(row.rel);
+                    continue;
+                }
+                const evt = row.evt;
+                const evtYear = row.year;
 
                 const { prose, meta } = buildProse(evt);
                 const color = dotColor(evt);
