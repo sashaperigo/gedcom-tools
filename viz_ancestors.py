@@ -294,6 +294,7 @@ def _indi_evt_subfield(state: dict, tag: str, val: str, raw_val: str, rec: dict,
             yr = ym.group(1)
             if evt['tag'] == 'BIRT' and rec['birth_year'] is None:
                 rec['birth_year'] = yr
+                rec['birth_date'] = val
             elif evt['tag'] == 'DEAT' and rec['death_year'] is None:
                 rec['death_year'] = yr
     elif tag == 'PLAC':
@@ -453,7 +454,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             indis[xref] = {
                 'name': None, 'name_given': None, 'name_surname': None, 'name_suffix': None,
-                'birth_year': None, 'death_year': None, 'has_death': False,
+                'birth_year': None, 'birth_date': None, 'death_year': None, 'has_death': False,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [],
                 'source_xrefs': [], 'source_urls': {}, 'source_citations': [], 'asso': [],
             }
@@ -1048,6 +1049,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     all_people = sorted(
         [{"id": xref, "name": info["name"] or "",
           "birth_year": info.get("birth_year") or "",
+          "birth_date": info.get("birth_date") or "",
           "death_year": info.get("death_year") or "",
           "sex": info.get("sex") or ""}
          for xref, info in indis.items()],

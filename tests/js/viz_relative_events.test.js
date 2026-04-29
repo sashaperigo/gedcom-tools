@@ -286,3 +286,100 @@ describe('buildRelativeEvents — name fallback', () => {
         expect(evt.role).toBe('daughter');
     });
 });
+
+describe('buildRelativeEvents — twins', () => {
+    function twinFx(kids) {
+        return {
+            allPeople: [
+                { id: '@F@', name: 'F', birth_year: 1900, birth_date: '1 JAN 1900', death_year: 1980, sex: 'F' },
+                ...kids,
+            ],
+            parents: {},
+            children: { '@F@': kids.map(k => k.id) },
+            families: {},
+        };
+    }
+
+    it('coalesces two same-date sons into "Birth of sons X and Y"', () => {
+        const fx = twinFx([
+            { id: '@C1@', name: 'Alex', birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'M' },
+            { id: '@C2@', name: 'Bob',  birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'M' },
+        ]);
+        const mod = loadModule(fx);
+        const births = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(births).toHaveLength(1);
+        expect(births[0].role).toBe('sons');
+        expect(births[0].name).toBe('Alex and Bob');
+    });
+
+    it('coalesces two same-date daughters into "Birth of daughters X and Y"', () => {
+        const fx = twinFx([
+            { id: '@C1@', name: 'Eva',  birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'F' },
+            { id: '@C2@', name: 'Lia',  birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'F' },
+        ]);
+        const mod = loadModule(fx);
+        const b = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(b).toHaveLength(1);
+        expect(b[0].role).toBe('daughters');
+        expect(b[0].name).toBe('Eva and Lia');
+    });
+
+    it('coalesces mixed-sex twins into "Birth of twins X and Y"', () => {
+        const fx = twinFx([
+            { id: '@C1@', name: 'Sam',  birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'M' },
+            { id: '@C2@', name: 'Mia',  birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'F' },
+        ]);
+        const mod = loadModule(fx);
+        const b = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(b).toHaveLength(1);
+        expect(b[0].role).toBe('twins');
+        expect(b[0].name).toBe('Sam and Mia');
+    });
+
+    it('joins three same-date siblings with Oxford comma', () => {
+        const fx = twinFx([
+            { id: '@C1@', name: 'A', birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'F' },
+            { id: '@C2@', name: 'B', birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'F' },
+            { id: '@C3@', name: 'C', birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'F' },
+        ]);
+        const mod = loadModule(fx);
+        const b = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(b).toHaveLength(1);
+        expect(b[0].role).toBe('daughters');
+        expect(b[0].name).toBe('A, B, and C');
+    });
+
+    it('does NOT coalesce when birth_date differs (same year only)', () => {
+        const fx = twinFx([
+            { id: '@C1@', name: 'A', birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'F' },
+            { id: '@C2@', name: 'B', birth_year: 1925, birth_date: '12 NOV 1925', death_year: '', sex: 'F' },
+        ]);
+        const mod = loadModule(fx);
+        const b = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(b).toHaveLength(2);
+        expect(b.every(e => e.role === 'daughter')).toBe(true);
+    });
+
+    it('does NOT coalesce when birth_date is empty (year-only data)', () => {
+        const fx = twinFx([
+            { id: '@C1@', name: 'A', birth_year: 1925, birth_date: '', death_year: '', sex: 'F' },
+            { id: '@C2@', name: 'B', birth_year: 1925, birth_date: '', death_year: '', sex: 'F' },
+        ]);
+        const mod = loadModule(fx);
+        const b = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(b).toHaveLength(2);
+        expect(b.every(e => e.role === 'daughter')).toBe(true);
+    });
+
+    it('drops names entirely when one twin has no name', () => {
+        const fx = twinFx([
+            { id: '@C1@', name: 'Alex', birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'M' },
+            { id: '@C2@', name: '',     birth_year: 1925, birth_date: '5 MAY 1925', death_year: '', sex: 'M' },
+        ]);
+        const mod = loadModule(fx);
+        const b = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(b).toHaveLength(1);
+        expect(b[0].role).toBe('sons');
+        expect(b[0].name).toBe('');
+    });
+});
