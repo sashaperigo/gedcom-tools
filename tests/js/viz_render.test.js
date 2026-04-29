@@ -86,6 +86,7 @@ const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS } = DESIGN;
 global.document = {
     createElementNS: (ns, tag) => new MockElement(ns, tag),
     addEventListener: () => {},
+    getElementById: () => null,
 };
 
 // Stub globals that viz_state.js needs

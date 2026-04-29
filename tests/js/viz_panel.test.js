@@ -762,6 +762,7 @@ describe('renderPanel — marriage card uses evt-year-col layout', () => {
         global.PARENTS = {};
         global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
         renderPanel();
+        global.getState = () => _state;
         expect(eventsEl.innerHTML).toContain('evt-year-col');
         expect(eventsEl.innerHTML).toContain('evt-content');
         expect(eventsEl.innerHTML).toContain('marr-card');
