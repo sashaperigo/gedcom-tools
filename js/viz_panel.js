@@ -622,7 +622,8 @@ function renderPanel() {
             : [];
 
         const ownRows = sorted.map(evt => {
-            const evtYear = evt.date ? ((_YR_RE.exec(evt.date) || [, 0])[1] | 0) : null;
+            const _yrMatch = evt.date ? _YR_RE.exec(evt.date) : null;
+            const evtYear = _yrMatch ? (parseInt(_yrMatch[1], 10) || null) : null;
             const _typ = (evt.type || '').toLowerCase();
             const _isDeathRelated = evt.tag === 'DEAT' || evt.tag === 'BURI' || evt.tag === 'PROB' ||
                 (evt.tag === 'EVEN' && (_typ.includes('death') || _typ.includes('obituar') || _typ.includes('avis de d') || _typ.includes('probate')));

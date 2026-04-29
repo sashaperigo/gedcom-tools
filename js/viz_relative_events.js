@@ -24,7 +24,7 @@ function _lifetimeBounds(xref) {
     if (lo === null) return null;
     const dy = _yearNum(p.death_year);
     const hi = dy !== null ? dy : lo + 100;
-    return { lo, hi };
+    return { lo, hi, deathYear: dy };
 }
 
 // Sort key for intra-year ordering: parent-death=0, child-birth=1, child-death=2, spouse-death=3.
@@ -61,7 +61,14 @@ function _push(out, year, kind, relation, person, bounds, focusBirth) {
     if (year < bounds.lo || year > bounds.hi) return;
     const role = _role(person, relation);
     const sortKey = _SORT_KEY[`${kind}-${relation}`] ?? 99;
-    const section = (year <= focusBirth + 18) ? 'Early Life' : 'Life';
+    let section;
+    if (bounds.deathYear !== null && year >= bounds.deathYear) {
+        section = 'Later Life';
+    } else if (year <= focusBirth + 18) {
+        section = 'Early Life';
+    } else {
+        section = 'Life';
+    }
     out.push({
         year,
         section,

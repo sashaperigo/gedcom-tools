@@ -79,19 +79,19 @@ describe('_lifetimeBounds', () => {
         const mod = loadModule({
             allPeople: [{ id: '@I1@', name: 'X', birth_year: 1880, death_year: 1945, sex: '' }],
         });
-        expect(mod._lifetimeBounds('@I1@')).toEqual({ lo: 1880, hi: 1945 });
+        expect(mod._lifetimeBounds('@I1@')).toEqual({ lo: 1880, hi: 1945, deathYear: 1945 });
     });
     it('caps at birth_year+100 when death year is missing', () => {
         const mod = loadModule({
             allPeople: [{ id: '@I1@', name: 'X', birth_year: 1880, death_year: '', sex: '' }],
         });
-        expect(mod._lifetimeBounds('@I1@')).toEqual({ lo: 1880, hi: 1980 });
+        expect(mod._lifetimeBounds('@I1@')).toEqual({ lo: 1880, hi: 1980, deathYear: null });
     });
     it('handles string years from JSON payload', () => {
         const mod = loadModule({
             allPeople: [{ id: '@I1@', name: 'X', birth_year: '1880', death_year: '1945', sex: '' }],
         });
-        expect(mod._lifetimeBounds('@I1@')).toEqual({ lo: 1880, hi: 1945 });
+        expect(mod._lifetimeBounds('@I1@')).toEqual({ lo: 1880, hi: 1945, deathYear: 1945 });
     });
     it('returns null when xref not found in ALL_PEOPLE_BY_ID', () => {
         const mod = loadModule();
@@ -237,6 +237,41 @@ describe('buildRelativeEvents — section + sort', () => {
             'death-son',
             'death-husband',
         ]);
+    });
+});
+
+describe('buildRelativeEvents — Later Life', () => {
+    it('assigns Later Life when relative death is at the focused person\'s death year', () => {
+        const fx = {
+            allPeople: [
+                { id: '@F@', name: 'F',  birth_year: 1900, death_year: 1980, sex: 'F' },
+                { id: '@S@', name: 'S',  birth_year: 1898, death_year: 1980, sex: 'M' },
+            ],
+            parents: {},
+            children: {},
+            families: { '@F1@': { husb: '@S@', wife: '@F@', chil: [], marr_year: 1922 } },
+        };
+        const mod = loadModule(fx);
+        const events = mod.buildRelativeEvents('@F@');
+        const spouseDeath = events.find(e => e.role === 'husband');
+        expect(spouseDeath.section).toBe('Later Life');
+    });
+
+    it('assigns Life (not Later Life) when focus has no death year and event is past birth+18', () => {
+        const fx = {
+            allPeople: [
+                { id: '@F@', name: 'F',  birth_year: 1900, death_year: '', sex: 'F' },
+                { id: '@C@', name: 'C',  birth_year: 1950, death_year: 1990, sex: 'M' },
+            ],
+            parents: {},
+            children: { '@F@': ['@C@'] },
+            families: {},
+        };
+        const mod = loadModule(fx);
+        const events = mod.buildRelativeEvents('@F@');
+        const childDeath = events.find(e => e.kind === 'death' && e.role === 'son');
+        // Focus has no death year → bounds.deathYear is null → no Later Life assignment.
+        expect(childDeath.section).toBe('Life');
     });
 });
 
