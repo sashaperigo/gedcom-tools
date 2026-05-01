@@ -117,6 +117,17 @@ function _ageAt(yearOrRange, birthYear) {
     return lo === hi ? String(lo) : `${lo}–${hi}`;
 }
 
+// Renders the small age sub-element for a timeline row. Returns '' when no
+// age should appear. BIRT rows show "(age)" hint regardless of computed age.
+function _buildAgeHtml(evt, yearOrRange, birthYear) {
+    if (birthYear == null || yearOrRange == null || yearOrRange === '') return '';
+    if (evt && evt.tag === 'BIRT') {
+        return `<span class="evt-age-hint">(age)</span>`;
+    }
+    const ageVal = _ageAt(yearOrRange, birthYear);
+    return ageVal != null ? `<span class="evt-age">${ageVal}</span>` : '';
+}
+
 // ── Event labels and prose ────────────────────────────────────────────────
 
 const EVENT_LABELS = {
@@ -801,6 +812,7 @@ function renderPanel() {
                 const isAnch = evt.tag === 'BIRT' || evt.tag === 'DEAT';
                 const dotCls = isAnch ? 'evt-dot dot-anchor' : 'evt-dot';
                 const yearStr = evtYear ? `<span class="evt-year">${evtYear}</span>` : '';
+                const ageStr = _buildAgeHtml(evt, evtYear, by);
                 const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
                 const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
                     `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` :
@@ -814,7 +826,7 @@ function renderPanel() {
                 const noYearClass = evtYear ? '' : ' no-year';
                 html +=
                     `<div class="evt-entry${noYearClass}">` +
-                    `<div class="evt-year-col">${yearStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
+                    `<div class="evt-year-col">${yearStr}${ageStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
                     `<div class="evt-content">` +
                     `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                     (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
@@ -1162,6 +1174,7 @@ if (typeof module !== 'undefined') {
         _handleGodparentClick,
         _buildGodparentPillsHtml,
         _ageAt,
+        _buildAgeHtml,
         convertEventTag,
     };
 }

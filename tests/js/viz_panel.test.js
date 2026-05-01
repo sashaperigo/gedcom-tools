@@ -1784,3 +1784,77 @@ describe('renderPanel — bare DEAT Y produces no timeline card', () => {
         expect(eventsEl.innerHTML).not.toContain('Death');
     });
 });
+
+describe('renderPanel — age column on standard events', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+        global.PARENTS = {};
+        global.FAMILIES = {};
+        global.CHILDREN = {};
+        global.ALL_PEOPLE_BY_ID = {};
+    });
+
+    function setupPanel(personData, xref = '@I1@') {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return null;
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+        global.PEOPLE[xref] = personData;
+        global.ALL_PEOPLE_BY_ID = global.PEOPLE;
+        global.getState = () => ({ panelOpen: true, panelXref: xref });
+        initPanel(panelEl);
+        renderPanel();
+        global.getState = () => _state;
+        return eventsEl;
+    }
+
+    it('renders a single-year age beneath the year on a death-of-mother-style event', () => {
+        const html = setupPanel({
+            name: 'Test', sex: 'M',
+            birth_year: '1926',
+            events: [
+                { tag: 'DEAT', date: '1 Jan 1941', place: '', _origIdx: 0, event_idx: 0 },
+            ],
+            notes: [], sources: [],
+        }).innerHTML;
+        expect(html).toContain('class="evt-age"');
+        expect(html).toMatch(/<span class="evt-age">15<\/span>/);
+    });
+
+    it('renders "(age)" hint on the BIRT row instead of literal 0', () => {
+        const html = setupPanel({
+            name: 'Test', sex: 'M',
+            birth_year: '1926',
+            events: [
+                { tag: 'BIRT', date: '16 Jan 1926', place: 'Izmir', _origIdx: 0, event_idx: 0 },
+            ],
+            notes: [], sources: [],
+        }).innerHTML;
+        expect(html).toContain('class="evt-age-hint"');
+        expect(html).toContain('(age)');
+        expect(html).not.toMatch(/<span class="evt-age">0<\/span>/);
+    });
+
+    it('renders no age node when focal person has no birth year', () => {
+        const html = setupPanel({
+            name: 'Test', sex: 'M',
+            birth_year: null,
+            events: [
+                { tag: 'RESI', date: '1947', place: 'England', _origIdx: 0, event_idx: 0 },
+            ],
+            notes: [], sources: [],
+        }).innerHTML;
+        expect(html).not.toContain('class="evt-age"');
+        expect(html).not.toContain('class="evt-age-hint"');
+    });
+});
