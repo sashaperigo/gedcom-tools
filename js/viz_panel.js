@@ -117,13 +117,13 @@ function _ageAt(yearOrRange, birthYear) {
     return lo === hi ? String(lo) : `${lo}–${hi}`;
 }
 
-function _buildAgeHtml(evt, yearOrRange, birthYear) {
+function _buildAgeHtml(evt, yearOrRange, birthYear, ageClass = 'evt-age') {
     if (birthYear == null || yearOrRange == null || yearOrRange === '') return '';
     if (evt && evt.tag === 'BIRT') {
         return `<span class="evt-age-hint">(age)</span>`;
     }
     const ageVal = _ageAt(yearOrRange, birthYear);
-    return ageVal != null ? `<span class="evt-age">${ageVal}</span>` : '';
+    return ageVal != null ? `<span class="${ageClass}">${ageVal}</span>` : '';
 }
 
 // ── Event labels and prose ────────────────────────────────────────────────
@@ -615,8 +615,7 @@ function renderPanel() {
         const name = rel.name ? ' ' + escHtml(rel.name) : '';
         const verb = rel.kind === 'birth' ? 'Birth' : 'Death';
         const label = `${verb} of ${role}${name}`;
-        const ageVal = _ageAt(rel.year, by);
-        const ageHtml = ageVal != null ? `<span class="age">${ageVal}</span>` : '';
+        const ageHtml = _buildAgeHtml(null, rel.year, by, 'age');
         const yrStack = `<span class="yr-stack"><span class="yr">${rel.year}</span>${ageHtml}</span>`;
         return `<div class="evt-rel-row">${yrStack}<span class="label">${label}</span></div>`;
     }
