@@ -117,8 +117,6 @@ function _ageAt(yearOrRange, birthYear) {
     return lo === hi ? String(lo) : `${lo}–${hi}`;
 }
 
-// Renders the small age sub-element for a timeline row. Returns '' when no
-// age should appear. BIRT rows show "(age)" hint regardless of computed age.
 function _buildAgeHtml(evt, yearOrRange, birthYear) {
     if (birthYear == null || yearOrRange == null || yearOrRange === '') return '';
     if (evt && evt.tag === 'BIRT') {
