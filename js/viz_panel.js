@@ -767,6 +767,7 @@ function renderPanel() {
                             const re = evt._run[ri];
                             const reYear = re.date ? ((_YR_RE.exec(re.date) || [, 0])[1] | 0) : null;
                             const reYearStr = reYear ? `<span class="evt-year">${reYear}</span>` : '';
+                            const reAgeStr = _buildAgeHtml(re, reYear, by);
                             const { prose: reProse, meta: reMeta } = buildProse(re);
                             const reEditBtn = re.event_idx !== null && re.event_idx !== undefined
                                 ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${re.event_idx},'RESI')">\u270f</button>`
@@ -778,7 +779,7 @@ function renderPanel() {
                             const reSrcBadge = buildSourceBadgeHtml(re.citations, xref, re._origIdx);
                             html +=
                                 `<div class="evt-entry evt-entry-expanded">` +
-                                `<div class="evt-year-col">${reYearStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
+                                `<div class="evt-year-col">${reYearStr}${reAgeStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
                                 `<div class="evt-content">` +
                                 `<span class="evt-prose-text">${escHtml(reProse)}</span>` +
                                 (reMeta && reMeta !== String(reYear) ? `<div class="evt-meta">${escHtml(reMeta)}</div>` : '') +
@@ -789,12 +790,13 @@ function renderPanel() {
                         }
                     } else {
                         const yearStr = `<span class="evt-year">${escHtml(evt._yearRange)}</span>`;
+                        const ageStr = _buildAgeHtml(evt, evt._yearRange, by);
                         const expandBtn = `<button class="evt-edit-btn" title="Expand to edit" onclick="toggleResiExpand(${xrefQ},${evt.event_idx})">\u270f</button>`;
                         const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
                         const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
                         html +=
                             `<div class="evt-entry">` +
-                            `<div class="evt-year-col">${yearStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
+                            `<div class="evt-year-col">${yearStr}${ageStr}<span class="evt-tag-abbrev">${tagAbbr}</span></div>` +
                             `<div class="evt-content">` +
                             `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                             (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +

@@ -1858,3 +1858,50 @@ describe('renderPanel — age column on standard events', () => {
         expect(html).not.toContain('class="evt-age-hint"');
     });
 });
+
+describe('renderPanel — age column on RESI ranges', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+        global.PARENTS = {};
+        global.FAMILIES = {};
+        global.CHILDREN = {};
+        global.ALL_PEOPLE_BY_ID = {};
+    });
+
+    it('renders a year-range and age-range when residence spans multiple years', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return null;
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+        global.PEOPLE['@I1@'] = {
+            name: 'Test', sex: 'M',
+            birth_year: '1926',
+            events: [
+                { tag: 'RESI', date: '1942', place: 'Agra, India', _origIdx: 0, event_idx: 0 },
+                { tag: 'RESI', date: '1943', place: 'Agra, India', _origIdx: 1, event_idx: 1 },
+                { tag: 'RESI', date: '1944', place: 'Agra, India', _origIdx: 2, event_idx: 2 },
+            ],
+            notes: [], sources: [],
+        };
+        global.ALL_PEOPLE_BY_ID = global.PEOPLE;
+        initPanel(panelEl);
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        global.getState = () => _state;
+        const html = eventsEl.innerHTML;
+        // Year range "1942–1944" already present today via collapseResidences
+        expect(html).toContain('1942–1944');
+        // New: age range "16–18"
+        expect(html).toMatch(/<span class="evt-age">16–18<\/span>/);
+    });
+});
