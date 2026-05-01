@@ -1874,6 +1874,11 @@ header h1 .root-name-accent {
     flex-shrink: 0;
     border-right: 1px solid var(--border);
     padding-right: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    text-align: left;
 }
 
 .evt-entry.no-year .evt-year-col {
@@ -1898,6 +1903,26 @@ header h1 .root-name-accent {
     margin-top: 2px;
     font-family: 'IBM Plex Mono', monospace;
     display: none;
+}
+
+.evt-age {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    align-self: center;
+}
+
+.evt-age-hint {
+    font-size: 9px;
+    color: var(--text-disabled);
+    margin-top: 4px;
+    line-height: 1.2;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    align-self: center;
 }
 
 .fact-del {
@@ -1950,12 +1975,24 @@ header h1 .root-name-accent {
     color: var(--text-muted);
     line-height: 1.4;
 }
+.evt-rel-row .yr-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 36px;
+    flex-shrink: 0;
+}
 .evt-rel-row .yr {
     font-variant-numeric: tabular-nums;
     font-weight: 600;
     color: var(--text-secondary);
-    width: 36px;
-    flex-shrink: 0;
+}
+.evt-rel-row .age {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+    align-self: center;
 }
 .evt-rel-row .label {
     font-style: italic;
