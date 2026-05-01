@@ -1947,3 +1947,45 @@ describe('renderPanel — age column on marriage card', () => {
         expect(html).toMatch(/<span class="evt-age">25<\/span>/);
     });
 });
+
+describe('renderPanel — age column on divorce card', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+        global.PARENTS = {};
+        global.FAMILIES = {};
+        global.CHILDREN = {};
+        global.ALL_PEOPLE_BY_ID = {};
+    });
+
+    it('renders age beneath the year in a DIV card', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return null;
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+        global.PEOPLE['@I1@'] = {
+            name: 'Test', sex: 'M',
+            birth_year: '1900',
+            events: [{ tag: 'DIV', date: '1940', place: '', fam_xref: '@F1@', div_idx: 0, _origIdx: 0, event_idx: null }],
+            notes: [], sources: [],
+        };
+        global.PARENTS = {};
+        global.ALL_PEOPLE_BY_ID = global.PEOPLE;
+        initPanel(panelEl);
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        global.getState = () => _state;
+        const html = eventsEl.innerHTML;
+        expect(html).toContain('div-card');
+        expect(html).toMatch(/<span class="evt-age">40<\/span>/);
+    });
+});
