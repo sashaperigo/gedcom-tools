@@ -709,11 +709,12 @@ function renderPanel() {
                         '';
                     const marrSrcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
                     const yearLabelSpan = evtYear ? `<span class="marr-year">${evtYear}</span>` : '';
+                    const ageStr = _buildAgeHtml(evt, evtYear, by);
                     html +=
                         `<div class="marr-card"${marrClick}>` +
                         marrEditBtn +
                         marrDelBtn +
-                        `<div class="evt-year-col">${yearLabelSpan}<span class="evt-tag-abbrev">MARR</span></div>` +
+                        `<div class="evt-year-col">${yearLabelSpan}${ageStr}<span class="evt-tag-abbrev">MARR</span></div>` +
                         `<div class="evt-content">` +
                         proseHtml +
                         (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
