@@ -1989,3 +1989,60 @@ describe('renderPanel — age column on divorce card', () => {
         expect(html).toMatch(/<span class="evt-age">40<\/span>/);
     });
 });
+
+describe('renderPanel — age column on relative-event row', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+        global.PARENTS = {};
+        global.FAMILIES = {};
+        global.CHILDREN = {};
+        global.ALL_PEOPLE_BY_ID = {};
+    });
+
+    it('wraps year + age in .yr-stack and shows age string', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return null;
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+        // Focal person born 1926, mother dies 1941 → he's 15.
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Child', sex: 'M', birth_year: '1926', death_year: '2000',
+                events: [{ tag: 'BIRT', date: '1926', _origIdx: 0, event_idx: 0 }],
+                notes: [], sources: [],
+            },
+            '@M@': {
+                name: 'Mother', sex: 'F', birth_year: '1900', death_year: '1941',
+                events: [], notes: [], sources: [],
+            },
+        };
+        global.ALL_PEOPLE_BY_ID = global.PEOPLE;
+        global.PARENTS = { '@I1@': ['@F@', '@M@'] };
+        global.FAMILIES = {};
+        global.CHILDREN = {};
+
+        // Make buildRelativeEvents available to the panel
+        const relMod = require('../../js/viz_relative_events.js');
+        global.buildRelativeEvents = relMod.buildRelativeEvents;
+
+        initPanel(panelEl);
+        global.getState = () => ({ panelOpen: true, panelXref: '@I1@' });
+        renderPanel();
+        global.getState = () => _state;
+        const html = eventsEl.innerHTML;
+        expect(html).toContain('evt-rel-row');
+        expect(html).toContain('yr-stack');
+        // Mother died in 1941 → child was 15
+        expect(html).toMatch(/<span class="age">15<\/span>/);
+    });
+});

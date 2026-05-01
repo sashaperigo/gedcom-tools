@@ -615,7 +615,10 @@ function renderPanel() {
         const name = rel.name ? ' ' + escHtml(rel.name) : '';
         const verb = rel.kind === 'birth' ? 'Birth' : 'Death';
         const label = `${verb} of ${role}${name}`;
-        return `<div class="evt-rel-row"><span class="yr">${rel.year}</span><span class="label">${label}</span></div>`;
+        const ageVal = _ageAt(rel.year, by);
+        const ageHtml = ageVal != null ? `<span class="age">${ageVal}</span>` : '';
+        const yrStack = `<span class="yr-stack"><span class="yr">${rel.year}</span>${ageHtml}</span>`;
+        return `<div class="evt-rel-row">${yrStack}<span class="label">${label}</span></div>`;
     }
 
     // ── Timeline events ────────────────────────────────────────────────────
