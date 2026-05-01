@@ -103,6 +103,20 @@ function fmtAge(raw) {
     return (prefix + r.trim().replace(/\s+/g, ' ')).trim();
 }
 
+// Returns null when no age can be derived. Otherwise a display string:
+//   single year  → "16"
+//   year range   → "16" if start == end, else "16–18"
+function _ageAt(yearOrRange, birthYear) {
+    if (birthYear == null) return null;
+    if (yearOrRange == null || yearOrRange === '') return null;
+    const s = String(yearOrRange);
+    const m = s.match(/^(\d{3,4})(?:\s*[–\-]\s*(\d{3,4}))?$/);
+    if (!m) return null;
+    const lo = parseInt(m[1], 10) - birthYear;
+    const hi = m[2] ? (parseInt(m[2], 10) - birthYear) : lo;
+    return lo === hi ? String(lo) : `${lo}–${hi}`;
+}
+
 // ── Event labels and prose ────────────────────────────────────────────────
 
 const EVENT_LABELS = {
@@ -1147,6 +1161,7 @@ if (typeof module !== 'undefined') {
         buildNoteSourceBadgeHtml,
         _handleGodparentClick,
         _buildGodparentPillsHtml,
+        _ageAt,
         convertEventTag,
     };
 }
