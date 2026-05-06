@@ -210,3 +210,39 @@ describe('assertUmbrellasDisjointAtY', () => {
         expect(() => assertUmbrellasDisjointAtY(edges)).not.toThrow();
     });
 });
+
+const {
+    assertNoUmbrellaCrossesPersonCenter,
+} = require('./_layout_invariants.js');
+
+describe('assertNoUmbrellaCrossesPersonCenter', () => {
+    it('passes when two umbrellas at same y have anchor drops on disjoint sides', () => {
+        // Anchor at x=150. Visible cluster crossbar [200, 300]. Other cluster crossbar [0, 100].
+        // Anchor verticals: visible drops from anchor (150) DOWN to crossbar at y=100;
+        // other drops from anchor (150) DOWN to crossbar at y=100.
+        const edges = [
+            // Anchor verticals (from above-y down to crossbar y)
+            { x1: 150, y1: 50, x2: 150, y2: 100, type: 'descendant' }, // visible anchor drop
+            { x1: 150, y1: 50, x2: 150, y2: 100, type: 'descendant' }, // other anchor drop
+            // Crossbars
+            { x1: 200, y1: 100, x2: 300, y2: 100, type: 'descendant' }, // visible crossbar (right of 150)
+            { x1: 0,   y1: 100, x2: 100, y2: 100, type: 'descendant' }, // other crossbar (left of 150)
+            // Horizontal connectors anchor → crossbar
+            { x1: 150, y1: 100, x2: 200, y2: 100, type: 'descendant' },
+            { x1: 100, y1: 100, x2: 150, y2: 100, type: 'descendant' },
+        ];
+        expect(() => assertNoUmbrellaCrossesPersonCenter(edges)).not.toThrow();
+    });
+
+    it('throws when one crossbar straddles the shared anchor x of two umbrellas', () => {
+        // Two anchor drops both at x=150. One crossbar from 100..200 straddles 150.
+        const edges = [
+            { x1: 150, y1: 50, x2: 150, y2: 100, type: 'descendant' },
+            { x1: 150, y1: 50, x2: 150, y2: 100, type: 'descendant' },
+            { x1: 100, y1: 100, x2: 200, y2: 100, type: 'descendant' }, // straddles 150
+            { x1: 250, y1: 100, x2: 350, y2: 100, type: 'descendant' },
+        ];
+        expect(() => assertNoUmbrellaCrossesPersonCenter(edges))
+            .toThrow(/cross.*anchor/i);
+    });
+});

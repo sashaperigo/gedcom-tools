@@ -137,10 +137,45 @@ function assertUmbrellasDisjointAtY(edges) {
     }
 }
 
+// When two or more umbrella anchor drops share an anchor-x at a given y, no
+// crossbar at that y may horizontally cross the shared anchor-x. Catches:
+// the opposite-side-rule violation that produces visually-merged umbrellas.
+function assertNoUmbrellaCrossesPersonCenter(edges) {
+    const crossbars = edges.filter(e => e.type === 'descendant' && e.y1 === e.y2);
+    const verticals = edges.filter(e => e.type === 'descendant' && e.x1 === e.x2 && e.y1 !== e.y2);
+    // Group anchors by (x, top-y) — multiple verticals from same anchor are siblings of each other
+    const anchorsByY = new Map();
+    for (const v of verticals) {
+        const top = Math.min(v.y1, v.y2);
+        const bot = Math.max(v.y1, v.y2);
+        const key = bot;
+        if (!anchorsByY.has(key)) anchorsByY.set(key, new Map());
+        const xMap = anchorsByY.get(key);
+        if (!xMap.has(v.x1)) xMap.set(v.x1, 0);
+        xMap.set(v.x1, xMap.get(v.x1) + 1);
+    }
+    for (const [y, xMap] of anchorsByY) {
+        for (const [anchorX, count] of xMap) {
+            if (count < 2) continue; // only multi-anchor case applies
+            const cbsAtY = crossbars.filter(c => Math.abs(c.y1 - y) < 0.5);
+            for (const cb of cbsAtY) {
+                const l = Math.min(cb.x1, cb.x2);
+                const r = Math.max(cb.x1, cb.x2);
+                if (l < anchorX && anchorX < r) {
+                    throw new Error(
+                        `Crossbar [${l}..${r}] at y=${y} crosses shared anchor x=${anchorX}`
+                    );
+                }
+            }
+        }
+    }
+}
+
 module.exports = {
     assertNoNodeOverlap,
     assertExactlyOneFocus,
     assertSiblingOrderMonotonic,
     assertChildrenInParentClusterRange,
     assertUmbrellasDisjointAtY,
+    assertNoUmbrellaCrossesPersonCenter,
 };
