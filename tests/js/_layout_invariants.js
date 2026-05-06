@@ -107,9 +107,40 @@ function assertChildrenInParentClusterRange(nodes, edges) {
     }
 }
 
+// Two descendant crossbars (horizontal descendant edges) at the same y must
+// not share any horizontal x-range — otherwise they merge into one visual
+// line at umbrellaY. Catches: multi-FAM umbrella merging bug class.
+function assertUmbrellasDisjointAtY(edges) {
+    const crossbars = edges
+        .filter(e => e.type === 'descendant' && e.y1 === e.y2)
+        .map(e => ({
+            y: e.y1,
+            l: Math.min(e.x1, e.x2),
+            r: Math.max(e.x1, e.x2),
+        }));
+    const byY = new Map();
+    for (const cb of crossbars) {
+        if (!byY.has(cb.y)) byY.set(cb.y, []);
+        byY.get(cb.y).push(cb);
+    }
+    for (const [y, group] of byY) {
+        const sorted = group.slice().sort((a, b) => a.l - b.l);
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i].l <= sorted[i - 1].r) {
+                throw new Error(
+                    `Descendant crossbar overlap at y=${y}: ` +
+                    `[${sorted[i - 1].l}..${sorted[i - 1].r}] and ` +
+                    `[${sorted[i].l}..${sorted[i].r}]`
+                );
+            }
+        }
+    }
+}
+
 module.exports = {
     assertNoNodeOverlap,
     assertExactlyOneFocus,
     assertSiblingOrderMonotonic,
     assertChildrenInParentClusterRange,
+    assertUmbrellasDisjointAtY,
 };

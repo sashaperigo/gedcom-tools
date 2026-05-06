@@ -162,3 +162,51 @@ describe('assertChildrenInParentClusterRange', () => {
             .toThrow(/outside.*crossbar/i);
     });
 });
+
+const {
+    assertUmbrellasDisjointAtY,
+} = require('./_layout_invariants.js');
+
+describe('assertUmbrellasDisjointAtY', () => {
+    it('passes when crossbars at same y have disjoint x-ranges', () => {
+        const edges = [
+            { x1: 0,   y1: 100, x2: 100, y2: 100, type: 'descendant' },
+            { x1: 200, y1: 100, x2: 300, y2: 100, type: 'descendant' },
+        ];
+        expect(() => assertUmbrellasDisjointAtY(edges)).not.toThrow();
+    });
+
+    it('passes when crossbars at different y can overlap in x', () => {
+        const edges = [
+            { x1: 0, y1: 100, x2: 200, y2: 100, type: 'descendant' },
+            { x1: 100, y1: 250, x2: 300, y2: 250, type: 'descendant' },
+        ];
+        expect(() => assertUmbrellasDisjointAtY(edges)).not.toThrow();
+    });
+
+    it('throws when two crossbars at same y overlap', () => {
+        const edges = [
+            { x1: 0,   y1: 100, x2: 200, y2: 100, type: 'descendant' },
+            { x1: 100, y1: 100, x2: 300, y2: 100, type: 'descendant' }, // overlaps first
+        ];
+        expect(() => assertUmbrellasDisjointAtY(edges))
+            .toThrow(/crossbar.*overlap/i);
+    });
+
+    it('throws when crossbars touch (zero gap)', () => {
+        const edges = [
+            { x1: 0,   y1: 100, x2: 100, y2: 100, type: 'descendant' },
+            { x1: 100, y1: 100, x2: 200, y2: 100, type: 'descendant' }, // shares endpoint
+        ];
+        expect(() => assertUmbrellasDisjointAtY(edges))
+            .toThrow(/crossbar.*overlap/i);
+    });
+
+    it('ignores non-descendant edges (e.g. marriage edges at same y)', () => {
+        const edges = [
+            { x1: 0,   y1: 100, x2: 200, y2: 100, type: 'marriage' },
+            { x1: 100, y1: 100, x2: 300, y2: 100, type: 'marriage' },
+        ];
+        expect(() => assertUmbrellasDisjointAtY(edges)).not.toThrow();
+    });
+});
