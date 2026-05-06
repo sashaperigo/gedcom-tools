@@ -20,6 +20,7 @@ const {
     _requiredSeparation,
     _placeChildrenOfPerson,
 } = require('../../js/viz_layout.js');
+const { computeLayoutChecked } = require('./_layout_invariants.js');
 const SLOT = NODE_W + H_GAP;
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -3809,7 +3810,7 @@ describe('computeLayout — focus-sibling with many kids lands between leftsib k
 
     it('all 9 MIDSIB children land between LEFTSIB children and FOCUS children', () => {
         const expandedChildrenPersons = new Set(['@LEFTSIB@', '@MIDSIB@']);
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
+        const { nodes } = computeLayoutChecked('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
 
         const lc2 = nodes.find(n => n.xref === '@LC2@');
         const fc1 = nodes.find(n => n.xref === '@FCHILD1@');
