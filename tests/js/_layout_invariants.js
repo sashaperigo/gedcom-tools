@@ -171,6 +171,27 @@ function assertNoUmbrellaCrossesPersonCenter(edges) {
     }
 }
 
+// Run every invariant. Order = cheapest/most-likely-to-fire first.
+function assertAllLayoutInvariants({ nodes, edges }) {
+    assertExactlyOneFocus(nodes);
+    assertNoNodeOverlap(nodes);
+    assertSiblingOrderMonotonic(nodes);
+    assertUmbrellasDisjointAtY(edges);
+    assertNoUmbrellaCrossesPersonCenter(edges);
+    assertChildrenInParentClusterRange(nodes, edges);
+}
+
+const { computeLayout } = require('../../js/viz_layout.js');
+
+// Drop-in replacement for computeLayout in tests: runs the full invariant
+// suite and returns the result unchanged. Tests that intentionally produce
+// malformed layouts should call computeLayout directly instead.
+function computeLayoutChecked(...args) {
+    const result = computeLayout(...args);
+    assertAllLayoutInvariants(result);
+    return result;
+}
+
 module.exports = {
     assertNoNodeOverlap,
     assertExactlyOneFocus,
@@ -178,4 +199,6 @@ module.exports = {
     assertChildrenInParentClusterRange,
     assertUmbrellasDisjointAtY,
     assertNoUmbrellaCrossesPersonCenter,
+    assertAllLayoutInvariants,
+    computeLayoutChecked,
 };

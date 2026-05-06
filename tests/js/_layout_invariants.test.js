@@ -246,3 +246,44 @@ describe('assertNoUmbrellaCrossesPersonCenter', () => {
             .toThrow(/cross.*anchor/i);
     });
 });
+
+const {
+    assertAllLayoutInvariants,
+    computeLayoutChecked,
+} = require('./_layout_invariants.js');
+
+describe('assertAllLayoutInvariants', () => {
+    it('passes for a valid minimal layout', () => {
+        global.PEOPLE = { '@F@': { birth_year: 1900 } };
+        const result = {
+            nodes: [{ xref: '@F@', x: 0, y: 0, role: 'focus' }],
+            edges: [],
+        };
+        expect(() => assertAllLayoutInvariants(result)).not.toThrow();
+    });
+
+    it('throws on the first invariant failure', () => {
+        const result = {
+            nodes: [
+                { xref: '@A@', x: 0, y: 0, role: 'sibling' },
+                { xref: '@B@', x: 50, y: 0, role: 'sibling' }, // overlaps
+            ],
+            edges: [],
+        };
+        expect(() => assertAllLayoutInvariants(result)).toThrow(/overlap|focus/i);
+    });
+});
+
+describe('computeLayoutChecked', () => {
+    it('returns the same shape as computeLayout when invariants pass', () => {
+        global.PEOPLE = { '@F@': { birth_year: 1900 } };
+        global.PARENTS = {};
+        global.CHILDREN = {};
+        global.RELATIVES = { '@F@': { siblings: [], spouses: [] } };
+        global.FAMILIES = {};
+        const result = computeLayoutChecked('@F@', new Set(), new Set(), new Set());
+        expect(result).toHaveProperty('nodes');
+        expect(result).toHaveProperty('edges');
+        expect(result.nodes.find(n => n.xref === '@F@')).toBeDefined();
+    });
+});
