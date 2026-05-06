@@ -193,13 +193,13 @@ describe('assertUmbrellasDisjointAtY', () => {
             .toThrow(/crossbar.*overlap/i);
     });
 
-    it('throws when crossbars touch (zero gap)', () => {
+    it('ignores T-junctions where crossbars share an endpoint x-coordinate', () => {
         const edges = [
             { x1: 0,   y1: 100, x2: 100, y2: 100, type: 'descendant' },
             { x1: 100, y1: 100, x2: 200, y2: 100, type: 'descendant' }, // shares endpoint
         ];
         expect(() => assertUmbrellasDisjointAtY(edges))
-            .toThrow(/crossbar.*overlap/i);
+            .not.toThrow();
     });
 
     it('ignores non-descendant edges (e.g. marriage edges at same y)', () => {

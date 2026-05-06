@@ -126,7 +126,7 @@ function assertUmbrellasDisjointAtY(edges) {
     for (const [y, group] of byY) {
         const sorted = group.slice().sort((a, b) => a.l - b.l);
         for (let i = 1; i < sorted.length; i++) {
-            if (sorted[i].l <= sorted[i - 1].r) {
+            if (sorted[i].l < sorted[i - 1].r) {
                 throw new Error(
                     `Descendant crossbar overlap at y=${y}: ` +
                     `[${sorted[i - 1].l}..${sorted[i - 1].r}] and ` +
