@@ -37,6 +37,42 @@ function assertNoNodeOverlap(nodes) {
     }
 }
 
+// Layout must contain exactly one node with role='focus'. Catches: stale
+// expandedChildrenPersons producing duplicate focus-row nodes; missing focus.
+function assertExactlyOneFocus(nodes) {
+    const focuses = nodes.filter(n => n.role === 'focus');
+    if (focuses.length !== 1) {
+        throw new Error(
+            `Expected exactly one focus node, found ${focuses.length}: ` +
+            focuses.map(n => n.xref).join(', ')
+        );
+    }
+}
+
+// On the focus row (y=0), nodes with role='sibling' or 'focus' must be ordered
+// left-to-right by birth year. Spouses sit next to their sibling and are
+// ignored for this check.
+function assertSiblingOrderMonotonic(nodes) {
+    const focusRow = nodes
+        .filter(n => n.y === 0 && (n.role === 'sibling' || n.role === 'focus'))
+        .slice()
+        .sort((a, b) => a.x - b.x);
+    for (let i = 1; i < focusRow.length; i++) {
+        const prev = focusRow[i - 1];
+        const curr = focusRow[i];
+        const prevBY = (typeof PEOPLE !== 'undefined' && PEOPLE[prev.xref]?.birth_year) ?? 9999;
+        const currBY = (typeof PEOPLE !== 'undefined' && PEOPLE[curr.xref]?.birth_year) ?? 9999;
+        if (prevBY > currBY) {
+            throw new Error(
+                `Sibling-row birth-year inversion: ${prev.xref} (b.${prevBY}, x=${prev.x}) ` +
+                `is left of ${curr.xref} (b.${currBY}, x=${curr.x})`
+            );
+        }
+    }
+}
+
 module.exports = {
     assertNoNodeOverlap,
+    assertExactlyOneFocus,
+    assertSiblingOrderMonotonic,
 };

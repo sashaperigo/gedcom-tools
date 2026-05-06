@@ -45,3 +45,76 @@ describe('assertNoNodeOverlap', () => {
         expect(() => assertNoNodeOverlap(nodes)).not.toThrow();
     });
 });
+
+const {
+    assertExactlyOneFocus,
+    assertSiblingOrderMonotonic,
+} = require('./_layout_invariants.js');
+
+describe('assertExactlyOneFocus', () => {
+    it('passes when exactly one node has role=focus', () => {
+        const nodes = [
+            { xref: '@F@', x: 0, y: 0, role: 'focus' },
+            { xref: '@S@', x: 200, y: 0, role: 'spouse' },
+        ];
+        expect(() => assertExactlyOneFocus(nodes)).not.toThrow();
+    });
+
+    it('throws when zero focus nodes', () => {
+        const nodes = [
+            { xref: '@A@', x: 0, y: 0, role: 'sibling' },
+        ];
+        expect(() => assertExactlyOneFocus(nodes)).toThrow(/exactly one focus/i);
+    });
+
+    it('throws when two focus nodes', () => {
+        const nodes = [
+            { xref: '@A@', x: 0, y: 0, role: 'focus' },
+            { xref: '@B@', x: 200, y: 0, role: 'focus' },
+        ];
+        expect(() => assertExactlyOneFocus(nodes)).toThrow(/exactly one focus/i);
+    });
+});
+
+describe('assertSiblingOrderMonotonic', () => {
+    // PEOPLE is read globally for birth_year lookup
+    it('passes when siblings on focus row are in birth-year order left-to-right', () => {
+        global.PEOPLE = {
+            '@A@': { birth_year: 1900 },
+            '@F@': { birth_year: 1910 },
+            '@B@': { birth_year: 1920 },
+        };
+        const nodes = [
+            { xref: '@A@', x: -200, y: 0, role: 'sibling' },
+            { xref: '@F@', x: 0,    y: 0, role: 'focus' },
+            { xref: '@B@', x: 200,  y: 0, role: 'sibling' },
+        ];
+        expect(() => assertSiblingOrderMonotonic(nodes)).not.toThrow();
+    });
+
+    it('throws when an older sibling is right of a younger sibling on focus row', () => {
+        global.PEOPLE = {
+            '@A@': { birth_year: 1920 },  // YOUNGER
+            '@B@': { birth_year: 1900 },  // OLDER
+        };
+        const nodes = [
+            { xref: '@A@', x: -200, y: 0, role: 'sibling' }, // younger but left
+            { xref: '@B@', x: 200,  y: 0, role: 'sibling' }, // older but right
+        ];
+        expect(() => assertSiblingOrderMonotonic(nodes)).toThrow(/birth.year/i);
+    });
+
+    it('ignores spouse-role nodes (they sit next to their sibling regardless of birth year)', () => {
+        global.PEOPLE = {
+            '@SIB@':    { birth_year: 1900 },
+            '@SPOUSE@': { birth_year: 1950 }, // much younger
+            '@F@':      { birth_year: 1910 },
+        };
+        const nodes = [
+            { xref: '@SPOUSE@', x: -300, y: 0, role: 'spouse' },
+            { xref: '@SIB@',    x: -200, y: 0, role: 'sibling' },
+            { xref: '@F@',      x: 0,    y: 0, role: 'focus' },
+        ];
+        expect(() => assertSiblingOrderMonotonic(nodes)).not.toThrow();
+    });
+});
