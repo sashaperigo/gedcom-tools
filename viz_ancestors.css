@@ -1245,6 +1245,15 @@ header h1 .root-name-accent {
     display: none !important;
 }
 
+/* While the kebab popover is open, allow the card to show overflow so the
+   menu isn't clipped by the card's overflow:hidden. */
+.evt-entry:has(.evt-kebab-btn[aria-expanded="true"]),
+.marr-card:has(.evt-kebab-btn[aria-expanded="true"]),
+.div-card:has(.evt-kebab-btn[aria-expanded="true"]),
+.fact-row:has(.evt-kebab-btn[aria-expanded="true"]) {
+    overflow: visible;
+}
+
 .evt-kebab-item {
     display: flex;
     align-items: center;
