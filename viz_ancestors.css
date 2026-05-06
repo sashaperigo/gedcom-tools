@@ -1387,6 +1387,12 @@ header h1 .root-name-accent {
     gap: 2px;
 }
 
+.aka-entry + .aka-entry::before {
+    content: '\00B7';
+    margin-right: 4px;
+    color: var(--text-disabled);
+}
+
 .aka-btn {
     background: none;
     border: none;

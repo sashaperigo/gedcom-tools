@@ -492,6 +492,43 @@ function _toggleFamily() {
     renderPanel();
 }
 
+// Collapse the AKA row to a single visible line when entries (or the
+// `+ alias` button) wrap, inserting a `+N more` toggle. The `+ alias`
+// button is kept visible at all times so adding an alias never requires
+// expanding first.
+function _collapseAkaIfWrapped(akaDiv) {
+    const entries = Array.from(akaDiv.querySelectorAll('.aka-entry'));
+    if (entries.length === 0) return;
+    const addBtn = akaDiv.querySelector('.aka-add-btn');
+    const row1Top = entries[0].offsetTop;
+
+    let firstWrap = entries.findIndex(e => e.offsetTop > row1Top);
+    if (firstWrap === -1) {
+        if (addBtn && addBtn.offsetTop > row1Top) {
+            firstWrap = entries.length - 1;
+        } else {
+            return;
+        }
+    }
+
+    const hidden = entries.slice(firstWrap);
+    hidden.forEach(e => { e.style.display = 'none'; });
+
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'aka-btn aka-more';
+    moreBtn.type = 'button';
+    moreBtn.textContent = `+${hidden.length} more`;
+    let expanded = false;
+    moreBtn.addEventListener('click', () => {
+        expanded = !expanded;
+        hidden.forEach(e => { e.style.display = expanded ? '' : 'none'; });
+        moreBtn.textContent = expanded ? 'show less' : `+${hidden.length} more`;
+    });
+
+    if (addBtn) akaDiv.insertBefore(moreBtn, addBtn);
+    else akaDiv.appendChild(moreBtn);
+}
+
 // ── Main render function ──────────────────────────────────────────────────
 
 function renderPanel() {
@@ -599,7 +636,7 @@ function renderPanel() {
         const xrefQA = JSON.stringify(xref).replace(/"/g, '&quot;');
         const akaEvents = (data.events || []).map((e, i) => ({ ...e, _origIdx: i }))
             .filter(e => e._name_record && e.note);
-        const addAkaBtn = `<button class="aka-btn" title="Add secondary name" style="font-size:11px;color:var(--text-disabled);margin-left:4px" onclick="openAliasModal(${xrefQA},null,'','AKA',true)">&#43; alias</button>`;
+        const addAkaBtn = `<button class="aka-btn aka-add-btn" title="Add secondary name" style="font-size:11px;color:var(--text-disabled);margin-left:4px" onclick="openAliasModal(${xrefQA},null,'','AKA',true)">&#43; alias</button>`;
         if (akaEvents.length) {
             const entries = akaEvents.map(e => {
                 const editBtn = e._name_record === true ?
@@ -610,8 +647,9 @@ function renderPanel() {
                 const delBtn = `<button class="aka-btn del" title="Delete name" onclick="deleteAlias(${xrefQA},PEOPLE[${xrefQA}].events[${e._origIdx}])">\u2715</button>`;
                 const typeLabel = (e.type && e.type.toUpperCase() !== 'AKA') ? `<span style="font-size:10px;color:var(--text-secondary);margin-right:2px">${escHtml(e.type)}:</span>` : '';
                 return `<span class="aka-entry">${typeLabel}<span style="font-style:italic">${escHtml(e.note)}</span>${editBtn}${delBtn}</span>`;
-            }).join(' \xb7 ');
+            }).join('');
             akaDiv.innerHTML = entries + addAkaBtn;
+            _collapseAkaIfWrapped(akaDiv);
         } else {
             akaDiv.innerHTML = addAkaBtn;
         }
@@ -1264,6 +1302,7 @@ if (typeof module !== 'undefined') {
         _buildGodparentPillsHtml,
         _ageAt,
         _buildAgeHtml,
+        _collapseAkaIfWrapped,
         convertEventTag,
     };
 }
