@@ -453,6 +453,9 @@ header h1 .root-name-accent {
 }
 
 .panel-godparent-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     background: var(--godparent-bg);
     border: 1px solid var(--godparent);
     color: var(--godparent-light);
@@ -469,6 +472,21 @@ header h1 .root-name-accent {
 .panel-godparent-role {
     color: var(--godparent);
     font-size: 10px;
+}
+
+.panel-godparent-del {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1;
+    padding: 0 2px;
+    margin-left: 2px;
+    cursor: pointer;
+}
+
+.panel-godparent-del:hover {
+    color: var(--danger, #d33);
 }
 
 .panel-add-godparent-btn {

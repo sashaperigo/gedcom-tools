@@ -1827,6 +1827,18 @@ async function submitAddGodparentModal() {
     }
 }
 
+async function deleteGodparent(xref, godparentXref) {
+    const gpName = (typeof PEOPLE !== 'undefined' && PEOPLE[godparentXref]?.name) || godparentXref;
+    if (!confirm('Remove ' + gpName + ' as godparent? The GEDCOM file will be updated immediately.')) return;
+    try {
+        const resp = await apiDeleteGodparent(xref, godparentXref);
+        if (resp && resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
+        if (typeof renderPanel !== 'undefined') renderPanel();
+    } catch (e) {
+        alert('Delete failed: ' + e);
+    }
+}
+
 // ── openAddPersonModal ────────────────────────────────────────────────────
 
 let _addPersonRelXref = null,
@@ -2293,6 +2305,7 @@ if (typeof module !== 'undefined' && module.exports) {
         showEditSourceModal,
         showAddGodparentModal,
         submitAddGodparentModal,
+        deleteGodparent,
         _selectGodparent,
         showAddSourceModal,
         _evtLabel,

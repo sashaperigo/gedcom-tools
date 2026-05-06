@@ -1342,6 +1342,29 @@ describe('_buildGodparentPillsHtml', () => {
         expect(html).not.toMatch(/onclick="[^"]*"@I5@"/);
         expect(html).toMatch(/onclick="[^"]*&quot;@I5@&quot;/);
     });
+
+    it('includes a delete button per godparent pill that calls deleteGodparent', () => {
+        const evt = {
+            tag: 'BAPM',
+            asso: [{ xref: '@I5@', rela: 'Godmother' }],
+        };
+        const html = _buildGodparentPillsHtml(evt, '@I1@', '&quot;@I1@&quot;');
+
+        // A delete control should exist for the pill.
+        expect(html).toMatch(/class="panel-godparent-del"/);
+        // The delete button's onclick must call deleteGodparent with the
+        // child xref and the godparent xref (both &quot;-escaped).
+        expect(html).toMatch(/deleteGodparent\(&quot;@I1@&quot;,\s*&quot;@I5@&quot;\)/);
+        // Clicking the delete button must not bubble up to the pill (which
+        // would open the godparent's panel).
+        expect(html).toMatch(/event\.stopPropagation\(\)/);
+    });
+
+    it('does not render a delete button when there are no godparents', () => {
+        const evt = { tag: 'BAPM', asso: [] };
+        const html = _buildGodparentPillsHtml(evt, '@I1@', '&quot;@I1@&quot;');
+        expect(html).not.toMatch(/panel-godparent-del/);
+    });
 });
 
 describe('renderPanel — accent bar color by sex', () => {

@@ -464,7 +464,8 @@ function _buildGodparentPillsHtml(evt, xref, xrefQ) {
         const roleSuffix = (asso.rela === 'Godfather' || asso.rela === 'Godmother') ?
             ` <span class="panel-godparent-role">(${asso.rela === 'Godfather' ? '\u2642' : '\u2640'})</span>` :
             '';
-        html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="setState({focusXref:${xrefJs},panelXref:${xrefJs},panelOpen:true})">${gpName}${roleSuffix}</span>`;
+        const delBtn = `<button class="panel-godparent-del" title="Remove godparent" onclick="event.stopPropagation();deleteGodparent(${xrefQ},${xrefJs})">\u2715</button>`;
+        html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="setState({focusXref:${xrefJs},panelXref:${xrefJs},panelOpen:true})">${gpName}${roleSuffix}${delBtn}</span>`;
     }
     if (assoArr.length < 2) {
         html += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;

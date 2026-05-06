@@ -1351,6 +1351,56 @@ describe('submitAddGodparentModal derives rela from godparent sex', () => {
     });
 });
 
+// ── deleteGodparent ───────────────────────────────────────────────────────
+
+describe('deleteGodparent', () => {
+    beforeEach(() => {
+        global.PEOPLE = {
+            '@I1@': { name: 'Child' },
+            '@I5@': { name: 'Maria Godmother', sex: 'F' },
+        };
+        global.confirm = vi.fn().mockReturnValue(true);
+        global.alert = vi.fn();
+        global.renderPanel = vi.fn();
+    });
+
+    it('calls apiDeleteGodparent with child and godparent xrefs after confirm', async () => {
+        const calls = [];
+        global.apiDeleteGodparent = async (...args) => { calls.push(args); return { people: {} }; };
+        const { deleteGodparent } = require('../../js/viz_modals.js');
+        await deleteGodparent('@I1@', '@I5@');
+        expect(global.confirm).toHaveBeenCalledTimes(1);
+        expect(calls).toEqual([['@I1@', '@I5@']]);
+    });
+
+    it('does nothing when the user cancels the confirm dialog', async () => {
+        global.confirm.mockReturnValue(false);
+        const calls = [];
+        global.apiDeleteGodparent = async (...args) => { calls.push(args); return {}; };
+        const { deleteGodparent } = require('../../js/viz_modals.js');
+        await deleteGodparent('@I1@', '@I5@');
+        expect(calls.length).toBe(0);
+        expect(global.renderPanel).not.toHaveBeenCalled();
+    });
+
+    it('updates PEOPLE from the response and re-renders the panel on success', async () => {
+        const updated = { name: 'Child', events: [] };
+        global.apiDeleteGodparent = async () => ({ people: { '@I1@': updated } });
+        const { deleteGodparent } = require('../../js/viz_modals.js');
+        await deleteGodparent('@I1@', '@I5@');
+        expect(global.PEOPLE['@I1@']).toEqual(updated);
+        expect(global.renderPanel).toHaveBeenCalledTimes(1);
+    });
+
+    it('alerts and does not crash when the API call fails', async () => {
+        global.apiDeleteGodparent = async () => { throw new Error('server boom'); };
+        const { deleteGodparent } = require('../../js/viz_modals.js');
+        await deleteGodparent('@I1@', '@I5@');
+        expect(global.alert).toHaveBeenCalledTimes(1);
+        expect(global.renderPanel).not.toHaveBeenCalled();
+    });
+});
+
 // ── openSourcesModal / closeSourcesModal ──────────────────────────────────
 
 describe('openSourcesModal and closeSourcesModal', () => {
