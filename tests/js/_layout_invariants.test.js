@@ -118,3 +118,47 @@ describe('assertSiblingOrderMonotonic', () => {
         expect(() => assertSiblingOrderMonotonic(nodes)).not.toThrow();
     });
 });
+
+const {
+    assertChildrenInParentClusterRange,
+} = require('./_layout_invariants.js');
+
+describe('assertChildrenInParentClusterRange', () => {
+    it('passes when every descendant node sits under its umbrella crossbar', () => {
+        // Umbrella crossbar from x=50 to x=250 at y=120; children at 50, 150, 250
+        const nodes = [
+            { xref: '@C1@', x: 0,   y: 148, role: 'descendant' }, // center 50
+            { xref: '@C2@', x: 100, y: 148, role: 'descendant' }, // center 150
+            { xref: '@C3@', x: 200, y: 148, role: 'descendant' }, // center 250
+        ];
+        const edges = [
+            { x1: 50, y1: 120, x2: 250, y2: 120, type: 'descendant' }, // crossbar
+            { x1: 50, y1: 120, x2: 50, y2: 148, type: 'descendant' },  // drop to C1
+            { x1: 150, y1: 120, x2: 150, y2: 148, type: 'descendant' }, // drop to C2
+            { x1: 250, y1: 120, x2: 250, y2: 148, type: 'descendant' }, // drop to C3
+        ];
+        expect(() => assertChildrenInParentClusterRange(nodes, edges)).not.toThrow();
+    });
+
+    it('throws when a descendant node has no drop edge connecting it to a crossbar', () => {
+        const nodes = [
+            { xref: '@ORPHAN@', x: 1000, y: 148, role: 'descendant' },
+        ];
+        const edges = [];
+        expect(() => assertChildrenInParentClusterRange(nodes, edges))
+            .toThrow(/no descendant drop edge/i);
+    });
+
+    it('throws when a child center is outside its crossbar range', () => {
+        // Crossbar spans x=50..150 but child sits at center 250
+        const nodes = [
+            { xref: '@OUT@', x: 200, y: 148, role: 'descendant' }, // center 250
+        ];
+        const edges = [
+            { x1: 50, y1: 120, x2: 150, y2: 120, type: 'descendant' },  // crossbar
+            { x1: 250, y1: 120, x2: 250, y2: 148, type: 'descendant' }, // drop (claims 250)
+        ];
+        expect(() => assertChildrenInParentClusterRange(nodes, edges))
+            .toThrow(/outside.*crossbar/i);
+    });
+});

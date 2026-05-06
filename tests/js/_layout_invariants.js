@@ -71,8 +71,45 @@ function assertSiblingOrderMonotonic(nodes) {
     }
 }
 
+// Every descendant-role node must hang from a descendant-type drop edge
+// connecting it to a crossbar (horizontal descendant edge) whose x-range
+// covers the drop's x. Catches: children landing outside their parent's
+// umbrella range; orphaned children with no umbrella connection.
+function assertChildrenInParentClusterRange(nodes, edges) {
+    const descNodes = nodes.filter(n => n.role === 'descendant');
+    const descEdges = edges.filter(e => e.type === 'descendant');
+    const crossbars = descEdges.filter(e => e.y1 === e.y2);
+    for (const child of descNodes) {
+        const childCenter = child.x + NODE_W / 2;
+        // Find a drop edge ending at this child's center+top
+        const drop = descEdges.find(e =>
+            e.x1 === e.x2 && // vertical
+            Math.abs(e.x1 - childCenter) < 0.5 &&
+            Math.abs(e.y2 - child.y) < 0.5
+        );
+        if (!drop) {
+            throw new Error(
+                `No descendant drop edge for ${child.xref} at (${childCenter}, ${child.y})`
+            );
+        }
+        // Find a crossbar at the drop's top y that covers the drop's x
+        const cb = crossbars.find(e =>
+            Math.abs(e.y1 - drop.y1) < 0.5 &&
+            Math.min(e.x1, e.x2) - 0.5 <= drop.x1 &&
+            drop.x1 <= Math.max(e.x1, e.x2) + 0.5
+        );
+        // Single-child cluster has no crossbar (just an anchor + drop) — that's fine
+        if (!cb && crossbars.some(c => Math.abs(c.y1 - drop.y1) < 0.5)) {
+            throw new Error(
+                `${child.xref} drop at x=${drop.x1} is outside crossbar range at y=${drop.y1}`
+            );
+        }
+    }
+}
+
 module.exports = {
     assertNoNodeOverlap,
     assertExactlyOneFocus,
     assertSiblingOrderMonotonic,
+    assertChildrenInParentClusterRange,
 };
