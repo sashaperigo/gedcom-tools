@@ -219,25 +219,58 @@
     <div id="add-person-modal-overlay" onclick="closeIfFarFromPanel(event,'add-person-modal',closeAddPersonModal)">
         <div id="add-person-modal" onkeydown="if(event.key==='Escape')closeAddPersonModal()">
             <h3 id="add-person-modal-title">Add Person</h3>
-            <div class="event-modal-field">
-                <label for="add-person-modal-given">Given name</label>
-                <input type="text" id="add-person-modal-given" autocomplete="off">
+            <div class="add-person-row add-person-row-name">
+                <div class="event-modal-field">
+                    <label for="add-person-modal-given">Given name</label>
+                    <input type="text" id="add-person-modal-given" autocomplete="off">
+                </div>
+                <div class="event-modal-field">
+                    <label for="add-person-modal-surname">Surname</label>
+                    <input type="text" id="add-person-modal-surname" autocomplete="off">
+                </div>
+                <div class="event-modal-field">
+                    <label for="add-person-modal-suffix">Suffix</label>
+                    <input type="text" id="add-person-modal-suffix" autocomplete="off">
+                </div>
             </div>
-            <div class="event-modal-field">
-                <label for="add-person-modal-surname">Surname</label>
-                <input type="text" id="add-person-modal-surname" autocomplete="off">
+            <div class="add-person-row add-person-row-full">
+                <div class="event-modal-field">
+                    <label for="add-person-modal-sex">Sex</label>
+                    <select id="add-person-modal-sex">
+                        <option value="U">Unknown</option>
+                        <option value="M">Male</option>
+                        <option value="F">Female</option>
+                    </select>
+                </div>
             </div>
-            <div class="event-modal-field">
-                <label for="add-person-modal-sex">Sex</label>
-                <select id="add-person-modal-sex">
-                    <option value="U">Unknown</option>
-                    <option value="M">Male</option>
-                    <option value="F">Female</option>
-                </select>
+            <div class="add-person-row add-person-row-full">
+                <div class="event-modal-field">
+                    <label>Status</label>
+                    <div class="add-person-radio-row">
+                        <label><input type="radio" name="add-person-modal-status" value="deceased" checked onchange="_onAddPersonStatusChange()"> Deceased</label>
+                        <label><input type="radio" name="add-person-modal-status" value="living" onchange="_onAddPersonStatusChange()"> Living</label>
+                    </div>
+                </div>
             </div>
-            <div class="event-modal-field">
-                <label for="add-person-modal-birth-year">Birth year</label>
-                <input type="text" id="add-person-modal-birth-year" inputmode="numeric" autocomplete="off">
+            <div class="add-person-row add-person-row-2col">
+                <div class="event-modal-field">
+                    <label for="add-person-modal-birth-date">Birth date</label>
+                    <input type="text" id="add-person-modal-birth-date" autocomplete="off" placeholder="e.g. 15 JAN 1975 or ABT 1880">
+                </div>
+                <div class="event-modal-field">
+                    <label for="add-person-modal-birth-place">Birth place</label>
+                    <input type="text" id="add-person-modal-birth-place" autocomplete="off" placeholder="City, County, State, Country">
+                </div>
+            </div>
+            <div class="add-person-row add-person-row-2col" id="add-person-modal-death-row">
+                <div class="event-modal-field">
+                    <label for="add-person-modal-death-date">Death date</label>
+                    <input type="text" id="add-person-modal-death-date" autocomplete="off" placeholder="e.g. 15 JUN 1985">
+                </div>
+                <div class="event-modal-field">
+                    <label for="add-person-modal-death-place">Death place</label>
+                    <input type="text" id="add-person-modal-death-place" autocomplete="off" placeholder="City, County, State, Country">
+                </div>
             </div>
             <div class="event-modal-field" id="add-person-modal-other-parent-row" style="display:none">
                 <label for="add-person-modal-other-parent">Other parent</label>
@@ -312,6 +345,10 @@
                 <label for="add-citation-modal-date">Date of source entry (optional)</label>
                 <input type="text" id="add-citation-modal-date" autocomplete="off" placeholder="e.g. 21 MAY 1814 or 1990">
             </div>
+            <div class="event-modal-field apply-to-events-row" id="add-citation-apply-to-events-row" style="display:none">
+                <label>Also attach to events</label>
+                <div id="add-citation-apply-to-events-list" class="apply-to-events-list"></div>
+            </div>
             <div class="event-modal-actions">
                 <button class="event-modal-cancel" onclick="closeAddCitationModal()">Cancel</button>
                 <button class="event-modal-save" onclick="submitAddCitationModal()">Add</button>
@@ -351,6 +388,10 @@
             <div class="event-modal-field">
                 <label for="edit-citation-modal-date">Date of source entry (optional)</label>
                 <input type="text" id="edit-citation-modal-date" autocomplete="off" placeholder="e.g. 21 MAY 1814 or 1990">
+            </div>
+            <div class="event-modal-field apply-to-events-row" id="edit-citation-apply-to-events-row" style="display:none">
+                <label>Also attach to events</label>
+                <div id="edit-citation-apply-to-events-list" class="apply-to-events-list"></div>
             </div>
             <div class="event-modal-actions">
                 <button id="edit-citation-view-source-btn" class="event-modal-cancel" style="display:none">View Source</button>

@@ -2046,3 +2046,226 @@ describe('renderPanel — age column on relative-event row', () => {
         expect(html).toMatch(/<span class="age">15<\/span>/);
     });
 });
+
+describe('renderPanel — AFT death sorts after same-year child birth', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+        global.PARENTS = {};
+        global.FAMILIES = {};
+        global.CHILDREN = {};
+        global.ALL_PEOPLE_BY_ID = {};
+    });
+
+    it('places "Died after 1822" after the 1822 birth of son, with birth in LIFE and death in LATER LIFE', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return null;
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@F@': {
+                name: 'Parent', sex: 'M', birth_year: '1780', death_year: '1822',
+                events: [
+                    { tag: 'BIRT', date: '1780', _origIdx: 0, event_idx: 0 },
+                    { tag: 'DEAT', date: 'AFT 1822', _origIdx: 1, event_idx: 1 },
+                ],
+                notes: [], sources: [],
+            },
+            '@C@': {
+                name: 'Antonio Piperi', sex: 'M', birth_year: '1822', death_year: '',
+                events: [], notes: [], sources: [],
+            },
+        };
+        global.ALL_PEOPLE_BY_ID = global.PEOPLE;
+        global.PARENTS = { '@C@': ['@F@', null] };
+        global.CHILDREN = { '@F@': ['@C@'] };
+        global.FAMILIES = {};
+
+        const relMod = require('../../js/viz_relative_events.js');
+        global.buildRelativeEvents = relMod.buildRelativeEvents;
+
+        initPanel(panelEl);
+        global.getState = () => ({ panelOpen: true, panelXref: '@F@' });
+        renderPanel();
+        global.getState = () => _state;
+
+        const html = eventsEl.innerHTML;
+        const birthIdx = html.indexOf('Birth of son');
+        const deathIdx = html.search(/Died after 1822|after 1822/);
+        const lifeLabelIdx = html.indexOf('>LIFE<');
+        const laterLabelIdx = html.indexOf('>LATER LIFE<');
+
+        expect(birthIdx).toBeGreaterThan(-1);
+        expect(deathIdx).toBeGreaterThan(-1);
+        expect(birthIdx).toBeLessThan(deathIdx);
+        expect(lifeLabelIdx).toBeGreaterThan(-1);
+        expect(laterLabelIdx).toBeGreaterThan(-1);
+        expect(lifeLabelIdx).toBeLessThan(birthIdx);
+        expect(birthIdx).toBeLessThan(laterLabelIdx);
+        expect(laterLabelIdx).toBeLessThan(deathIdx);
+    });
+});
+
+// ── Kebab menu — replaces hover-shifting evt-actions ─────────────────────────
+
+describe('renderPanel — event card kebab menu', () => {
+    beforeEach(() => {
+        _setState_calls = [];
+        _state = { panelOpen: false, panelXref: null };
+        _callbacks.length = 0;
+        global.PEOPLE = {};
+        global.PARENTS = {};
+        global.SOURCES = {};
+    });
+
+    function setupDom(panelEl, eventsEl) {
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return makeFakeEl(id);
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+    }
+
+    it('INDI event card renders an .evt-kebab-btn with Edit + Delete menu items', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@I_K1@' };
+        global.PEOPLE['@I_K1@'] = {
+            name: 'Kebab Test',
+            birth_year: '1900', death_year: null, sex: 'M',
+            events: [{ tag: 'BIRT', date: '1900', place: 'Smyrna', citations: [], event_idx: 0 }],
+            notes: [], sources: [],
+        };
+        setupDom(panelEl, eventsEl);
+        initPanel(panelEl);
+        renderPanel();
+
+        const html = eventsEl.innerHTML;
+        // Exactly one kebab button per event card
+        expect(html.match(/class="evt-kebab-btn"/g)).toHaveLength(1);
+        // Menu container with role=menu
+        expect(html).toContain('class="evt-kebab-menu"');
+        expect(html).toContain('role="menu"');
+        // Menu items
+        expect(html).toMatch(/role="menuitem"[^>]*>(?:[^<]*)Edit/);
+        expect(html).toMatch(/role="menuitem"[^>]*>(?:[^<]*)Delete/);
+        // Menu hidden by default
+        expect(html).toMatch(/class="evt-kebab-menu"[^>]*hidden/);
+        // No legacy evt-actions wrapper, no hover-show classes
+        expect(html).not.toContain('class="evt-actions"');
+    });
+
+    it('INDI event Edit menu item invokes editEvent with event_idx (INDI flow)', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@I_K2@' };
+        global.PEOPLE['@I_K2@'] = {
+            name: 'Indi K',
+            birth_year: '1900', death_year: null, sex: 'M',
+            events: [{ tag: 'BIRT', date: '1900', place: 'Smyrna', citations: [], event_idx: 7 }],
+            notes: [], sources: [],
+        };
+        setupDom(panelEl, eventsEl);
+        initPanel(panelEl);
+        renderPanel();
+
+        const html = eventsEl.innerHTML;
+        // INDI keys events by event_idx (here: 7), not fam_xref
+        expect(html).toMatch(/editEvent\([^)]*,\s*7\b/);
+        expect(html).not.toMatch(/editEvent\([^)]*'@F\d+@'/);
+    });
+
+    it('FAM marriage card renders a kebab whose Edit calls editEvent with fam_xref + marr_idx', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@MK1@' };
+        global.PEOPLE['@MK1@'] = {
+            name: 'Married K',
+            birth_year: '1900', death_year: null, sex: 'M',
+            events: [{
+                tag: 'MARR', date: '1925', place: 'Athens',
+                spouse: 'Maria', spouse_xref: '@SPK@',
+                fam_xref: '@FK1@', marr_idx: 0,
+                citations: [], event_idx: null,
+            }],
+            notes: [], sources: [],
+        };
+        setupDom(panelEl, eventsEl);
+        initPanel(panelEl);
+        renderPanel();
+
+        const html = eventsEl.innerHTML;
+        // Card uses kebab, not legacy marr-edit-btn / marr-del-btn
+        expect(html).toContain('marr-card');
+        expect(html.match(/class="evt-kebab-btn"/g)).toHaveLength(1);
+        expect(html).not.toContain('marr-edit-btn');
+        expect(html).not.toContain('marr-del-btn');
+        // FAM flow: edit references fam_xref + marr_idx, NOT a numeric event_idx
+        expect(html).toMatch(/editEvent\([^)]*'?@FK1@'?[^)]*,\s*0\)/);
+        // Delete uses deleteMarriage with the FAM xref
+        expect(html).toMatch(/deleteMarriage\([^)]*'?@FK1@'?/);
+    });
+
+    it('FAM divorce card renders a kebab with deleteMarriage(... ,"DIV") in Delete', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@DK1@' };
+        global.PEOPLE['@DK1@'] = {
+            name: 'Divorced K',
+            birth_year: '1900', death_year: null, sex: 'M',
+            events: [{
+                tag: 'DIV', date: '1940', place: 'Athens',
+                spouse: 'Maria', spouse_xref: '@SPDK@',
+                fam_xref: '@FDK1@', div_idx: 0,
+                citations: [], event_idx: null,
+            }],
+            notes: [], sources: [],
+        };
+        setupDom(panelEl, eventsEl);
+        initPanel(panelEl);
+        renderPanel();
+
+        const html = eventsEl.innerHTML;
+        expect(html).toContain('div-card');
+        expect(html.match(/class="evt-kebab-btn"/g)).toHaveLength(1);
+        // Delete passes 'DIV' as the type
+        expect(html).toMatch(/deleteMarriage\([^)]*'DIV'\)/);
+    });
+
+    it('event card layout is stable: no .evt-entry:hover or .marr-card:hover-only action wrappers', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@STAB@' };
+        global.PEOPLE['@STAB@'] = {
+            name: 'Stable Layout',
+            birth_year: '1900', death_year: '1970', sex: 'M',
+            events: [
+                { tag: 'BIRT', date: '1900', place: 'Smyrna', citations: [], event_idx: 0 },
+                { tag: 'DEAT', date: '1970', place: 'Athens', citations: [], event_idx: 1 },
+            ],
+            notes: [], sources: [],
+        };
+        setupDom(panelEl, eventsEl);
+        initPanel(panelEl);
+        renderPanel();
+
+        const html = eventsEl.innerHTML;
+        // Old hover-shift wrapper must be gone everywhere
+        expect(html).not.toContain('class="evt-actions"');
+        // Two events → two kebabs
+        expect(html.match(/class="evt-kebab-btn"/g)).toHaveLength(2);
+    });
+});

@@ -1834,7 +1834,7 @@ class TestAddPersonEndpoint:
         ged, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
-            'birth_year': '2000',
+            'birth_date': '2000',
             'rel_type': 'child_of', 'rel_xref': '@I2@',
         })
         assert 'xref' in resp
@@ -1847,7 +1847,7 @@ class TestAddPersonEndpoint:
         ged, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
-            'birth_year': '2000',
+            'birth_date': '2000',
             'rel_type': 'child_of', 'rel_xref': '@I2@',
         })
         xref = resp['xref']
@@ -1857,21 +1857,149 @@ class TestAddPersonEndpoint:
         # The family that @I2@ belongs to should have a CHIL link to the new person
         assert f'1 CHIL {xref}' in text
 
-    def test_birth_year_written(self, live_server):
+    def test_birth_date_written(self, live_server):
         ged, post, _, _ = live_server
         post('/api/add_person', {
             'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
-            'birth_year': '1975',
+            'birth_date': '1975',
             'rel_type': 'spouse_of', 'rel_xref': '@I3@',
         })
         text = _ged_text(ged)
         assert '2 DATE 1975' in text
 
+    def test_birth_date_full_format_written(self, live_server):
+        ged, post, _, _ = live_server
+        post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'birth_date': '15 JAN 1975',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        text = _ged_text(ged)
+        assert '2 DATE 15 JAN 1975' in text
+
+    def test_birth_place_only(self, live_server):
+        """birth_place without birth_date still creates a 1 BIRT block with 2 PLAC."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'birth_place': 'Boston, MA',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '1 BIRT' in block
+        assert '2 PLAC Boston, MA' in block
+        # No DATE under BIRT since birth_date was empty
+        birt_segment = block.split('1 BIRT', 1)[1].split('\n1 ', 1)[0]
+        assert '2 DATE' not in birt_segment
+
+    def test_birth_date_and_place_together(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'birth_date': 'ABT 1900', 'birth_place': 'Boston, MA',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '1 BIRT' in block
+        birt = block.split('1 BIRT', 1)[1].split('\n1 ', 1)[0]
+        # DATE before PLAC
+        assert birt.index('2 DATE ABT 1900') < birt.index('2 PLAC Boston, MA')
+
+    def test_suffix_written(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'suffix': 'Jr.', 'sex': 'M',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '2 NSFX Jr.' in block
+
+    def test_death_date_and_place_written(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'status': 'deceased',
+            'death_date': '15 JUN 1985', 'death_place': 'Chicago, IL',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '1 DEAT' in block
+        deat = block.split('1 DEAT', 1)[1]
+        # End the DEAT segment at the next level-1 tag (or end of block)
+        deat = deat.split('\n1 ', 1)[0]
+        assert '2 DATE 15 JUN 1985' in deat
+        assert '2 PLAC Chicago, IL' in deat
+
+    def test_status_deceased_no_detail_writes_DEAT_Y(self, live_server):
+        """status=deceased with no death fields → bare `1 DEAT Y` sentinel."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'status': 'deceased',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '\n1 DEAT Y' in block
+        # No DATE/PLAC subtags under DEAT since none were provided
+        deat = block.split('1 DEAT Y', 1)[1].split('\n1 ', 1)[0]
+        assert '2 DATE' not in deat
+        assert '2 PLAC' not in deat
+
+    def test_status_living_writes_no_DEAT(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'status': 'living',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '1 DEAT' not in block
+
+    def test_death_fields_without_status_still_writes_DEAT(self, live_server):
+        """Death fields filled but status empty → DEAT block inferred from data."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'death_date': '1990',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '1 DEAT' in block
+        deat = block.split('1 DEAT', 1)[1].split('\n1 ', 1)[0]
+        assert '2 DATE 1990' in deat
+
+    def test_no_birth_no_death_no_blocks(self, live_server):
+        """With no birth/death/status fields, neither 1 BIRT nor 1 DEAT appears."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
+            'rel_type': 'spouse_of', 'rel_xref': '@I3@',
+        })
+        new_xref = resp['xref']
+        text = _ged_text(ged)
+        block = text.split(f'0 {new_xref} INDI')[1].split('\n0 ')[0]
+        assert '1 BIRT' not in block
+        assert '1 DEAT' not in block
+
     def test_spouse_of_creates_fam(self, live_server):
         ged, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Ted', 'surn': 'Jones', 'sex': 'M',
-            'birth_year': '',
+            'birth_date': '',
             'rel_type': 'spouse_of', 'rel_xref': '@I3@',
         })
         xref = resp['xref']
@@ -1885,7 +2013,7 @@ class TestAddPersonEndpoint:
         ged, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Tom', 'surn': 'Smith', 'sex': 'M',
-            'birth_year': '',
+            'birth_date': '',
             'rel_type': 'sibling_of', 'rel_xref': '@I1@',
         })
         xref = resp['xref']
@@ -1893,12 +2021,38 @@ class TestAddPersonEndpoint:
         # @F1@ already has @I1@ as a child — new INDI should also appear as CHIL
         assert f'1 CHIL {xref}' in text
 
-    def test_missing_given_returns_400(self, live_server):
+    def test_surname_only_creates_indi(self, live_server):
+        """Either given OR surname is sufficient — surname alone should succeed."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'surn': 'Smith', 'sex': 'M', 'birth_date': '',
+            'rel_type': 'child_of', 'rel_xref': '@I2@',
+        })
+        assert 'xref' in resp
+        xref = resp['xref']
+        text = _ged_text(ged)
+        assert f'0 {xref} INDI' in text
+        # Empty given segment: NAME line is "/Smith/" (no leading space)
+        assert '1 NAME /Smith/' in text
+
+    def test_given_only_creates_indi(self, live_server):
+        """Given alone (no surname) should still succeed."""
+        ged, post, _, _ = live_server
+        resp = post('/api/add_person', {
+            'given': 'Cher', 'sex': 'F', 'birth_date': '',
+            'rel_type': 'child_of', 'rel_xref': '@I2@',
+        })
+        assert 'xref' in resp
+        text = _ged_text(ged)
+        assert '1 NAME Cher' in text
+
+    def test_missing_both_names_returns_400(self, live_server):
+        """Neither given nor surname → 400."""
         ged, post, _, _ = live_server
         import urllib.error
         try:
             post('/api/add_person', {
-                'surn': 'Smith', 'sex': 'M', 'birth_year': '',
+                'sex': 'M', 'birth_date': '',
                 'rel_type': 'child_of', 'rel_xref': '@I2@',
             })
             assert False, 'Should have raised'
@@ -1911,7 +2065,7 @@ class TestAddPersonEndpoint:
         try:
             post('/api/add_person', {
                 'given': 'Tom', 'surn': 'Smith', 'sex': 'M',
-                'birth_year': '', 'rel_type': 'child_of',
+                'birth_date': '', 'rel_type': 'child_of',
             })
             assert False, 'Should have raised'
         except urllib.error.HTTPError as e:
@@ -1921,7 +2075,7 @@ class TestAddPersonEndpoint:
         ged, post, _, _ = live_server
         post('/api/add_person', {
             'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
-            'birth_year': '', 'rel_type': 'child_of', 'rel_xref': '@I2@',
+            'birth_date': '', 'rel_type': 'child_of', 'rel_xref': '@I2@',
         })
         assert ged.with_suffix('.ged.bak').exists()
 
@@ -1931,7 +2085,7 @@ class TestAddPersonEndpoint:
         ged, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Kid', 'surn': 'Davis', 'sex': 'M',
-            'birth_year': '2018',
+            'birth_date': '2018',
             'rel_type': 'child_of', 'rel_xref': '@I1@',
             'other_parent_xref': '@I12@',
         })
@@ -1952,7 +2106,7 @@ class TestAddPersonEndpoint:
         ged, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Love', 'surn': 'Child', 'sex': 'F',
-            'birth_year': '1991',
+            'birth_date': '1991',
             'rel_type': 'child_of', 'rel_xref': '@I1@',
             'other_parent_xref': '@I2@',
         })
@@ -1978,7 +2132,7 @@ class TestAddPersonEndpoint:
         ged, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Solo', 'surn': 'Kid', 'sex': 'M',
-            'birth_year': '1995',
+            'birth_date': '1995',
             'rel_type': 'child_of', 'rel_xref': '@I1@',
             'other_parent_xref': '',
         })
@@ -2009,7 +2163,7 @@ class TestAddPersonEndpoint:
         _, post, _, _ = live_server
         resp = post('/api/add_person', {
             'given': 'Lucy', 'surn': 'Smith', 'sex': 'F',
-            'birth_year': '2000',
+            'birth_date': '2000',
             'rel_type': 'child_of', 'rel_xref': '@I2@',
         })
         assert resp.get('ok') is True
@@ -2615,7 +2769,7 @@ class TestAddPersonParentOf:
         # Add a new person as a parent (WIFE) of @I6@
         resp = post('/api/add_person', {
             'given': 'Martha', 'surn': 'Jones', 'sex': 'F',
-            'birth_year': '1935',
+            'birth_date': '1935',
             'rel_type': 'parent_of', 'rel_xref': '@I6@',
         })
         assert 'xref' in resp
@@ -2635,13 +2789,13 @@ class TestAddPersonParentOf:
         # First add a wife to @F6@ (which starts with only a HUSB)
         post('/api/add_person', {
             'given': 'First', 'surn': 'Wife', 'sex': 'F',
-            'birth_year': '', 'rel_type': 'parent_of', 'rel_xref': '@I6@',
+            'birth_date': '', 'rel_type': 'parent_of', 'rel_xref': '@I6@',
         })
         # Now try to add a second wife — should fail with 400
         try:
             post('/api/add_person', {
                 'given': 'Second', 'surn': 'Wife', 'sex': 'F',
-                'birth_year': '', 'rel_type': 'parent_of', 'rel_xref': '@I6@',
+                'birth_date': '', 'rel_type': 'parent_of', 'rel_xref': '@I6@',
             })
             assert False, 'Expected 400 for duplicate WIFE slot'
         except urllib.error.HTTPError as e:

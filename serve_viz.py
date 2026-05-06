@@ -1801,15 +1801,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # ------------------------------------------------------------------ #
 
         elif parsed.path == '/api/add_person':
-            given     = (body.get('given') or '').strip()
-            surn      = (body.get('surn') or '').strip()
-            sex       = (body.get('sex') or 'U').strip().upper()
-            birth_yr  = (body.get('birth_year') or '').strip()
-            rel_type  = (body.get('rel_type') or '').strip()
-            rel_xref  = (body.get('rel_xref') or '').strip()
+            given       = (body.get('given')       or '').strip()
+            surn        = (body.get('surn')        or '').strip()
+            suffix      = (body.get('suffix')      or '').strip()
+            sex         = (body.get('sex') or 'U').strip().upper()
+            birth_date  = (body.get('birth_date')  or '').strip()
+            birth_place = (body.get('birth_place') or '').strip()
+            status      = (body.get('status')      or '').strip().lower()
+            death_date  = (body.get('death_date')  or '').strip()
+            death_place = (body.get('death_place') or '').strip()
+            rel_type    = (body.get('rel_type')    or '').strip()
+            rel_xref    = (body.get('rel_xref')    or '').strip()
 
-            if not given:
-                self.send_error(400, 'given is required')
+            if not given and not surn:
+                self.send_error(400, 'given or surn is required')
                 return
             if not rel_xref:
                 self.send_error(400, 'rel_xref is required')
@@ -1822,14 +1827,37 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             new_xref = _next_indi_xref(lines)
 
             # Build the new INDI block
-            name_val = f'{given} /{surn}/' if surn else given
-            new_indi = [f'0 {new_xref} INDI', f'1 NAME {name_val}']
             if surn:
-                new_indi += [f'2 GIVN {given}', f'2 SURN {surn}']
+                name_val = f'{given} /{surn}/' if given else f'/{surn}/'
+            else:
+                name_val = given
+            new_indi = [f'0 {new_xref} INDI', f'1 NAME {name_val}']
+            if given:
+                new_indi.append(f'2 GIVN {given}')
+            if surn:
+                new_indi.append(f'2 SURN {surn}')
+            if suffix:
+                new_indi.append(f'2 NSFX {suffix}')
             if sex in ('M', 'F'):
                 new_indi.append(f'1 SEX {sex}')
-            if birth_yr:
-                new_indi += ['1 BIRT', f'2 DATE {birth_yr}']
+            if birth_date or birth_place:
+                new_indi.append('1 BIRT')
+                if birth_date:
+                    new_indi.append(f'2 DATE {birth_date}')
+                if birth_place:
+                    new_indi.append(f'2 PLAC {birth_place}')
+            deceased = (status == 'deceased')
+            has_death_detail = bool(death_date or death_place)
+            if deceased or has_death_detail:
+                if has_death_detail:
+                    new_indi.append('1 DEAT')
+                    if death_date:
+                        new_indi.append(f'2 DATE {death_date}')
+                    if death_place:
+                        new_indi.append(f'2 PLAC {death_place}')
+                else:
+                    # GEDCOM 5.5.1 sentinel for "deceased, details unknown"
+                    new_indi.append('1 DEAT Y')
 
             # Insert new INDI before TRLR
             trlr_idx = next(
@@ -2200,10 +2228,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 # ---------------------------------------------------------------------------
-# Graceful shutdown: commit on Ctrl-C
+# Graceful shutdown: warn if canonical GED has uncommitted edits
 # ---------------------------------------------------------------------------
 
+def _warn_if_ged_dirty() -> None:
+    """If GED is in a git repo and has uncommitted changes, print a loud warning."""
+    try:
+        repo = subprocess.run(
+            ['git', '-C', str(GED.parent), 'rev-parse', '--show-toplevel'],
+            capture_output=True, text=True, timeout=5,
+        )
+        if repo.returncode != 0:
+            return
+        status = subprocess.run(
+            ['git', '-C', str(GED.parent), 'status', '--porcelain', '--', GED.name],
+            capture_output=True, text=True, timeout=5,
+        )
+        if status.returncode != 0 or not status.stdout.strip():
+            return
+        repo_root = repo.stdout.strip()
+        print()
+        print('=' * 72)
+        print(f'⚠️  UNCOMMITTED CHANGES in {GED.name}')
+        print(f'   Repo: {repo_root}')
+        print(f'   Your UI edits are saved to disk but NOT committed to git.')
+        print(f'   They will be lost if anything resets the working tree.')
+        print()
+        print(f'   To commit:')
+        print(f'     cd {repo_root}')
+        print(f'     git add {GED.name} && git commit -m "data: UI edits"')
+        print('=' * 72)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+
 def _shutdown_handler(_sig, _frame):
+    _warn_if_ged_dirty()
     sys.exit(0)
 
 

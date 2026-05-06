@@ -370,6 +370,80 @@ function buildNoteSourceBadgeHtml(citations, xref, noteDisplayIdx) {
     return `<span class="${cls}" title="${label}" onclick="event.stopPropagation();openNoteSourcesModal(${xrefQ},${noteDisplayIdx})">${text}</span>`;
 }
 
+// ── Event card kebab menu ─────────────────────────────────────────────────
+// Items: [{ icon, label, onclick, danger? }, ...]
+// `onclick` is the inline JS string to run (already has stopPropagation handling
+// via _evtKebabRun, which closes the menu before invoking).
+
+function _buildEventKebabHtml(items) {
+    const parts = items.map(it => {
+        const cls = it.danger ? 'evt-kebab-item del' : 'evt-kebab-item';
+        const inner = `${it.icon ? it.icon + ' ' : ''}${it.label}`;
+        // Wrap the action so the menu always closes after a click; stopPropagation
+        // prevents the document-level click-outside handler from firing twice.
+        const safeAction = (it.onclick || '').replace(/"/g, '&quot;');
+        return `<button class="${cls}" role="menuitem" onclick="event.stopPropagation();_evtKebabClose(this);${it.onclick || ''}">${inner}</button>`;
+    }).join('');
+    return (
+        `<div class="evt-kebab">` +
+        `<button class="evt-kebab-btn" type="button" aria-haspopup="menu" aria-expanded="false" title="Event actions" onclick="event.stopPropagation();_evtKebabToggle(this)">⋮</button>` +
+        `<div class="evt-kebab-menu" role="menu" hidden>${parts}</div>` +
+        `</div>`
+    );
+}
+
+// ── Kebab popover behaviour (global) ──────────────────────────────────────
+// Exposed on `window` so they can be invoked from inline HTML handlers.
+
+let _evtKebabListenerAttached = false;
+
+function _evtKebabCloseAll() {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    document.querySelectorAll('.evt-kebab-menu').forEach(m => {
+        m.setAttribute('hidden', '');
+        const btn = m.parentElement && m.parentElement.querySelector('.evt-kebab-btn');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function _evtKebabToggle(btn) {
+    const wrap = btn.parentElement;
+    if (!wrap) return;
+    const menu = wrap.querySelector('.evt-kebab-menu');
+    if (!menu) return;
+    const isOpen = !menu.hasAttribute('hidden');
+    _evtKebabCloseAll();
+    if (!isOpen) {
+        menu.removeAttribute('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+    }
+}
+
+function _evtKebabClose(itemBtn) {
+    const menu = itemBtn && itemBtn.closest && itemBtn.closest('.evt-kebab-menu');
+    if (!menu) return;
+    menu.setAttribute('hidden', '');
+    const wrap = menu.parentElement;
+    const kbtn = wrap && wrap.querySelector('.evt-kebab-btn');
+    if (kbtn) kbtn.setAttribute('aria-expanded', 'false');
+}
+
+function _initEventKebabHandlers() {
+    if (_evtKebabListenerAttached) return;
+    if (typeof document === 'undefined' || !document.addEventListener) return;
+    document.addEventListener('click', (e) => {
+        if (!e.target || !e.target.closest) { _evtKebabCloseAll(); return; }
+        if (!e.target.closest('.evt-kebab')) _evtKebabCloseAll();
+    });
+    _evtKebabListenerAttached = true;
+}
+
+if (typeof window !== 'undefined') {
+    window._evtKebabToggle = _evtKebabToggle;
+    window._evtKebabClose = _evtKebabClose;
+    window._evtKebabCloseAll = _evtKebabCloseAll;
+}
+
 // ── Godparent click handler (exported for tests) ───────────────────────────
 
 const _GODPARENT_RELAS = new Set(['Godparent', 'Godfather', 'Godmother']);
@@ -655,9 +729,13 @@ function renderPanel() {
             let section = 'Life';
             if (evt.tag === 'BIRT' || (evtYear && by && evtYear <= by + 18)) section = 'Early Life';
             else if (_isDeathRelated) section = 'Later Life';
-            return { kind: 'own', year: evtYear, section, evt };
+            // "AFT YYYY" means the event happened sometime after YYYY — sort it after
+            // events precisely in YYYY (e.g. a child's birth) but before YYYY+1.
+            const _isAftDate = evt.date && /^\s*AFT\s+/i.test(evt.date);
+            const sortYear = (_isAftDate && evtYear !== null) ? evtYear + 0.5 : evtYear;
+            return { kind: 'own', year: evtYear, sortYear, section, evt };
         });
-        const relRows = relEvents.map(r => ({ kind: 'rel', year: r.year, section: r.section, rel: r }));
+        const relRows = relEvents.map(r => ({ kind: 'rel', year: r.year, sortYear: r.year, section: r.section, rel: r }));
 
         // Merge: own events keep their order; relative events are inserted in year order.
         // At equal year, own row comes first.
@@ -665,8 +743,8 @@ function renderPanel() {
         let oi = 0, ri = 0;
         while (oi < ownRows.length && ri < relRows.length) {
             const o = ownRows[oi], r = relRows[ri];
-            const oy = o.year ?? Infinity;
-            const ry = r.year;
+            const oy = o.sortYear ?? Infinity;
+            const ry = r.sortYear;
             if (oy <= ry) { merged.push(o); oi++; }
             else          { merged.push(r); ri++; }
         }
@@ -703,19 +781,16 @@ function renderPanel() {
                     const proseHtml = spClickable ?
                         `<div class="marr-prose marr-link">${escHtml(prose)}</div>` :
                         `<div class="marr-prose">${escHtml(prose)}</div>`;
-                    const marrEditBtn = evt.fam_xref ?
-                        `<button class="marr-edit-btn" title="Edit marriage" onclick="event.stopPropagation();editEvent(${xrefQ},null,'MARR',${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.marr_idx ?? 0})">\u270f</button>` :
-                        '';
-                    const marrDelBtn = evt.fam_xref ?
-                        `<button class="marr-del-btn" title="Delete marriage" onclick="event.stopPropagation();deleteMarriage(${xrefQ},${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.marr_idx ?? 0})">\u2715</button>` :
-                        '';
+                    const famXrefQ = JSON.stringify(evt.fam_xref).replace(/"/g, '&quot;');
+                    const marrKebab = evt.fam_xref ? _buildEventKebabHtml([
+                        { icon: '\u270f', label: 'Edit', onclick: `editEvent(${xrefQ},null,'MARR',${famXrefQ},${evt.marr_idx ?? 0})` },
+                        { icon: '\u2715', label: 'Delete', danger: true, onclick: `deleteMarriage(${xrefQ},${famXrefQ},${evt.marr_idx ?? 0})` },
+                    ]) : '';
                     const marrSrcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
                     const yearLabelSpan = evtYear ? `<span class="marr-year">${evtYear}</span>` : '';
                     const ageStr = _buildAgeHtml(evt, evtYear, by);
                     html +=
                         `<div class="marr-card"${marrClick}>` +
-                        marrEditBtn +
-                        marrDelBtn +
                         `<div class="evt-year-col">${yearLabelSpan}${ageStr}<span class="evt-tag-abbrev">MARR</span></div>` +
                         `<div class="evt-content">` +
                         proseHtml +
@@ -723,6 +798,7 @@ function renderPanel() {
                         noteInl +
                         `</div>` +
                         marrSrcBadge +
+                        marrKebab +
                         `</div>`;
                     continue;
                 }
@@ -736,19 +812,16 @@ function renderPanel() {
                     const proseHtml = spClickable ?
                         `<div class="marr-prose marr-link">${escHtml(prose)}</div>` :
                         `<div class="marr-prose">${escHtml(prose)}</div>`;
-                    const divEditBtn = evt.fam_xref ?
-                        `<button class="marr-edit-btn" title="Edit divorce" onclick="event.stopPropagation();editEvent(${xrefQ},null,'DIV',${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.div_idx ?? 0})">\u270f</button>` :
-                        '';
-                    const divDelBtn = evt.fam_xref ?
-                        `<button class="marr-del-btn" title="Delete divorce" onclick="event.stopPropagation();deleteMarriage(${xrefQ},${JSON.stringify(evt.fam_xref).replace(/"/g,'&quot;')},${evt.div_idx ?? 0},'DIV')">\u2715</button>` :
-                        '';
+                    const divFamXrefQ = JSON.stringify(evt.fam_xref).replace(/"/g, '&quot;');
+                    const divKebab = evt.fam_xref ? _buildEventKebabHtml([
+                        { icon: '\u270f', label: 'Edit', onclick: `editEvent(${xrefQ},null,'DIV',${divFamXrefQ},${evt.div_idx ?? 0})` },
+                        { icon: '\u2715', label: 'Delete', danger: true, onclick: `deleteMarriage(${xrefQ},${divFamXrefQ},${evt.div_idx ?? 0},'DIV')` },
+                    ]) : '';
                     const divSrcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
                     const yearLabelSpan = evtYear ? `<span class="marr-year">${evtYear}</span>` : '';
                     const ageStr = _buildAgeHtml(evt, evtYear, by);
                     html +=
                         `<div class="div-card"${divClick}>` +
-                        divEditBtn +
-                        divDelBtn +
                         `<div class="evt-year-col">${yearLabelSpan}${ageStr}<span class="evt-tag-abbrev">DIV</span></div>` +
                         `<div class="evt-content">` +
                         proseHtml +
@@ -756,6 +829,7 @@ function renderPanel() {
                         noteInl +
                         `</div>` +
                         divSrcBadge +
+                        divKebab +
                         `</div>`;
                     continue;
                 }
@@ -773,13 +847,15 @@ function renderPanel() {
                             const reYearStr = reYear ? `<span class="evt-year">${reYear}</span>` : '';
                             const reAgeStr = _buildAgeHtml(re, reYear, by);
                             const { prose: reProse, meta: reMeta } = buildProse(re);
-                            const reEditBtn = re.event_idx !== null && re.event_idx !== undefined
-                                ? `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${re.event_idx},'RESI')">\u270f</button>`
-                                : '';
-                            const reDelBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${re._origIdx}])">\u2715</button>`;
-                            const collapseBtn = ri === 0
-                                ? `<button class="evt-edit-btn" title="Collapse" onclick="toggleResiExpand(${xrefQ},${evt.event_idx})">\u25b4</button>`
-                                : '';
+                            const reItems = [];
+                            if (ri === 0) {
+                                reItems.push({ icon: '\u25b4', label: 'Collapse', onclick: `toggleResiExpand(${xrefQ},${evt.event_idx})` });
+                            }
+                            if (re.event_idx !== null && re.event_idx !== undefined) {
+                                reItems.push({ icon: '\u270f', label: 'Edit', onclick: `editEvent(${xrefQ},${re.event_idx},'RESI')` });
+                            }
+                            reItems.push({ icon: '\u2715', label: 'Delete', danger: true, onclick: `deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${re._origIdx}])` });
+                            const reKebab = _buildEventKebabHtml(reItems);
                             const reSrcBadge = buildSourceBadgeHtml(re.citations, xref, re._origIdx);
                             html +=
                                 `<div class="evt-entry evt-entry-expanded">` +
@@ -787,16 +863,18 @@ function renderPanel() {
                                 `<div class="evt-content">` +
                                 `<span class="evt-prose-text">${escHtml(reProse)}</span>` +
                                 (reMeta && reMeta !== String(reYear) ? `<div class="evt-meta">${escHtml(reMeta)}</div>` : '') +
-                                `<div class="evt-actions">${collapseBtn}${reEditBtn}${reDelBtn}</div>` +
                                 `</div>` +
                                 reSrcBadge +
+                                reKebab +
                                 `</div>`;
                         }
                     } else {
                         const yearStr = `<span class="evt-year">${escHtml(evt._yearRange)}</span>`;
                         const ageStr = _buildAgeHtml(evt, evt._yearRange, by);
-                        const expandBtn = `<button class="evt-edit-btn" title="Expand to edit" onclick="toggleResiExpand(${xrefQ},${evt.event_idx})">\u270f</button>`;
-                        const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
+                        const collapsedKebab = _buildEventKebabHtml([
+                            { icon: '\u270f', label: 'Edit', onclick: `toggleResiExpand(${xrefQ},${evt.event_idx})` },
+                            { icon: '\u2715', label: 'Delete', danger: true, onclick: `deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])` },
+                        ]);
                         const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
                         html +=
                             `<div class="evt-entry">` +
@@ -805,9 +883,9 @@ function renderPanel() {
                             `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                             (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
                             noteInl +
-                            `<div class="evt-actions">${expandBtn}${delBtn}</div>` +
                             `</div>` +
                             srcBadge +
+                            collapsedKebab +
                             `</div>`;
                     }
                     continue;
@@ -817,10 +895,12 @@ function renderPanel() {
                 const dotCls = isAnch ? 'evt-dot dot-anchor' : 'evt-dot';
                 const yearStr = evtYear ? `<span class="evt-year">${evtYear}</span>` : '';
                 const ageStr = _buildAgeHtml(evt, evtYear, by);
-                const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
-                const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
-                    `<button class="evt-edit-btn" title="Edit event" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` :
-                    '';
+                const evtKebabItems = [];
+                if (evt.event_idx !== null && evt.event_idx !== undefined) {
+                    evtKebabItems.push({ icon: '\u270f', label: 'Edit', onclick: `editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})` });
+                }
+                evtKebabItems.push({ icon: '\u2715', label: 'Delete', danger: true, onclick: `deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])` });
+                const evtKebab = _buildEventKebabHtml(evtKebabItems);
                 const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
 
                 // Godparents (CHR/BAPM)
@@ -836,9 +916,9 @@ function renderPanel() {
                     (meta && meta !== String(evtYear) ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
                     noteInl +
                     godparentHtml +
-                    `<div class="evt-actions">${editBtn}${delBtn}</div>` +
                     `</div>` +
                     srcBadge +
+                    evtKebab +
                     `</div>`;
             }
             html += _addEvtBtn;
@@ -855,9 +935,12 @@ function renderPanel() {
                 const noteInl = (evt.note && evt.tag !== 'FACT') ? evt.note.split('\n').map(l => `<div class="fact-row-note">${escHtml(l)}</div>`).join('') : '';
                 const subMeta = [fmtPlace(evt.place || ''), fmtDate(evt.date)].filter(Boolean).join(' \u00b7 ');
                 const subMetaInl = subMeta ? `<div class="fact-row-meta">${escHtml(subMeta)}</div>` : '';
-                const delBtn = `<button class="fact-del" title="Delete fact" onclick="deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])">\u2715</button>`;
-                const editBtn = evt.event_idx !== null && evt.event_idx !== undefined ?
-                    `<button class="evt-edit-btn" title="Edit" onclick="editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})">\u270f</button>` : '';
+                const undatedKebabItems = [];
+                if (evt.event_idx !== null && evt.event_idx !== undefined) {
+                    undatedKebabItems.push({ icon: '\u270f', label: 'Edit', onclick: `editEvent(${xrefQ},${evt.event_idx},${JSON.stringify(evt.tag).replace(/"/g,'&quot;')})` });
+                }
+                undatedKebabItems.push({ icon: '\u2715', label: 'Delete', danger: true, onclick: `deleteFact(${xrefQ},PEOPLE[${xrefQ}].events[${evt._origIdx}])` });
+                const undatedKebab = _buildEventKebabHtml(undatedKebabItems);
                 const srcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
 
                 if (evt.tag === 'RESI') {
@@ -866,9 +949,9 @@ function renderPanel() {
                         `<span class="evt-prose-text">${escHtml(prose)}</span>` +
                         (meta ? `<div class="evt-meta">${escHtml(meta)}</div>` : '') +
                         noteInl +
-                        `<div class="evt-actions">${editBtn}${delBtn}</div>` +
                         `</div>` +
                         srcBadge +
+                        undatedKebab +
                         `</div>`;
                 }
 
@@ -885,8 +968,8 @@ function renderPanel() {
                         `<span class="fact-row-label" style="margin-bottom:0;">${escHtml(labelTag)}</span>` +
                         `<span class="fact-row-value">${escHtml(valueText)}</span>` +
                         `</div>` +
-                        `<div class="evt-actions">${editBtn}${delBtn}</div>` +
                         srcBadge +
+                        undatedKebab +
                         `</div>`;
                 }
 
@@ -898,8 +981,8 @@ function renderPanel() {
                     subMetaInl +
                     noteInl +
                     `</div>` +
-                    `<div class="evt-actions">${editBtn}${delBtn}</div>` +
                     srcBadge +
+                    undatedKebab +
                     `</div>`;
             }).join('');
         }
@@ -950,7 +1033,8 @@ function renderPanel() {
         };
         const _sx = p => !p ? '' :
             p.sex === 'M' ? '<span class="family-sex-m">\u2022</span>' :
-            p.sex === 'F' ? '<span class="family-sex-f">\u2022</span>' : '';
+            p.sex === 'F' ? '<span class="family-sex-f">\u2022</span>' :
+            '<span class="family-sex-u">\u2022</span>';
         const _pr = px => {
             const p = (typeof PEOPLE !== 'undefined') && PEOPLE[px];
             const name = p ? escHtml(p.name || '?') : '?';
@@ -1155,6 +1239,7 @@ async function convertEventTag(xref, eventIdx, fromTag, toTag) {
 
 function initPanel(panelEl) {
     _panelEl = panelEl;
+    _initEventKebabHandlers();
     onStateChange(function(state) {
         renderPanel();
     });

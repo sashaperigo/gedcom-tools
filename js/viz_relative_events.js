@@ -61,8 +61,9 @@ function _push(out, year, kind, relation, person, bounds, focusBirth) {
     if (year < bounds.lo || year > bounds.hi) return;
     const role = _role(person, relation);
     const sortKey = _SORT_KEY[`${kind}-${relation}`] ?? 99;
+    const isChildBirth = kind === 'birth' && relation === 'child';
     let section;
-    if (bounds.deathYear !== null && year >= bounds.deathYear) {
+    if (!isChildBirth && bounds.deathYear !== null && year >= bounds.deathYear) {
         section = 'Later Life';
     } else if (year <= focusBirth + 18) {
         section = 'Early Life';
@@ -97,10 +98,8 @@ function _pushTwins(out, kids, bounds, focusBirth) {
     else                                          role = 'twins';
     const allNames = kids.map(k => k.name || '');
     const name = allNames.every(Boolean) ? _joinNames(allNames) : '';
-    let section;
-    if (bounds.deathYear !== null && year >= bounds.deathYear) section = 'Later Life';
-    else if (year <= focusBirth + 18) section = 'Early Life';
-    else section = 'Life';
+    // Twin/triplet rows are always child births → never bucketed as Later Life.
+    const section = year <= focusBirth + 18 ? 'Early Life' : 'Life';
     out.push({
         year,
         section,

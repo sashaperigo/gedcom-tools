@@ -1334,6 +1334,72 @@ async function submitAddNoteModal() {
     }
 }
 
+// ── Apply-to-events picker (person-level source modals only) ──────────────
+//
+// When a user adds or edits a *person-level* source, the modal shows a
+// checklist of the person's events. Checking events causes that source to be
+// attached at the event level too. State is shared between the add and edit
+// modals (only one is open at a time).
+
+const _applyToEventsState = { rows: [], mode: null };
+
+function _applyToEventLabel(ev) {
+    const tag = ev && ev.tag;
+    let label = _evtLabel(tag, ev && ev.type) || tag || '';
+    if (tag === 'MARR' || tag === 'DIV') {
+        const fam = (typeof FAMILIES !== 'undefined' && FAMILIES) ? FAMILIES[ev.fam_xref] : null;
+        // Best-effort spouse label — fall back silently when data isn't loaded.
+        const spouseXref = fam && fam.spouseXrefs && fam.spouseXrefs.find(x => x !== ev.indi_xref);
+        const spouse = (typeof PEOPLE !== 'undefined' && PEOPLE && spouseXref) ? PEOPLE[spouseXref] : null;
+        if (spouse && spouse.name) label += ' to ' + spouse.name.replace(/\//g, '');
+    }
+    const date = (ev && ev.date) || '';
+    const place = (ev && ev.place) || '';
+    const tail = [date, place].filter(Boolean).join(', ');
+    return tail ? `${label} — ${tail}` : label;
+}
+
+function _buildApplyToEventsRows(person, sourceXref) {
+    const events = (person && person.events) || [];
+    return events.map(ev => {
+        const isFam = (ev.event_idx == null) && !!ev.fam_xref;
+        const occ = isFam ? (ev.tag === 'MARR' ? ev.marr_idx : ev.div_idx) : ev.event_idx;
+        const cites = ev.citations || [];
+        const matchingIndices = [];
+        if (sourceXref) {
+            cites.forEach((c, i) => {
+                if (c && c.sourceXref === sourceXref) matchingIndices.push(i);
+            });
+        }
+        return {
+            factKey: `${ev.tag}:${occ}`,
+            apiXref: isFam ? ev.fam_xref : null,
+            label: _applyToEventLabel(ev),
+            alreadyAttached: matchingIndices.length > 0,
+            alreadyAttachedIndices: matchingIndices,
+            checked: matchingIndices.length > 0,
+        };
+    });
+}
+
+function _setApplyToEventChecked(idx, checked) {
+    const r = _applyToEventsState.rows[idx];
+    if (r) r.checked = !!checked;
+}
+
+function _renderApplyToEventsList(containerEl, idPrefix) {
+    if (!containerEl) return;
+    const html = _applyToEventsState.rows.map((r, i) => {
+        const checked = r.checked ? ' checked' : '';
+        const labelHtml = (typeof escHtml === 'function') ? escHtml(r.label) : r.label;
+        return `<label class="apply-to-event-row">` +
+               `<input type="checkbox" data-row-idx="${i}"${checked} ` +
+               `onchange="_setApplyToEventChecked(${i}, this.checked)"> ${labelHtml}` +
+               `</label>`;
+    }).join('');
+    containerEl.innerHTML = html;
+}
+
 // ── showAddCitationModal ──────────────────────────────────────────────────
 
 // `factKey` is the server-side fact key: either null/undefined for a person-level
@@ -1385,6 +1451,22 @@ function showAddCitationModal(xref, factKey) {
         }
     }
 
+    // Apply-to-events picker — only for person-level adds (factKey null).
+    const applyRow = document.getElementById('add-citation-apply-to-events-row');
+    const applyList = document.getElementById('add-citation-apply-to-events-list');
+    if (factKey == null) {
+        const person = (typeof PEOPLE !== 'undefined' && PEOPLE) ? PEOPLE[xref] : null;
+        _applyToEventsState.mode = 'add';
+        _applyToEventsState.rows = _buildApplyToEventsRows(person, null);
+        _renderApplyToEventsList(applyList, 'add-citation');
+        if (applyRow) applyRow.style.display = '';
+    } else {
+        _applyToEventsState.mode = null;
+        _applyToEventsState.rows = [];
+        if (applyList) applyList.innerHTML = '';
+        if (applyRow) applyRow.style.display = 'none';
+    }
+
     if (overlayEl) overlayEl.classList.add('open');
     if (sourceEl) setTimeout(() => sourceEl.focus && sourceEl.focus(), 50);
 }
@@ -1393,6 +1475,8 @@ function closeAddCitationModal() {
     const overlayEl = document.getElementById('add-citation-modal-overlay');
     if (overlayEl) overlayEl.classList.remove('open');
     _addCitationModalXref = _addCitationModalFactKey = null;
+    _applyToEventsState.rows = [];
+    _applyToEventsState.mode = null;
 }
 
 async function submitAddCitationModal() {
@@ -1412,16 +1496,24 @@ async function submitAddCitationModal() {
     const url = urlEl ? urlEl.value.trim() : '';
     const quay = quayEl ? quayEl.value : '';
     const date = dateEl ? dateEl.value.trim() : '';
+    // Snapshot the picker rows before closeAddCitationModal() resets them.
+    const eventRows = (factKey == null) ?
+        _applyToEventsState.rows.filter(r => r.checked && !r.alreadyAttached).slice() :
+        [];
     closeAddCitationModal();
     if (!sourceXref) { alert('Please select a source.'); return; }
     try {
         const resp = await apiAddCitation(xref, sourceXref, factKey, page, text, note, url, quay, date);
-        // FAM citations refresh both spouses; merge every returned person.
         if (resp && resp.people) {
             for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
         }
-        // If the Sources modal is still open (we arrived here from its "+ Add source"
-        // button), refresh its content in place instead of closing it.
+        for (const row of eventRows) {
+            const eventXref = row.apiXref || xref;
+            const r2 = await apiAddCitation(eventXref, sourceXref, row.factKey, page, text, note, url, quay, date);
+            if (r2 && r2.people) {
+                for (const [k, v] of Object.entries(r2.people)) PEOPLE[k] = v;
+            }
+        }
         if (_sourcesModalXref != null) _refreshSourcesModalContent();
         if (typeof renderPanel !== 'undefined') renderPanel();
     } catch (e) {
@@ -1511,6 +1603,21 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
         viewSrcBtn.style.display = 'none';
     }
 
+    // Apply-to-events picker — only for person-level edits (factTag null).
+    const applyRow = document.getElementById('edit-citation-apply-to-events-row');
+    const applyList = document.getElementById('edit-citation-apply-to-events-list');
+    if (factTag == null && person) {
+        _applyToEventsState.mode = 'edit';
+        _applyToEventsState.rows = _buildApplyToEventsRows(person, _editCitationSourceXref);
+        _renderApplyToEventsList(applyList, 'edit-citation');
+        if (applyRow) applyRow.style.display = '';
+    } else {
+        _applyToEventsState.mode = null;
+        _applyToEventsState.rows = [];
+        if (applyList) applyList.innerHTML = '';
+        if (applyRow) applyRow.style.display = 'none';
+    }
+
     if (overlayEl) overlayEl.classList.add('open');
     if (pageEl) setTimeout(() => pageEl.focus && pageEl.focus(), 50);
 }
@@ -1520,13 +1627,17 @@ function closeEditCitationModal() {
     if (overlayEl) overlayEl.classList.remove('open');
     _editCitationXref = _editCitationFactTag = _editCitationIndex = null;
     _editCitationEventOcc = 0;
+    _applyToEventsState.rows = [];
+    _applyToEventsState.mode = null;
 }
 
 async function submitEditCitationModal() {
     const xref = _editCitationApiXref || _editCitationXref;
+    const indiXref = _editCitationXref; // for event-level diff dispatch
     const factTag = _editCitationFactTag;
     const index = _editCitationIndex;
     const eventOcc = _editCitationEventOcc != null ? _editCitationEventOcc : 0;
+    const sourceXref = _editCitationSourceXref;
     const pageEl = document.getElementById('edit-citation-modal-page');
     const textEl = document.getElementById('edit-citation-modal-text');
     const noteEl = document.getElementById('edit-citation-modal-note');
@@ -1539,6 +1650,8 @@ async function submitEditCitationModal() {
     const url = urlEl ? urlEl.value.trim() : '';
     const quay = quayEl ? quayEl.value : '';
     const date = dateEl ? dateEl.value.trim() : '';
+    // Snapshot picker rows for the diff before close resets state.
+    const diffRows = (factTag == null) ? _applyToEventsState.rows.slice() : [];
     closeEditCitationModal();
     try {
         const resp = await apiEditCitation(
@@ -1550,11 +1663,32 @@ async function submitEditCitationModal() {
             if (resp.people) {
                 for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
             }
-            _refreshSourcesModalContent();
-            if (typeof renderPanel === 'function') renderPanel();
         } else {
             alert('Save failed: ' + ((resp && resp.error) || 'unknown'));
+            return;
         }
+        // Diff: was-attached vs is-checked. Already-attached rows that stay
+        // checked are left untouched (non-destructive).
+        for (const row of diffRows) {
+            const eventXref = row.apiXref || indiXref;
+            if (!row.alreadyAttached && row.checked) {
+                const r2 = await apiAddCitation(eventXref, sourceXref, row.factKey, page, text, note, url, quay, date);
+                if (r2 && r2.people) {
+                    for (const [k, v] of Object.entries(r2.people)) PEOPLE[k] = v;
+                }
+            } else if (row.alreadyAttached && !row.checked) {
+                // Delete in descending index order so earlier indices stay valid.
+                const indices = (row.alreadyAttachedIndices || []).slice().sort((a, b) => b - a);
+                for (const ci of indices) {
+                    const r2 = await apiDeleteCitation(eventXref, `${row.factKey}:${ci}`);
+                    if (r2 && r2.people) {
+                        for (const [k, v] of Object.entries(r2.people)) PEOPLE[k] = v;
+                    }
+                }
+            }
+        }
+        _refreshSourcesModalContent();
+        if (typeof renderPanel === 'function') renderPanel();
     } catch (e) {
         alert('Save failed: ' + e);
     }
@@ -1712,8 +1846,12 @@ function openAddPersonModal(xref, relType) {
     const titleEl = document.getElementById('add-person-modal-title');
     const givenEl = document.getElementById('add-person-modal-given');
     const surnEl = document.getElementById('add-person-modal-surname');
+    const suffixEl = document.getElementById('add-person-modal-suffix');
     const sexEl = document.getElementById('add-person-modal-sex');
-    const byEl = document.getElementById('add-person-modal-birth-year');
+    const bdEl = document.getElementById('add-person-modal-birth-date');
+    const bpEl = document.getElementById('add-person-modal-birth-place');
+    const ddEl = document.getElementById('add-person-modal-death-date');
+    const dpEl = document.getElementById('add-person-modal-death-place');
     const otherRowEl = document.getElementById('add-person-modal-other-parent-row');
     const otherSelEl = document.getElementById('add-person-modal-other-parent');
 
@@ -1721,8 +1859,17 @@ function openAddPersonModal(xref, relType) {
     if (titleEl) titleEl.textContent = 'Add ' + label;
     if (givenEl) givenEl.value = '';
     if (surnEl) surnEl.value = '';
+    if (suffixEl) suffixEl.value = '';
     if (sexEl) sexEl.value = 'U';
-    if (byEl) byEl.value = '';
+    if (bdEl) bdEl.value = '';
+    if (bpEl) bpEl.value = '';
+    if (ddEl) ddEl.value = '';
+    if (dpEl) dpEl.value = '';
+
+    // Default status = Deceased; show death row.
+    const statusRadios = document.getElementsByName('add-person-modal-status');
+    for (const r of statusRadios) r.checked = (r.value === 'deceased');
+    _onAddPersonStatusChange();
 
     if (relType === 'child_of' && otherSelEl && otherRowEl) {
         const person = PEOPLE[xref] || {};
@@ -1751,6 +1898,14 @@ function closeAddPersonModal() {
     const overlayEl = document.getElementById('add-person-modal-overlay');
     if (overlayEl) overlayEl.classList.remove('open');
     _addPersonRelXref = _addPersonRelType = null;
+}
+
+function _onAddPersonStatusChange() {
+    const radios = document.getElementsByName('add-person-modal-status');
+    let val = '';
+    for (const r of radios) if (r.checked) { val = r.value; break; }
+    const row = document.getElementById('add-person-modal-death-row');
+    if (row) row.style.display = (val === 'deceased') ? 'grid' : 'none';
 }
 
 // ── changeParent (pencil + X next to a parent row) ────────────────────────
@@ -1867,21 +2022,34 @@ async function _postChangeParent(childXref, currentXref, newXref) {
 }
 
 async function submitAddPersonModal() {
-    const given = (document.getElementById('add-person-modal-given').value || '').trim();
-    const surn = (document.getElementById('add-person-modal-surname').value || '').trim();
-    const sex = document.getElementById('add-person-modal-sex').value || 'U';
-    const birthYear = (document.getElementById('add-person-modal-birth-year').value || '').trim();
+    const given      = (document.getElementById('add-person-modal-given').value       || '').trim();
+    const surn       = (document.getElementById('add-person-modal-surname').value     || '').trim();
+    const suffix     = (document.getElementById('add-person-modal-suffix').value      || '').trim();
+    const sex        = document.getElementById('add-person-modal-sex').value || 'U';
+    const birthDate  = (document.getElementById('add-person-modal-birth-date').value  || '').trim();
+    const birthPlace = (document.getElementById('add-person-modal-birth-place').value || '').trim();
+    const deathDate  = (document.getElementById('add-person-modal-death-date').value  || '').trim();
+    const deathPlace = (document.getElementById('add-person-modal-death-place').value || '').trim();
+    let status = '';
+    for (const r of document.getElementsByName('add-person-modal-status')) {
+        if (r.checked) { status = r.value; break; }
+    }
     const relXref = _addPersonRelXref;
     const relType = _addPersonRelType;
 
-    if (!given) { alert('Given name is required.'); return; }
+    if (!given && !surn) { alert('Given name or surname is required.'); return; }
     if (!relXref || !relType) { alert('Missing relationship context.'); return; }
 
     const body = {
         given,
         surn,
+        suffix,
         sex,
-        birth_year: birthYear,
+        birth_date: birthDate,
+        birth_place: birthPlace,
+        status,
+        death_date: deathDate,
+        death_place: deathPlace,
         rel_type: relType,
         rel_xref: relXref,
         current_person: window._currentPerson || null,
@@ -2116,8 +2284,12 @@ if (typeof module !== 'undefined' && module.exports) {
         showEditNameModal,
         showAddNoteModal,
         showAddCitationModal,
+        submitAddCitationModal,
         showEditCitationModal,
         submitEditCitationModal,
+        _buildApplyToEventsRows,
+        _applyToEventLabel,
+        _setApplyToEventChecked,
         showEditSourceModal,
         showAddGodparentModal,
         submitAddGodparentModal,

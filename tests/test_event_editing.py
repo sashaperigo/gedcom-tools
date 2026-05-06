@@ -694,7 +694,9 @@ class TestTemplateUIElements:
         assert '/api/edit_name' in _FULL_SOURCE
 
     def test_marr_edit_button_rendered(self):
-        assert 'marr-edit-btn' in _FULL_SOURCE
+        # Marriage edit/delete now live inside the event-card kebab menu;
+        # the kebab markup must be present in the rendered viz source.
+        assert 'evt-kebab-btn' in _FULL_SOURCE
 
     def test_aka_add_button_rendered(self):
         assert 'openAliasModal' in _FULL_SOURCE
@@ -723,6 +725,8 @@ class TestTemplateUIElements:
             'for (const evt of sorted)' in panel_src
             or 'for (const fact of facts)' in panel_src
             or 'for (const evt of allVisible)' in panel_src
+            or 'for (const row of merged)' in panel_src
+            or 'sorted.map(evt' in panel_src
         ), 'viz_panel.js must iterate events to render the timeline'
 
     def test_type_field_uses_uppercase_key(self):

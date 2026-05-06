@@ -841,7 +841,6 @@ header h1 .root-name-accent {
 #name-modal,
 #alias-modal,
 #add-godparent-modal,
-#add-person-modal,
 #change-parent-modal,
 #add-citation-modal,
 #edit-citation-modal,
@@ -853,6 +852,57 @@ header h1 .root-name-accent {
     padding: 20px;
     width: 420px;
     max-width: 90vw;
+}
+
+/* Wider modal shell for add-person — multi-column grid layout */
+#add-person-modal {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    width: 720px;
+    max-width: 95vw;
+}
+
+.add-person-row {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.add-person-row-name { grid-template-columns: 1fr 1fr 0.45fr; }
+.add-person-row-2col { grid-template-columns: 1fr 1fr; }
+.add-person-row-full { grid-template-columns: 1fr; }
+
+/* Inside grid rows, let the row gap control spacing instead of the field's own margin */
+.add-person-row .event-modal-field { margin: 0; }
+
+.add-person-radio-row {
+    display: flex;
+    gap: 22px;
+    align-items: center;
+    padding-top: 4px;
+}
+.add-person-radio-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-light);
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0;
+    cursor: pointer;
+}
+.add-person-radio-row input[type="radio"] {
+    width: auto;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+@media (max-width: 600px) {
+    #add-person-modal { width: 420px; padding: 20px; }
+    .add-person-row-name,
+    .add-person-row-2col { grid-template-columns: 1fr; }
 }
 
 /* 520px modal shells */
@@ -1100,69 +1150,124 @@ header h1 .root-name-accent {
     background: var(--bg-surface);
 }
 
+.apply-to-events-list {
+    max-height: 180px;
+    overflow-y: auto;
+    background: var(--bg-app);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+.apply-to-event-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: var(--text-primary);
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+}
+
+.apply-to-event-row:last-child {
+    border-bottom: none;
+}
+
+.apply-to-event-row input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    flex: 0 0 auto;
+}
+
 .event-modal-field textarea {
     resize: vertical;
     min-height: 60px;
 }
 
-/* ── Inline event actions ───────────────────────────────── */
-.evt-actions {
-    display: none;
-    align-items: center;
-    gap: 2px;
+/* ── Event card kebab menu ──────────────────────────────── */
+/* Replaces the old hover-shifting .evt-actions / .evt-edit-btn / .fact-del
+   pattern. The kebab is always visible in a fixed slot, so card geometry
+   never changes on hover. The popover opens on click. */
+
+.evt-kebab {
+    position: relative;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
 }
 
-.evt-entry:hover .evt-actions,
-.marr-card:hover .evt-actions,
-.fact-row:hover .evt-actions {
-    display: flex;
-}
-
-.evt-edit-btn,
-.evt-convert-btn,
-.fact-del {
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s;
-}
-
-.evt-entry:hover .evt-edit-btn,
-.evt-entry:hover .evt-convert-btn,
-.evt-entry:hover .fact-del,
-.fact-row:hover .evt-edit-btn,
-.fact-row:hover .fact-del {
-    opacity: 1;
-}
-
-.evt-edit-btn {
+.evt-kebab-btn {
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--text-muted);
     padding: 2px 4px;
     border-radius: 4px;
+    font-size: 16px;
     line-height: 1;
+    font-family: inherit;
+    transition: color 0.15s;
 }
 
-.evt-edit-btn:hover {
+.evt-entry:hover .evt-kebab-btn,
+.marr-card:hover .evt-kebab-btn,
+.div-card:hover .evt-kebab-btn,
+.fact-row:hover .evt-kebab-btn {
+    color: var(--text-secondary);
+}
+
+.evt-kebab-btn:hover,
+.evt-kebab-btn[aria-expanded="true"] {
     color: var(--accent);
 }
 
-.evt-convert-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 11px;
-    color: var(--text-secondary);
-    padding: 2px 4px;
-    border-radius: 4px;
-    line-height: 1;
-    white-space: nowrap;
+.evt-kebab-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 2px;
+    background: var(--bg-elev, #1e293b);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+    padding: 4px;
+    z-index: 20;
+    min-width: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
-.evt-convert-btn:hover {
-    color: var(--accent-hover);
+.evt-kebab-menu[hidden] {
+    display: none !important;
+}
+
+.evt-kebab-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+    font-family: inherit;
+}
+
+.evt-kebab-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.evt-kebab-item.del:hover {
+    color: var(--danger);
 }
 
 /* ── Add event/fact controls ────────────────────────────── */
@@ -1318,42 +1423,6 @@ header h1 .root-name-accent {
     overflow: hidden;
 }
 
-.marr-edit-btn,
-.marr-del-btn {
-    position: absolute;
-    top: 8px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--text-muted);
-    padding: 2px 4px;
-    border-radius: 4px;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s;
-}
-
-.marr-edit-btn {
-    right: 8px;
-}
-
-.marr-del-btn {
-    right: 30px;
-}
-
-.marr-card:hover .marr-edit-btn,
-.marr-card:hover .marr-del-btn {
-    opacity: 1;
-}
-
-.marr-edit-btn:hover {
-    color: var(--accent);
-}
-
-.marr-del-btn:hover {
-    color: var(--danger);
-}
-
 .marr-card .marr-year {
     font-size: 12px;
     font-weight: 700;
@@ -1404,11 +1473,6 @@ header h1 .root-name-accent {
     padding: 8px 12px;
     margin-bottom: 6px;
     overflow: hidden;
-}
-
-.div-card:hover .marr-edit-btn,
-.div-card:hover .marr-del-btn {
-    opacity: 1;
 }
 
 .div-card .marr-year {
@@ -1925,21 +1989,6 @@ header h1 .root-name-accent {
     align-self: center;
 }
 
-.fact-del {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--text-disabled);
-    padding: 1px 4px;
-    border-radius: 3px;
-    line-height: 1;
-}
-
-.fact-del:hover {
-    color: var(--danger);
-}
-
 .evt-prose-text {
     display: block;
     font-size: 13px;
@@ -1968,7 +2017,7 @@ header h1 .root-name-accent {
 .evt-rel-row {
     display: flex;
     gap: 10px;
-    align-items: baseline;
+    align-items: center;
     padding: 7px 12px;
     margin: 5px 0;
     font-size: 12px;
@@ -2527,13 +2576,15 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .family-sex-m,
-.family-sex-f {
+.family-sex-f,
+.family-sex-u {
     font-size: 9px;
     opacity: 0.8;
 }
 
 .family-sex-m { color: var(--sex-m); }
 .family-sex-f { color: var(--sex-f); }
+.family-sex-u { color: var(--text-muted); }
 
 .family-marr-meta {
     color: var(--text-muted);

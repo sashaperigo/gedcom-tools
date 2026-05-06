@@ -894,6 +894,8 @@ class TestPanelTagLabels:
             or 'facts.forEach' in panel_src
             or 'for (const evt of sorted)' in panel_src
             or 'for (const evt of allVisible)' in panel_src
+            or 'for (const row of merged)' in panel_src
+            or 'sorted.map(evt' in panel_src
         ), "viz_panel.js must iterate events to render life event rows"
 
 

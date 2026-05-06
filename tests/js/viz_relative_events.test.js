@@ -257,6 +257,41 @@ describe('buildRelativeEvents — Later Life', () => {
         expect(spouseDeath.section).toBe('Later Life');
     });
 
+    it("assigns Life (not Later Life) to child birth at focus's death year", () => {
+        const fx = {
+            allPeople: [
+                { id: '@F@', name: 'F',  birth_year: 1780, death_year: 1822, sex: 'M' },
+                { id: '@C@', name: 'C',  birth_year: 1822, death_year: '',   sex: 'M' },
+            ],
+            parents: {},
+            children: { '@F@': ['@C@'] },
+            families: {},
+        };
+        const mod = loadModule(fx);
+        const events = mod.buildRelativeEvents('@F@');
+        const childBirth = events.find(e => e.kind === 'birth' && e.role === 'son');
+        expect(childBirth).toBeDefined();
+        expect(childBirth.section).toBe('Life');
+    });
+
+    it("assigns Life (not Later Life) to twin births at focus's death year", () => {
+        const fx = {
+            allPeople: [
+                { id: '@F@', name: 'F', birth_year: 1780, birth_date: '1 JAN 1780', death_year: 1822, sex: 'M' },
+                { id: '@C1@', name: 'A', birth_year: 1822, birth_date: '5 MAY 1822', death_year: '', sex: 'M' },
+                { id: '@C2@', name: 'B', birth_year: 1822, birth_date: '5 MAY 1822', death_year: '', sex: 'M' },
+            ],
+            parents: {},
+            children: { '@F@': ['@C1@', '@C2@'] },
+            families: {},
+        };
+        const mod = loadModule(fx);
+        const births = mod.buildRelativeEvents('@F@').filter(e => e.kind === 'birth');
+        expect(births).toHaveLength(1);
+        expect(births[0].role).toBe('sons');
+        expect(births[0].section).toBe('Life');
+    });
+
     it('assigns Life (not Later Life) when focus has no death year and event is past birth+18', () => {
         const fx = {
             allPeople: [

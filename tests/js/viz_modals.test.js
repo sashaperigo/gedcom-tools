@@ -2255,3 +2255,414 @@ describe('editEvent — convert-to-baptism row', () => {
         expect(convertRow.style.display).toBe('none');
     });
 });
+
+// ── Multi-event picker for personal-level sources ─────────────────────────
+//
+// When the user adds or edits a *person-level* source, the modal shows a
+// checklist of the person's events; checking events causes that source to be
+// attached to those events too (in addition to the person record itself).
+
+describe('_buildApplyToEventsRows', () => {
+    const { _buildApplyToEventsRows } = require('../../js/viz_modals.js');
+
+    it('returns a row for every entry in person.events', () => {
+        const person = {
+            events: [
+                { tag: 'BIRT', event_idx: 0, date: '1900', place: 'Athens', citations: [] },
+                { tag: 'DEAT', event_idx: 1, date: '1972', place: '', citations: [] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, null);
+        expect(rows.length).toBe(2);
+        expect(rows[0].factKey).toBe('BIRT:0');
+        expect(rows[1].factKey).toBe('DEAT:1');
+    });
+
+    it('uses fam_xref + marr_idx for MARR events', () => {
+        const person = {
+            events: [
+                { tag: 'MARR', event_idx: null, fam_xref: '@F5@', marr_idx: 2, date: '1925', citations: [] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, null);
+        expect(rows[0].factKey).toBe('MARR:2');
+        expect(rows[0].apiXref).toBe('@F5@');
+    });
+
+    it('uses fam_xref + div_idx for DIV events', () => {
+        const person = {
+            events: [
+                { tag: 'DIV', event_idx: null, fam_xref: '@F5@', div_idx: 0, date: '1930', citations: [] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, null);
+        expect(rows[0].factKey).toBe('DIV:0');
+        expect(rows[0].apiXref).toBe('@F5@');
+    });
+
+    it('apiXref is null for INDI events', () => {
+        const person = { events: [{ tag: 'BIRT', event_idx: 0, citations: [] }] };
+        const rows = _buildApplyToEventsRows(person, null);
+        expect(rows[0].apiXref).toBeNull();
+    });
+
+    it('marks alreadyAttached when an event citation matches sourceXref', () => {
+        const person = {
+            events: [
+                { tag: 'BIRT', event_idx: 0, citations: [{ sourceXref: '@S1@', page: 'p.42' }] },
+                { tag: 'DEAT', event_idx: 1, citations: [{ sourceXref: '@S2@' }] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, '@S1@');
+        expect(rows[0].alreadyAttached).toBe(true);
+        expect(rows[0].alreadyAttachedIndices).toEqual([0]);
+        expect(rows[1].alreadyAttached).toBe(false);
+        expect(rows[1].alreadyAttachedIndices).toEqual([]);
+    });
+
+    it('alreadyAttachedIndices captures every matching citation, not just the first', () => {
+        const person = {
+            events: [{
+                tag: 'BIRT', event_idx: 0,
+                citations: [
+                    { sourceXref: '@S1@' },
+                    { sourceXref: '@S2@' },
+                    { sourceXref: '@S1@' },
+                ],
+            }],
+        };
+        const rows = _buildApplyToEventsRows(person, '@S1@');
+        expect(rows[0].alreadyAttachedIndices).toEqual([0, 2]);
+    });
+
+    it('rows.checked initialises to alreadyAttached', () => {
+        const person = {
+            events: [
+                { tag: 'BIRT', event_idx: 0, citations: [{ sourceXref: '@S1@' }] },
+                { tag: 'DEAT', event_idx: 1, citations: [] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, '@S1@');
+        expect(rows[0].checked).toBe(true);
+        expect(rows[1].checked).toBe(false);
+    });
+
+    it('produces a human label that includes tag + date', () => {
+        const person = {
+            events: [{ tag: 'BIRT', event_idx: 0, date: '1900', place: 'Athens', citations: [] }],
+        };
+        const rows = _buildApplyToEventsRows(person, null);
+        expect(rows[0].label).toMatch(/Birth/);
+        expect(rows[0].label).toContain('1900');
+    });
+
+    it('returns [] for a person with no events', () => {
+        expect(_buildApplyToEventsRows({}, null)).toEqual([]);
+        expect(_buildApplyToEventsRows({ events: [] }, null)).toEqual([]);
+    });
+});
+
+describe('submitAddCitationModal — multi-event picker', () => {
+    function _fakeEl(id) {
+        return {
+            id, innerHTML: '', textContent: '', value: '', style: { display: '' },
+            checked: false,
+            classList: { _c: new Set(), add(c) { this._c.add(c); }, remove(c) { this._c.delete(c); }, contains(c) { return this._c.has(c); } },
+            appendChild(child) { (this.children = this.children || []).push(child); },
+        };
+    }
+
+    let els;
+    beforeEach(() => {
+        els = {};
+        const ids = [
+            'add-citation-modal-overlay',
+            'add-citation-modal-source',
+            'add-citation-modal-page',
+            'add-citation-modal-text',
+            'add-citation-modal-note',
+            'add-citation-modal-url',
+            'add-citation-modal-quay',
+            'add-citation-modal-date',
+            'add-citation-modal-title',
+            'add-citation-apply-to-events-row',
+            'add-citation-apply-to-events-list',
+        ];
+        ids.forEach(id => els[id] = _fakeEl(id));
+        global.document = {
+            getElementById: (id) => els[id] || _fakeEl(id),
+            addEventListener: () => {},
+        };
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'Test Person',
+                sources: [],
+                events: [
+                    { tag: 'BIRT', event_idx: 0, date: '1900', place: 'Athens', citations: [] },
+                    { tag: 'RESI', event_idx: 0, date: '1930', place: 'NY', citations: [] },
+                    { tag: 'OCCU', event_idx: 0, date: '1930', place: '', citations: [] },
+                    { tag: 'MARR', event_idx: null, fam_xref: '@F5@', marr_idx: 0, date: '1925', citations: [] },
+                ],
+            },
+        };
+        global.SOURCES = { '@S1@': { titl: 'Census' } };
+        global.renderPanel = () => {};
+        global._refreshSourcesModalContent = () => {};
+    });
+
+    it('with no events checked: makes a single person-level apiAddCitation call', async () => {
+        const { showAddCitationModal, submitAddCitationModal } = require('../../js/viz_modals.js');
+        if (!showAddCitationModal || !submitAddCitationModal) return;
+        const calls = [];
+        global.apiAddCitation = async (...args) => { calls.push(args); return { ok: true, people: {} }; };
+        showAddCitationModal('@I1@', null);
+        els['add-citation-modal-source'].value = '@S1@';
+        els['add-citation-modal-page'].value = 'p.47';
+        await submitAddCitationModal();
+        expect(calls.length).toBe(1);
+        // signature: (xref, sourXref, factKey, page, text, note, url, quay, date)
+        expect(calls[0][0]).toBe('@I1@');
+        expect(calls[0][2]).toBe(null); // person-level
+        expect(calls[0][3]).toBe('p.47');
+    });
+
+    it('with two INDI events checked: chains 1 person-level + 2 event-level adds with same fields', async () => {
+        const { showAddCitationModal, submitAddCitationModal, _setApplyToEventChecked } = require('../../js/viz_modals.js');
+        if (!showAddCitationModal || !submitAddCitationModal) return;
+        const calls = [];
+        global.apiAddCitation = async (...args) => { calls.push(args); return { ok: true, people: {} }; };
+        showAddCitationModal('@I1@', null);
+        els['add-citation-modal-source'].value = '@S1@';
+        els['add-citation-modal-page'].value = 'p.47';
+        // events order: BIRT(0), RESI(1), OCCU(2), MARR(3) — check RESI and OCCU
+        _setApplyToEventChecked(1, true);
+        _setApplyToEventChecked(2, true);
+        await submitAddCitationModal();
+        expect(calls.length).toBe(3);
+        expect(calls[0][2]).toBe(null);            // person-level first
+        expect(calls[1][2]).toBe('RESI:0');
+        expect(calls[2][2]).toBe('OCCU:0');
+        // same fields propagated
+        expect(calls[1][3]).toBe('p.47');
+        expect(calls[2][3]).toBe('p.47');
+    });
+
+    it('FAM event row uses fam_xref as the API xref', async () => {
+        const { showAddCitationModal, submitAddCitationModal, _setApplyToEventChecked } = require('../../js/viz_modals.js');
+        if (!showAddCitationModal || !submitAddCitationModal) return;
+        const calls = [];
+        global.apiAddCitation = async (...args) => { calls.push(args); return { ok: true, people: {} }; };
+        showAddCitationModal('@I1@', null);
+        els['add-citation-modal-source'].value = '@S1@';
+        _setApplyToEventChecked(3, true); // MARR row
+        await submitAddCitationModal();
+        expect(calls.length).toBe(2);
+        // person-level uses INDI xref
+        expect(calls[0][0]).toBe('@I1@');
+        // MARR-level uses FAM xref + factKey MARR:0
+        expect(calls[1][0]).toBe('@F5@');
+        expect(calls[1][2]).toBe('MARR:0');
+    });
+
+    it('does not expose the apply-to-events row when the modal is for an event-level citation', () => {
+        const { showAddCitationModal } = require('../../js/viz_modals.js');
+        if (!showAddCitationModal) return;
+        showAddCitationModal('@I1@', 'BIRT:0');
+        expect(els['add-citation-apply-to-events-row'].style.display).toBe('none');
+    });
+
+    it('exposes the apply-to-events row for a person-level citation', () => {
+        const { showAddCitationModal } = require('../../js/viz_modals.js');
+        if (!showAddCitationModal) return;
+        showAddCitationModal('@I1@', null);
+        expect(els['add-citation-apply-to-events-row'].style.display).not.toBe('none');
+    });
+});
+
+describe('submitEditCitationModal — multi-event picker (diff)', () => {
+    function _fakeEl(id) {
+        return {
+            id, innerHTML: '', textContent: '', value: '', style: { display: '' },
+            checked: false,
+            classList: { _c: new Set(), add(c) { this._c.add(c); }, remove(c) { this._c.delete(c); }, contains(c) { return this._c.has(c); } },
+            appendChild(child) { (this.children = this.children || []).push(child); },
+        };
+    }
+
+    let els;
+    beforeEach(() => {
+        els = {};
+        const ids = [
+            'edit-citation-modal-overlay',
+            'edit-citation-modal-page',
+            'edit-citation-modal-text',
+            'edit-citation-modal-note',
+            'edit-citation-modal-url',
+            'edit-citation-modal-quay',
+            'edit-citation-modal-date',
+            'edit-citation-modal-title',
+            'edit-citation-modal-source-name',
+            'edit-citation-view-source-btn',
+            'edit-citation-apply-to-events-row',
+            'edit-citation-apply-to-events-list',
+        ];
+        ids.forEach(id => els[id] = _fakeEl(id));
+        global.document = {
+            getElementById: (id) => els[id] || _fakeEl(id),
+            addEventListener: () => {},
+        };
+        global.SOURCES = { '@S1@': { titl: 'Census' } };
+        global.renderPanel = () => {};
+        global._refreshSourcesModalContent = () => {};
+    });
+
+    it('check one previously-unchecked event: dispatches person-level edit + add for that event', async () => {
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'P', sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
+                events: [
+                    { tag: 'BIRT', event_idx: 0, date: '1900', citations: [] },
+                    { tag: 'DEAT', event_idx: 0, date: '1980', citations: [] },
+                ],
+            },
+        };
+        const { showEditCitationModal, submitEditCitationModal, _setApplyToEventChecked } = require('../../js/viz_modals.js');
+        if (!showEditCitationModal || !submitEditCitationModal) return;
+        const editCalls = [], addCalls = [], delCalls = [];
+        global.apiEditCitation = async (...a) => { editCalls.push(a); return { ok: true, people: {} }; };
+        global.apiAddCitation = async (...a) => { addCalls.push(a); return { ok: true, people: {} }; };
+        global.apiDeleteCitation = async (...a) => { delCalls.push(a); return { ok: true, people: {} }; };
+
+        showEditCitationModal('@I1@', null, 0);
+        _setApplyToEventChecked(1, true); // check DEAT
+        await submitEditCitationModal();
+
+        expect(editCalls.length).toBe(1);
+        expect(editCalls[0][1]).toBe('SOUR:0'); // person-level edit
+        expect(addCalls.length).toBe(1);
+        expect(addCalls[0][2]).toBe('DEAT:0'); // factKey
+        expect(delCalls.length).toBe(0);
+    });
+
+    it('uncheck a previously-checked event: dispatches person-level edit + delete for that event', async () => {
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'P',
+                sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
+                events: [
+                    { tag: 'BIRT', event_idx: 0, date: '1900', citations: [{ sourceXref: '@S1@' }] },
+                ],
+            },
+        };
+        const { showEditCitationModal, submitEditCitationModal, _setApplyToEventChecked } = require('../../js/viz_modals.js');
+        if (!showEditCitationModal || !submitEditCitationModal) return;
+        const editCalls = [], addCalls = [], delCalls = [];
+        global.apiEditCitation = async (...a) => { editCalls.push(a); return { ok: true, people: {} }; };
+        global.apiAddCitation = async (...a) => { addCalls.push(a); return { ok: true, people: {} }; };
+        global.apiDeleteCitation = async (...a) => { delCalls.push(a); return { ok: true, people: {} }; };
+
+        showEditCitationModal('@I1@', null, 0);
+        _setApplyToEventChecked(0, false); // uncheck BIRT
+        await submitEditCitationModal();
+
+        expect(editCalls.length).toBe(1);
+        expect(addCalls.length).toBe(0);
+        expect(delCalls.length).toBe(1);
+        expect(delCalls[0][1]).toBe('BIRT:0:0');
+    });
+
+    it('non-destructive: already-checked events are NOT touched on save (no add, no delete)', async () => {
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'P',
+                sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
+                events: [
+                    { tag: 'BIRT', event_idx: 0, date: '1900', citations: [{ sourceXref: '@S1@', page: '42' }] },
+                ],
+            },
+        };
+        const { showEditCitationModal, submitEditCitationModal } = require('../../js/viz_modals.js');
+        if (!showEditCitationModal || !submitEditCitationModal) return;
+        const editCalls = [], addCalls = [], delCalls = [];
+        global.apiEditCitation = async (...a) => { editCalls.push(a); return { ok: true, people: {} }; };
+        global.apiAddCitation = async (...a) => { addCalls.push(a); return { ok: true, people: {} }; };
+        global.apiDeleteCitation = async (...a) => { delCalls.push(a); return { ok: true, people: {} }; };
+
+        showEditCitationModal('@I1@', null, 0);
+        // BIRT was pre-checked (alreadyAttached) — leave it checked.
+        els['edit-citation-modal-page'].value = 'p.99'; // edit the person-level page
+        await submitEditCitationModal();
+
+        expect(editCalls.length).toBe(1); // person-level edit only
+        expect(addCalls.length).toBe(0);
+        expect(delCalls.length).toBe(0);
+    });
+
+    it('multiple existing citations of same source on one event: unchecking deletes all, descending', async () => {
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'P',
+                sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
+                events: [
+                    { tag: 'BIRT', event_idx: 0, date: '1900',
+                      citations: [{ sourceXref: '@S1@' }, { sourceXref: '@S2@' }, { sourceXref: '@S1@' }] },
+                ],
+            },
+        };
+        const { showEditCitationModal, submitEditCitationModal, _setApplyToEventChecked } = require('../../js/viz_modals.js');
+        if (!showEditCitationModal || !submitEditCitationModal) return;
+        const delCalls = [];
+        global.apiEditCitation = async () => ({ ok: true, people: {} });
+        global.apiAddCitation = async () => ({ ok: true, people: {} });
+        global.apiDeleteCitation = async (...a) => { delCalls.push(a); return { ok: true, people: {} }; };
+
+        showEditCitationModal('@I1@', null, 0);
+        _setApplyToEventChecked(0, false); // uncheck BIRT
+        await submitEditCitationModal();
+
+        // Two matching citations at indices 0 and 2; expect delete in descending order
+        expect(delCalls.length).toBe(2);
+        expect(delCalls[0][1]).toBe('BIRT:0:2');
+        expect(delCalls[1][1]).toBe('BIRT:0:0');
+    });
+
+    it('FAM event diff uses fam_xref as the API xref for delete', async () => {
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'P',
+                sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
+                events: [
+                    { tag: 'MARR', event_idx: null, fam_xref: '@F5@', marr_idx: 0,
+                      citations: [{ sourceXref: '@S1@' }] },
+                ],
+            },
+        };
+        const { showEditCitationModal, submitEditCitationModal, _setApplyToEventChecked } = require('../../js/viz_modals.js');
+        if (!showEditCitationModal || !submitEditCitationModal) return;
+        const delCalls = [];
+        global.apiEditCitation = async () => ({ ok: true, people: {} });
+        global.apiAddCitation = async () => ({ ok: true, people: {} });
+        global.apiDeleteCitation = async (...a) => { delCalls.push(a); return { ok: true, people: {} }; };
+
+        showEditCitationModal('@I1@', null, 0);
+        _setApplyToEventChecked(0, false);
+        await submitEditCitationModal();
+
+        expect(delCalls.length).toBe(1);
+        expect(delCalls[0][0]).toBe('@F5@');
+        expect(delCalls[0][1]).toBe('MARR:0:0');
+    });
+
+    it('does not expose the apply-to-events row when editing an event-level citation', () => {
+        global.PEOPLE = {
+            '@I1@': {
+                name: 'P', sources: [],
+                events: [{ tag: 'BIRT', event_idx: 0, citations: [{ sourceXref: '@S1@' }] }],
+            },
+        };
+        const { showEditCitationModal } = require('../../js/viz_modals.js');
+        if (!showEditCitationModal) return;
+        showEditCitationModal('@I1@', 'BIRT', 0);
+        expect(els['edit-citation-apply-to-events-row'].style.display).toBe('none');
+    });
+});
