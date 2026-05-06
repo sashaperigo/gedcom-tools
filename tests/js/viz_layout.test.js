@@ -3764,3 +3764,68 @@ describe('computeLayout — Phase 3 children of focus-children land in x-order r
         });
     });
 });
+
+// ── Regression: middle FOCUS-SIBLING with many children must land between
+// left-sibling kids and focus's own kids (not spill past focus's kids).
+// Reproduces: Giuseppe focus, Lucia + Nicolao older siblings, Nicolao+Angela
+// have 9 children. Expanding Nicolao must place his 9 children in the middle.
+describe('computeLayout — focus-sibling with many kids lands between leftsib kids and focus kids', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@':       { birth_year: 1810 }, // Giuseppe
+                '@FSPOUSE@':     { birth_year: 1815 }, // Lucie
+                '@FCHILD1@':     { birth_year: 1845 },
+                '@FCHILD2@':     { birth_year: 1854 },
+                '@LEFTSIB@':     { birth_year: 1795 }, // Lucia
+                '@LSPOUSE@':     { birth_year: 1785 }, // Ignacio
+                '@LC1@':         { birth_year: 1816 },
+                '@LC2@':         { birth_year: 1819 },
+                '@MIDSIB@':      { birth_year: 1802 }, // Nicolao
+                '@MIDSPOUSE@':   { birth_year: 1815 }, // Angela
+                '@MC1@':         { birth_year: 1836 },
+                '@MC2@':         { birth_year: 1838 },
+                '@MC3@':         { birth_year: 1840 },
+                '@MC4@':         { birth_year: 1842 },
+                '@MC5@':         { birth_year: 1844 },
+                '@MC6@':         { birth_year: 1846 },
+                '@MC7@':         { birth_year: 1848 },
+                '@MC8@':         { birth_year: 1850 },
+                '@MC9@':         { birth_year: 1852 },
+            },
+            relatives: {
+                '@FOCUS@':   { siblings: ['@LEFTSIB@', '@MIDSIB@'], spouses: ['@FSPOUSE@'] },
+                '@LEFTSIB@': { siblings: ['@MIDSIB@', '@FOCUS@'],  spouses: ['@LSPOUSE@'] },
+                '@MIDSIB@':  { siblings: ['@LEFTSIB@', '@FOCUS@'], spouses: ['@MIDSPOUSE@'] },
+            },
+            children: { '@FOCUS@': ['@FCHILD1@', '@FCHILD2@'] },
+            families: {
+                '@FOCUSFAM@': { husb: '@FOCUS@',   wife: '@FSPOUSE@',   chil: ['@FCHILD1@', '@FCHILD2@'] },
+                '@LEFTFAM@':  { husb: '@LSPOUSE@', wife: '@LEFTSIB@',   chil: ['@LC1@', '@LC2@'] },
+                '@MIDFAM@':   { husb: '@MIDSIB@',  wife: '@MIDSPOUSE@', chil: ['@MC1@','@MC2@','@MC3@','@MC4@','@MC5@','@MC6@','@MC7@','@MC8@','@MC9@'] },
+            },
+        });
+    });
+
+    it('all 9 MIDSIB children land between LEFTSIB children and FOCUS children', () => {
+        const expandedChildrenPersons = new Set(['@LEFTSIB@', '@MIDSIB@']);
+        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
+
+        const lc2 = nodes.find(n => n.xref === '@LC2@');
+        const fc1 = nodes.find(n => n.xref === '@FCHILD1@');
+        const fc2 = nodes.find(n => n.xref === '@FCHILD2@');
+        expect(lc2).toBeDefined();
+        expect(fc1).toBeDefined();
+        expect(fc2).toBeDefined();
+        const lcRight = lc2.x + NODE_W;
+        const fcLeft = Math.min(fc1.x, fc2.x);
+
+        const mcXrefs = ['@MC1@','@MC2@','@MC3@','@MC4@','@MC5@','@MC6@','@MC7@','@MC8@','@MC9@'];
+        mcXrefs.forEach(x => {
+            const n = nodes.find(n => n.xref === x);
+            expect(n, `${x} should be present`).toBeDefined();
+            expect(n.x, `${x} must be right of LEFTSIB children`).toBeGreaterThan(lcRight);
+            expect(n.x + NODE_W, `${x} must be left of FOCUS children`).toBeLessThan(fcLeft);
+        });
+    });
+});

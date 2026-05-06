@@ -153,10 +153,24 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 
     // Older siblings: packed leftward. If there's a left spouse, siblings start left of it;
     // otherwise closest older sib center = -(FOCUS_TO_SIB).
-    const olderSibsAnchor = leftmostSpouseAreaX !== null ?
+    let olderSibsAnchor = leftmostSpouseAreaX !== null ?
         leftmostSpouseAreaX - NODE_W / 2 - H_GAP - NODE_W / 2 :
         -FOCUS_TO_SIB;
+    // When the rightmost older sibling has expanded children, ensure its child
+    // cluster's right edge clears focus's child cluster's left edge — otherwise
+    // Phase 3's pickStartInFreeGap can't fit the cluster in the natural gap and
+    // pushes it past focus's children. Mirror logic for younger siblings below.
+    const INTER_FAM_GAP_FOR_SIB = H_GAP * 8;
+    const focusKidsExtents = _focusChildrenExtents(focusXref, rightSpouseXrefs, leftSpouseXref, leftSpouseX, firstSpouseX, SLOT, visibleSpouseFams);
     if (olderSibs.length > 0) {
+        const lastSibXref = olderSibs[olderSibs.length - 1];
+        if (expandedChildrenPersons.has(lastSibXref) && focusKidsExtents) {
+            const sibRightHalf = _descendantHalfwidth(lastSibXref, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
+            // sib_center = anchor + NODE_W/2; conservative right cluster edge = sib_center + sibRightHalf
+            // Need: cluster_right + INTER_FAM_GAP ≤ focusKidsExtents.leftEdge
+            const maxAnchor = focusKidsExtents.leftEdge - INTER_FAM_GAP_FOR_SIB - sibRightHalf - NODE_W / 2;
+            if (olderSibsAnchor > maxAnchor) olderSibsAnchor = maxAnchor;
+        }
         const olderSibNodes = _packRowWithDescendants(
             olderSibs.map(xref => ({ xref })),
             0,
@@ -290,10 +304,18 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     }
 
     // Younger siblings: packed after the rightmost spouse/spouse-sibling (or at FOCUS_TO_SIB if no spouses).
-    const youngerSibStartX = rightmostSpouseAreaX !== null ?
+    let youngerSibStartX = rightmostSpouseAreaX !== null ?
         rightmostSpouseAreaX + NODE_W / 2 + H_GAP + NODE_W / 2 :
         FOCUS_TO_SIB;
     if (youngerSibs.length > 0) {
+        const firstYoungSibXref = youngerSibs[0];
+        if (expandedChildrenPersons.has(firstYoungSibXref) && focusKidsExtents) {
+            const sibLeftHalf = _descendantHalfwidth(firstYoungSibXref, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
+            // sib_center = startX + NODE_W/2; conservative left cluster edge = sib_center - sibLeftHalf
+            // Need: focusKidsExtents.rightEdge + INTER_FAM_GAP ≤ cluster_left
+            const minStartX = focusKidsExtents.rightEdge + INTER_FAM_GAP_FOR_SIB + sibLeftHalf - NODE_W / 2;
+            if (youngerSibStartX < minStartX) youngerSibStartX = minStartX;
+        }
         const youngerSibNodes = _packRowWithDescendants(
             youngerSibs.map(xref => ({ xref })),
             0,
@@ -1460,6 +1482,82 @@ function _shiftFocusSpouseSubtree(nodes, edges, entry, dx) {
         if (onSide(e.x1)) e.x1 += dx;
         if (onSide(e.x2)) e.x2 += dx;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Focus children extents (preview Phase 2 placement before siblings are packed)
+// ---------------------------------------------------------------------------
+
+// Returns { leftEdge, rightEdge } in absolute coords for focus's child cluster(s),
+// or null if focus has no children. Mirrors Phase 2's placement so that Phase 1
+// sibling packing can push expanded-children siblings far enough from focus
+// to clear focus's child cluster on the same row.
+function _focusChildrenExtents(focusXref, rightSpouseXrefs, leftSpouseXref, leftSpouseX, firstSpouseX, SLOT, visibleSpouseFams) {
+    const { NODE_W, NODE_W_FOCUS, H_GAP } = DESIGN;
+    const focusCenterX = NODE_W_FOCUS / 2;
+    if (typeof CHILDREN === 'undefined' || !CHILDREN) return null;
+    const childXrefs = CHILDREN[focusXref] || [];
+    if (childXrefs.length === 0) return null;
+
+    let visibleFamXref = null;
+    let visibleOtherX = null;
+    if (typeof FAMILIES !== 'undefined' && FAMILIES) {
+        for (const f of Object.keys(FAMILIES)) {
+            const fam = FAMILIES[f];
+            if (!fam) continue;
+            if (fam.husb !== focusXref && fam.wife !== focusXref) continue;
+            if (!(fam.chil || []).length) continue;
+            const other = fam.husb === focusXref ? fam.wife : fam.husb;
+            if (!other) continue;
+            const idx = rightSpouseXrefs.indexOf(other);
+            if (idx >= 0) {
+                visibleFamXref = f;
+                visibleOtherX = firstSpouseX + idx * SLOT;
+                break;
+            }
+            if (other === leftSpouseXref) {
+                visibleFamXref = f;
+                visibleOtherX = leftSpouseX;
+                break;
+            }
+        }
+    }
+
+    const sumWidth = (kids) => kids.reduce((w, cx, i) => {
+        const sp = (typeof RELATIVES !== 'undefined' && RELATIVES[cx])
+            ? _visibleSpousesFor(cx, RELATIVES[cx]?.spouses ?? [], visibleSpouseFams, focusXref)
+            : [];
+        const slotW = NODE_W + sp.length * (H_GAP + NODE_W);
+        return w + slotW + (i > 0 ? H_GAP : 0);
+    }, 0);
+
+    let visibleKids = [], otherKids = [];
+    if (visibleFamXref) {
+        const visibleSet = new Set(FAMILIES[visibleFamXref].chil || []);
+        for (const c of childXrefs) {
+            (visibleSet.has(c) ? visibleKids : otherKids).push(c);
+        }
+    } else {
+        otherKids = childXrefs.slice();
+    }
+
+    let leftEdge = null, rightEdge = null;
+    if (visibleKids.length > 0 && visibleOtherX !== null) {
+        const w = sumWidth(visibleKids);
+        const midpoint = (focusCenterX + visibleOtherX + NODE_W / 2) / 2;
+        const start = midpoint - w / 2;
+        leftEdge = start;
+        rightEdge = start + w;
+    }
+    if (otherKids.length > 0) {
+        const w = sumWidth(otherKids);
+        const start = focusCenterX - w / 2;
+        const end = start + w;
+        leftEdge = leftEdge === null ? start : Math.min(leftEdge, start);
+        rightEdge = rightEdge === null ? end : Math.max(rightEdge, end);
+    }
+    if (leftEdge === null) return null;
+    return { leftEdge, rightEdge };
 }
 
 // ---------------------------------------------------------------------------
