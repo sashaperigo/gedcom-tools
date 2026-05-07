@@ -493,24 +493,17 @@ function _toggleFamily() {
     renderPanel();
 }
 
-// Collapse the AKA row to a single visible line when entries (or the
-// `+ alias` button) wrap, inserting a `+N more` toggle. The `+ alias`
-// button is kept visible at all times so adding an alias never requires
-// expanding first.
+// Collapse the AKA row when alias entries wrap to a second line, inserting
+// a `+N more` toggle. The `+ alias` button is allowed to wrap to its own
+// row when all entries fit row 1 — it stays visible either way.
 function _collapseAkaIfWrapped(akaDiv) {
     const entries = Array.from(akaDiv.querySelectorAll('.aka-entry'));
     if (entries.length === 0) return;
     const addBtn = akaDiv.querySelector('.aka-add-btn');
     const row1Top = entries[0].offsetTop;
 
-    let firstWrap = entries.findIndex(e => e.offsetTop > row1Top);
-    if (firstWrap === -1) {
-        if (addBtn && addBtn.offsetTop > row1Top) {
-            firstWrap = entries.length - 1;
-        } else {
-            return;
-        }
-    }
+    const firstWrap = entries.findIndex(e => e.offsetTop > row1Top);
+    if (firstWrap === -1) return;
 
     const hidden = entries.slice(firstWrap);
     hidden.forEach(e => { e.style.display = 'none'; });
@@ -776,7 +769,11 @@ function renderPanel() {
         });
         const relRows = relEvents.map(r => ({ kind: 'rel', year: r.year, sortYear: r.year, section: r.section, rel: r }));
 
-        // Merge: own events keep their order; relative events are inserted in year order.
+        // Sort own events chronologically (nulls/undated last) so undated events
+        // (e.g. MARR with no date) don't strand later dated events at the end.
+        ownRows.sort((a, b) => (a.sortYear ?? Infinity) - (b.sortYear ?? Infinity));
+
+        // Merge: own events in chronological order; relative events interleaved by year.
         // At equal year, own row comes first.
         const merged = [];
         let oi = 0, ri = 0;

@@ -492,6 +492,56 @@ describe('renderPanel — restored section headers', () => {
 
         expect(eventsEl.innerHTML).toContain('LATER LIFE');
     });
+
+    it('undated MARR does not cause section headers to appear out of order', () => {
+        // Regression: undated MARR (sortYear=null→Infinity) was left in GEDCOM order,
+        // stranding later dated own events (e.g. BAPM) after it in the merged array.
+        // Those events rendered with their correct section label, producing a stale
+        // "EARLY LIFE" header after the undated marriage card.
+        const panelEl = makeFakeEl('detail-panel');
+        const eventsEl = makeFakeEl('detail-events');
+        _state = { panelOpen: true, panelXref: '@ORDER@' };
+
+        global.PEOPLE['@ORDER@'] = {
+            name: 'Order Test',
+            birth_year: '1873',
+            death_year: null,
+            sex: 'M',
+            events: [
+                { tag: 'BIRT', date: '1873', place: 'Smyrna', citations: [], event_idx: 0 },
+                // MARR appears before BAPM in GEDCOM but has no date
+                { tag: 'MARR', date: null, place: '', spouse: 'Maria', spouse_xref: null, fam_xref: '@F1@', marr_idx: 0, citations: [], event_idx: null },
+                { tag: 'BAPM', date: '1875', place: 'Smyrna', citations: [], event_idx: 1 },
+            ],
+            notes: [],
+            sources: [],
+        };
+
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-events') return eventsEl;
+                return makeFakeEl(id);
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+
+        initPanel(panelEl);
+        renderPanel();
+
+        const html = eventsEl.innerHTML;
+        // BAPM(1875) must appear before the undated MARR card
+        const baptismPos = html.indexOf('1875');
+        const marrPos = html.indexOf('marr-card');
+        expect(baptismPos).toBeGreaterThan(-1);
+        expect(marrPos).toBeGreaterThan(-1);
+        expect(baptismPos).toBeLessThan(marrPos);
+
+        // No "EARLY LIFE" section header should appear after the marr-card
+        const earlyLifeAfterMarr = html.indexOf('EARLY LIFE', marrPos);
+        expect(earlyLifeAfterMarr).toBe(-1);
+    });
 });
 
 describe('renderPanel — RESI rollup', () => {
