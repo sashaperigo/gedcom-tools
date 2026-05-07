@@ -272,6 +272,207 @@ describe('assertNoUmbrellaCrossesPersonCenter', () => {
 });
 
 const {
+    assertClusterXRangesDisjoint,
+} = require('./_layout_invariants.js');
+
+describe('assertClusterXRangesDisjoint', () => {
+    // Helper: build a multi-child cluster (crossbar + drop per child)
+    function clusterAt(crossbarL, crossbarR, y, childYs, anchorX = (crossbarL + crossbarR) / 2) {
+        const crossbarY = y - 50; // crossbar above children
+        const edges = [
+            { x1: crossbarL, y1: crossbarY, x2: crossbarR, y2: crossbarY, type: 'descendant' },
+        ];
+        const nodes = childYs.map((cx, i) => ({
+            xref: `@C${i}@`, x: cx, y, role: 'descendant',
+        }));
+        for (const cx of childYs) {
+            edges.push({ x1: cx + NODE_W / 2, y1: crossbarY, x2: cx + NODE_W / 2, y2: y, type: 'descendant' });
+        }
+        return { nodes, edges };
+    }
+
+    it('passes on empty input', () => {
+        expect(() => assertClusterXRangesDisjoint([], [])).not.toThrow();
+    });
+
+    it('passes for a single cluster', () => {
+        const c = clusterAt(50, 250, 148, [50, 200]);
+        expect(() => assertClusterXRangesDisjoint(c.nodes, c.edges)).not.toThrow();
+    });
+
+    it('passes for two clusters at same y with disjoint x-ranges', () => {
+        const a = clusterAt(0, 200, 148, [0, 100]);
+        const b = clusterAt(400, 600, 148, [400, 500]);
+        const nodes = [...a.nodes, ...b.nodes.map((n, i) => ({ ...n, xref: `@D${i}@` }))];
+        const edges = [...a.edges, ...b.edges];
+        expect(() => assertClusterXRangesDisjoint(nodes, edges)).not.toThrow();
+    });
+
+    it('throws when two clusters at same y have overlapping node x-ranges', () => {
+        // Crossbars are disjoint (so umbrella check passes) but the node ranges
+        // overlap because nodes have width: A's right node x=200..300 vs B's
+        // left node x=280..380. This is the inter-cluster-gap bug class.
+        const a = clusterAt(50, 250, 148, [0, 200]);   // crossbar at drops; nodes [0..300]
+        const b = clusterAt(330, 530, 148, [280, 480]); // nodes [280..580]
+        const nodes = [...a.nodes, ...b.nodes.map((n, i) => ({ ...n, xref: `@D${i}@` }))];
+        const edges = [...a.edges, ...b.edges];
+        expect(() => assertClusterXRangesDisjoint(nodes, edges)).toThrow(/cluster.*overlap/i);
+    });
+
+    it('passes when overlapping clusters are at different y', () => {
+        const a = clusterAt(0, 250, 148, [0, 150]);
+        const b = clusterAt(0, 250, 296, [0, 150]); // same x, different y
+        const nodes = [...a.nodes, ...b.nodes.map((n, i) => ({ ...n, xref: `@D${i}@` }))];
+        const edges = [...a.edges, ...b.edges];
+        expect(() => assertClusterXRangesDisjoint(nodes, edges)).not.toThrow();
+    });
+
+    it('handles single-child clusters (anchor-only, no crossbar)', () => {
+        // Two single-child clusters: child A at x=0, child B at x=300, both y=148.
+        // Each has an anchor vertical from y=50 down to drop at y=98, then drop to y=148.
+        const nodes = [
+            { xref: '@A@', x: 0, y: 148, role: 'descendant' },
+            { xref: '@B@', x: 300, y: 148, role: 'descendant' },
+        ];
+        const edges = [
+            // anchor vertical above drop A
+            { x1: NODE_W / 2, y1: 50, x2: NODE_W / 2, y2: 98, type: 'descendant' },
+            // drop A
+            { x1: NODE_W / 2, y1: 98, x2: NODE_W / 2, y2: 148, type: 'descendant' },
+            // anchor vertical above drop B
+            { x1: 300 + NODE_W / 2, y1: 50, x2: 300 + NODE_W / 2, y2: 98, type: 'descendant' },
+            // drop B
+            { x1: 300 + NODE_W / 2, y1: 98, x2: 300 + NODE_W / 2, y2: 148, type: 'descendant' },
+        ];
+        expect(() => assertClusterXRangesDisjoint(nodes, edges)).not.toThrow();
+    });
+});
+
+const {
+    assertChildWithinParentSpanRange,
+} = require('./_layout_invariants.js');
+
+describe('assertChildWithinParentSpanRange', () => {
+    // Minimal layout factory: parent at given x, one child cluster below.
+    function focusWithChildren(focusX, childXs, opts = {}) {
+        const focusY = 0;
+        const childY = 148;
+        const crossbarY = 98;
+        const focusCenter = focusX + NODE_W_FOCUS / 2;
+        const nodes = [
+            { xref: '@F@', x: focusX, y: focusY, generation: 0, role: 'focus' },
+        ];
+        const edges = [];
+        global.PARENTS = {};
+        for (let i = 0; i < childXs.length; i++) {
+            const cx = childXs[i];
+            const xref = `@C${i}@`;
+            nodes.push({ xref, x: cx, y: childY, generation: -1, role: 'descendant' });
+            edges.push({ x1: cx + NODE_W / 2, y1: crossbarY, x2: cx + NODE_W / 2, y2: childY, type: 'descendant' });
+            global.PARENTS[xref] = ['@F@'];
+        }
+        if (childXs.length > 1) {
+            // multi-child crossbar
+            const xs = childXs.map(x => x + NODE_W / 2);
+            edges.push({ x1: Math.min(...xs), y1: crossbarY, x2: Math.max(...xs), y2: crossbarY, type: 'descendant' });
+        } else if (childXs.length === 1) {
+            // single-child anchor vertical from focus center down to crossbarY
+            edges.push({ x1: focusCenter, y1: focusY + 50, x2: focusCenter, y2: crossbarY, type: 'descendant' });
+        }
+        if (opts.spouse !== undefined) {
+            nodes.push({ xref: '@S@', x: opts.spouse, y: focusY, generation: 0, role: 'spouse' });
+            // spouse co-parents the same children
+            for (let i = 0; i < childXs.length; i++) global.PARENTS[`@C${i}@`].push('@S@');
+        }
+        return { nodes, edges };
+    }
+
+    it('passes when one child sits directly below the parent', () => {
+        // Focus at x=0 (center=58), child at x=8 (center=58). Right under parent.
+        const { nodes, edges } = focusWithChildren(0, [8]);
+        expect(() => assertChildWithinParentSpanRange(nodes, edges)).not.toThrow();
+    });
+
+    it('passes when children straddle the parent', () => {
+        // Focus at x=0; two children at x=-100 and x=120 — crossbar centered roughly on focus.
+        const { nodes, edges } = focusWithChildren(0, [-100, 120]);
+        expect(() => assertChildWithinParentSpanRange(nodes, edges)).not.toThrow();
+    });
+
+    it('throws when a child sits far past the parent on one side', () => {
+        // Focus at x=0 (span [0..116]), one child at x=600 (center=650).
+        // halfCluster = 50 (single child). Allowed range [-50..166]. 650 is way outside.
+        const { nodes, edges } = focusWithChildren(0, [600]);
+        expect(() => assertChildWithinParentSpanRange(nodes, edges)).toThrow(/parent.*span|outside/i);
+    });
+
+    it('uses NODE_W_FOCUS for focus-role parent (asymmetry per gotcha #3)', () => {
+        // Focus span is [0..116] not [0..100]. A child at x=110 (center=160) is within
+        // [0-50, 116+50]=[−50,166]. Just barely fits.
+        const { nodes, edges } = focusWithChildren(0, [110]);
+        expect(() => assertChildWithinParentSpanRange(nodes, edges)).not.toThrow();
+    });
+
+    it('extends span to include on-row spouse', () => {
+        // Focus at x=0 (right edge 116), spouse at x=200 (right edge 300). Span [0..300].
+        // Child at x=150 (center 200). halfCluster=50. Allowed [0-50..300+50]=[-50..350]. ✓
+        const { nodes, edges } = focusWithChildren(0, [150], { spouse: 200 });
+        expect(() => assertChildWithinParentSpanRange(nodes, edges)).not.toThrow();
+    });
+
+    it('skips silently when PARENTS global is missing', () => {
+        delete global.PARENTS;
+        const nodes = [
+            { xref: '@F@', x: 0, y: 0, role: 'focus' },
+            { xref: '@C@', x: 600, y: 148, role: 'descendant' }, // would fail if PARENTS were set
+        ];
+        const edges = [];
+        expect(() => assertChildWithinParentSpanRange(nodes, edges)).not.toThrow();
+    });
+
+    it('passes on empty input', () => {
+        global.PARENTS = {};
+        expect(() => assertChildWithinParentSpanRange([], [])).not.toThrow();
+    });
+});
+
+const {
+    assertGenerationsAligned,
+} = require('./_layout_invariants.js');
+
+describe('assertGenerationsAligned', () => {
+    it('passes when all nodes at the same generation share a y', () => {
+        const nodes = [
+            { xref: '@A@', x: 0, y: 0, generation: 0 },
+            { xref: '@B@', x: 200, y: 0, generation: 0 },
+            { xref: '@C@', x: 0, y: 148, generation: -1 },
+            { xref: '@D@', x: 0, y: -148, generation: 1 },
+        ];
+        expect(() => assertGenerationsAligned(nodes)).not.toThrow();
+    });
+
+    it('throws when two nodes at the same generation have different y', () => {
+        const nodes = [
+            { xref: '@A@', x: 0, y: 0, generation: 0 },
+            { xref: '@B@', x: 200, y: 10, generation: 0 }, // off-row
+        ];
+        expect(() => assertGenerationsAligned(nodes)).toThrow(/generation/i);
+    });
+
+    it('ignores nodes without a generation field', () => {
+        const nodes = [
+            { xref: '@A@', x: 0, y: 0, generation: 0 },
+            { xref: '@B@', x: 200, y: 50 }, // no generation
+        ];
+        expect(() => assertGenerationsAligned(nodes)).not.toThrow();
+    });
+
+    it('passes on empty input', () => {
+        expect(() => assertGenerationsAligned([])).not.toThrow();
+    });
+});
+
+const {
     assertAllLayoutInvariants,
     computeLayoutChecked,
 } = require('./_layout_invariants.js');

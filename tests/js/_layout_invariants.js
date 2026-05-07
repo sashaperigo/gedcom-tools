@@ -181,14 +181,145 @@ function assertNoUmbrellaCrossesPersonCenter(edges) {
     }
 }
 
+// Group descendant nodes by which umbrella they hang from. A "cluster" is a
+// crossbar (multi-child) or a colinear anchor-vertical above a drop (single
+// child). Returns Map<clusterId, { y, l, r, members: [nodes] }>.
+function _clustersByUmbrella(nodes, edges) {
+    const descNodes = nodes.filter(n => n.role === 'descendant');
+    const descEdges = edges.filter(e => e.type === 'descendant');
+    const crossbars = descEdges.filter(e => e.y1 === e.y2);
+    const verticals = descEdges.filter(e => e.x1 === e.x2);
+    const clusters = new Map();
+    let synthCounter = 0;
+    for (const child of descNodes) {
+        const childCenter = child.x + NODE_W / 2;
+        const drop = descEdges.find(e =>
+            e.x1 === e.x2 &&
+            Math.abs(e.x1 - childCenter) < 0.5 &&
+            Math.abs(e.y2 - child.y) < 0.5
+        );
+        if (!drop) continue; // assertChildrenInParentClusterRange will catch this
+        const cb = crossbars.find(e =>
+            Math.abs(e.y1 - drop.y1) < 0.5 &&
+            Math.min(e.x1, e.x2) - 0.5 <= drop.x1 &&
+            drop.x1 <= Math.max(e.x1, e.x2) + 0.5
+        );
+        let id;
+        if (cb) {
+            id = `cb:${cb.x1},${cb.x2},${cb.y1}`;
+        } else {
+            const anchor = verticals.find(e =>
+                Math.abs(e.x1 - drop.x1) < 0.5 &&
+                Math.abs(e.y2 - drop.y1) < 0.5 &&
+                e.y1 < drop.y1 - 0.5
+            );
+            id = anchor ? `anch:${anchor.x1},${anchor.y1},${anchor.y2}` : `orphan:${synthCounter++}`;
+        }
+        if (!clusters.has(id)) {
+            clusters.set(id, { y: child.y, l: Infinity, r: -Infinity, members: [] });
+        }
+        const c = clusters.get(id);
+        c.members.push(child);
+        c.l = Math.min(c.l, child.x);
+        c.r = Math.max(c.r, child.x + NODE_W);
+    }
+    return clusters;
+}
+
+// At any y, distinct clusters' x-ranges must not overlap. Catches:
+// inter-cluster-gap bug class — one expanded cluster spilling into another.
+function assertClusterXRangesDisjoint(nodes, edges) {
+    const clusters = _clustersByUmbrella(nodes, edges);
+    const byY = new Map();
+    for (const [id, c] of clusters) {
+        if (!byY.has(c.y)) byY.set(c.y, []);
+        byY.get(c.y).push({ id, ...c });
+    }
+    for (const [y, group] of byY) {
+        const sorted = group.slice().sort((a, b) => a.l - b.l);
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i].l < sorted[i - 1].r) {
+                throw new Error(
+                    `Cluster x-range overlap at y=${y}: ` +
+                    `[${sorted[i - 1].l}..${sorted[i - 1].r}] (${sorted[i - 1].members.map(m => m.xref).join(',')}) ` +
+                    `and [${sorted[i].l}..${sorted[i].r}] (${sorted[i].members.map(m => m.xref).join(',')})`
+                );
+            }
+        }
+    }
+}
+
+// Every node with the same `generation` field must share a single y coordinate.
+// Catches: any future bug where a node lands on the wrong row.
+function assertGenerationsAligned(nodes) {
+    const yByGen = new Map();
+    for (const n of nodes) {
+        if (n.generation === undefined) continue;
+        if (!yByGen.has(n.generation)) {
+            yByGen.set(n.generation, { y: n.y, witness: n.xref });
+            continue;
+        }
+        const seen = yByGen.get(n.generation);
+        if (seen.y !== n.y) {
+            throw new Error(
+                `Generation alignment broken at gen=${n.generation}: ` +
+                `${seen.witness} at y=${seen.y}, ${n.xref} at y=${n.y}`
+            );
+        }
+    }
+}
+
+// Each descendant node must sit within its rendered parent's x-span (extended
+// to include an on-row spouse), padded by half the cluster's width.
+// Catches: cluster anchored to the right umbrella geometrically but mis-
+// positioned relative to the actual parent (the bug `assertChildrenInParentClusterRange`
+// can miss because it only checks crossbar containment, not parent identity).
+function assertChildWithinParentSpanRange(nodes, edges) {
+    if (typeof PARENTS === 'undefined') return;
+    const nodeByXref = new Map(nodes.map(n => [n.xref, n]));
+    const clusters = _clustersByUmbrella(nodes, edges);
+    // Index clusters by member xref for fast lookup
+    const clusterByMember = new Map();
+    for (const [, c] of clusters) {
+        for (const m of c.members) clusterByMember.set(m.xref, c);
+    }
+    const descNodes = nodes.filter(n => n.role === 'descendant');
+    for (const c of descNodes) {
+        const parentXrefs = PARENTS[c.xref] || [];
+        const renderedParents = parentXrefs
+            .map(x => nodeByXref.get(x))
+            .filter(p => p && p.y < c.y);
+        if (renderedParents.length === 0) continue;
+        let spanL = Infinity, spanR = -Infinity;
+        for (const p of renderedParents) {
+            spanL = Math.min(spanL, p.x);
+            spanR = Math.max(spanR, p.x + _nodeWidth(p));
+        }
+        const cluster = clusterByMember.get(c.xref);
+        const halfCluster = cluster ? (cluster.r - cluster.l) / 2 : NODE_W / 2;
+        const cCenter = c.x + NODE_W / 2;
+        const lo = spanL - halfCluster;
+        const hi = spanR + halfCluster;
+        if (cCenter < lo - 0.5 || cCenter > hi + 0.5) {
+            throw new Error(
+                `${c.xref} (center=${cCenter}) outside parent span [${lo}..${hi}] ` +
+                `(parents: ${renderedParents.map(p => `${p.xref}@${p.x}`).join(',')})`
+            );
+        }
+    }
+}
+
 // Run every invariant. Order = cheapest/most-likely-to-fire first.
 function assertAllLayoutInvariants({ nodes, edges }) {
     assertExactlyOneFocus(nodes);
+    assertGenerationsAligned(nodes);
     assertNoNodeOverlap(nodes);
     assertSiblingOrderMonotonic(nodes);
     assertUmbrellasDisjointAtY(edges);
     assertNoUmbrellaCrossesPersonCenter(edges);
     assertChildrenInParentClusterRange(nodes, edges);
+    assertClusterXRangesDisjoint(nodes, edges);
+    assertChildWithinParentSpanRange(nodes, edges);
 }
 
 const { computeLayout } = require('../../js/viz_layout.js');
@@ -209,6 +340,10 @@ module.exports = {
     assertChildrenInParentClusterRange,
     assertUmbrellasDisjointAtY,
     assertNoUmbrellaCrossesPersonCenter,
+    assertGenerationsAligned,
+    assertClusterXRangesDisjoint,
+    assertChildWithinParentSpanRange,
     assertAllLayoutInvariants,
     computeLayoutChecked,
+    _clustersByUmbrella,
 };
