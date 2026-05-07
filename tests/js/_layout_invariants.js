@@ -269,27 +269,46 @@ function assertGenerationsAligned(nodes) {
     }
 }
 
-// Each descendant node must sit within its rendered parent's x-span (extended
-// to include an on-row spouse), padded by half the cluster's width.
-// Catches: cluster anchored to the right umbrella geometrically but mis-
-// positioned relative to the actual parent (the bug `assertChildrenInParentClusterRange`
-// can miss because it only checks crossbar containment, not parent identity).
+// Each focus-side descendant node from a fully-rendered couple must sit within
+// the couple's x-span padded by half the cluster's width. Catches: cluster
+// anchored to the right umbrella geometrically but mis-positioned relative to
+// the actual parent (a bug `assertChildrenInParentClusterRange` can miss
+// because it only checks crossbar containment, not parent identity).
+//
+// Restrictions:
+//  - Focus-side descendants only (y > 0). Ancestor-side "descendants" (kids of
+//    aunts/uncles) anchor on packing constraints, not the parent's pill.
+//  - Skip multi-FAM children: when only some of a child's genealogical parents
+//    are rendered, the cluster anchors asymmetrically (one side of the
+//    rendered parent), and the symmetric span check doesn't apply. Those are
+//    handled by `assertChildrenInParentClusterRange` and the umbrella checks.
 function assertChildWithinParentSpanRange(nodes, edges) {
     if (typeof PARENTS === 'undefined') return;
     const nodeByXref = new Map(nodes.map(n => [n.xref, n]));
     const clusters = _clustersByUmbrella(nodes, edges);
-    // Index clusters by member xref for fast lookup
     const clusterByMember = new Map();
     for (const [, c] of clusters) {
         for (const m of c.members) clusterByMember.set(m.xref, c);
     }
-    const descNodes = nodes.filter(n => n.role === 'descendant');
+    const descNodes = nodes.filter(n => n.role === 'descendant' && n.y > 0);
     for (const c of descNodes) {
         const parentXrefs = PARENTS[c.xref] || [];
         const renderedParents = parentXrefs
             .map(x => nodeByXref.get(x))
             .filter(p => p && p.y < c.y);
         if (renderedParents.length === 0) continue;
+        if (renderedParents.length < parentXrefs.length) continue;
+        // Skip when a rendered parent has a rendered spouse who isn't this
+        // child's parent — the cluster goes to the opposite side, not
+        // symmetric across the parent.
+        const parentSet = new Set(parentXrefs);
+        if (typeof RELATIVES !== 'undefined') {
+            const skip = renderedParents.some(p => {
+                const spouses = RELATIVES[p.xref]?.spouses || [];
+                return spouses.some(s => !parentSet.has(s) && nodeByXref.has(s));
+            });
+            if (skip) continue;
+        }
         let spanL = Infinity, spanR = -Infinity;
         for (const p of renderedParents) {
             spanL = Math.min(spanL, p.x);
