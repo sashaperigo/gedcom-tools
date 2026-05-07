@@ -2103,6 +2103,55 @@ async function _postChangeParent(childXref, currentXref, newXref) {
 }
 
 async function submitAddPersonModal() {
+    let mode = 'new';
+    for (const r of document.getElementsByName('add-person-mode')) {
+        if (r.checked) { mode = r.value; break; }
+    }
+
+    const relXref = _addPersonRelXref;
+    const relType = _addPersonRelType;
+
+    if (mode === 'existing') {
+        if (!_addPersonFromTreeXref) {
+            alert('Please select a person from the search results.');
+            return;
+        }
+        if (!relXref || !relType) { alert('Missing relationship context.'); return; }
+        const body = {
+            existing_xref: _addPersonFromTreeXref,
+            rel_type: relType,
+            rel_xref: relXref,
+            current_person: window._currentPerson || null,
+        };
+        if (relType === 'child_of') {
+            const otherSelEl = document.getElementById('add-person-modal-other-parent');
+            const v = otherSelEl ? otherSelEl.value : '';
+            body.other_parent_xref = (v === '__none__') ? '' : v;
+        }
+        try {
+            const resp = await fetch('/api/link_person', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                if (data.people)
+                    for (const [k, v] of Object.entries(data.people)) PEOPLE[k] = v;
+                if (typeof _applyFamilyMaps === 'function') _applyFamilyMaps(data.family_maps);
+                closeAddPersonModal();
+                window._openDetailKey = null;
+                setState({ panelXref: relXref, panelOpen: true });
+            } else {
+                alert('Save failed: ' + (data.error || 'unknown error'));
+            }
+        } catch (e) {
+            alert('Request failed: ' + e);
+        }
+        return;
+    }
+
+    // mode === 'new': original path below, unchanged
     const given      = (document.getElementById('add-person-modal-given').value       || '').trim();
     const surn       = (document.getElementById('add-person-modal-surname').value     || '').trim();
     const suffix     = (document.getElementById('add-person-modal-suffix').value      || '').trim();
@@ -2115,8 +2164,6 @@ async function submitAddPersonModal() {
     for (const r of document.getElementsByName('add-person-modal-status')) {
         if (r.checked) { status = r.value; break; }
     }
-    const relXref = _addPersonRelXref;
-    const relType = _addPersonRelType;
 
     if (!given && !surn) { alert('Given name or surname is required.'); return; }
     if (!relXref || !relType) { alert('Missing relationship context.'); return; }
