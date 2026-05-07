@@ -322,9 +322,10 @@ function _updateAddrSuggestions(place) {
 
 // ── Place autocomplete ─────────────────────────────────────────────────────
 
-function _onPlaceInput(val) {
+function _onPlaceInput(val, inputId) {
+    inputId = inputId || 'event-modal-place';
     const q = val.trim();
-    const el = document.getElementById('event-modal-place-results');
+    const el = document.getElementById(inputId + '-results');
     if (!el) return;
     if (!q) { el.innerHTML = ''; return; }
     const ql = q.toLowerCase();
@@ -332,28 +333,32 @@ function _onPlaceInput(val) {
         .filter(p => p.toLowerCase().startsWith(ql))
         .slice(0, 8);
     if (!matches.length) { el.innerHTML = ''; return; }
+    const inputIdQ = JSON.stringify(inputId).replace(/"/g, '&quot;');
     el.innerHTML = matches.map(p =>
-        `<div class="place-result-item" onmousedown="event.preventDefault();_selectPlace(${JSON.stringify(p).replace(/"/g, '&quot;')})">${escHtml(p)}</div>`
+        `<div class="place-result-item" onmousedown="event.preventDefault();_selectPlace(${JSON.stringify(p).replace(/"/g, '&quot;')},${inputIdQ})">${escHtml(p)}</div>`
     ).join('');
 }
 
-function _selectPlace(place) {
-    const inp = document.getElementById('event-modal-place');
+function _selectPlace(place, inputId) {
+    inputId = inputId || 'event-modal-place';
+    const inp = document.getElementById(inputId);
     if (inp) inp.value = place;
-    _clearPlaceResults();
-    _updateAddrSuggestions(place);
+    _clearPlaceResults(inputId);
+    if (inputId === 'event-modal-place') _updateAddrSuggestions(place);
 }
 
-function _clearPlaceResults() {
-    const el = document.getElementById('event-modal-place-results');
+function _clearPlaceResults(inputId) {
+    inputId = inputId || 'event-modal-place';
+    const el = document.getElementById(inputId + '-results');
     if (el) el.innerHTML = '';
 }
 
-let _placeBlurTimer = null;
+const _placeBlurTimers = {};
 
-function _schedulePlaceResultsClear() {
-    clearTimeout(_placeBlurTimer);
-    _placeBlurTimer = setTimeout(_clearPlaceResults, 150);
+function _schedulePlaceResultsClear(inputId) {
+    inputId = inputId || 'event-modal-place';
+    clearTimeout(_placeBlurTimers[inputId]);
+    _placeBlurTimers[inputId] = setTimeout(() => _clearPlaceResults(inputId), 150);
 }
 
 function _personName(xref) {
@@ -452,6 +457,8 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
     document.getElementById('event-modal-source-toggle').textContent = '+ Add source citation (optional)';
     document.getElementById('event-modal-source').value = '';
     document.getElementById('event-modal-page').value = '';
+    const _convertRow = document.getElementById('event-modal-convert-row');
+    if (_convertRow) _convertRow.style.display = 'none';
     _eventModalPasteOnSave = false;
     _refreshEventModalPasteBtn();
     const spouseInp = document.getElementById('event-modal-spouse-input');
@@ -1843,12 +1850,44 @@ async function deleteGodparent(xref, godparentXref) {
 
 let _addPersonRelXref = null,
     _addPersonRelType = null;
+let _addPersonFromTreeXref = null;
 const _ADD_PERSON_REL_LABELS = {
     parent_of: 'Parent',
     sibling_of: 'Sibling',
     spouse_of: 'Spouse',
     child_of: 'Child',
 };
+
+function _renderAddPersonTreeResults(query) {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return [];
+    return (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
+        .filter(p => p.name && p.name.toLowerCase().includes(q))
+        .slice(0, 12)
+        .map(p => ({ id: p.id, name: p.name, label: p.name + (p.birth_year ? ' (' + p.birth_year + ')' : '') }));
+}
+
+function _onAddPersonModeChange() {
+    let mode = 'new';
+    for (const r of document.getElementsByName('add-person-mode')) {
+        if (r.checked) { mode = r.value; break; }
+    }
+    const modal = document.getElementById('add-person-modal');
+    const formRows = modal ? modal.querySelectorAll(
+        '.add-person-row-name, .add-person-row-full, .add-person-row-2col, #add-person-modal-death-row'
+    ) : [];
+    const fromTree = document.getElementById('add-person-from-tree');
+    if (mode === 'existing') {
+        formRows.forEach(el => { el.style.display = 'none'; });
+        if (fromTree) fromTree.style.display = '';
+        const searchEl = document.getElementById('add-person-tree-search');
+        if (searchEl) setTimeout(() => searchEl.focus && searchEl.focus(), 50);
+    } else {
+        formRows.forEach(el => { el.style.display = ''; });
+        if (fromTree) fromTree.style.display = 'none';
+        _onAddPersonStatusChange();
+    }
+}
 
 function openAddPersonModal(xref, relType) {
     _addPersonRelXref = xref;
@@ -1903,6 +1942,17 @@ function openAddPersonModal(xref, relType) {
     }
 
     if (overlayEl) overlayEl.classList.add('open');
+    for (const r of document.getElementsByName('add-person-mode')) r.checked = (r.value === 'new');
+    _addPersonFromTreeXref = null;
+    const fromTreeEl = document.getElementById('add-person-from-tree');
+    if (fromTreeEl) fromTreeEl.style.display = 'none';
+    const treeSearchEl = document.getElementById('add-person-tree-search');
+    if (treeSearchEl) treeSearchEl.value = '';
+    const treeResultsEl = document.getElementById('add-person-tree-results');
+    if (treeResultsEl) treeResultsEl.innerHTML = '';
+    const modalEl = document.getElementById('add-person-modal');
+    const formRows = modalEl ? modalEl.querySelectorAll('.add-person-row-name, .add-person-row-full, .add-person-row-2col') : [];
+    formRows.forEach(el => { el.style.display = ''; });
     if (givenEl) setTimeout(() => givenEl.focus && givenEl.focus(), 50);
 }
 
@@ -1910,6 +1960,7 @@ function closeAddPersonModal() {
     const overlayEl = document.getElementById('add-person-modal-overlay');
     if (overlayEl) overlayEl.classList.remove('open');
     _addPersonRelXref = _addPersonRelType = null;
+    _addPersonFromTreeXref = null;
 }
 
 function _onAddPersonStatusChange() {
@@ -1972,14 +2023,32 @@ function _selectChangeParent(xref, name) {
 }
 
 document.addEventListener('click', e => {
-    const item = e.target.closest('.change-parent-result-item');
-    if (item) _selectChangeParent(item.dataset.xref, item.dataset.name);
+    const cpItem = e.target.closest('.change-parent-result-item');
+    if (cpItem) { _selectChangeParent(cpItem.dataset.xref, cpItem.dataset.name); return; }
+    const apItem = e.target.closest('.add-person-tree-result-item');
+    if (apItem) {
+        _addPersonFromTreeXref = apItem.dataset.xref;
+        const inp = document.getElementById('add-person-tree-search');
+        const res = document.getElementById('add-person-tree-results');
+        if (inp) inp.value = apItem.dataset.name;
+        if (res) res.innerHTML = '';
+    }
 });
 
 document.addEventListener('input', e => {
     if (e.target.id === 'change-parent-modal-search') {
         _changeParentNewXref = null;
         _renderChangeParentResults(e.target.value);
+    }
+    if (e.target.id === 'add-person-tree-search') {
+        _addPersonFromTreeXref = null;
+        const results = _renderAddPersonTreeResults(e.target.value);
+        const container = document.getElementById('add-person-tree-results');
+        if (container) {
+            container.innerHTML = results.map(r =>
+                `<div class="add-person-tree-result-item" data-xref="${escHtml(r.id)}" data-name="${escHtml(r.name)}">${escHtml(r.label)}</div>`
+            ).join('');
+        }
     }
 });
 
@@ -2325,5 +2394,7 @@ if (typeof module !== 'undefined' && module.exports) {
         deletePerson,
         _updateEventModalFields,
         _onDateUnknownChange,
+        _onAddPersonModeChange,
+        _renderAddPersonTreeResults,
     };
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(
     import.meta.url);
@@ -24,6 +24,8 @@ const {
     closeSourcesModal,
     _buildSourcesModalContent,
     openIndiSourcesModal,
+    _onPlaceInput,
+    _selectPlace,
 } = require('../../js/viz_modals.js');
 
 // ── _isFamEventTag ────────────────────────────────────────────────────────
@@ -252,6 +254,76 @@ describe('_FACT_PRESETS', () => {
         for (const [key, preset] of Object.entries(_FACT_PRESETS)) {
             expect(preset.baseTag, `preset ${key}.baseTag`).toMatch(GEDCOM_TAG);
         }
+    });
+});
+
+// ── Place autocomplete (event modal + add-person modal) ──────────────────
+
+describe('place autocomplete', () => {
+    const ALL_PLACES = ['Paris, France', 'Parma, Italy', 'Athens, Greece', 'Smyrna, Turkey'];
+
+    function _fakeEl(id) {
+        return { id, innerHTML: '', value: '' };
+    }
+
+    let prevDoc, prevPlaces;
+    let elements;
+
+    beforeEach(() => {
+        prevDoc = global.document;
+        prevPlaces = global.ALL_PLACES;
+        global.ALL_PLACES = ALL_PLACES;
+        elements = {};
+        global.document = {
+            getElementById(id) {
+                if (!(id in elements)) elements[id] = _fakeEl(id);
+                return elements[id];
+            },
+            addEventListener: () => {},
+        };
+    });
+
+    afterEach(() => {
+        global.document = prevDoc;
+        global.ALL_PLACES = prevPlaces;
+    });
+
+    it('_onPlaceInput writes matches to event-modal-place-results by default', () => {
+        _onPlaceInput('par');
+        expect(elements['event-modal-place-results'].innerHTML).toContain('Paris, France');
+        expect(elements['event-modal-place-results'].innerHTML).toContain('Parma, Italy');
+    });
+
+    it('_onPlaceInput writes matches to add-person-modal-birth-place-results when given that inputId', () => {
+        _onPlaceInput('par', 'add-person-modal-birth-place');
+        const html = elements['add-person-modal-birth-place-results'].innerHTML;
+        expect(html).toContain('Paris, France');
+        expect(html).toContain('Parma, Italy');
+        // result onmousedown should reference the same inputId so _selectPlace targets the right field
+        expect(html).toContain('add-person-modal-birth-place');
+        // It must NOT spill into the event modal's results container
+        expect(elements['event-modal-place-results']?.innerHTML || '').toBe('');
+    });
+
+    it('_onPlaceInput targets death-place results when given that inputId', () => {
+        _onPlaceInput('smy', 'add-person-modal-death-place');
+        expect(elements['add-person-modal-death-place-results'].innerHTML).toContain('Smyrna, Turkey');
+    });
+
+    it('_selectPlace writes the chosen place into the targeted input and clears its results', () => {
+        elements['add-person-modal-birth-place'] = _fakeEl('add-person-modal-birth-place');
+        elements['add-person-modal-birth-place-results'] = _fakeEl('add-person-modal-birth-place-results');
+        elements['add-person-modal-birth-place-results'].innerHTML = '<div>stale</div>';
+        _selectPlace('Paris, France', 'add-person-modal-birth-place');
+        expect(elements['add-person-modal-birth-place'].value).toBe('Paris, France');
+        expect(elements['add-person-modal-birth-place-results'].innerHTML).toBe('');
+    });
+
+    it('_onPlaceInput clears results when the query is empty', () => {
+        elements['add-person-modal-birth-place-results'] = _fakeEl('add-person-modal-birth-place-results');
+        elements['add-person-modal-birth-place-results'].innerHTML = '<div>old</div>';
+        _onPlaceInput('   ', 'add-person-modal-birth-place');
+        expect(elements['add-person-modal-birth-place-results'].innerHTML).toBe('');
     });
 });
 
@@ -2714,5 +2786,44 @@ describe('submitEditCitationModal — multi-event picker (diff)', () => {
         if (!showEditCitationModal) return;
         showEditCitationModal('@I1@', 'BIRT', 0);
         expect(els['edit-citation-apply-to-events-row'].style.display).toBe('none');
+    });
+});
+
+// ── _renderAddPersonTreeResults ───────────────────────────────────────────
+
+const { _renderAddPersonTreeResults } = require('../../js/viz_modals.js');
+
+describe('_renderAddPersonTreeResults', () => {
+    beforeEach(() => {
+        global.ALL_PEOPLE = [
+            { id: '@I1@', name: 'Rose Smith', birth_year: '1990' },
+            { id: '@I2@', name: 'James Smith', birth_year: '1960' },
+            { id: '@I3@', name: 'Clara Jones', birth_year: '1963' },
+        ];
+    });
+
+    it('returns empty array for empty query', () => {
+        expect(_renderAddPersonTreeResults('')).toEqual([]);
+    });
+
+    it('matches by substring (case-insensitive)', () => {
+        const results = _renderAddPersonTreeResults('smith');
+        expect(results.map(r => r.id)).toEqual(['@I1@', '@I2@']);
+    });
+
+    it('returns at most 12 results', () => {
+        global.ALL_PEOPLE = Array.from({ length: 20 }, (_, i) => ({
+            id: `@I${i}@`, name: `Person Smith ${i}`, birth_year: '1900',
+        }));
+        expect(_renderAddPersonTreeResults('smith').length).toBe(12);
+    });
+
+    it('includes birth_year in result label when present', () => {
+        const results = _renderAddPersonTreeResults('rose');
+        expect(results[0].label).toContain('1990');
+    });
+
+    it('returns empty array when no match', () => {
+        expect(_renderAddPersonTreeResults('zzznomatch')).toEqual([]);
     });
 });
