@@ -549,15 +549,47 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         }
 
         const CHILD_MARRIAGE_GAP = H_GAP;
+        const PHASE2_INTER_FAM_GAP = H_GAP * 8;
         const buildGroup = (childXref) => {
             const childSpouses = _visibleSpousesFor(childXref, RELATIVES[childXref]?.spouses ?? [], visibleSpouseFams, focusXref);
             const width = NODE_W + childSpouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
-            return { childXref, childSpouses, width };
+            // Halfwidths of this gen-1 child's own (Phase-3) descendant cluster,
+            // measured from the child's marriage midpoint (= group center).
+            // NODE_W/2 when the child has no expanded descendants.
+            const halfLeft = _descendantHalfwidth(childXref, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
+            const halfRight = _descendantHalfwidth(childXref, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
+            return { childXref, childSpouses, width, halfLeft, halfRight };
         };
         const visibleGroups = visibleKids.map(buildGroup);
         const otherGroups = otherKids.map(buildGroup);
 
-        const sumWidth = (groups) => groups.reduce((w, g, i) => w + g.width + (i > 0 ? H_GAP : 0), 0);
+        // Per-pair advance from prev group's cursor to next group's cursor.
+        // Baseline is prev.width + H_GAP. When either group has an expanded
+        // grandchild cluster, ensure the gen-1 spacing leaves enough room so
+        // the gen-2 clusters don't overlap (and Phase 3 doesn't need to push
+        // children outside their natural position).
+        const advanceFor = (prev, next) => {
+            const baseline = prev.width + H_GAP;
+            const prevHasDesc = prev.halfRight > NODE_W / 2 + 0.001;
+            const nextHasDesc = next.halfLeft > NODE_W / 2 + 0.001;
+            if (!prevHasDesc && !nextHasDesc) return baseline;
+            // Marriage midpoint of group sits at cursor + width/2. Cluster
+            // reaches right to (mid + halfRight) and next reaches left to
+            // (next_mid - halfLeft). Required advance derives from
+            //   nextCursor - prevCursor ≥ prev.width/2 + halfRight + halfLeft
+            //                              - next.width/2 + INTER_FAM_GAP.
+            const required =
+                prev.width / 2 + prev.halfRight + next.halfLeft -
+                next.width / 2 + PHASE2_INTER_FAM_GAP;
+            return Math.max(baseline, required);
+        };
+
+        const sumWidth = (groups) => groups.reduce((w, g, i) => {
+            if (i === 0) return w + g.width;
+            // Match emitGroup's per-pair advance so visibleStart/otherStart
+            // center the cluster correctly when grandchildren widen it.
+            return w + (advanceFor(groups[i - 1], g) - groups[i - 1].width) + g.width;
+        }, 0);
         const visibleWidth = sumWidth(visibleGroups);
         const otherWidth = sumWidth(otherGroups);
 
@@ -587,7 +619,10 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             const centers = [];
             let cursor = startX;
             groups.forEach((g, i) => {
-                if (i > 0) cursor += H_GAP;
+                if (i > 0) {
+                    const prev = groups[i - 1];
+                    cursor += advanceFor(prev, g) - prev.width;
+                }
                 const childX = cursor;
                 nodes.push({ xref: g.childXref, x: childX, y: ROW_HEIGHT, generation: 1, role: 'descendant' });
                 centers.push(childX + NODE_W / 2);

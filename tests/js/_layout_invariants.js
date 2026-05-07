@@ -79,6 +79,7 @@ function assertChildrenInParentClusterRange(nodes, edges) {
     const descNodes = nodes.filter(n => n.role === 'descendant');
     const descEdges = edges.filter(e => e.type === 'descendant');
     const crossbars = descEdges.filter(e => e.y1 === e.y2);
+    const verticals = descEdges.filter(e => e.x1 === e.x2);
     for (const child of descNodes) {
         const childCenter = child.x + NODE_W / 2;
         // Find a drop edge ending at this child's center+top
@@ -92,18 +93,27 @@ function assertChildrenInParentClusterRange(nodes, edges) {
                 `No descendant drop edge for ${child.xref} at (${childCenter}, ${child.y})`
             );
         }
-        // Find a crossbar at the drop's top y that covers the drop's x
+        // Crossbar covering this drop's x at the drop's top y is the umbrella
+        // this child hangs from.
         const cb = crossbars.find(e =>
             Math.abs(e.y1 - drop.y1) < 0.5 &&
             Math.min(e.x1, e.x2) - 0.5 <= drop.x1 &&
             drop.x1 <= Math.max(e.x1, e.x2) + 0.5
         );
-        // Single-child cluster has no crossbar (just an anchor + drop) — that's fine
-        if (!cb && crossbars.some(c => Math.abs(c.y1 - drop.y1) < 0.5)) {
-            throw new Error(
-                `${child.xref} drop at x=${drop.x1} is outside crossbar range at y=${drop.y1}`
-            );
-        }
+        if (cb) continue;
+        // Single-child anchor pattern: a colinear vertical edge above the drop
+        // (anchor drop from parent's bottom to umbrellaY at the same x). That's
+        // a valid umbrella with no crossbar — exempt independent of whether
+        // *other* unrelated umbrellas at this y have crossbars.
+        const hasAnchorAbove = verticals.some(e =>
+            Math.abs(e.x1 - drop.x1) < 0.5 &&
+            Math.abs(e.y2 - drop.y1) < 0.5 &&
+            e.y1 < drop.y1 - 0.5
+        );
+        if (hasAnchorAbove) continue;
+        throw new Error(
+            `${child.xref} drop at x=${drop.x1} is outside crossbar range at y=${drop.y1}`
+        );
     }
 }
 

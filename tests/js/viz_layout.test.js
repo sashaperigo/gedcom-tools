@@ -946,8 +946,7 @@ describe('computeLayout — multi-FAM children split', () => {
                 '@F3@': { husb: '@FOCUS@', wife: null, chil: ['@TENG@', '@WU@'] },
             },
         });
-        // (intentional: multi-FAM umbrella positioning needs invariant investigation)
-        const { nodes, edges } = computeLayout('@FOCUS@', new Set(), new Set());
+        const { nodes, edges } = computeLayoutChecked('@FOCUS@', new Set(), new Set());
 
         const focusCenter = NODE_W_FOCUS / 2;
         const spouseLeft = NODE_W_FOCUS / 2 + MARRIAGE_GAP + NODE_W / 2;
@@ -3730,8 +3729,7 @@ describe('computeLayout — Phase 3 children of focus-children land in x-order r
     it('MC children land between LC and RC when RIGHTSIB expanded first (bug-order Set)', () => {
         // Bug order: RIGHTSIB before MIDSIB
         const expandedChildrenPersons = new Set(['@RIGHTSIB@', '@LEFTSIB@', '@MIDSIB@']);
-        // (intentional: Phase 3 cluster positioning needs invariant investigation)
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
+        const { nodes } = computeLayoutChecked('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
 
         const mc1 = nodes.find(n => n.xref === '@MC1@');
         const mc2 = nodes.find(n => n.xref === '@MC2@');
@@ -3752,8 +3750,7 @@ describe('computeLayout — Phase 3 children of focus-children land in x-order r
 
     it('MC children land between LC and RC when MIDSIB expanded first (natural-order Set)', () => {
         const expandedChildrenPersons = new Set(['@LEFTSIB@', '@MIDSIB@', '@RIGHTSIB@']);
-        // (intentional: Phase 3 cluster positioning needs invariant investigation)
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
+        const { nodes } = computeLayoutChecked('@FOCUS@', new Set(), new Set(), expandedChildrenPersons);
 
         const mc1 = nodes.find(n => n.xref === '@MC1@');
         const mc3 = nodes.find(n => n.xref === '@MC3@');

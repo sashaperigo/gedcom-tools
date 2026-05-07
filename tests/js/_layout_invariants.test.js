@@ -149,6 +149,30 @@ describe('assertChildrenInParentClusterRange', () => {
             .toThrow(/no descendant drop edge/i);
     });
 
+    it('passes for multi-FAM single-child umbrella sharing y with another umbrella', () => {
+        // Two parents have umbrellas at the same y. Visible-FAM has 1 child
+        // (no crossbar — anchor + drop colinear). Other-FAM has 3 kids with a
+        // crossbar. The single-child drop is outside the multi-child crossbar's
+        // x-range, but it's anchored from above (its parent's bottom).
+        const nodes = [
+            { xref: '@SOLO@', x: 100, y: 148, role: 'descendant' },  // center 150
+            { xref: '@A@',    x: 250, y: 148, role: 'descendant' },  // center 300
+            { xref: '@B@',    x: 350, y: 148, role: 'descendant' },  // center 400
+            { xref: '@C@',    x: 450, y: 148, role: 'descendant' },  // center 500
+        ];
+        const edges = [
+            // Visible-FAM single-child: anchor drop above + drop colinear (both at x=150)
+            { x1: 150, y1: 50,  x2: 150, y2: 120, type: 'descendant' }, // anchor above
+            { x1: 150, y1: 120, x2: 150, y2: 148, type: 'descendant' }, // drop to SOLO
+            // Other-FAM multi-child cluster
+            { x1: 300, y1: 120, x2: 500, y2: 120, type: 'descendant' }, // crossbar
+            { x1: 300, y1: 120, x2: 300, y2: 148, type: 'descendant' }, // drop to A
+            { x1: 400, y1: 120, x2: 400, y2: 148, type: 'descendant' }, // drop to B
+            { x1: 500, y1: 120, x2: 500, y2: 148, type: 'descendant' }, // drop to C
+        ];
+        expect(() => assertChildrenInParentClusterRange(nodes, edges)).not.toThrow();
+    });
+
     it('throws when a child center is outside its crossbar range', () => {
         // Crossbar spans x=50..150 but child sits at center 250
         const nodes = [
