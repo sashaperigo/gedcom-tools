@@ -1226,6 +1226,102 @@ def _normalize_event_date(value: str) -> tuple[str, str | None]:
     return normalized, None
 
 
+def _wire_relationship(lines, new_xref, rel_type, rel_xref, other_parent_xref, sex):
+    """Wire rel_type relationship between new_xref and rel_xref.
+
+    Returns (new_lines, error_str_or_None). error_str is non-None only when the
+    parent_of slot is already occupied.
+    """
+    if rel_type == 'child_of':
+        def _mk_bare_fam_with(a_xref, b_xref):
+            fam_xref_local = _next_fam_xref(lines)
+            a_sex = _get_sex(lines, a_xref) if a_xref else None
+            b_sex = _get_sex(lines, b_xref) if b_xref else None
+            if a_sex == 'F' and b_sex != 'F':
+                husb, wife = b_xref, a_xref
+            elif b_sex == 'F' and a_sex != 'F':
+                husb, wife = a_xref, b_xref
+            else:
+                husb, wife = a_xref, b_xref
+            return fam_xref_local, husb, wife
+
+        if other_parent_xref is None:
+            existing_fams = _get_fams_for_indi(lines, rel_xref)
+            if existing_fams:
+                fam_xref = existing_fams[0]
+            else:
+                fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
+                lines = _create_bare_fam(lines, fam_xref, husb, wife)
+                lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+        elif other_parent_xref == '':
+            fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
+            lines = _create_bare_fam(lines, fam_xref, husb, wife)
+            lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+        else:
+            other_parent_fams = set(_get_fams_for_indi(lines, other_parent_xref))
+            shared_fams = [f for f in _get_fams_for_indi(lines, rel_xref) if f in other_parent_fams]
+            if shared_fams:
+                fam_xref = shared_fams[0]
+            else:
+                fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, other_parent_xref)
+                lines = _create_bare_fam(lines, fam_xref, husb, wife)
+                lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+                lines = _add_fams_to_indi(lines, other_parent_xref, fam_xref)
+        lines = _add_chil_to_fam(lines, fam_xref, new_xref)
+        lines = _add_famc_to_indi(lines, new_xref, fam_xref)
+
+    elif rel_type == 'parent_of':
+        famc_xref = _get_famc_for_indi(lines, rel_xref)
+        if famc_xref:
+            fam_xref = famc_xref
+            slot = 'WIFE' if sex == 'F' else 'HUSB'
+            fam_start, fam_end, ferr = _find_fam_block(lines, fam_xref)
+            if not ferr:
+                slot_occupied = any(
+                    (m := _TAG_RE.match(ln)) and m.group(2) == slot
+                    for ln in lines[fam_start:fam_end]
+                )
+                if slot_occupied:
+                    return lines, f'Family {fam_xref} already has a {slot}'
+                lines = lines[:fam_end] + [f'1 {slot} {new_xref}'] + lines[fam_end:]
+        else:
+            fam_xref = _next_fam_xref(lines)
+            if sex == 'F':
+                lines = _create_bare_fam(lines, fam_xref, None, new_xref)
+            else:
+                lines = _create_bare_fam(lines, fam_xref, new_xref, None)
+            lines = _add_chil_to_fam(lines, fam_xref, rel_xref)
+            lines = _add_famc_to_indi(lines, rel_xref, fam_xref)
+        lines = _add_fams_to_indi(lines, new_xref, fam_xref)
+
+    elif rel_type == 'spouse_of':
+        rel_sex = _get_sex(lines, rel_xref)
+        fam_xref = _next_fam_xref(lines)
+        if sex == 'F' and rel_sex != 'F':
+            husb_xref, wife_xref = rel_xref, new_xref
+        elif rel_sex == 'F' and sex != 'F':
+            husb_xref, wife_xref = new_xref, rel_xref
+        else:
+            husb_xref, wife_xref = new_xref, rel_xref
+        lines = _create_bare_fam(lines, fam_xref, husb_xref, wife_xref)
+        lines = _add_fams_to_indi(lines, new_xref, fam_xref)
+        lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
+
+    elif rel_type == 'sibling_of':
+        famc_xref = _get_famc_for_indi(lines, rel_xref)
+        if famc_xref:
+            fam_xref = famc_xref
+        else:
+            fam_xref = _next_fam_xref(lines)
+            lines = _create_bare_fam(lines, fam_xref, None, None)
+            lines = _add_chil_to_fam(lines, fam_xref, rel_xref)
+            lines = _add_famc_to_indi(lines, rel_xref, fam_xref)
+        lines = _add_chil_to_fam(lines, fam_xref, new_xref)
+        lines = _add_famc_to_indi(lines, new_xref, fam_xref)
+
+    return lines, None
+
+
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
@@ -1893,105 +1989,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             lines = lines[:trlr_idx] + new_indi + lines[trlr_idx:]
 
             # Handle relationship
-            if rel_type == 'child_of':
-                # Caller may specify a co-parent:
-                #   other_parent_xref = '@Ix@' → find/create FAM with both parents
-                #   other_parent_xref = ''     → create new FAM with rel_xref only
-                #   key absent (None)          → legacy: reuse first FAMS of rel_xref
-                other_parent_xref = body.get('other_parent_xref')
-
-                def _mk_bare_fam_with(a_xref, b_xref):
-                    """Create a bare FAM with a_xref and optional b_xref, assigning
-                    HUSB/WIFE based on sex. Returns (lines, fam_xref)."""
-                    fam_xref_local = _next_fam_xref(lines)
-                    a_sex = _get_sex(lines, a_xref) if a_xref else None
-                    b_sex = _get_sex(lines, b_xref) if b_xref else None
-                    if a_sex == 'F' and b_sex != 'F':
-                        husb, wife = b_xref, a_xref
-                    elif b_sex == 'F' and a_sex != 'F':
-                        husb, wife = a_xref, b_xref
-                    else:
-                        husb, wife = a_xref, b_xref
-                    return fam_xref_local, husb, wife
-
-                if other_parent_xref is None:
-                    existing_fams = _get_fams_for_indi(lines, rel_xref)
-                    if existing_fams:
-                        fam_xref = existing_fams[0]
-                    else:
-                        fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
-                        lines = _create_bare_fam(lines, fam_xref, husb, wife)
-                        lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
-                elif other_parent_xref == '':
-                    fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, None)
-                    lines = _create_bare_fam(lines, fam_xref, husb, wife)
-                    lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
-                else:
-                    # Look for an existing FAM that already pairs rel_xref with other_parent_xref
-                    other_parent_fams = set(_get_fams_for_indi(lines, other_parent_xref))
-                    shared_fams = [f for f in _get_fams_for_indi(lines, rel_xref) if f in other_parent_fams]
-                    if shared_fams:
-                        fam_xref = shared_fams[0]
-                    else:
-                        fam_xref, husb, wife = _mk_bare_fam_with(rel_xref, other_parent_xref)
-                        lines = _create_bare_fam(lines, fam_xref, husb, wife)
-                        lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
-                        lines = _add_fams_to_indi(lines, other_parent_xref, fam_xref)
-                lines = _add_chil_to_fam(lines, fam_xref, new_xref)
-                lines = _add_famc_to_indi(lines, new_xref, fam_xref)
-
-            elif rel_type == 'parent_of':
-                # New INDI is a parent of rel_xref. Find rel_xref's FAMC family.
-                famc_xref = _get_famc_for_indi(lines, rel_xref)
-                if famc_xref:
-                    fam_xref = famc_xref
-                    # Guard: check whether the HUSB/WIFE slot is already occupied
-                    slot = 'WIFE' if sex == 'F' else 'HUSB'
-                    fam_start, fam_end, ferr = _find_fam_block(lines, fam_xref)
-                    if not ferr:
-                        slot_occupied = any(
-                            (m := _TAG_RE.match(ln)) and m.group(2) == slot
-                            for ln in lines[fam_start:fam_end]
-                        )
-                        if slot_occupied:
-                            self.send_error(400, f'Family {fam_xref} already has a {slot}')
-                            return
-                        lines = lines[:fam_end] + [f'1 {slot} {new_xref}'] + lines[fam_end:]
-                else:
-                    fam_xref = _next_fam_xref(lines)
-                    if sex == 'F':
-                        lines = _create_bare_fam(lines, fam_xref, None, new_xref)
-                    else:
-                        lines = _create_bare_fam(lines, fam_xref, new_xref, None)
-                    lines = _add_chil_to_fam(lines, fam_xref, rel_xref)
-                    lines = _add_famc_to_indi(lines, rel_xref, fam_xref)
-                lines = _add_fams_to_indi(lines, new_xref, fam_xref)
-
-            elif rel_type == 'spouse_of':
-                rel_sex = _get_sex(lines, rel_xref)
-                fam_xref = _next_fam_xref(lines)
-                if sex == 'F' and rel_sex != 'F':
-                    husb_xref, wife_xref = rel_xref, new_xref
-                elif rel_sex == 'F' and sex != 'F':
-                    husb_xref, wife_xref = new_xref, rel_xref
-                else:
-                    husb_xref, wife_xref = new_xref, rel_xref
-                lines = _create_bare_fam(lines, fam_xref, husb_xref, wife_xref)
-                lines = _add_fams_to_indi(lines, new_xref, fam_xref)
-                lines = _add_fams_to_indi(lines, rel_xref, fam_xref)
-
-            elif rel_type == 'sibling_of':
-                # Add new INDI to the same FAMC family as rel_xref
-                famc_xref = _get_famc_for_indi(lines, rel_xref)
-                if famc_xref:
-                    fam_xref = famc_xref
-                else:
-                    fam_xref = _next_fam_xref(lines)
-                    lines = _create_bare_fam(lines, fam_xref, None, None)
-                    lines = _add_chil_to_fam(lines, fam_xref, rel_xref)
-                    lines = _add_famc_to_indi(lines, rel_xref, fam_xref)
-                lines = _add_chil_to_fam(lines, fam_xref, new_xref)
-                lines = _add_famc_to_indi(lines, new_xref, fam_xref)
+            other_parent_xref = body.get('other_parent_xref') if rel_type == 'child_of' else None
+            lines, wire_err = _wire_relationship(lines, new_xref, rel_type, rel_xref, other_parent_xref, sex)
+            if wire_err:
+                self.send_error(400, wire_err)
+                return
 
             _write_gedcom_atomic(lines)
             print(f"[person-add] {new_xref} {name_val} ({rel_type} {rel_xref})")
