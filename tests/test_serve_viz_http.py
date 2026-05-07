@@ -1156,6 +1156,137 @@ class TestAddCitationEndpoint:
             f'crossing event block boundaries.\n{text}'
         )
 
+    def test_event_citation_mirrors_to_indi_when_source_missing_at_indi_level(self, live_server):
+        """Adding an event-level citation on an INDI must also add a full
+        `1 SOUR @SX@` citation at INDI level if that source isn't already there."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 42', 'text': '', 'note': '',
+        })
+        text = _ged_text(ged)
+        # Locate the @I1@ block and check it contains a level-1 SOUR ref with page.
+        lines = text.splitlines()
+        i1_start = next(i for i, l in enumerate(lines) if l == '0 @I1@ INDI')
+        i1_end = next(
+            (i for i, l in enumerate(lines) if i > i1_start and l.startswith('0 ')),
+            len(lines),
+        )
+        indi_block = lines[i1_start:i1_end]
+        assert f'1 SOUR {sour_xref}' in indi_block, (
+            f'Expected `1 SOUR {sour_xref}` at INDI level in @I1@ block; got:\n'
+            + '\n'.join(indi_block)
+        )
+        assert '2 PAGE p. 42' in indi_block, (
+            f'Expected `2 PAGE p. 42` under mirrored INDI-level SOUR; got:\n'
+            + '\n'.join(indi_block)
+        )
+
+    def test_event_citation_indi_mirror_includes_full_details(self, live_server):
+        """The mirrored INDI-level citation must include page, text, note, url, and quay."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 42', 'text': 'Some text',
+            'note': 'A note', 'url': 'https://example.com', 'quay': '3',
+        })
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        i1_start = next(i for i, l in enumerate(lines) if l == '0 @I1@ INDI')
+        i1_end = next(
+            (i for i, l in enumerate(lines) if i > i1_start and l.startswith('0 ')),
+            len(lines),
+        )
+        indi_block = lines[i1_start:i1_end]
+        # Find the level-1 SOUR line in the @I1@ block.
+        sour_idx = next(
+            (i for i, l in enumerate(indi_block) if l == f'1 SOUR {sour_xref}'),
+            None,
+        )
+        assert sour_idx is not None, (
+            f'level-1 SOUR mirror not found in:\n' + '\n'.join(indi_block)
+        )
+        # The sub-tags immediately following should include PAGE, DATA, NOTE, and QUAY.
+        mirror_block = indi_block[sour_idx:]
+        end = next(
+            (i for i, l in enumerate(mirror_block) if i > 0 and not l.startswith('2 ') and not l.startswith('3 ')),
+            len(mirror_block),
+        )
+        mirror_lines = mirror_block[:end]
+        assert any(l.startswith('2 PAGE') for l in mirror_lines), (
+            f'Expected 2 PAGE in mirror; got:\n' + '\n'.join(mirror_lines)
+        )
+        assert any(l.startswith('3 TEXT') for l in mirror_lines), (
+            f'Expected 3 TEXT in mirror; got:\n' + '\n'.join(mirror_lines)
+        )
+        assert any(l.startswith('3 WWW') for l in mirror_lines), (
+            f'Expected 3 WWW in mirror; got:\n' + '\n'.join(mirror_lines)
+        )
+        assert any(l.startswith('2 NOTE') for l in mirror_lines), (
+            f'Expected 2 NOTE in mirror; got:\n' + '\n'.join(mirror_lines)
+        )
+        assert any(l.startswith('2 QUAY') for l in mirror_lines), (
+            f'Expected 2 QUAY in mirror; got:\n' + '\n'.join(mirror_lines)
+        )
+
+    def test_event_citation_does_not_duplicate_indi_mirror(self, live_server):
+        """Mirror must be skipped when source is already at INDI level
+        (regardless of page/text differences)."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        # Pre-add a person-level citation with a page.
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': None, 'page': 'p. preface', 'text': '', 'note': '',
+        })
+        # Now add an event-level citation for the same source — different page.
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': 'BIRT:0', 'page': 'p. 42', 'text': '', 'note': '',
+        })
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        i1_start = next(i for i, l in enumerate(lines) if l == '0 @I1@ INDI')
+        i1_end = next(
+            (i for i, l in enumerate(lines) if i > i1_start and l.startswith('0 ')),
+            len(lines),
+        )
+        indi_block = lines[i1_start:i1_end]
+        level1_sour_count = sum(
+            1 for l in indi_block
+            if l == f'1 SOUR {sour_xref}' or l.startswith(f'1 SOUR {sour_xref} ')
+        )
+        assert level1_sour_count == 1, (
+            f'Expected exactly one level-1 SOUR for {sour_xref}; got {level1_sour_count}\n'
+            + '\n'.join(indi_block)
+        )
+
+    def test_person_level_citation_not_double_added(self, live_server):
+        """fact_key=None (person-level) must NOT trigger mirror (it IS the mirror)."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@I1@', 'sour_xref': sour_xref,
+            'fact_key': None, 'page': 'p. 1', 'text': '', 'note': '',
+        })
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        i1_start = next(i for i, l in enumerate(lines) if l == '0 @I1@ INDI')
+        i1_end = next(
+            (i for i, l in enumerate(lines) if i > i1_start and l.startswith('0 ')),
+            len(lines),
+        )
+        indi_block = lines[i1_start:i1_end]
+        level1_sour_count = sum(
+            1 for l in indi_block
+            if l == f'1 SOUR {sour_xref}' or l.startswith(f'1 SOUR {sour_xref} ')
+        )
+        assert level1_sour_count == 1, (
+            f'Person-level citation must not be duplicated; got {level1_sour_count}'
+        )
+
 
 # ===========================================================================
 # /api/edit_citation
@@ -1456,7 +1587,8 @@ class TestCitationQuayAndDate:
         assert '4 DATE 1990' in text
 
     def test_edit_citation_clears_quay_and_date(self, live_server):
-        """Setting QUAY/DATE to '' on edit must remove the corresponding lines."""
+        """Setting QUAY/DATE to '' on edit must remove them from the fact-level citation.
+        (The INDI-level mirror retains its own copy at a lower GEDCOM level.)"""
         ged, post, _, _ = live_server
         sour_xref = self._add_source(post)
         post('/api/add_citation', {
@@ -1470,8 +1602,10 @@ class TestCitationQuayAndDate:
             'quay': '', 'date': '',
         })
         text = _ged_text(ged)
+        # Fact-level citation is at GEDCOM level 2 (under BIRT at level 1),
+        # so its QUAY is at level 3 and its DATE is at level 4.
         assert '3 QUAY' not in text
-        assert 'DATE 1990' not in text
+        assert '4 DATE 1990' not in text
 
     def test_edit_citation_returns_quay_and_date_in_people_payload(self, live_server):
         """Refreshed people payload exposes c.quay and c.date for the client to display."""
@@ -1691,6 +1825,27 @@ class TestFamCitationEndpoints:
                 found = True
         assert found, f'2 SOUR {sour_xref} not found inside @F5@\'s MARR block'
         assert '3 PAGE p.12' in text
+
+    def test_fam_event_citation_does_not_mirror_to_either_spouse_indi(self, live_server):
+        """FAM events live on the FAM record; mirror-to-INDI is INDI-only."""
+        ged, post, _, _ = live_server
+        sour_xref = self._add_source(post)
+        post('/api/add_citation', {
+            'xref': '@F5@', 'sour_xref': sour_xref,
+            'fact_key': 'MARR:0', 'page': 'p.12', 'text': '', 'note': '',
+        })
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        for spouse in ('@I1@', '@I12@'):
+            start = next(i for i, l in enumerate(lines) if l == f'0 {spouse} INDI')
+            end = next(
+                (i for i, l in enumerate(lines) if i > start and l.startswith('0 ')),
+                len(lines),
+            )
+            block = lines[start:end]
+            assert f'1 SOUR {sour_xref}' not in block, (
+                f'FAM-event mirror leaked into {spouse} INDI block:\n' + '\n'.join(block)
+            )
 
     def test_add_citation_response_refreshes_both_spouses(self, live_server):
         """Adding a MARR citation on @F5@ must refresh both @I1@ and @I12@ in the

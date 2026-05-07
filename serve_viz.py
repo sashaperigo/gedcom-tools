@@ -1029,6 +1029,22 @@ def _citation_already_exists(lines: list[str], insert_pos: int, sour_xref: str, 
     return False
 
 
+def _indi_has_level1_source(lines: list[str], xref: str, sour_xref: str) -> bool:
+    """True if the @xref@ INDI block contains a level-1 SOUR ref to sour_xref.
+    Match is by source xref alone — pages/notes are intentionally ignored, since
+    the mirror represents presence of the source on the person, not a specific
+    page reference."""
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err or indi_start is None:
+        return False
+    target = f'1 SOUR {sour_xref}'
+    for i in range(indi_start, indi_end):
+        raw = lines[i].rstrip()
+        if raw == target or raw.startswith(target + ' '):
+            return True
+    return False
+
+
 def _build_citation_lines(
     sour_xref: str, page: str, text: str, note: str, base_level: int,
     url: str = '', quay: str = '', date: str = '',
@@ -1713,6 +1729,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         sour_xref, page, text, note, base_level=2, url=url, quay=quay, date=date,
                     )
                     new_lines  = lines[:insert_pos] + cite_lines + lines[insert_pos:]
+                # Mirror to INDI level: a citation on any sub-record of an INDI also
+                # represents the source on that person, so surface it at level 1 too
+                # with the same details as the event-level citation.
+                if not is_fam and not _indi_has_level1_source(new_lines, xref, sour_xref):
+                    _, indi_end, _err = _find_indi_block(new_lines, xref)
+                    if indi_end is not None:
+                        mirror_lines = _build_citation_lines(
+                            sour_xref, page, text, note, base_level=1,
+                            url=url, quay=quay, date=date,
+                        )
+                        new_lines = new_lines[:indi_end] + mirror_lines + new_lines[indi_end:]
 
             if new_lines is not lines:
                 _write_gedcom_atomic(new_lines)
