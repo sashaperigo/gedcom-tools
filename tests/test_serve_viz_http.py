@@ -3065,3 +3065,16 @@ class TestLinkPersonEndpoint:
             assert False, 'Expected HTTPError'
         except urllib.error.HTTPError as e:
             assert e.code == 400
+
+    def test_unknown_rel_xref_returns_400(self, live_server):
+        ged, post, get, server = live_server
+        import urllib.error
+        try:
+            post('/api/link_person', {
+                'existing_xref': '@I12@',
+                'rel_type': 'child_of',
+                'rel_xref': '@I9999@',
+            })
+            assert False, 'Expected HTTPError'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400

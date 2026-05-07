@@ -2017,11 +2017,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not existing_xref:
                 self.send_error(400, 'existing_xref is required')
                 return
-            if not rel_xref:
-                self.send_error(400, 'rel_xref is required')
-                return
             if rel_type not in ('child_of', 'parent_of', 'spouse_of', 'sibling_of'):
                 self.send_error(400, 'rel_type must be one of child_of, parent_of, spouse_of, sibling_of')
+                return
+            if not rel_xref:
+                self.send_error(400, 'rel_xref is required')
                 return
 
             lines = GED.read_text(encoding='utf-8').splitlines()
@@ -2030,6 +2030,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             start, _, err = _find_indi_block(lines, existing_xref)
             if err or start is None:
                 self.send_error(400, f'Unknown individual: {existing_xref}')
+                return
+
+            # Verify rel_xref is a known INDI
+            start, _, err = _find_indi_block(lines, rel_xref)
+            if err or start is None:
+                self.send_error(400, f'Unknown individual: {rel_xref}')
                 return
 
             sex = _get_sex(lines, existing_xref)
