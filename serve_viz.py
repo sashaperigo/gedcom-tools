@@ -2006,6 +2006,51 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                'family_maps': family_maps}).encode()
 
         # ------------------------------------------------------------------ #
+        # Link an existing INDI into a family relationship                    #
+        # ------------------------------------------------------------------ #
+
+        elif parsed.path == '/api/link_person':
+            existing_xref = (body.get('existing_xref') or '').strip()
+            rel_type      = (body.get('rel_type')      or '').strip()
+            rel_xref      = (body.get('rel_xref')      or '').strip()
+
+            if not existing_xref:
+                self.send_error(400, 'existing_xref is required')
+                return
+            if not rel_xref:
+                self.send_error(400, 'rel_xref is required')
+                return
+            if rel_type not in ('child_of', 'parent_of', 'spouse_of', 'sibling_of'):
+                self.send_error(400, 'rel_type must be one of child_of, parent_of, spouse_of, sibling_of')
+                return
+
+            lines = GED.read_text(encoding='utf-8').splitlines()
+
+            # Verify existing_xref is a known INDI
+            start, _, err = _find_indi_block(lines, existing_xref)
+            if err or start is None:
+                self.send_error(400, f'Unknown individual: {existing_xref}')
+                return
+
+            sex = _get_sex(lines, existing_xref)
+            other_parent_xref = body.get('other_parent_xref') if rel_type == 'child_of' else None
+
+            lines, wire_err = _wire_relationship(lines, existing_xref, rel_type, rel_xref, other_parent_xref, sex)
+            if wire_err:
+                self.send_error(400, wire_err)
+                return
+
+            _write_gedcom_atomic(lines)
+            print(f"[person-link] {existing_xref} ({rel_type} {rel_xref})")
+            regenerate(body.get('current_person'))
+            viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+            indis, fams, sources = parse_gedcom(str(GED))
+            updated = build_people_json({rel_xref, existing_xref}, indis, fams=fams, sources=sources)
+            family_maps = viz.build_family_maps(indis, fams)
+            resp = json.dumps({'ok': True, 'xref': existing_xref, 'people': updated,
+                               'family_maps': family_maps}).encode()
+
+        # ------------------------------------------------------------------ #
         # Change / delete one of a child's parents                            #
         # ------------------------------------------------------------------ #
 

@@ -2955,3 +2955,113 @@ class TestAddPersonParentOf:
             assert False, 'Expected 400 for duplicate WIFE slot'
         except urllib.error.HTTPError as e:
             assert e.code == 400
+
+
+# ===========================================================================
+# /api/link_person
+# ===========================================================================
+
+class TestLinkPersonEndpoint:
+    """Link an existing INDI as a relative — no new INDI should be created."""
+
+    def test_child_of_adds_famc_without_creating_new_indi(self, live_server):
+        ged, post, _, _ = live_server
+        lines_before = _ged_text(ged).splitlines()
+        indi_count_before = sum(1 for l in lines_before if ' INDI' in l and l.startswith('0'))
+        resp = post('/api/link_person', {
+            'existing_xref': '@I12@',
+            'rel_type': 'child_of',
+            'rel_xref': '@I2@',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        lines_after = text.splitlines()
+        indi_count_after = sum(1 for l in lines_after if ' INDI' in l and l.startswith('0'))
+        assert indi_count_after == indi_count_before, 'No new INDI should be created'
+        assert '1 FAMC' in text
+
+    def test_child_of_chil_link_added_to_family(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/link_person', {
+            'existing_xref': '@I12@',
+            'rel_type': 'child_of',
+            'rel_xref': '@I2@',
+        })
+        assert resp.get('ok') is True
+        assert '1 CHIL @I12@' in _ged_text(ged)
+
+    def test_spouse_of_creates_fam_without_new_indi(self, live_server):
+        ged, post, _, _ = live_server
+        lines_before = _ged_text(ged).splitlines()
+        indi_count_before = sum(1 for l in lines_before if ' INDI' in l and l.startswith('0'))
+        resp = post('/api/link_person', {
+            'existing_xref': '@I2@',
+            'rel_type': 'spouse_of',
+            'rel_xref': '@I3@',
+        })
+        assert resp.get('ok') is True
+        text = _ged_text(ged)
+        indi_count_after = sum(1 for l in text.splitlines() if ' INDI' in l and l.startswith('0'))
+        assert indi_count_after == indi_count_before
+        assert '1 FAMS' in text
+
+    def test_returns_people_and_family_maps(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/link_person', {
+            'existing_xref': '@I12@',
+            'rel_type': 'child_of',
+            'rel_xref': '@I2@',
+        })
+        assert resp.get('ok') is True
+        assert 'people' in resp
+        assert 'family_maps' in resp
+
+    def test_unknown_existing_xref_returns_400(self, live_server):
+        ged, post, get, server = live_server
+        import urllib.error
+        try:
+            post('/api/link_person', {
+                'existing_xref': '@I9999@',
+                'rel_type': 'child_of',
+                'rel_xref': '@I2@',
+            })
+            assert False, 'Expected HTTPError'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_invalid_rel_type_returns_400(self, live_server):
+        ged, post, get, server = live_server
+        import urllib.error
+        try:
+            post('/api/link_person', {
+                'existing_xref': '@I12@',
+                'rel_type': 'invalid_rel',
+                'rel_xref': '@I2@',
+            })
+            assert False, 'Expected HTTPError'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_missing_rel_xref_returns_400(self, live_server):
+        ged, post, get, server = live_server
+        import urllib.error
+        try:
+            post('/api/link_person', {
+                'existing_xref': '@I12@',
+                'rel_type': 'child_of',
+            })
+            assert False, 'Expected HTTPError'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_missing_existing_xref_returns_400(self, live_server):
+        ged, post, get, server = live_server
+        import urllib.error
+        try:
+            post('/api/link_person', {
+                'rel_type': 'child_of',
+                'rel_xref': '@I2@',
+            })
+            assert False, 'Expected HTTPError'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
