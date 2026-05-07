@@ -389,12 +389,7 @@ describe('computeLayout — spouse siblings expanded', () => {
     });
 
     it('spouse siblings appear to the right of the spouse', () => {
-        // TODO(invariant-bug): assertNoNodeOverlap fires here. Spouse-sibling layout
-        // emits the same person twice — once with role='spouse_sibling' (correct
-        // position right of spouse) and once with role='ancestor_sibling' (incorrect
-        // position left of focus). Real bug worth investigating; reverted to plain
-        // computeLayout to keep the suite green.
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
+        const { nodes } = computeLayoutChecked('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
         const spouse = nodes.find(n => n.xref === '@SPOUSE@');
         const ss1 = nodes.find(n => n.xref === '@SS1@');
         const ss2 = nodes.find(n => n.xref === '@SS2@');
@@ -405,12 +400,7 @@ describe('computeLayout — spouse siblings expanded', () => {
     });
 
     it('first spouse sibling is exactly one SLOT to the right of the spouse', () => {
-        // TODO(invariant-bug): assertNoNodeOverlap fires here. Spouse-sibling layout
-        // emits the same person twice — once with role='spouse_sibling' (correct
-        // position right of spouse) and once with role='ancestor_sibling' (incorrect
-        // position left of focus). Real bug worth investigating; reverted to plain
-        // computeLayout to keep the suite green.
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
+        const { nodes } = computeLayoutChecked('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
         const spouse = nodes.find(n => n.xref === '@SPOUSE@');
         // spouse siblings sorted by birth_year; @SS1@ (1895) comes first
         const ss1 = nodes.find(n => n.xref === '@SS1@');
@@ -418,12 +408,7 @@ describe('computeLayout — spouse siblings expanded', () => {
     });
 
     it('spouse siblings have role "spouse_sibling"', () => {
-        // TODO(invariant-bug): assertNoNodeOverlap fires here. Spouse-sibling layout
-        // emits the same person twice — once with role='spouse_sibling' (correct
-        // position right of spouse) and once with role='ancestor_sibling' (incorrect
-        // position left of focus). Real bug worth investigating; reverted to plain
-        // computeLayout to keep the suite green.
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
+        const { nodes } = computeLayoutChecked('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
         const spouseSibs = nodes.filter(n => n.role === 'spouse_sibling');
         expect(spouseSibs).toHaveLength(2);
     });
@@ -534,12 +519,7 @@ describe('computeLayout — no overlap', () => {
         };
         resetGlobals({ people, relatives });
 
-        // TODO(invariant-bug): assertNoNodeOverlap fires here. Spouse-sibling layout
-        // emits the same person twice — once with role='spouse_sibling' (correct
-        // position right of spouse) and once with role='ancestor_sibling' (incorrect
-        // position left of focus). Real bug worth investigating; reverted to plain
-        // computeLayout to keep the suite green.
-        const { nodes } = computeLayout('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
+        const { nodes } = computeLayoutChecked('@FOCUS@', new Set(), new Set(['@SPOUSE@']));
         const gen0 = nodes.filter(n => n.generation === 0);
         const xs = gen0.map(n => n.x);
         const uniqueXs = new Set(xs);

@@ -466,7 +466,12 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     // spouse-parents subtree would overlap, shift the spouse subtree
     // outward by the shortfall before placing its ancestor subtree.
     for (const entry of focusSpouses) {
-        if (!effectiveExpandedAncestors.has(entry.xref)) {
+        // Gate on the original expandedAncestors set — not the force-expanded one.
+        // Force-expand exists so an ancestor-row sibling group hangs from a
+        // proper umbrella; focus-spouse siblings are placed inline by Phase 1
+        // and need no umbrella, so spouse-only-sibling expansion must not pull
+        // spouse-parents into the layout.
+        if (!expandedAncestors || !expandedAncestors.has(entry.xref)) {
             continue;
         }
         const shift = _computeFocusSpouseShift(
@@ -477,7 +482,8 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             _shiftFocusSpouseSubtree(nodes, edges, entry, shift);
             entry.originalX += shift;
         }
-        _placeAncestorSiblings(entry.xref, entry.originalX, 0, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        // Spouse-siblings are emitted by Phase 1 (role='spouse_sibling') —
+        // do NOT call _placeAncestorSiblings here or they'd be emitted twice.
         _placeAncestors(entry.xref, entry.originalX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
     }
 
