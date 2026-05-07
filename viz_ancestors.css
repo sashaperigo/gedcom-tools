@@ -894,6 +894,37 @@ header h1 .root-name-accent {
 /* Inside grid rows, let the row gap control spacing instead of the field's own margin */
 .add-person-row .event-modal-field { margin: 0; }
 
+.add-person-mode-row {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+}
+.add-person-mode-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+}
+.add-person-tree-result-item {
+    padding: 0.35rem 0.6rem;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.add-person-tree-result-item:hover {
+    background: #f0f0f0;
+}
+#add-person-tree-results {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-top: 0.25rem;
+    max-height: 220px;
+    overflow-y: auto;
+}
+#add-person-tree-results:empty {
+    display: none;
+}
+
 .add-person-radio-row {
     display: flex;
     gap: 22px;
@@ -1548,6 +1579,8 @@ header h1 .root-name-accent {
 /* ── Autocomplete pickers ────────────────────────────────── */
 #event-modal-spouse-results,
 #event-modal-place-results,
+#add-person-modal-birth-place-results,
+#add-person-modal-death-place-results,
 #add-godparent-modal-results,
 #change-parent-modal-results {
     max-height: 160px;

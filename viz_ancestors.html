@@ -118,7 +118,7 @@
             </div>
             <div class="event-modal-field" id="event-modal-place-row">
                 <label for="event-modal-place">Place</label>
-                <input type="text" id="event-modal-place" autocomplete="off" oninput="_onPlaceInput(this.value)" onblur="_schedulePlaceResultsClear()" onkeydown="if(event.key==='Escape')closeEventModal()">
+                <input type="text" id="event-modal-place" autocomplete="off" oninput="_onPlaceInput(this.value,'event-modal-place')" onblur="_schedulePlaceResultsClear('event-modal-place')" onkeydown="if(event.key==='Escape')closeEventModal()">
                 <div id="event-modal-place-results"></div>
             </div>
             <div class="event-modal-field" id="event-modal-addr-row">
@@ -219,6 +219,17 @@
     <div id="add-person-modal-overlay" onclick="closeIfFarFromPanel(event,'add-person-modal',closeAddPersonModal)">
         <div id="add-person-modal" onkeydown="if(event.key==='Escape')closeAddPersonModal()">
             <h3 id="add-person-modal-title">Add Person</h3>
+            <div class="add-person-mode-row">
+                <label><input type="radio" name="add-person-mode" value="new" checked onchange="_onAddPersonModeChange()"> New person</label>
+                <label><input type="radio" name="add-person-mode" value="existing" onchange="_onAddPersonModeChange()"> From your tree</label>
+            </div>
+            <div id="add-person-from-tree" style="display:none">
+                <div class="event-modal-field">
+                    <label for="add-person-tree-search">Name</label>
+                    <input type="text" id="add-person-tree-search" autocomplete="off" placeholder="Start typing to search your tree">
+                    <div id="add-person-tree-results"></div>
+                </div>
+            </div>
             <div class="add-person-row add-person-row-name">
                 <div class="event-modal-field">
                     <label for="add-person-modal-given">Given name</label>
@@ -259,7 +270,8 @@
                 </div>
                 <div class="event-modal-field">
                     <label for="add-person-modal-birth-place">Birth place</label>
-                    <input type="text" id="add-person-modal-birth-place" autocomplete="off" placeholder="City, County, State, Country">
+                    <input type="text" id="add-person-modal-birth-place" autocomplete="off" placeholder="City, County, State, Country" oninput="_onPlaceInput(this.value,'add-person-modal-birth-place')" onblur="_schedulePlaceResultsClear('add-person-modal-birth-place')">
+                    <div id="add-person-modal-birth-place-results"></div>
                 </div>
             </div>
             <div class="add-person-row add-person-row-2col" id="add-person-modal-death-row">
@@ -269,7 +281,8 @@
                 </div>
                 <div class="event-modal-field">
                     <label for="add-person-modal-death-place">Death place</label>
-                    <input type="text" id="add-person-modal-death-place" autocomplete="off" placeholder="City, County, State, Country">
+                    <input type="text" id="add-person-modal-death-place" autocomplete="off" placeholder="City, County, State, Country" oninput="_onPlaceInput(this.value,'add-person-modal-death-place')" onblur="_schedulePlaceResultsClear('add-person-modal-death-place')">
+                    <div id="add-person-modal-death-place-results"></div>
                 </div>
             </div>
             <div class="event-modal-field" id="add-person-modal-other-parent-row" style="display:none">
