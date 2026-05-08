@@ -420,7 +420,7 @@ function editEvent(xref, eventIdx, tag, famXref, marrIdx) {
     document.getElementById('event-modal-type').value = evt.type || '';
     document.getElementById('event-modal-overlay').classList.add('open');
     const focusId = _INLINE_TYPE_TAGS.has(tag) ? 'event-modal-inline' : 'event-modal-date';
-    setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus(); }, 50);
+    setTimeout(() => { const el = document.getElementById(focusId); if (el) el.focus?.(); }, 50);
 }
 
 function addEvent(xref, defaultTag = 'RESI', prefillType) {
