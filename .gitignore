@@ -22,6 +22,9 @@ merge-report.txt
 # Node.js
 node_modules/
 
+# macOS
+.DS_Store
+
 # Superpowers brainstorm session files
 .superpowers/
 
