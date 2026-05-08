@@ -586,6 +586,18 @@ def _add_fams_to_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[s
     return lines[:indi_end] + [target] + lines[indi_end:]
 
 
+def _remove_fams_from_indi(lines: list[str], indi_xref: str, fam_xref: str) -> list[str]:
+    """Remove '1 FAMS fam_xref' from indi_xref's INDI block."""
+    indi_start, indi_end, err = _find_indi_block(lines, indi_xref)
+    if err:
+        return lines
+    target = f'1 FAMS {fam_xref}'
+    return [
+        ln for i, ln in enumerate(lines)
+        if not (indi_start < i < indi_end and ln.strip() == target)
+    ]
+
+
 def _insert_fam_event(lines: list[str], fam_xref: str, event_tag: str, fields: dict) -> list[str]:
     """Append a new MARR/DIV event block just before the end of the FAM record."""
     _, fam_end, err = _find_fam_block(lines, fam_xref)
@@ -1195,6 +1207,40 @@ def _remove_famc_from_indi(lines: list[str], indi_xref: str, fam_xref: str) -> l
             if not (indi_start <= idx < indi_end and l.strip() == target)]
 
 
+def _prune_empty_fam(lines: list[str], fam_xref: str) -> list[str]:
+    """Remove a childless FAM block and its FAMS back-links from HUSB/WIFE individuals.
+
+    No-op if the FAM has any CHIL entries or if the block cannot be found.
+    """
+    fam_start, fam_end, err = _find_fam_block(lines, fam_xref)
+    if err:
+        return lines
+    block = lines[fam_start:fam_end]
+    if any(
+        (m := _TAG_RE.match(ln)) and int(m.group(1)) == 1 and m.group(2) == 'CHIL'
+        for ln in block
+    ):
+        return lines  # has children — don't prune
+
+    # Collect HUSB/WIFE xrefs to remove their FAMS back-links
+    linked = []
+    for ln in block:
+        m = _TAG_RE.match(ln)
+        if m and int(m.group(1)) == 1 and m.group(2) in ('HUSB', 'WIFE'):
+            val = (m.group(3) or '').strip()
+            if val:
+                linked.append(val)
+
+    for px in linked:
+        lines = _remove_fams_from_indi(lines, px, fam_xref)
+
+    # Re-find the block (indices may have shifted after removing FAMS lines)
+    fam_start, fam_end, err = _find_fam_block(lines, fam_xref)
+    if not err:
+        lines = lines[:fam_start] + lines[fam_end:]
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Input validation / normalization
 # ---------------------------------------------------------------------------
@@ -1273,16 +1319,42 @@ def _wire_relationship(lines, new_xref, rel_type, rel_xref, other_parent_xref, s
     elif rel_type == 'parent_of':
         famc_xref = _get_famc_for_indi(lines, rel_xref)
         if famc_xref:
-            fam_xref = famc_xref
             slot = 'WIFE' if sex == 'F' else 'HUSB'
-            fam_start, fam_end, ferr = _find_fam_block(lines, fam_xref)
+            other_slot = 'HUSB' if slot == 'WIFE' else 'WIFE'
+            fam_start, fam_end, ferr = _find_fam_block(lines, famc_xref)
+            existing_other_parent = None
+            slot_occupied = False
             if not ferr:
-                slot_occupied = any(
-                    (m := _TAG_RE.match(ln)) and m.group(2) == slot
-                    for ln in lines[fam_start:fam_end]
-                )
-                if slot_occupied:
-                    return lines, f'Family {fam_xref} already has a {slot}'
+                for ln in lines[fam_start:fam_end]:
+                    m = _TAG_RE.match(ln)
+                    if not m:
+                        continue
+                    lvl, tag, val = int(m.group(1)), m.group(2), (m.group(3) or '').strip()
+                    if lvl == 1 and tag == slot:
+                        slot_occupied = True
+                    elif lvl == 1 and tag == other_slot:
+                        existing_other_parent = val
+            if slot_occupied:
+                return lines, f'Family {famc_xref} already has a {slot}'
+
+            # If new parent and existing other parent already share a FAM, redirect
+            # the child there — avoids creating a duplicate marriage record.
+            if existing_other_parent:
+                new_parent_fams = set(_get_fams_for_indi(lines, new_xref))
+                other_fams = set(_get_fams_for_indi(lines, existing_other_parent))
+                shared = [f for f in new_parent_fams if f in other_fams]
+                if shared:
+                    shared_fam = shared[0]
+                    lines = _remove_chil_from_fam(lines, famc_xref, rel_xref)
+                    lines = _remove_famc_from_indi(lines, rel_xref, famc_xref)
+                    lines = _add_chil_to_fam(lines, shared_fam, rel_xref)
+                    lines = _add_famc_to_indi(lines, rel_xref, shared_fam)
+                    lines = _prune_empty_fam(lines, famc_xref)
+                    lines = _add_fams_to_indi(lines, new_xref, shared_fam)
+                    return lines, None
+
+            fam_xref = famc_xref
+            if not ferr:
                 lines = lines[:fam_end] + [f'1 {slot} {new_xref}'] + lines[fam_end:]
         else:
             fam_xref = _next_fam_xref(lines)
