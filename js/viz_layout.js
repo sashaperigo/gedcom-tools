@@ -613,7 +613,13 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             }
         }
 
-        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const visibleUmbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        // When the focus owns BOTH cluster types, the other-FAM umbrella shifts
+        // DOWN by H_GAP so its horizontal connector cannot share a y-line with
+        // the visible-FAM crossbar. See docs/learnings/umbrella-connector-overlap.md.
+        const otherUmbrellaY = (visibleGroups.length > 0 && otherGroups.length > 0)
+            ? visibleUmbrellaY + H_GAP
+            : visibleUmbrellaY;
 
         const emitGroup = (groups, startX) => {
             const centers = [];
@@ -644,7 +650,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             return centers;
         };
 
-        const emitUmbrella = (centers, famAnchorX, anchorTopY) => {
+        const emitUmbrella = (centers, famAnchorX, anchorTopY, umbrellaY) => {
             if (centers.length === 0) return;
             const leftCenter = Math.min(...centers);
             const rightCenter = Math.max(...centers);
@@ -667,24 +673,29 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
 
         if (visibleCenters.length > 0) {
             const anchorTopY = rightSpouseXrefs.length > 0 ? NODE_H / 2 : NODE_H_FOCUS;
-            emitUmbrella(visibleCenters, marriageMidpointX, anchorTopY);
+            emitUmbrella(visibleCenters, marriageMidpointX, anchorTopY, visibleUmbrellaY);
         }
         if (otherCenters.length > 0) {
-            emitUmbrella(otherCenters, focusCenterX, NODE_H_FOCUS);
+            emitUmbrella(otherCenters, focusCenterX, NODE_H_FOCUS, otherUmbrellaY);
         }
     }
 
     // ── Phase 3: Expanded children of non-focus persons ─────────────────────
     // Skip focusXref — Phase 2 already placed the focus person's children.
-    // Sort by parent x-position (left→right) so that left-side parents always
-    // have their children placed first. Without this, a right-side parent
-    // expanded before a middle parent (click order) would occupy the ideal
-    // interior gap, forcing pickStartInFreeGap to push the middle parent's
-    // children far outside their natural position.
+    // Sort by distance from focus center (ascending) so the parent CLOSEST to
+    // the focus gets first claim on the gap nearest its ideal position. With
+    // x-ascending order, two ancestors on the same side both fight for the
+    // outer gap: the outer parent's wide cluster fills it, then the inner
+    // parent's children can't fit and pickStartInFreeGap pushes them past the
+    // focus to the far side. Distance-asc places the inner parent first
+    // (under its parent) and lets the outer parent fill the remaining outer
+    // space. Tie-break by x so behavior stays deterministic across same-distance
+    // parents on opposite sides of the focus.
     // Iterate to a fixed point: an expanded person may not be present in
     // `nodes` until another expanded ancestor has been processed first
     // (e.g., grandma's pass places her son, then the son's pass can place
-    // his children). One linear sort by x can't satisfy that dependency.
+    // his children). One linear sort can't satisfy that dependency.
+    const phase3FocusCenterX = NODE_W_FOCUS / 2;
     const remaining = new Set([...expandedChildrenPersons].filter(xref => xref !== focusXref));
     let progressed = true;
     while (progressed && remaining.size > 0) {
@@ -694,7 +705,11 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             .sort((a, b) => {
                 const na = nodes.find(n => n.xref === a);
                 const nb = nodes.find(n => n.xref === b);
-                return (na?.x ?? 0) - (nb?.x ?? 0);
+                const ax = (na?.x ?? 0) + NODE_W / 2;
+                const bx = (nb?.x ?? 0) + NODE_W / 2;
+                const da = Math.abs(ax - phase3FocusCenterX);
+                const db = Math.abs(bx - phase3FocusCenterX);
+                return da - db || (na?.x ?? 0) - (nb?.x ?? 0);
             });
         for (const personXref of ready) {
             _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges);
@@ -743,7 +758,7 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     const personY = personNode.y;
     const childY = personY + ROW_HEIGHT;
     const personCenter = personNode.x + NODE_W / 2;
-    const umbrellaY = personY + NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+    const visibleUmbrellaY = personY + NODE_H + (ROW_HEIGHT - NODE_H) / 2;
 
     // Skip FAMs whose children are all already placed at childY. This prevents
     // Phase 3 from re-rendering the focus row's siblings when a parent of the
@@ -918,7 +933,14 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
         return centers;
     };
 
-    const emitUmbrella = (anchorX, anchorTopY, centers) => {
+    // When the person owns BOTH cluster types, the other-FAM umbrella shifts
+    // DOWN by H_GAP so its horizontal connector cannot share a y-line with
+    // the visible-FAM crossbar. See docs/learnings/umbrella-connector-overlap.md.
+    const otherUmbrellaY = (visibleGroups.length > 0 && otherGroups.length > 0)
+        ? visibleUmbrellaY + H_GAP
+        : visibleUmbrellaY;
+
+    const emitUmbrella = (anchorX, anchorTopY, centers, umbrellaY) => {
         if (centers.length === 0) return;
         const leftCenter = Math.min(...centers);
         const rightCenter = Math.max(...centers);
@@ -974,7 +996,7 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
     if (visibleGroups.length > 0) {
         actualVisibleStart = pickStartInFreeGap(visibleIdealStart, visibleWidth);
         const centers = emitClusterNodes(visibleGroups, actualVisibleStart);
-        emitUmbrella(marriageMidpointX, personY + NODE_H / 2, centers);
+        emitUmbrella(marriageMidpointX, personY + NODE_H / 2, centers, visibleUmbrellaY);
     }
     if (otherGroups.length > 0) {
         // When we pre-shifted the visible cluster to make room, the other cluster
@@ -989,7 +1011,7 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
         }
         const startX = pickStartInFreeGap(otherIdealStart, otherWidth);
         const centers = emitClusterNodes(otherGroups, startX);
-        emitUmbrella(personCenter, personY + NODE_H, centers);
+        emitUmbrella(personCenter, personY + NODE_H, centers, otherUmbrellaY);
     }
 }
 

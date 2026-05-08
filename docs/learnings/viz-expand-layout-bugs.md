@@ -182,6 +182,9 @@ After `pickStartInFreeGap` may have moved a cluster, any subsequent gap-enforcem
 | `2026-04-25-phase3-sort-by-x.md` | Click order changes layout — Phase 3 must sort by parent x |
 | `2026-04-28-phase3-fixed-point-iteration.md` | Cascading expansions silently skipped — Phase 3 needs fixed-point loop |
 | `2026-05-06-sibling-children-anchor.md` | Focus-sibling's kids overflow past focus's kids — Phase 1 anchor preview |
+| `2026-05-06-fix-phase3-cluster-overlap.md` | Phase 2 doesn't reserve room for grandchild clusters; single-child anchor assertion |
+| `2026-05-06-fix-spouse-sibling-double-emit.md` | Spouse siblings emitted twice — Phase 1.5 leaked via effectiveExpandedAncestors |
+| `docs/learnings/umbrella-connector-overlap.md` | Visible-FAM + other-FAM crossbars merge at same y — fixed by staggering otherUmbrellaY |
 
 ---
 
@@ -207,9 +210,34 @@ Genealogy-specific extensions Reingold-Tilford alone doesn't cover, but which al
 
 When to reach for tier 3: if the same bug class keeps recurring, or if scope grows (dual-tree views, pedigree collapse, thousands of nodes). Until then, tier 2 contains the damage at a fraction of the effort.
 
+**Partial implementation today (ancestor side only).** `_rightContour` / `_leftContour` / `_requiredSeparation` in `js/viz_layout.js` (lines ~1289-1470) implement bottom-up Reingold-Tilford-style contour measurement for the **ancestor subtree above focus**. They drive `_placeAncestors` and the focus-parent / focus-spouse-parent separation calls (lines 394, 1053, 1499, 1515). What this *doesn't* cover:
+- **Descendant side**: `_descendantHalfwidth` is still a single-scalar per-side estimate, not a per-depth contour. Phase 2/3 children placement uses these scalars, not contours.
+- **Focus row**: `_focusChildrenExtents` previews focus-children width to constrain Phase 1 sibling anchors — also a scalar preview, not a contour.
+- **Cross-tree alignment**: ancestor and descendant subtrees are not measured against each other; each is computed independently and stitched at the focus row.
+
+So Tier-2 is half-done. The remaining work is to (a) compute descendant-side contours analogously, (b) replace `_descendantHalfwidth` and `_focusChildrenExtents` call sites with per-depth contour comparisons, and (c) drop the Phase-2-preview hack now that all extents are precomputed. Tier-3 (replace Phase 1/2/3 with a single measure-then-place pass) remains untouched.
+
 **Property-based testing is worth doing regardless of architecture.** Random GED-shaped inputs + assertions ("no two clusters' x-ranges overlap at any Y," "every umbrella's horizontal range is disjoint from any other's at the same Y," "every child x is between its parent and on-row-spouse midpoint ± half-cluster-width") would have caught most of the bugs in the completion docs at PR time.
 
-**Implemented**: `tests/js/viz_layout_property.test.js` — 200 seeds per `npm test` run, ~1.2s. Generator at `tests/js/_layout_generator.js`, shrinker at `tests/js/_layout_shrink.js`, invariants at `tests/js/_layout_invariants.js` (now wired through `computeLayoutChecked`). Failures reduce to a paste-able minimal input. `KNOWN_FAILURES` in the runner tracks open layout bugs without blocking CI.
+**Implemented**: `tests/js/viz_layout_property.test.js` — 200 random seeds plus 5 scenario-biased blocks of 50 seeds each (450 tests, ~0.4s). Generator at `tests/js/_layout_generator.js`, shrinker at `tests/js/_layout_shrink.js`, invariants at `tests/js/_layout_invariants.js` (now wired through `computeLayoutChecked`). Failures reduce to a paste-able minimal input. `KNOWN_FAILURES` in the runner is currently empty — all previously known layout bugs are fixed. Add an entry there (with a doc reference) only when a new open bug is identified rather than blocking CI.
+
+### Scenario templates
+
+Pure random generation can miss specific configurations that historically surfaced bugs. The generator's `scenario` option biases toward known-stressful shapes; each scenario forces a defining structural property and uses the seed only for variance (birth years, sibling counts).
+
+| Scenario | What it forces | Bug class targeted |
+|----------|----------------|--------------------|
+| `focus_parent_sibling_with_kids` | Focus's aunt/uncle in `expandedChildrenPersons` | Ancestor-row sibling with descendants — case `_focusChildrenExtents` does not cover |
+| `focus_sibling_with_grandkids` | Focus's sibling expanded; one of their kids also expanded | Phase 1 ↔ Phase 3 cascade where sibling subtree is deeper than focus's |
+| `adjacent_siblings_both_expanded` | Two focus-row siblings each expanded with kids | Adjacent sibling clusters that must not collide (#1 — both-sides-have-kids gotcha) |
+| `multi_gen_ancestor_siblings` | Grandparent's sibling expanded with kids | Ancestor-side descendant clusters in deep rows |
+| `focus_uncle_grandkids_vs_focus_kids` | Focus has kids AND uncle's grandkids exist (both at y=ROW_HEIGHT) | Row-1 collision between focus's descendants and an ancestor-sibling's |
+
+Run a single scenario seed: `LAYOUT_PROPERTY_SEED=42 npx vitest run tests/js/viz_layout_property.test.js -t "focus_parent_sibling_with_kids"`. Stress test: `LAYOUT_SCENARIO_COUNT=500 npm test`.
+
+**Status (2026-05-08)**: All scenarios pass clean at 500 seeds each. The "ancestor/sibling row spacing gap" called out in gotcha #1's mirror is *theoretical*, not active — Phase 1's `_packRowWithDescendants` + `_placeAncestorSiblings` already reserve correct width via `_descendantHalfwidth` on both sides. Scenarios stay in the suite as regression guards.
+
+**Adding a new scenario**: define a builder in `SCENARIOS` (in `_layout_generator.js`), then write a structural test in `_layout_generator.test.js` that asserts the defining property holds across multiple seeds, then add the scenario name to the `SCENARIOS` array in `viz_layout_property.test.js`.
 
 ---
 

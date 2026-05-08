@@ -36,6 +36,193 @@ const DEFAULT_OPTIONS = {
     pExpandChild: 0.5,
     pExpandSibling: 0.5,
     maxTotalPersons: 30,
+    // Optional scenario template — biases the generator toward a specific
+    // genealogical configuration. See SCENARIOS below for the list. When
+    // unset (default), random tree generation is used.
+    scenario: null,
+};
+
+// Each scenario builder is a function (ctx) → void that mutates the shared
+// PEOPLE/PARENTS/CHILDREN/FAMILIES/RELATIVES globals via the `ctx` helpers and
+// records the focus xref + expansion-set choices on `ctx.out`. Scenarios use
+// `ctx.rand` (seeded) for variance in birth years and counts; same seed →
+// identical output.
+const SCENARIOS = {
+    // Focus's aunt/uncle (a sibling of focus's parent) has expanded children.
+    // Targets: ancestor-row sibling packing where the sibling has descendants
+    // — the case _focusChildrenExtents does NOT cover.
+    focus_parent_sibling_with_kids(ctx) {
+        const { newPerson, newFamily, jitter, randInt } = ctx;
+        const focus = newPerson(1900);
+        ctx.out.focusXref = focus;
+
+        const father = newPerson(1870);
+        const mother = newPerson(1870);
+        // Focus's aunt/uncle (sibling of father)
+        const grandfather = newPerson(1840);
+        const grandmother = newPerson(1840);
+        const uncle = newPerson(jitter(1870));
+        newFamily({ husb: grandfather, wife: grandmother, chil: [father, uncle] });
+        // Focus's parents' marriage; mother gets her own parents to keep tree
+        // shape balanced (optional siblings on father side already present).
+        newFamily({ husb: father, wife: mother, chil: [focus] });
+        // Uncle's kids
+        const nKids = randInt(2, 3);
+        const cousins = [];
+        for (let i = 0; i < nKids; i++) {
+            cousins.push(newPerson(jitter(1900)));
+        }
+        const uncleSpouse = newPerson(jitter(1870));
+        newFamily({ husb: uncle, wife: uncleSpouse, chil: cousins });
+
+        // Expansion: ancestors visible (focus's parents auto-render, but we
+        // need father in expandedSiblingsXrefs to surface the uncle, and
+        // uncle in expandedChildrenPersons to surface the cousins).
+        ctx.out.expandedSiblingsXrefs.add(father);
+        ctx.out.expandedChildrenPersons.add(uncle);
+    },
+
+    // Focus has a sibling whose own subtree is expanded two generations deep.
+    // Targets: Phase 1 ↔ Phase 3 cascade where the sibling's subtree is
+    // deeper than focus's.
+    focus_sibling_with_grandkids(ctx) {
+        const { newPerson, newFamily, jitter, randInt } = ctx;
+        const father = newPerson(1870);
+        const mother = newPerson(1870);
+        const focus = newPerson(1900);
+        const sibling = newPerson(jitter(1900));
+        ctx.out.focusXref = focus;
+        newFamily({ husb: father, wife: mother, chil: [focus, sibling] });
+
+        // Sibling's family
+        const sibSpouse = newPerson(jitter(1900));
+        const niece = newPerson(jitter(1925));
+        // Optional second niece for variance
+        const niece2 = randInt(0, 1) ? newPerson(jitter(1925)) : null;
+        const sibKids = niece2 ? [niece, niece2] : [niece];
+        newFamily({ husb: sibling, wife: sibSpouse, chil: sibKids });
+
+        // Niece's family (focus's expanded grand-niece/nephew)
+        const nieceSpouse = newPerson(jitter(1925));
+        const grandKids = [];
+        for (let i = 0; i < randInt(1, 2); i++) {
+            grandKids.push(newPerson(jitter(1950)));
+        }
+        newFamily({ husb: niece, wife: nieceSpouse, chil: grandKids });
+
+        ctx.out.expandedChildrenPersons.add(sibling);
+        ctx.out.expandedChildrenPersons.add(niece);
+    },
+
+    // Two adjacent focus-row siblings each have expanded kids.
+    // Targets: Phase 1 sibling packing where adjacent sibling clusters must
+    // not collide.
+    adjacent_siblings_both_expanded(ctx) {
+        const { newPerson, newFamily, jitter, randInt } = ctx;
+        const father = newPerson(1870);
+        const mother = newPerson(1870);
+        const sib1 = newPerson(jitter(1898));
+        const focus = newPerson(1900);
+        const sib2 = newPerson(jitter(1902));
+        ctx.out.focusXref = focus;
+        newFamily({ husb: father, wife: mother, chil: [sib1, focus, sib2] });
+
+        for (const sib of [sib1, sib2]) {
+            const spouse = newPerson(jitter(1900));
+            const nKids = randInt(2, 3);
+            const kids = [];
+            for (let i = 0; i < nKids; i++) {
+                kids.push(newPerson(jitter(1925)));
+            }
+            newFamily({ husb: sib, wife: spouse, chil: kids });
+            ctx.out.expandedChildrenPersons.add(sib);
+        }
+    },
+
+    // Focus has its own expanded children (gen 1), and focus's uncle has
+    // expanded children (cousins at gen 0) who themselves have expanded kids
+    // (cousins-once-removed at gen 1). Both clusters land at y=ROW_HEIGHT.
+    // Targets: row-1 collision between focus's descendant subtree and an
+    // ancestor-sibling's descendant subtree — the case where Phase 2's
+    // advanceFor fix and _focusChildrenExtents do not jointly cover the
+    // ancestor side.
+    focus_uncle_grandkids_vs_focus_kids(ctx) {
+        const { newPerson, newFamily, jitter, randInt } = ctx;
+        const ggFather = newPerson(1840);
+        const ggMother = newPerson(1840);
+        const grandfather = newPerson(jitter(1870));
+        const uncle = newPerson(jitter(1870));
+        newFamily({ husb: ggFather, wife: ggMother, chil: [grandfather, uncle] });
+
+        const grandmother = newPerson(jitter(1870));
+        const father = newPerson(jitter(1898));
+        newFamily({ husb: grandfather, wife: grandmother, chil: [father] });
+
+        const mother = newPerson(jitter(1898));
+        const focus = newPerson(1900);
+        newFamily({ husb: father, wife: mother, chil: [focus] });
+        ctx.out.focusXref = focus;
+
+        // Focus's children
+        const focusSpouse = newPerson(jitter(1900));
+        const focusKids = [];
+        for (let i = 0; i < randInt(2, 3); i++) focusKids.push(newPerson(jitter(1925)));
+        newFamily({ husb: focus, wife: focusSpouse, chil: focusKids });
+
+        // Uncle's children (cousins) — same row as focus
+        const uncleSpouse = newPerson(jitter(1870));
+        const cousins = [];
+        for (let i = 0; i < randInt(2, 3); i++) cousins.push(newPerson(jitter(1900)));
+        newFamily({ husb: uncle, wife: uncleSpouse, chil: cousins });
+
+        // Each cousin has children (cousins once removed) — same row as focusKids
+        for (const cousin of cousins) {
+            const cs = newPerson(jitter(1900));
+            const cKids = [];
+            for (let i = 0; i < randInt(1, 2); i++) cKids.push(newPerson(jitter(1925)));
+            newFamily({ husb: cousin, wife: cs, chil: cKids });
+            ctx.out.expandedChildrenPersons.add(cousin);
+        }
+
+        ctx.out.expandedAncestors.add(father);
+        ctx.out.expandedAncestors.add(grandfather);
+        ctx.out.expandedSiblingsXrefs.add(grandfather);
+        ctx.out.expandedChildrenPersons.add(uncle);
+    },
+
+    // Grandparent (gen 2) has expanded siblings, one of whom has expanded
+    // children. Targets: ancestor-side descendant clusters in deep rows.
+    multi_gen_ancestor_siblings(ctx) {
+        const { newPerson, newFamily, jitter, randInt } = ctx;
+        const focus = newPerson(1900);
+        ctx.out.focusXref = focus;
+
+        const father = newPerson(1870);
+        const mother = newPerson(1870);
+        newFamily({ husb: father, wife: mother, chil: [focus] });
+
+        // Grandfather + his great-aunt sibling
+        const grandfather = newPerson(1840);
+        const grandmother = newPerson(1840);
+        const greatAunt = newPerson(jitter(1840));
+        const ggFather = newPerson(1810);
+        const ggMother = newPerson(1810);
+        newFamily({ husb: ggFather, wife: ggMother, chil: [grandfather, greatAunt] });
+        newFamily({ husb: grandfather, wife: grandmother, chil: [father] });
+
+        // Great-aunt's kids (focus's first cousins once removed)
+        const gaSpouse = newPerson(jitter(1840));
+        const greatCousins = [];
+        for (let i = 0; i < randInt(1, 2); i++) {
+            greatCousins.push(newPerson(jitter(1870)));
+        }
+        newFamily({ husb: gaSpouse, wife: greatAunt, chil: greatCousins });
+
+        ctx.out.expandedAncestors.add(father);
+        ctx.out.expandedAncestors.add(grandfather);
+        ctx.out.expandedSiblingsXrefs.add(grandfather);
+        ctx.out.expandedChildrenPersons.add(greatAunt);
+    },
 };
 
 function generateLayoutInput(seed, opts = {}) {
@@ -162,6 +349,32 @@ function generateLayoutInput(seed, opts = {}) {
         // Recurse upward on father and mother (their parents = grandparents)
         buildAncestors(father, generation + 1, PEOPLE[father].birth_year);
         buildAncestors(mother, generation + 1, PEOPLE[mother].birth_year);
+    }
+
+    // Scenario branch: build a deterministic configuration biased toward a
+    // specific bug class. Bypasses the random tree builder entirely.
+    if (o.scenario) {
+        const builder = SCENARIOS[o.scenario];
+        if (!builder) throw new Error(`Unknown scenario: ${o.scenario}`);
+        const out = {
+            focusXref: null,
+            expandedAncestors: new Set(),
+            expandedChildrenPersons: new Set(),
+            expandedSiblingsXrefs: new Set(),
+        };
+        builder({
+            rand, randInt, randChance,
+            newPerson, newFamily, jitter,
+            out,
+        });
+        if (!out.focusXref) throw new Error(`Scenario ${o.scenario} did not set focusXref`);
+        return {
+            globals: { PEOPLE, PARENTS, CHILDREN, RELATIVES, FAMILIES },
+            focusXref: out.focusXref,
+            expandedAncestors: out.expandedAncestors,
+            expandedChildrenPersons: out.expandedChildrenPersons,
+            expandedSiblingsXrefs: out.expandedSiblingsXrefs,
+        };
     }
 
     // Generate focus + tree.

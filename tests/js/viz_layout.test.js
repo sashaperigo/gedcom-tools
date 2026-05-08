@@ -967,7 +967,7 @@ describe('computeLayout — multi-FAM children split', () => {
         const otherDrop = edges.find(e =>
             e.type === 'descendant' &&
             e.x1 === focusCenter && e.y1 === NODE_H_FOCUS &&
-            e.x2 === focusCenter && e.y2 === UMBRELLA_Y
+            e.x2 === focusCenter && e.y2 === UMBRELLA_Y + H_GAP
         );
         expect(otherDrop).toBeDefined();
 
@@ -980,6 +980,55 @@ describe('computeLayout — multi-FAM children split', () => {
 
         expect(teng.x).toBeLessThan(wu.x);
         expect(wu.x).toBeLessThan(eleanor.x);
+    });
+
+    // When focus has BOTH a visible-FAM (couple-anchored) and an other-FAM
+    // (no spouse rendered), the two umbrellas must sit at distinct y-values so
+    // their horizontal segments cannot merge into one line. See
+    // docs/learnings/umbrella-connector-overlap.md.
+    it('staggers other-FAM umbrellaY below visible-FAM umbrellaY when both clusters exist', () => {
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 1900 },
+                '@SPOUSE@': { birth_year: 1902 },
+                '@VISIBLE_KID@': { birth_year: 1925 },
+                '@OTHER_KID@': { birth_year: 1928 },
+            },
+            children: { '@FOCUS@': ['@VISIBLE_KID@', '@OTHER_KID@'] },
+            relatives: { '@FOCUS@': { siblings: [], spouses: ['@SPOUSE@'] } },
+            families: {
+                '@F1@': { husb: '@FOCUS@', wife: '@SPOUSE@', chil: ['@VISIBLE_KID@'] },
+                '@F2@': { husb: '@FOCUS@', wife: null, chil: ['@OTHER_KID@'] },
+            },
+        });
+        const { nodes, edges } = computeLayoutChecked('@FOCUS@', new Set(), new Set());
+
+        const focusCenter = NODE_W_FOCUS / 2;
+
+        // Visible anchor drop bottoms at the canonical UMBRELLA_Y.
+        const visibleAnchorDrop = edges.find(e =>
+            e.type === 'descendant' &&
+            e.x1 === e.x2 && e.y1 === NODE_H / 2 && e.y2 === UMBRELLA_Y
+        );
+        expect(visibleAnchorDrop).toBeDefined();
+
+        // Other anchor drop bottoms below UMBRELLA_Y by exactly H_GAP.
+        const otherAnchorDrop = edges.find(e =>
+            e.type === 'descendant' &&
+            e.x1 === focusCenter && e.x2 === focusCenter &&
+            e.y1 === NODE_H_FOCUS && e.y2 === UMBRELLA_Y + H_GAP
+        );
+        expect(otherAnchorDrop).toBeDefined();
+
+        // The other-FAM child drop starts from the staggered umbrella, not 106.
+        const otherKid = nodes.find(n => n.xref === '@OTHER_KID@');
+        const otherKidCenter = otherKid.x + NODE_W / 2;
+        const otherChildDrop = edges.find(e =>
+            e.type === 'descendant' &&
+            e.x1 === otherKidCenter && e.x2 === otherKidCenter &&
+            e.y1 === UMBRELLA_Y + H_GAP && e.y2 === ROW_HEIGHT
+        );
+        expect(otherChildDrop).toBeDefined();
     });
 
     it('single-FAM focus with on-row spouse behaves like legacy (one umbrella at marriage midpoint)', () => {
@@ -1010,6 +1059,104 @@ describe('computeLayout — multi-FAM children split', () => {
             e.x2 === focusCenter && e.y2 === UMBRELLA_Y
         );
         expect(otherDrop).toBeUndefined();
+    });
+});
+
+// ── Phase 3 ordering: inner-first when two siblings on same side ──────────
+// When two ancestor-siblings on the same side of the focus both have wide
+// child clusters expanded, the cluster closer to the focus must be placed
+// FIRST so it claims the gap nearest its parent. With left→right placement
+// the outer (farther) cluster fills that gap, the inner cluster can't fit,
+// and pickStartInFreeGap pushes the inner cluster past the focus to the
+// opposite side.
+describe('computeLayout — Phase 3 places inner-cluster before outer when same-side', () => {
+    it('Aime-like: inner ancestor-sibling\'s kids land under it, not pushed past focus', () => {
+        // Mirror of the Sasha → Monica → Michael Sinclair real-world scenario:
+        // focus has parents at gen=-1 (both placed by Phase 1, occupying the
+        // gen=-1 row near focus center). One parent's father (GF) has two
+        // siblings whose children both expand: SIB_OUTER has a wide 4-pill
+        // cluster (couple + 2 kid+spouse pairs across two FAMs); SIB_INNER
+        // has 2 kids. With x-asc Phase 3 ordering, OUTER's wide cluster fills
+        // the gap, INNER's cluster doesn't fit between OUTER and the parents,
+        // and gets pushed to the far side of focus.
+        resetGlobals({
+            people: {
+                '@FOCUS@': { birth_year: 2000 },
+                '@DAD@': { birth_year: 1970 },
+                '@MOM@': { birth_year: 1970 },
+                '@GF@': { birth_year: 1940 },
+                '@SIB_OUTER@': { birth_year: 1935 },
+                '@SIB_OUTER_SP@': { birth_year: 1936 },
+                '@OUTER_VIS_K@': { birth_year: 1958 },
+                '@OUTER_VIS_K_SP@': { birth_year: 1959 },
+                '@OUTER_OTHER_K@': { birth_year: 1962 },
+                '@OUTER_OTHER_K_SP@': { birth_year: 1963 },
+                '@SIB_INNER@': { birth_year: 1942 },
+                '@INNER_K1@': { birth_year: 1968 },
+                '@INNER_K2@': { birth_year: 1972 },
+            },
+            parents: {
+                '@FOCUS@': ['@DAD@', '@MOM@'],
+                '@MOM@': ['@GF@', null],
+                '@DAD@': [null, null],
+                '@GF@': [null, null],
+                '@SIB_OUTER@': [null, null],
+                '@SIB_INNER@': [null, null],
+                '@OUTER_VIS_K@': ['@SIB_OUTER@', '@SIB_OUTER_SP@'],
+                '@OUTER_OTHER_K@': ['@SIB_OUTER@', null],
+                '@INNER_K1@': ['@SIB_INNER@', null],
+                '@INNER_K2@': ['@SIB_INNER@', null],
+            },
+            relatives: {
+                '@FOCUS@': { siblings: [], spouses: [] },
+                '@MOM@': { siblings: [], spouses: ['@DAD@'] },
+                '@DAD@': { siblings: [], spouses: ['@MOM@'] },
+                '@GF@': { siblings: ['@SIB_OUTER@', '@SIB_INNER@'], spouses: [] },
+                '@SIB_OUTER@': { siblings: [], spouses: ['@SIB_OUTER_SP@'] },
+                '@SIB_INNER@': { siblings: [], spouses: [] },
+                '@OUTER_VIS_K@': { siblings: [], spouses: ['@OUTER_VIS_K_SP@'] },
+                '@OUTER_OTHER_K@': { siblings: [], spouses: ['@OUTER_OTHER_K_SP@'] },
+                '@INNER_K1@': { siblings: [], spouses: [] },
+                '@INNER_K2@': { siblings: [], spouses: [] },
+            },
+            families: {
+                // SIB_OUTER has visible-FAM (with spouse) AND other-FAM (no spouse)
+                // — the wide multi-FAM cluster pattern that consumes the prime gap.
+                '@F_OUTER_VIS@': { husb: '@SIB_OUTER@', wife: '@SIB_OUTER_SP@', chil: ['@OUTER_VIS_K@'] },
+                '@F_OUTER_OTHER@': { husb: '@SIB_OUTER@', wife: null, chil: ['@OUTER_OTHER_K@'] },
+                '@F_INNER@': { husb: '@SIB_INNER@', wife: null, chil: ['@INNER_K1@', '@INNER_K2@'] },
+            },
+        });
+
+        const { nodes } = computeLayoutChecked(
+            '@FOCUS@',
+            new Set(['@MOM@', '@GF@']),                 // ancestors expanded up to GF
+            new Set(['@GF@']),                          // expand GF's siblings (places SIB_OUTER, SIB_INNER)
+            new Set(['@SIB_OUTER@', '@SIB_INNER@']),    // expand both siblings' children
+        );
+
+        const focus = nodes.find(n => n.xref === '@FOCUS@');
+        const focusCenter = focus.x + NODE_W_FOCUS / 2;
+        const sibInner = nodes.find(n => n.xref === '@SIB_INNER@');
+        const sibOuter = nodes.find(n => n.xref === '@SIB_OUTER@');
+        const innerK1 = nodes.find(n => n.xref === '@INNER_K1@');
+        const innerK2 = nodes.find(n => n.xref === '@INNER_K2@');
+
+        // Sib_inner must be on the same side of focus as Sib_outer (both left).
+        expect(sibInner.x).toBeLessThan(focusCenter);
+        expect(sibOuter.x).toBeLessThan(sibInner.x);
+
+        // Inner kids must stay on the same side of focus as their parent —
+        // not pushed past the focus to the opposite side.
+        expect(innerK1.x).toBeLessThan(focusCenter);
+        expect(innerK2.x).toBeLessThan(focusCenter);
+
+        // Inner kids' centroid should be closer to Sib_inner than to Sib_outer.
+        const innerKidsCenter = ((innerK1.x + innerK2.x) / 2) + NODE_W / 2;
+        const sibInnerCenter = sibInner.x + NODE_W / 2;
+        const sibOuterCenter = sibOuter.x + NODE_W / 2;
+        expect(Math.abs(innerKidsCenter - sibInnerCenter))
+            .toBeLessThan(Math.abs(innerKidsCenter - sibOuterCenter));
     });
 });
 
@@ -2467,6 +2614,92 @@ describe('computeLayout — cross-generation mirror: father-side great-uncle vs 
     });
 });
 
+// Polycarpe-vs-Aime regression (user-reported): two great-uncles on the
+// great-grandparent row each have expanded children. Their kid clusters
+// land at gen -1 (parent row) alongside focus's parents. The clusters and
+// focus-parents must all fit without one cluster getting pushed past the
+// other to the far right.
+describe('computeLayout — two great-uncles each with expanded kids on parent row', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@FOCUS@':   { birth_year: 1995, sex: 'M' },
+                '@DAD@':     { birth_year: 1963, sex: 'M' },
+                '@MOM@':     { birth_year: 1963, sex: 'F' },
+                '@GF@':      { birth_year: 1918, sex: 'M' }, // Polycarpe Ar (Sasha's grandfather)
+                '@GM@':      { birth_year: 1920, sex: 'F' },
+                // Sasha's grandfather's siblings = great-uncles
+                '@GU1@':     { birth_year: 1923, sex: 'M' }, // Polycarpe Anto
+                '@GU1_SP@':  { birth_year: 1925, sex: 'F' },
+                '@GU2@':     { birth_year: 1923, sex: 'M' }, // Aime
+                '@GU2_SP@':  { birth_year: 1924, sex: 'F' },
+                // GU1's kids (4 with one having spouse → wide cluster)
+                '@P1@':      { birth_year: 1955, sex: 'M' },
+                '@P1_SP@':   { birth_year: 1958, sex: 'F' },
+                '@P2@':      { birth_year: 1958, sex: 'F' },
+                '@P3@':      { birth_year: 1965, sex: 'F' },
+                '@P4@':      { birth_year: 1966, sex: 'M' },
+                // GU2's kids (3)
+                '@A1@':      { birth_year: 1960, sex: 'M' },
+                '@A2@':      { birth_year: 1962, sex: 'F' },
+                '@A3@':      { birth_year: 1964, sex: 'M' },
+                // Great-grandparents
+                '@GGF@':     { birth_year: 1882, sex: 'M' }, // Saverio
+                '@GGM@':     { birth_year: 1883, sex: 'F' }, // Adelaide
+            },
+            parents: {
+                '@FOCUS@': ['@DAD@', '@MOM@'],
+                '@DAD@':   ['@GF@',  '@GM@'],
+                '@GF@':    ['@GGF@', '@GGM@'],
+                '@GU1@':   ['@GGF@', '@GGM@'],
+                '@GU2@':   ['@GGF@', '@GGM@'],
+            },
+            children: {
+                '@GF@':  ['@DAD@'],
+                '@GU1@': ['@P1@', '@P2@', '@P3@', '@P4@'],
+                '@GU2@': ['@A1@', '@A2@', '@A3@'],
+                '@GGF@': ['@GU1@', '@GU2@', '@GF@'],
+            },
+            relatives: {
+                '@GF@':  { siblings: ['@GU1@', '@GU2@'], spouses: ['@GM@'] },
+                '@GU1@': { siblings: ['@GF@', '@GU2@'], spouses: ['@GU1_SP@'] },
+                '@GU2@': { siblings: ['@GF@', '@GU1@'], spouses: ['@GU2_SP@'] },
+                '@P1@':  { siblings: ['@P2@', '@P3@', '@P4@'], spouses: ['@P1_SP@'] },
+            },
+            families: {
+                '@GF_FAM@':  { husb: '@GF@',  wife: '@GM@',     chil: ['@DAD@'] },
+                '@GU1_FAM@': { husb: '@GU1@', wife: '@GU1_SP@', chil: ['@P1@', '@P2@', '@P3@', '@P4@'] },
+                '@GU2_FAM@': { husb: '@GU2@', wife: '@GU2_SP@', chil: ['@A1@', '@A2@', '@A3@'] },
+                '@GGF_FAM@': { husb: '@GGF@', wife: '@GGM@',    chil: ['@GU1@', '@GU2@', '@GF@'] },
+            },
+        });
+    });
+
+    it('GU2\'s kids land near GU2, not pushed past MOM', () => {
+        const { nodes } = computeLayoutChecked(
+            '@FOCUS@',
+            new Set(['@DAD@', '@GF@']),
+            new Set(['@GF@']),
+            new Set(['@GU1@', '@GU2@']),
+        );
+        const dad = nodes.find(n => n.xref === '@DAD@');
+        const mom = nodes.find(n => n.xref === '@MOM@');
+        const a1 = nodes.find(n => n.xref === '@A1@');
+        const a3 = nodes.find(n => n.xref === '@A3@');
+        const gu2 = nodes.find(n => n.xref === '@GU2@');
+        [dad, mom, a1, a3, gu2].forEach(n => expect(n).toBeDefined());
+        // GU2's kids should be left of DAD (under GU2 which is left of GF/DAD column).
+        expect(a1.x + NODE_W).toBeLessThan(dad.x);
+        expect(a3.x + NODE_W).toBeLessThan(dad.x);
+        // And specifically they should be near GU2, not far right.
+        // GU2's kids cluster should overlap GU2's x range (loose check).
+        const gu2Center = gu2.x + NODE_W / 2;
+        const a1Center = a1.x + NODE_W / 2;
+        // A1 (oldest) within ~400px of GU2 center on either side
+        expect(Math.abs(a1Center - gu2Center)).toBeLessThan(400);
+    });
+});
+
 // Aunt (ancestor-sibling at gen -1) with expanded FAM: her kids land at
 // gen 0 — the FOCUS row. They must not collide with focus, focus's siblings,
 // focus's spouse, or focus's spouse's siblings.
@@ -3103,16 +3336,18 @@ describe('_placeChildrenOfPerson — multi-FAM with visible spouse splits into t
         _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
 
         const adrianCenter = NODE_W / 2;
-        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const visibleUmbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const otherUmbrellaY = visibleUmbrellaY + H_GAP;
         const horizontals = edges.filter(e =>
-            e.type === 'descendant' && e.y1 === umbrellaY && e.y2 === umbrellaY
+            e.type === 'descendant' && e.y1 === e.y2 &&
+            (e.y1 === visibleUmbrellaY || e.y1 === otherUmbrellaY)
         );
         for (const e of horizontals) {
             const lo = Math.min(e.x1, e.x2);
             const hi = Math.max(e.x1, e.x2);
             expect(
                 hi <= adrianCenter || lo >= adrianCenter,
-                `horizontal at umbrellaY spans ${lo}→${hi} crossing Adrian center ${adrianCenter}`,
+                `horizontal at y=${e.y1} spans ${lo}→${hi} crossing Adrian center ${adrianCenter}`,
             ).toBe(true);
         }
     });
@@ -3127,7 +3362,7 @@ describe('_placeChildrenOfPerson — multi-FAM with visible spouse splits into t
         const edges = [];
         _placeChildrenOfPerson('@ADRIAN@', new Set(), '@ADRIAN@', nodes, edges);
 
-        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const otherUmbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2 + H_GAP;
         const byXref = Object.fromEntries(
             nodes.filter(n => n.y === ROW_HEIGHT).map(k => [k.xref, k])
         );
@@ -3140,7 +3375,7 @@ describe('_placeChildrenOfPerson — multi-FAM with visible spouse splits into t
         const rightC = Math.max(...otherCenters);
 
         const crossbar = edges.find(e =>
-            e.type === 'descendant' && e.y1 === umbrellaY && e.y2 === umbrellaY &&
+            e.type === 'descendant' && e.y1 === otherUmbrellaY && e.y2 === otherUmbrellaY &&
             Math.min(e.x1, e.x2) === leftC && Math.max(e.x1, e.x2) === rightC
         );
         expect(crossbar, 'expected a single crossbar spanning the 3 non-visible children').toBeDefined();
@@ -3310,16 +3545,18 @@ describe('_placeChildrenOfPerson — visible spouse LEFT enforces INTER_FAM_GAP 
         _placeChildrenOfPerson('@POLYCARPE@', new Set(), '@POLYCARPE@', nodes, edges);
 
         const personCenter = NODE_W / 2;
-        const umbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const visibleUmbrellaY = NODE_H + (ROW_HEIGHT - NODE_H) / 2;
+        const otherUmbrellaY = visibleUmbrellaY + H_GAP;
         const horizontals = edges.filter(e =>
-            e.type === 'descendant' && e.y1 === umbrellaY && e.y2 === umbrellaY,
+            e.type === 'descendant' && e.y1 === e.y2 &&
+            (e.y1 === visibleUmbrellaY || e.y1 === otherUmbrellaY),
         );
         for (const e of horizontals) {
             const lo = Math.min(e.x1, e.x2);
             const hi = Math.max(e.x1, e.x2);
             expect(
                 hi <= personCenter || lo >= personCenter,
-                `horizontal at umbrellaY spans ${lo}→${hi} crossing personCenter ${personCenter}`,
+                `horizontal at y=${e.y1} spans ${lo}→${hi} crossing personCenter ${personCenter}`,
             ).toBe(true);
         }
     });

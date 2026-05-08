@@ -129,7 +129,9 @@ describe('_collapseAkaIfWrapped', () => {
         expect(moreIdx).toBe(addIdx - 1);
     });
 
-    it('hides the last entry when only the add button wraps', () => {
+    it('keeps all entries when only the add button wraps', () => {
+        // A full row of aliases should show even if `+ alias` overflows to
+        // a second line — the add button stays visible on its own row.
         const { div, entries, addBtn } = buildAkaDiv({
             entryTops: [0, 0, 0, 0],
             addBtnTop: 20,
@@ -137,14 +139,9 @@ describe('_collapseAkaIfWrapped', () => {
 
         _collapseAkaIfWrapped(div);
 
-        expect(entries[0].style.display).toBeUndefined();
-        expect(entries[1].style.display).toBeUndefined();
-        expect(entries[2].style.display).toBeUndefined();
-        expect(entries[3].style.display).toBe('none');
-
-        const moreBtn = div.querySelector('.aka-more');
-        expect(moreBtn).not.toBeNull();
-        expect(moreBtn.textContent).toBe('+1 more');
+        entries.forEach(e => expect(e.style.display).toBeUndefined());
+        expect(div.querySelector('.aka-more')).toBeNull();
+        expect(addBtn.style.display).toBeUndefined();
     });
 
     it('clicking +N more reveals hidden entries and changes label to "show less"', () => {

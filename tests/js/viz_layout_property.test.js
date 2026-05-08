@@ -22,22 +22,22 @@ const { shrink, formatInput } = require('./_layout_shrink.js');
 const DEFAULT_COUNT = 200;
 const ENV_COUNT = parseInt(process.env.LAYOUT_PROPERTY_COUNT || '', 10);
 const ENV_SEED = parseInt(process.env.LAYOUT_PROPERTY_SEED || '', 10);
+// Per-scenario seed budget — scenarios are pre-biased toward bug classes so
+// fewer seeds suffice. Override with LAYOUT_SCENARIO_COUNT for stress runs.
+const SCENARIO_COUNT = parseInt(process.env.LAYOUT_SCENARIO_COUNT || '', 10) || 50;
+const SCENARIOS = [
+    'focus_parent_sibling_with_kids',
+    'focus_sibling_with_grandkids',
+    'adjacent_siblings_both_expanded',
+    'multi_gen_ancestor_siblings',
+    'focus_uncle_grandkids_vs_focus_kids',
+];
 
 // Failures matching any of these patterns are pre-existing layout bugs being
 // tracked elsewhere — log and skip rather than block CI. Removing an entry
 // from this list when the underlying bug is fixed re-arms the property suite
 // to flag regressions. Add a new entry only with a doc reference.
-const KNOWN_FAILURES = [
-    {
-        // Multi-FAM connector at y=ROW_HEIGHT/2-ish overlaps visible-FAM crossbar
-        // when focus has both a visible-FAM (with on-row spouse) and an other-FAM
-        // (with no spouse rendered). See completion docs:
-        //   .claude/completions/2026-04-23-inter-cluster-gap-*.md
-        //   .claude/completions/2026-04-25-merge-non-visible-fam-children-cluster.md
-        pattern: /Descendant crossbar overlap at y=106/,
-        ref: 'multi-fam-other-cluster connector overlap (TODO: link to follow-up)',
-    },
-];
+const KNOWN_FAILURES = [];
 
 function classifyFailure(message) {
     for (const k of KNOWN_FAILURES) {
@@ -108,3 +108,33 @@ describe('property tests — layout invariants', () => {
         });
     }
 });
+
+// Scenario-biased property tests. Each scenario forces a specific
+// genealogical configuration (focus's uncle has expanded kids, etc.) and
+// runs SCENARIO_COUNT seeded variants through the same invariant suite.
+// Reproduce a single failure: LAYOUT_PROPERTY_SEED=N npx vitest run -t "scenario=NAME"
+const scenarioSeeds = ENV_SEED
+    ? [ENV_SEED]
+    : Array.from({ length: SCENARIO_COUNT }, (_, i) => i + 1);
+
+for (const scenario of SCENARIOS) {
+    describe(`property tests — scenario=${scenario}`, () => {
+        for (const seed of scenarioSeeds) {
+            it(`scenario=${scenario} seed=${seed}`, () => {
+                const input = generateLayoutInput(seed, { scenario });
+                const originalMsg = getFailureMessage(input);
+                if (!originalMsg) return;
+                const known = classifyFailure(originalMsg);
+                if (known) return;
+
+                const minimal = shrink(input, fails);
+                const minimalMsg = getFailureMessage(minimal) || originalMsg;
+                const detail =
+                    `\nscenario=${scenario} seed=${seed}\n\n` +
+                    `Minimal failing input:\n${formatInput(minimal)}\n\n` +
+                    `Invariant violation: ${minimalMsg}`;
+                throw new Error(detail);
+            });
+        }
+    });
+}

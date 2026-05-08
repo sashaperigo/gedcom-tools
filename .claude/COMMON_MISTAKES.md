@@ -4,7 +4,7 @@
 
 ---
 
-## Top 5 Critical Mistakes
+## Top Critical Mistakes
 
 ### 1. Wrong GEDCOM file path
 
@@ -58,7 +58,15 @@ Data-structure tests (edge objects per FAM, children grouped by FAM) can pass wh
 
 ---
 
-### 6. expandedChildrenPersons persists across focus changes (can duplicate focus-row nodes)
+### 6. Wrong-position-after-expand bugs (load the playbook before fixing)
+
+**Symptom**: Expanding a chevron lands the new nodes in the wrong place — past another cluster, overlapping focus's children, "lines crossing." Especially "sibling's expanded kids appear to the right of focus's kids."
+**Check**: Are you about to add cluster-shifting logic to Phase 3 / `pickStartInFreeGap`?
+**Fix**: STOP and read `docs/learnings/viz-expand-layout-bugs.md` first. The bug is almost always Phase 1/2 not reserving enough room — fixing it in Phase 3 is whack-a-mole. The doc has the diagnosis playbook (which phase placed what, how to read coordinates, how to write a regression test that exceeds the natural-gap threshold).
+
+---
+
+### 7. expandedChildrenPersons persists across focus changes (can duplicate focus-row nodes)
 
 **Symptom**: A person and all their siblings appear twice in the focus row — once with role `sibling`/`focus`, once with role `descendant`.
 **Check**: Is a parent of the focus person in `expandedChildrenPersons`? The parent is at y=−ROW_HEIGHT; `_placeChildrenOfPerson` places their children at y=0, duplicating Phase 1.
@@ -73,4 +81,4 @@ Data-structure tests (edge objects per FAM, children grouped by FAM) can pass wh
 - Mistake repeated across sessions
 - Pattern violates framework conventions
 
-**Last Updated**: 2026-04-24
+**Last Updated**: 2026-05-06
