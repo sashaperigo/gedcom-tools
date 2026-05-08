@@ -187,6 +187,42 @@ describe('buildRelativeEvents — filtering', () => {
         expect(years).not.toContain(1960);
     });
 
+    it('excludes relative death when death_date starts with "BEF "', () => {
+        const fx = focusedFixture();
+        fx.allPeople = fx.allPeople.map(p =>
+            p.id === '@I5@' ? { ...p, death_date: 'BEF 1895' } : p);
+        const mod = loadModule(fx);
+        const events = mod.buildRelativeEvents('@I1@');
+        expect(events.find(e => e.kind === 'death' && e.name === 'Dimitrios')).toBeUndefined();
+    });
+
+    it('excludes relative death when death_date starts with "AFT "', () => {
+        const fx = focusedFixture();
+        fx.allPeople = fx.allPeople.map(p =>
+            p.id === '@I4@' ? { ...p, death_date: 'AFT 1934' } : p);
+        const mod = loadModule(fx);
+        const events = mod.buildRelativeEvents('@I1@');
+        expect(events.find(e => e.kind === 'death' && e.name === 'Stavros')).toBeUndefined();
+    });
+
+    it('includes relative death when death_date is a specific date', () => {
+        const fx = focusedFixture();
+        fx.allPeople = fx.allPeople.map(p =>
+            p.id === '@I5@' ? { ...p, death_date: '14 JAN 1895' } : p);
+        const mod = loadModule(fx);
+        const events = mod.buildRelativeEvents('@I1@');
+        expect(events.find(e => e.kind === 'death' && e.name === 'Dimitrios')).toBeDefined();
+    });
+
+    it('includes relative death when death_date is empty (year-only data)', () => {
+        const fx = focusedFixture();
+        fx.allPeople = fx.allPeople.map(p =>
+            p.id === '@I5@' ? { ...p, death_date: '' } : p);
+        const mod = loadModule(fx);
+        const events = mod.buildRelativeEvents('@I1@');
+        expect(events.find(e => e.kind === 'death' && e.name === 'Dimitrios')).toBeDefined();
+    });
+
     it('uses birth_year+100 cap when focused person has no death year', () => {
         const fx = focusedFixture();
         fx.allPeople = fx.allPeople.map(p =>

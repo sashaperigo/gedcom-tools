@@ -297,6 +297,7 @@ def _indi_evt_subfield(state: dict, tag: str, val: str, raw_val: str, rec: dict,
                 rec['birth_date'] = val
             elif evt['tag'] == 'DEAT' and rec['death_year'] is None:
                 rec['death_year'] = yr
+                rec['death_date'] = val
     elif tag == 'PLAC':
         evt['place'] = html_mod.unescape(val)
     elif tag == 'TYPE':
@@ -454,7 +455,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             indis[xref] = {
                 'name': None, 'name_given': None, 'name_surname': None, 'name_suffix': None,
-                'birth_year': None, 'birth_date': None, 'death_year': None, 'has_death': False,
+                'birth_year': None, 'birth_date': None, 'death_year': None, 'death_date': None, 'has_death': False,
                 'famc': None, 'fams': [], 'sex': None, 'events': [], 'notes': [],
                 'source_xrefs': [], 'source_urls': {}, 'source_citations': [], 'asso': [],
             }
@@ -827,7 +828,9 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
             'name_surname': info.get('name_surname'),
             'name_suffix':  info.get('name_suffix'),
             'birth_year':   info['birth_year'],
+            'birth_date':   info.get('birth_date'),
             'death_year':   info['death_year'],
+            'death_date':   info.get('death_date'),
             'has_death':    info.get('has_death', False),
             'sex':          info['sex'],
             'events':       sort_events(events),
@@ -1051,6 +1054,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
           "birth_year": info.get("birth_year") or "",
           "birth_date": info.get("birth_date") or "",
           "death_year": info.get("death_year") or "",
+          "death_date": info.get("death_date") or "",
           "sex": info.get("sex") or ""}
          for xref, info in indis.items()],
         key=lambda p: p["name"].lower()

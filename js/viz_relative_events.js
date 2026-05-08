@@ -56,8 +56,14 @@ function _lookup(xref) {
     return ALL_PEOPLE_BY_ID[xref] || null;
 }
 
+function _isVagueDate(dateStr) {
+    if (!dateStr) return false;
+    return dateStr.startsWith('BEF ') || dateStr.startsWith('AFT ');
+}
+
 function _push(out, year, kind, relation, person, bounds, focusBirth) {
     if (year === null) return;
+    if (kind === 'death' && _isVagueDate(person.death_date)) return;
     if (year < bounds.lo || year > bounds.hi) return;
     const role = _role(person, relation);
     const sortKey = _SORT_KEY[`${kind}-${relation}`] ?? 99;
@@ -165,6 +171,7 @@ function buildRelativeEvents(xref) {
 if (typeof module !== 'undefined') module.exports = {
     _role,
     _yearNum,
+    _isVagueDate,
     _lifetimeBounds,
     buildRelativeEvents,
 };
