@@ -297,6 +297,19 @@ header h1 .root-name-accent {
     line-height: 1.5;
 }
 
+#detail-relationship {
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent-light);
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.3px;
+}
+
+#detail-relationship:empty {
+    margin-top: 0;
+}
+
 #detail-header-btns {
     display: flex;
     flex-direction: column;
