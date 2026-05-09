@@ -267,6 +267,49 @@ function findAffinityLabel(viewer, other, ctx) {
     }
   }
 
+  // ── Tier 4: generic affinity templates ───────────────────────────
+  // 4a: other is spouse of someone with a blood label
+  const otherSpouses = getSpousesOf(other, ctx);
+  let bestSpouseTemplate = null;
+  let bestSpouseLegLength = Infinity;
+  for (const sp of otherSpouses) {
+    if (sp === viewer) continue; // already handled by tier 1
+    const paths = findBloodPaths(viewer, sp, ctx);
+    if (paths.length === 0) continue;
+    const path = pickClosestPath(paths);
+    const spSex = (ctx.PEOPLE[sp] || {}).sex || null;
+    const spIsHalf = !isFullRelationship(path, ctx);
+    const spLabel = formatBloodLabel(path.a, path.b, spSex, spIsHalf);
+    if (!spLabel) continue;
+    const legLen = path.a + path.b;
+    if (legLen < bestSpouseLegLength) {
+      const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
+      const verb = gendered(otherSex, 'Husband', 'Wife', 'Spouse');
+      bestSpouseTemplate = `${verb} of ${spLabel}`;
+      bestSpouseLegLength = legLen;
+    }
+  }
+  if (bestSpouseTemplate) return bestSpouseTemplate;
+
+  // 4b: other has a blood label relative to viewer's spouse
+  let bestSpouseSideTemplate = null;
+  let bestSpouseSideLeg = Infinity;
+  for (const sp of viewerSpouses) {
+    const paths = findBloodPaths(sp, other, ctx);
+    if (paths.length === 0) continue;
+    const path = pickClosestPath(paths);
+    const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
+    const isHalf = !isFullRelationship(path, ctx);
+    const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
+    if (!label) continue;
+    const legLen = path.a + path.b;
+    if (legLen < bestSpouseSideLeg) {
+      bestSpouseSideTemplate = `${label} of Spouse`;
+      bestSpouseSideLeg = legLen;
+    }
+  }
+  if (bestSpouseSideTemplate) return bestSpouseSideTemplate;
+
   return null;
 }
 

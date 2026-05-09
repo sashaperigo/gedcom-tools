@@ -500,3 +500,49 @@ describe('computeRelationship — affinity: step relationships', () => {
     expect(computeRelationship('@V@', '@SS@', c).label).toBe('Step-Sister');
   });
 });
+
+describe('computeRelationship — affinity: generic templates', () => {
+  it('Wife of 1st Cousin', () => {
+    // viewer's 1st cousin married someone — that someone = "Wife of 1st Cousin"
+    const c = ctx({
+      people: {
+        '@V@': {}, '@C@': { sex: 'F' }, '@CW@': { sex: 'F' },
+        '@PV@': { sex: 'F' }, '@PC@': { sex: 'F' },
+        '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: {
+        '@V@': [null, '@PV@'], '@C@': [null, '@PC@'],
+        '@PV@': ['@GPA@', '@GMA@'], '@PC@': ['@GPA@', '@GMA@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@PC@': ['@C@'],
+        '@GMA@': ['@PV@', '@PC@'], '@GPA@': ['@PV@', '@PC@'],
+      },
+      relatives: { '@C@': { spouses: ['@CW@'] }, '@CW@': { spouses: ['@C@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@CW@', c).label).toBe('Wife of 1st Cousin');
+  });
+
+  it('1st Cousin of Spouse', () => {
+    // viewer's spouse has a 1st cousin — that cousin = "1st Cousin of Spouse"
+    const c = ctx({
+      people: {
+        '@V@': {}, '@S@': { sex: 'F' }, '@SC@': { sex: 'F' },
+        '@PS@': { sex: 'F' }, '@PSC@': { sex: 'F' },
+        '@SGM@': { sex: 'F' }, '@SGP@': { sex: 'M' },
+      },
+      parents: {
+        '@S@': [null, '@PS@'], '@SC@': [null, '@PSC@'],
+        '@PS@': ['@SGP@', '@SGM@'], '@PSC@': ['@SGP@', '@SGM@'],
+      },
+      children: {
+        '@PS@': ['@S@'], '@PSC@': ['@SC@'],
+        '@SGM@': ['@PS@', '@PSC@'], '@SGP@': ['@PS@', '@PSC@'],
+      },
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@SC@', c).label).toBe('1st Cousin of Spouse');
+  });
+});
