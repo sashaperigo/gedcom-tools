@@ -80,29 +80,57 @@ function formatBloodLabel(a, b, otherSex) {
   return null;
 }
 
+// Find all blood paths from viewer to other.
+// Each path: { a, b, mrca, viewerLeg, otherLeg }
+//   viewerLeg = MRCA's child on viewer's path (=== viewer if a===1; null if a===0)
+//   otherLeg  = MRCA's child on other's path  (=== other  if b===1; null if b===0)
+function findBloodPaths(viewer, other, ctx) {
+  const ancestors = bfsUp(viewer, ctx.PARENTS, MAX_DEPTH);
+  const paths = [];
+  for (const [ancestorXref, viewerPaths] of ancestors) {
+    const descendants = bfsDown(ancestorXref, ctx.CHILDREN, MAX_DEPTH);
+    const otherPaths = descendants.get(other);
+    if (!otherPaths) continue;
+    for (const vp of viewerPaths) {
+      for (const op of otherPaths) {
+        paths.push({
+          a: vp.depth,
+          b: op.depth,
+          mrca: ancestorXref,
+          viewerLeg: vp.viaParentXref,
+          otherLeg: op.viaChildXref,
+        });
+      }
+    }
+  }
+  return paths;
+}
+
+// Pick the closest path: minimize a+b, tiebreak on smaller min(a,b).
+function pickClosestPath(paths) {
+  let best = null;
+  for (const p of paths) {
+    if (!best) { best = p; continue; }
+    const sumP = p.a + p.b, sumB = best.a + best.b;
+    if (sumP < sumB) { best = p; continue; }
+    if (sumP === sumB && Math.min(p.a, p.b) < Math.min(best.a, best.b)) best = p;
+  }
+  return best;
+}
+
 function computeRelationship(viewerXref, otherXref, ctx) {
   if (otherXref === viewerXref) {
     return { label: 'Self', debug: { a: 0, b: 0 } };
   }
-  // Direct ancestor?
-  const ancestors = bfsUp(viewerXref, ctx.PARENTS, MAX_DEPTH);
-  if (ancestors.has(otherXref)) {
-    const path = ancestors.get(otherXref)[0];
-    const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
-    const label = formatBloodLabel(path.depth, 0, otherSex);
-    if (label) return { label, debug: { a: path.depth, b: 0 } };
-  }
-  // Direct descendant?
-  const descendants = bfsDown(viewerXref, ctx.CHILDREN, MAX_DEPTH);
-  if (descendants.has(otherXref)) {
-    const path = descendants.get(otherXref)[0];
-    const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
-    const label = formatBloodLabel(0, path.depth, otherSex);
-    if (label) return { label, debug: { a: 0, b: path.depth } };
-  }
-  return null;
+  const paths = findBloodPaths(viewerXref, otherXref, ctx);
+  if (paths.length === 0) return null;
+  const path = pickClosestPath(paths);
+  const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
+  const label = formatBloodLabel(path.a, path.b, otherSex);
+  if (label === null) return null;
+  return { label, debug: { a: path.a, b: path.b, mrca: path.mrca } };
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix };
+  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix };
 }
