@@ -15,6 +15,9 @@ function greatPrefix(greatCount) {
   return `${greatCount}× Great-`;
 }
 
+const ORDINALS = ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th','11th'];
+function ordinal(n) { return ORDINALS[n - 1] || `${n}th`; }
+
 // Determine whether a sibling/cousin-line path represents a full relationship.
 // Full ↔ both legs descend through the same parent-couple at the MRCA generation.
 // Half ↔ only the MRCA is shared at that generation (other parents differ or unknown).
@@ -114,6 +117,15 @@ function formatBloodLabel(a, b, otherSex, isHalf) {
     return halfPrefix + greatPrefix(b - 2) + term;
   }
 
+  // Cousins (a≥2 AND b≥2)
+  if (a >= 2 && b >= 2) {
+    const cousinNum = Math.min(a, b) - 1;
+    if (cousinNum > 11) return null; // cap (FamilySearch chart bound)
+    const removed = Math.abs(a - b);
+    const removedPart = removed > 0 ? `, ${removed}× Removed` : '';
+    return halfPrefix + ordinal(cousinNum) + ' Cousin' + removedPart;
+  }
+
   return null;
 }
 
@@ -170,5 +182,5 @@ function computeRelationship(viewerXref, otherXref, ctx) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, isFullRelationship };
+  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship };
 }
