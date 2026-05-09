@@ -155,3 +155,56 @@ describe('computeRelationship — half- prefix', () => {
     expect(computeRelationship('@I1@', '@I2@', c).label).toBe('Half-Sister');
   });
 });
+
+describe('computeRelationship — aunt/uncle line (b=1, a≥2)', () => {
+  function auntCtx(genUp, auntSex) {
+    const people = {}, parents = {}, children = {};
+    // For genUp=2: P1 -> P2 -> GRANDPA+GRANDMA
+    // AUNT is a sibling of P2, also child of GRANDPA+GRANDMA
+    // Build lineage: P1 -> P2 -> ... -> P_{genUp} -> GRANDPA+GRANDMA
+    for (let i = 1; i <= genUp; i++) {
+      people[`@P${i}@`] = {};
+    }
+    people['@GRANDPA@'] = { sex: 'M' };
+    people['@GRANDMA@'] = { sex: 'F' };
+
+    // Connect P1 -> P2 -> ... -> P_{genUp}
+    for (let i = 1; i < genUp; i++) {
+      parents[`@P${i}@`] = [null, `@P${i + 1}@`];
+      children[`@P${i + 1}@`] = (children[`@P${i + 1}@`] || []).concat([`@P${i}@`]);
+    }
+    // P_{genUp} is a child of GRANDPA and GRANDMA
+    parents[`@P${genUp}@`] = ['@GRANDPA@', '@GRANDMA@'];
+    children['@GRANDPA@'] = (children['@GRANDPA@'] || []).concat([`@P${genUp}@`]);
+    children['@GRANDMA@'] = (children['@GRANDMA@'] || []).concat([`@P${genUp}@`]);
+
+    // AUNT is a sibling of P_{genUp}, with same parents GRANDPA and GRANDMA
+    people['@AUNT@'] = { sex: auntSex };
+    parents['@AUNT@'] = ['@GRANDPA@', '@GRANDMA@'];
+    children['@GRANDPA@'].push('@AUNT@');
+    children['@GRANDMA@'].push('@AUNT@');
+
+    return { c: ctx({ people, parents, children }), viewer: '@P1@', other: '@AUNT@' };
+  }
+
+  it('Aunt (a=2)', () => {
+    const { c, viewer, other } = auntCtx(2, 'F');
+    expect(computeRelationship(viewer, other, c).label).toBe('Aunt');
+  });
+  it('Uncle (a=2, sex=M)', () => {
+    const { c, viewer, other } = auntCtx(2, 'M');
+    expect(computeRelationship(viewer, other, c).label).toBe('Uncle');
+  });
+  it('Aunt or Uncle (a=2, sex unknown)', () => {
+    const { c, viewer, other } = auntCtx(2, undefined);
+    expect(computeRelationship(viewer, other, c).label).toBe('Aunt or Uncle');
+  });
+  it('Great-Aunt (a=3)', () => {
+    const { c, viewer, other } = auntCtx(3, 'F');
+    expect(computeRelationship(viewer, other, c).label).toBe('Great-Aunt');
+  });
+  it('3× Great-Aunt (a=5)', () => {
+    const { c, viewer, other } = auntCtx(5, 'F');
+    expect(computeRelationship(viewer, other, c).label).toBe('3× Great-Aunt');
+  });
+});

@@ -100,6 +100,13 @@ function formatBloodLabel(a, b, otherSex, isHalf) {
     return halfPrefix + gendered(otherSex, 'Brother', 'Sister', 'Sibling');
   }
 
+  // Aunt/Uncle line (a≥2, b=1)
+  if (b === 1 && a >= 2) {
+    const term = gendered(otherSex, 'Uncle', 'Aunt', 'Aunt or Uncle');
+    if (a === 2) return halfPrefix + term;
+    return halfPrefix + greatPrefix(a - 2) + term;
+  }
+
   return null;
 }
 
