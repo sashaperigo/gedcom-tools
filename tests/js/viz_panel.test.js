@@ -237,6 +237,73 @@ describe('renderPanel', () => {
         expect(lifespanRowEl.innerHTML).toContain('1950');
     });
 
+    it('"Living" lifespan label is clickable to add a death event', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const lifespanRowEl = makeFakeEl('detail-lifespan-row');
+        _state = { panelOpen: true, panelXref: '@LIV@' };
+
+        global.PEOPLE['@LIV@'] = {
+            name: 'Live Person',
+            birth_year: '1990',
+            death_year: null,
+            has_death: false,
+            sex: 'M',
+            events: [],
+            notes: [],
+            sources: [],
+        };
+
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-lifespan-row') return lifespanRowEl;
+                return makeFakeEl(id);
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+
+        initPanel(panelEl);
+        renderPanel();
+
+        expect(lifespanRowEl.innerHTML).toContain('Living');
+        // Clickable: calls addEvent with the xref and 'DEAT' tag
+        expect(lifespanRowEl.innerHTML).toMatch(/onclick="[^"]*addEvent\([^)]*@LIV@[^)]*'DEAT'/);
+    });
+
+    it('does not make "Living" clickable when has_death is true (death exists, year unknown)', () => {
+        const panelEl = makeFakeEl('detail-panel');
+        const lifespanRowEl = makeFakeEl('detail-lifespan-row');
+        _state = { panelOpen: true, panelXref: '@DEDA@' };
+
+        global.PEOPLE['@DEDA@'] = {
+            name: 'Dead person, year unknown',
+            birth_year: '1800',
+            death_year: null,
+            has_death: true,
+            sex: 'M',
+            events: [],
+            notes: [],
+            sources: [],
+        };
+
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'detail-panel') return panelEl;
+                if (id === 'detail-lifespan-row') return lifespanRowEl;
+                return makeFakeEl(id);
+            },
+            createElement: (tag) => makeFakeEl(tag),
+            addEventListener: () => {},
+        };
+
+        initPanel(panelEl);
+        renderPanel();
+
+        expect(lifespanRowEl.innerHTML).not.toContain('Living');
+        expect(lifespanRowEl.innerHTML).not.toMatch(/addEvent\([^)]*'DEAT'/);
+    });
+
     it('renders fact rows for each fact', () => {
         const panelEl = makeFakeEl('detail-panel');
         const eventsEl = makeFakeEl('detail-events');

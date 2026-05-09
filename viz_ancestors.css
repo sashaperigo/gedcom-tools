@@ -645,6 +645,15 @@ header h1 .root-name-accent {
     white-space: nowrap;
 }
 
+.lifespan-living {
+    cursor: pointer;
+}
+
+.lifespan-living:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
 /* ── Body ───────────────────────────────────────────────── */
 #detail-body {
     padding: 18px 20px 28px 20px;

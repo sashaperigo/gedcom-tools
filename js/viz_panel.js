@@ -599,7 +599,7 @@ function renderPanel() {
             const span = (dy && dy > by) ? dy - by : null;
             const deathPart = dy
                 ? `<span class="lifespan-year">${dy}</span>`
-                : (!hasDeath ? `<span class="lifespan-year lifespan-living"><em>Living</em></span>` : '');
+                : (!hasDeath ? `<span class="lifespan-year lifespan-living" title="Click to add death" onclick="addEvent(${xrefQ},'DEAT')"><em>Living</em></span>` : '');
             lifespanRow.innerHTML =
                 `<span class="lifespan-year">${by}</span>` +
                 `<span class="lifespan-sep">\u2013</span>` +
@@ -615,7 +615,7 @@ function renderPanel() {
             if (by) html += `<span class="panel-birth-year">${escHtml(String(by))}</span>`;
             if (by) html += `<span class="panel-lifespan-sep">\u2013</span>`;
             if (dy) html += `<span class="panel-death-year">${escHtml(String(dy))}</span>`;
-            else if (by && !hasDeath) html += `<span class="panel-death-year panel-living"><em>Living</em></span>`;
+            else if (by && !hasDeath) html += `<span class="panel-death-year panel-living" title="Click to add death" onclick="addEvent(${xrefQ},'DEAT')"><em>Living</em></span>`;
             if (by && dy) {
                 const age = dy - by;
                 if (age > 0) html += `<span class="panel-age">\u00b7 ${age} yrs</span>`;
