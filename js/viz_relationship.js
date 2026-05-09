@@ -180,12 +180,57 @@ function getSpousesOf(xref, ctx) {
 }
 
 function findAffinityLabel(viewer, other, ctx) {
-  // Tier 1: other is the viewer's spouse?
+  // Tier 1: spouse of viewer
   const viewerSpouses = getSpousesOf(viewer, ctx);
   if (viewerSpouses.includes(other)) {
     const sex = (ctx.PEOPLE[other] || {}).sex || null;
     return gendered(sex, 'Husband', 'Wife', 'Spouse');
   }
+
+  // Tier 3 (specific in-laws). Step (tier 2) handled in next task.
+  // 3a: parent of viewer's spouse → mother/father-in-law
+  for (const sp of viewerSpouses) {
+    const spParents = ctx.PARENTS[sp] || [null, null];
+    if (spParents.includes(other)) {
+      const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      return gendered(sex, 'Father-in-law', 'Mother-in-law', 'Parent-in-law');
+    }
+  }
+
+  // 3b: sibling of viewer's spouse → sister/brother-in-law
+  for (const sp of viewerSpouses) {
+    const spParents = ctx.PARENTS[sp] || [null, null];
+    for (const p of spParents) {
+      if (!p) continue;
+      const siblings = (ctx.CHILDREN[p] || []).filter(c => c !== sp);
+      if (siblings.includes(other)) {
+        const sex = (ctx.PEOPLE[other] || {}).sex || null;
+        return gendered(sex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law');
+      }
+    }
+  }
+
+  // 3c: spouse of viewer's sibling → sister/brother-in-law
+  const viewerParents = ctx.PARENTS[viewer] || [null, null];
+  for (const p of viewerParents) {
+    if (!p) continue;
+    for (const sib of (ctx.CHILDREN[p] || [])) {
+      if (sib === viewer) continue;
+      if (getSpousesOf(sib, ctx).includes(other)) {
+        const sex = (ctx.PEOPLE[other] || {}).sex || null;
+        return gendered(sex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law');
+      }
+    }
+  }
+
+  // 3d: spouse of viewer's child → son/daughter-in-law
+  for (const child of (ctx.CHILDREN[viewer] || [])) {
+    if (getSpousesOf(child, ctx).includes(other)) {
+      const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      return gendered(sex, 'Son-in-law', 'Daughter-in-law', 'Child-in-law');
+    }
+  }
+
   return null;
 }
 

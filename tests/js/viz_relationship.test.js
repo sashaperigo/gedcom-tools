@@ -410,3 +410,49 @@ describe('computeRelationship — affinity: spouse of viewer', () => {
     expect(computeRelationship('@V@', '@S@', spouseCtx(undefined)).label).toBe('Spouse');
   });
 });
+
+describe('computeRelationship — affinity: specific in-laws', () => {
+  it('Mother-in-law (parent of viewer\'s spouse)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@S@': { sex: 'F' }, '@SM@': { sex: 'F' } },
+      parents: { '@V@': [null, null], '@S@': [null, '@SM@'], '@SM@': [null, null] },
+      children: { '@SM@': ['@S@'] },
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@V@', wife: '@S@', chil: [] } },
+    });
+    expect(computeRelationship('@V@', '@SM@', c).label).toBe('Mother-in-law');
+  });
+
+  it('Brother-in-law (spouse of viewer\'s sister)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@SIB@': { sex: 'F' }, '@SIBSP@': { sex: 'M' }, '@MOM@': { sex: 'F' } },
+      parents: { '@V@': [null, '@MOM@'], '@SIB@': [null, '@MOM@'], '@SIBSP@': [null, null] },
+      children: { '@MOM@': ['@V@', '@SIB@'] },
+      relatives: { '@SIB@': { spouses: ['@SIBSP@'] }, '@SIBSP@': { spouses: ['@SIB@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@SIBSP@', c).label).toBe('Brother-in-law');
+  });
+
+  it('Sister-in-law (sibling of viewer\'s spouse)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@SP@': { sex: 'F' }, '@SPSIB@': { sex: 'F' }, '@SM@': { sex: 'F' } },
+      parents: { '@V@': [null, null], '@SP@': [null, '@SM@'], '@SPSIB@': [null, '@SM@'] },
+      children: { '@SM@': ['@SP@', '@SPSIB@'] },
+      relatives: { '@V@': { spouses: ['@SP@'] }, '@SP@': { spouses: ['@V@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@SPSIB@', c).label).toBe('Sister-in-law');
+  });
+
+  it('Son-in-law (spouse of viewer\'s daughter)', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'F' }, '@D@': { sex: 'F' }, '@DH@': { sex: 'M' } },
+      parents: { '@D@': [null, '@V@'], '@DH@': [null, null] },
+      children: { '@V@': ['@D@'] },
+      relatives: { '@D@': { spouses: ['@DH@'] }, '@DH@': { spouses: ['@D@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@DH@', c).label).toBe('Son-in-law');
+  });
+});
