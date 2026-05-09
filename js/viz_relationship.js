@@ -15,6 +15,23 @@ function greatPrefix(greatCount) {
   return `${greatCount}× Great-`;
 }
 
+// Determine whether a sibling/cousin-line path represents a full relationship.
+// Full ↔ both legs descend through the same parent-couple at the MRCA generation.
+// Half ↔ only the MRCA is shared at that generation (other parents differ or unknown).
+function isFullRelationship(path, ctx) {
+  if (path.a === 0 || path.b === 0) return true; // direct lineal — half- doesn't apply
+  const otherParentInFam = (childXref, mrca) => {
+    if (!childXref) return null;
+    const [father, mother] = ctx.PARENTS[childXref] || [null, null];
+    if (father === mrca) return mother;
+    if (mother === mrca) return father;
+    return null;
+  };
+  const opViewer = otherParentInFam(path.viewerLeg, path.mrca);
+  const opOther  = otherParentInFam(path.otherLeg, path.mrca);
+  return opViewer !== null && opViewer === opOther;
+}
+
 // BFS up via PARENTS. Returns Map<ancestorXref, Array<{depth, viaParentXref}>>.
 // viaParentXref = the immediate child of the ancestor on the path back toward `start`.
 // Includes start itself at depth 0 (viaParentXref=null).
@@ -60,7 +77,8 @@ function bfsDown(start, children, maxDepth) {
   return result;
 }
 
-function formatBloodLabel(a, b, otherSex) {
+function formatBloodLabel(a, b, otherSex, isHalf) {
+  const halfPrefix = isHalf ? 'Half-' : '';
   if (a === 0 && b === 0) return 'Self';
 
   // Direct ancestors (b=0)
@@ -79,7 +97,7 @@ function formatBloodLabel(a, b, otherSex) {
 
   // Sibling line (a=1, b=1)
   if (a === 1 && b === 1) {
-    return gendered(otherSex, 'Brother', 'Sister', 'Sibling');
+    return halfPrefix + gendered(otherSex, 'Brother', 'Sister', 'Sibling');
   }
 
   return null;
@@ -131,11 +149,12 @@ function computeRelationship(viewerXref, otherXref, ctx) {
   if (paths.length === 0) return null;
   const path = pickClosestPath(paths);
   const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
-  const label = formatBloodLabel(path.a, path.b, otherSex);
+  const isHalf = !isFullRelationship(path, ctx);
+  const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
   if (label === null) return null;
-  return { label, debug: { a: path.a, b: path.b, mrca: path.mrca } };
+  return { label, debug: { a: path.a, b: path.b, mrca: path.mrca, half: isHalf } };
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix };
+  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, isFullRelationship };
 }

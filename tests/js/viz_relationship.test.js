@@ -144,3 +144,14 @@ describe('computeRelationship — full siblings (a=1, b=1)', () => {
     expect(computeRelationship('@I1@', '@I2@', fullSibCtx(undefined)).label).toBe('Sibling');
   });
 });
+
+describe('computeRelationship — half- prefix', () => {
+  it('Half-Sister: shares one parent only', () => {
+    const c = ctx({
+      people: { '@I1@': {}, '@I2@': { sex: 'F' }, '@DAD@': { sex: 'M' }, '@MOM1@': { sex: 'F' }, '@MOM2@': { sex: 'F' } },
+      parents: { '@I1@': ['@DAD@', '@MOM1@'], '@I2@': ['@DAD@', '@MOM2@'] },
+      children: { '@DAD@': ['@I1@', '@I2@'], '@MOM1@': ['@I1@'], '@MOM2@': ['@I2@'] },
+    });
+    expect(computeRelationship('@I1@', '@I2@', c).label).toBe('Half-Sister');
+  });
+});
