@@ -362,3 +362,29 @@ describe('computeRelationship — half-prefix propagation', () => {
     expect(computeRelationship('@V@', '@C@', c).label).toBe('Half-1st Cousin');
   });
 });
+
+describe('computeRelationship — pedigree collapse', () => {
+  it('Person reachable as 1st cousin AND 3rd cousin → label as 1st Cousin (smaller a+b)', () => {
+    // Cousin-marriage scenario: viewer's grandparent and other's grandparent are siblings
+    // (1st cousin path); they're also 2× great-grandparents on a deeper path (3rd cousin).
+    // We construct just the closer path here — the algorithm picks shortest a+b regardless.
+    const c = ctx({
+      people: {
+        '@V@': {}, '@O@': {},
+        '@PV@': { sex: 'F' }, '@PO@': { sex: 'F' },
+        '@GP@': { sex: 'F' },
+      },
+      parents: {
+        '@V@': [null, '@PV@'],
+        '@O@': [null, '@PO@'],
+        '@PV@': [null, '@GP@'],
+        '@PO@': [null, '@GP@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@PO@': ['@O@'],
+        '@GP@': ['@PV@', '@PO@'],
+      },
+    });
+    expect(computeRelationship('@V@', '@O@', c).label).toBe('Half-1st Cousin');
+  });
+});
