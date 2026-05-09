@@ -1,7 +1,8 @@
 // Compute the kinship label between two people in the JS graph.
 // Reads (via injected ctx, falling back to globals): PEOPLE, PARENTS, CHILDREN, RELATIVES, FAMILIES.
 
-const MAX_DEPTH = 11;
+// 11th cousin / 10× great-grandparent (FamilySearch chart cap) requires depth 12 from MRCA.
+const MAX_DEPTH = 12;
 
 function gendered(sex, mLabel, fLabel, neutralLabel) {
   if (sex === 'M') return mLabel;

@@ -308,6 +308,10 @@ describe('computeRelationship — cousins', () => {
     const { c, viewer, other } = cousinCtx(6, 9);
     expect(computeRelationship(viewer, other, c).label).toBe('5th Cousin, 3× Removed');
   });
+  it('11th Cousin (a=12, b=12) — boundary at chart cap', () => {
+    const { c, viewer, other } = cousinCtx(12, 12);
+    expect(computeRelationship(viewer, other, c).label).toBe('11th Cousin');
+  });
   it('returns null past 11th cousin cap (a=13, b=13)', () => {
     const { c, viewer, other } = cousinCtx(13, 13);
     expect(computeRelationship(viewer, other, c)).toBeNull();
@@ -386,6 +390,51 @@ describe('computeRelationship — pedigree collapse', () => {
       },
     });
     expect(computeRelationship('@V@', '@O@', c).label).toBe('Half-1st Cousin');
+  });
+
+  it('Two real paths: 1st Cousin via close MRCA wins over 3rd Cousin via deeper MRCA', () => {
+    // V and O have two shared-ancestor paths:
+    //   Path 1: shared GP (grandparent) — both are grandchildren → 1st Cousin (a+b=4)
+    //   Path 2: shared 2GGP (2× great-grandparent) on a separate ancestral branch → 3rd Cousin (a+b=8)
+    // pickClosestPath should select Path 1 (smaller a+b) → "1st Cousin".
+    //
+    // Graph:
+    //   2GGP — ancestor of both V and O via separate chains GGV and GGO
+    //   GP   — grandparent of both V and O via PV and PO
+    //   V's parents: PV (via GP) AND HV (via GGV chain)? — no, simpler:
+    //   We make V have two parent lines that both lead to ancestors of O.
+    const c = ctx({
+      people: {
+        '@V@': {}, '@O@': {},
+        // Close path (1st cousin): shared grandparent couple
+        '@PV@': { sex: 'F' }, '@PO@': { sex: 'M' },
+        '@GP1@': { sex: 'F' }, '@GP2@': { sex: 'M' },
+        // Deeper path (3rd cousin): V's other parent and O's other parent share a 2× great-grandparent couple
+        '@HV@': { sex: 'M' }, '@HO@': { sex: 'F' },
+        '@HV_P@': { sex: 'F' }, '@HO_P@': { sex: 'M' },
+        '@HV_GP@': { sex: 'F' }, '@HO_GP@': { sex: 'M' },
+        '@DEEP_F@': { sex: 'M' }, '@DEEP_M@': { sex: 'F' },
+      },
+      parents: {
+        '@V@': ['@HV@', '@PV@'],
+        '@O@': ['@PO@', '@HO@'],
+        '@PV@': ['@GP2@', '@GP1@'],
+        '@PO@': ['@GP2@', '@GP1@'],
+        '@HV@': ['@HV_P@', null],   '@HO@': [null, '@HO_P@'],
+        '@HV_P@': ['@HV_GP@', null],'@HO_P@': [null, '@HO_GP@'],
+        '@HV_GP@': ['@DEEP_F@', '@DEEP_M@'],
+        '@HO_GP@': ['@DEEP_F@', '@DEEP_M@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@HV@': ['@V@'],
+        '@PO@': ['@O@'], '@HO@': ['@O@'],
+        '@GP1@': ['@PV@', '@PO@'], '@GP2@': ['@PV@', '@PO@'],
+        '@HV_P@': ['@HV@'], '@HO_P@': ['@HO@'],
+        '@HV_GP@': ['@HV_P@'], '@HO_GP@': ['@HO_P@'],
+        '@DEEP_F@': ['@HV_GP@', '@HO_GP@'], '@DEEP_M@': ['@HV_GP@', '@HO_GP@'],
+      },
+    });
+    expect(computeRelationship('@V@', '@O@', c).label).toBe('1st Cousin');
   });
 });
 
