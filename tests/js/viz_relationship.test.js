@@ -546,3 +546,16 @@ describe('computeRelationship — affinity: generic templates', () => {
     expect(computeRelationship('@V@', '@SC@', c).label).toBe('1st Cousin of Spouse');
   });
 });
+
+describe('computeRelationship — unrelated', () => {
+  it('returns null for person with no graph path', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@X@': { sex: 'M' } },
+      parents: { '@V@': [null, null], '@X@': [null, null] },
+      children: {},
+      relatives: {},
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@X@', c)).toBeNull();
+  });
+});
