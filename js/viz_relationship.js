@@ -104,18 +104,21 @@ function formatBloodLabel(a, b, otherSex, isHalf) {
     return halfPrefix + gendered(otherSex, 'Brother', 'Sister', 'Sibling');
   }
 
-  // Aunt/Uncle line (a≥2, b=1)
+  // Aunt/Uncle line (a≥2, b=1). FamilySearch convention: Uncle (a=2),
+  // Granduncle (a=3, sibling of grandparent), Great-Granduncle (a=4),
+  // N× Great-Granduncle (a≥5). Mirrors the sibling's depth, not the nibling's.
   if (b === 1 && a >= 2) {
-    const term = gendered(otherSex, 'Uncle', 'Aunt', 'Aunt or Uncle');
-    if (a === 2) return halfPrefix + term;
-    return halfPrefix + greatPrefix(a - 2) + term;
+    if (a === 2) return halfPrefix + gendered(otherSex, 'Uncle', 'Aunt', 'Aunt or Uncle');
+    const term = gendered(otherSex, 'Granduncle', 'Grandaunt', 'Grandaunt or Granduncle');
+    return halfPrefix + greatPrefix(a - 3) + term;
   }
 
-  // Niece/Nephew line (a=1, b≥2)
+  // Niece/Nephew line (a=1, b≥2). Mirror of aunt/uncle: Niece/Nephew (b=2),
+  // Grandniece/Grandnephew (b=3), Great-Grandniece (b=4), N× Great-Grandniece (b≥5).
   if (a === 1 && b >= 2) {
-    const term = gendered(otherSex, 'Nephew', 'Niece', 'Niece or Nephew');
-    if (b === 2) return halfPrefix + term;
-    return halfPrefix + greatPrefix(b - 2) + term;
+    if (b === 2) return halfPrefix + gendered(otherSex, 'Nephew', 'Niece', 'Niece or Nephew');
+    const term = gendered(otherSex, 'Grandnephew', 'Grandniece', 'Grandniece or Grandnephew');
+    return halfPrefix + greatPrefix(b - 3) + term;
   }
 
   // Cousins (a≥2 AND b≥2)

@@ -199,13 +199,25 @@ describe('computeRelationship — aunt/uncle line (b=1, a≥2)', () => {
     const { c, viewer, other } = auntCtx(2, undefined);
     expect(computeRelationship(viewer, other, c).label).toBe('Aunt or Uncle');
   });
-  it('Great-Aunt (a=3)', () => {
+  it('Grandaunt (a=3) — sibling of grandparent', () => {
     const { c, viewer, other } = auntCtx(3, 'F');
-    expect(computeRelationship(viewer, other, c).label).toBe('Great-Aunt');
+    expect(computeRelationship(viewer, other, c).label).toBe('Grandaunt');
   });
-  it('3× Great-Aunt (a=5)', () => {
+  it('Granduncle (a=3, sex=M)', () => {
+    const { c, viewer, other } = auntCtx(3, 'M');
+    expect(computeRelationship(viewer, other, c).label).toBe('Granduncle');
+  });
+  it('Great-Grandaunt (a=4) — sibling of great-grandparent', () => {
+    const { c, viewer, other } = auntCtx(4, 'F');
+    expect(computeRelationship(viewer, other, c).label).toBe('Great-Grandaunt');
+  });
+  it('2× Great-Grandaunt (a=5)', () => {
     const { c, viewer, other } = auntCtx(5, 'F');
-    expect(computeRelationship(viewer, other, c).label).toBe('3× Great-Aunt');
+    expect(computeRelationship(viewer, other, c).label).toBe('2× Great-Grandaunt');
+  });
+  it('4× Great-Granduncle (a=7) — sibling of 4× great-grandparent', () => {
+    const { c, viewer, other } = auntCtx(7, 'M');
+    expect(computeRelationship(viewer, other, c).label).toBe('4× Great-Granduncle');
   });
 });
 
@@ -241,13 +253,21 @@ describe('computeRelationship — niece/nephew line (a=1, b≥2)', () => {
     const { c, viewer, other } = nieceCtx(1, 'M');
     expect(computeRelationship(viewer, other, c).label).toBe('Nephew');
   });
-  it('Great-Niece (b=3)', () => {
+  it('Grandniece (b=3) — grandchild of sibling', () => {
     const { c, viewer, other } = nieceCtx(2, 'F');
-    expect(computeRelationship(viewer, other, c).label).toBe('Great-Niece');
+    expect(computeRelationship(viewer, other, c).label).toBe('Grandniece');
   });
-  it('2× Great-Nephew (b=4)', () => {
+  it('Grandnephew (b=3, sex=M)', () => {
+    const { c, viewer, other } = nieceCtx(2, 'M');
+    expect(computeRelationship(viewer, other, c).label).toBe('Grandnephew');
+  });
+  it('Great-Grandnephew (b=4)', () => {
     const { c, viewer, other } = nieceCtx(3, 'M');
-    expect(computeRelationship(viewer, other, c).label).toBe('2× Great-Nephew');
+    expect(computeRelationship(viewer, other, c).label).toBe('Great-Grandnephew');
+  });
+  it('3× Great-Grandniece (b=6)', () => {
+    const { c, viewer, other } = nieceCtx(5, 'F');
+    expect(computeRelationship(viewer, other, c).label).toBe('3× Great-Grandniece');
   });
 });
 
