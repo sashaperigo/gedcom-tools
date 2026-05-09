@@ -316,17 +316,17 @@ describe('computeRelationship — cousins', () => {
     const { c, viewer, other } = cousinCtx(3, 3);
     expect(computeRelationship(viewer, other, c).label).toBe('2nd Cousin');
   });
-  it('1st Cousin, 1× Removed (a=2, b=3)', () => {
+  it('1st Cousin 1× Removed (a=2, b=3)', () => {
     const { c, viewer, other } = cousinCtx(2, 3);
-    expect(computeRelationship(viewer, other, c).label).toBe('1st Cousin, 1× Removed');
+    expect(computeRelationship(viewer, other, c).label).toBe('1st Cousin 1× Removed');
   });
-  it('1st Cousin, 1× Removed (a=3, b=2) — same label, no direction', () => {
+  it('1st Cousin 1× Removed (a=3, b=2) — same label, no direction', () => {
     const { c, viewer, other } = cousinCtx(3, 2);
-    expect(computeRelationship(viewer, other, c).label).toBe('1st Cousin, 1× Removed');
+    expect(computeRelationship(viewer, other, c).label).toBe('1st Cousin 1× Removed');
   });
-  it('5th Cousin, 3× Removed (a=6, b=9)', () => {
+  it('5th Cousin 3× Removed (a=6, b=9)', () => {
     const { c, viewer, other } = cousinCtx(6, 9);
-    expect(computeRelationship(viewer, other, c).label).toBe('5th Cousin, 3× Removed');
+    expect(computeRelationship(viewer, other, c).label).toBe('5th Cousin 3× Removed');
   });
   it('11th Cousin (a=12, b=12) — boundary at chart cap', () => {
     const { c, viewer, other } = cousinCtx(12, 12);
