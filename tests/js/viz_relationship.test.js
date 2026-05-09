@@ -79,3 +79,37 @@ describe('computeRelationship — deeper ancestors (b=0)', () => {
     expect(computeRelationship('@I1@', '@I8@', c).label).toBe('5× Great-Grandparent');
   });
 });
+
+describe('computeRelationship — descendants (a=0, b≥1)', () => {
+  function descendantChain(generations) {
+    const people = {}, parents = {}, children = {};
+    for (let i = 1; i <= generations; i++) {
+      people[`@I${i}@`] = i === 1 ? { sex: 'F' } : { sex: 'F' };
+    }
+    for (let i = 1; i < generations; i++) {
+      parents[`@I${i + 1}@`] = ['@I' + i + '@', null];
+      children[`@I${i}@`] = [`@I${i + 1}@`];
+    }
+    return ctx({ people, parents, children });
+  }
+
+  it('Daughter (b=1)', () => {
+    expect(computeRelationship('@I1@', '@I2@', descendantChain(2)).label).toBe('Daughter');
+  });
+
+  it('Granddaughter (b=2)', () => {
+    expect(computeRelationship('@I1@', '@I3@', descendantChain(3)).label).toBe('Granddaughter');
+  });
+
+  it('Great-Grandchild (b=3, sex unknown)', () => {
+    const c = descendantChain(4);
+    c.PEOPLE['@I4@'] = {};
+    expect(computeRelationship('@I1@', '@I4@', c).label).toBe('Great-Grandchild');
+  });
+
+  it('3× Great-Grandson (b=5)', () => {
+    const c = descendantChain(6);
+    c.PEOPLE['@I6@'] = { sex: 'M' };
+    expect(computeRelationship('@I1@', '@I6@', c).label).toBe('3× Great-Grandson');
+  });
+});
