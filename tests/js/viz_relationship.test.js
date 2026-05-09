@@ -208,3 +208,45 @@ describe('computeRelationship — aunt/uncle line (b=1, a≥2)', () => {
     expect(computeRelationship(viewer, other, c).label).toBe('3× Great-Aunt');
   });
 });
+
+describe('computeRelationship — niece/nephew line (a=1, b≥2)', () => {
+  // viewer has a sibling who has descendants. The sibling and viewer share BOTH parents
+  // (DAD + MOM) so the niece is a FULL niece (not half-niece).
+  function nieceCtx(genDown, nieceSex) {
+    const people = {}, parents = {}, children = {};
+    people['@VIEW@'] = {};
+    people['@SIB@'] = { sex: 'M' };
+    people['@DAD@'] = { sex: 'M' };
+    people['@MOM@'] = { sex: 'F' };
+    parents['@VIEW@'] = ['@DAD@', '@MOM@'];
+    parents['@SIB@']  = ['@DAD@', '@MOM@'];
+    children['@DAD@'] = ['@VIEW@', '@SIB@'];
+    children['@MOM@'] = ['@VIEW@', '@SIB@'];
+    let cursor = '@SIB@';
+    for (let i = 1; i <= genDown; i++) {
+      const xref = `@D${i}@`;
+      people[xref] = i === genDown ? { sex: nieceSex } : { sex: 'F' };
+      parents[xref] = [null, cursor];
+      children[cursor] = (children[cursor] || []).concat([xref]);
+      cursor = xref;
+    }
+    return { c: ctx({ people, parents, children }), viewer: '@VIEW@', other: cursor };
+  }
+
+  it('Niece (b=2, sex=F)', () => {
+    const { c, viewer, other } = nieceCtx(1, 'F');
+    expect(computeRelationship(viewer, other, c).label).toBe('Niece');
+  });
+  it('Nephew (b=2, sex=M)', () => {
+    const { c, viewer, other } = nieceCtx(1, 'M');
+    expect(computeRelationship(viewer, other, c).label).toBe('Nephew');
+  });
+  it('Great-Niece (b=3)', () => {
+    const { c, viewer, other } = nieceCtx(2, 'F');
+    expect(computeRelationship(viewer, other, c).label).toBe('Great-Niece');
+  });
+  it('2× Great-Nephew (b=4)', () => {
+    const { c, viewer, other } = nieceCtx(3, 'M');
+    expect(computeRelationship(viewer, other, c).label).toBe('2× Great-Nephew');
+  });
+});

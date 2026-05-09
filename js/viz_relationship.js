@@ -107,6 +107,13 @@ function formatBloodLabel(a, b, otherSex, isHalf) {
     return halfPrefix + greatPrefix(a - 2) + term;
   }
 
+  // Niece/Nephew line (a=1, b≥2)
+  if (a === 1 && b >= 2) {
+    const term = gendered(otherSex, 'Nephew', 'Niece', 'Niece or Nephew');
+    if (b === 2) return halfPrefix + term;
+    return halfPrefix + greatPrefix(b - 2) + term;
+  }
+
   return null;
 }
 
