@@ -649,6 +649,18 @@ function renderPanel() {
         }
     }
 
+    // ── Relationship to viewer ────────────────────────────────────────────
+    const relEl = document.getElementById('detail-relationship');
+    if (relEl && typeof computeRelationship === 'function' && typeof VIEWER_XREF !== 'undefined' &&
+        typeof PARENTS !== 'undefined' && typeof CHILDREN !== 'undefined' &&
+        typeof RELATIVES !== 'undefined' && typeof FAMILIES !== 'undefined') {
+        const relCtx = { PEOPLE, PARENTS, CHILDREN, RELATIVES, FAMILIES };
+        const rel = computeRelationship(VIEWER_XREF, xref, relCtx);
+        relEl.textContent = rel ? rel.label : '';
+    } else if (relEl) {
+        relEl.textContent = '';
+    }
+
     // ── Notes ─────────────────────────────────────────────────────────────
     const notesDiv = document.getElementById('detail-notes');
     if (notesDiv) {
