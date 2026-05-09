@@ -44,3 +44,38 @@ describe('computeRelationship — direct parents (a=1, b=0)', () => {
     expect(computeRelationship('@I1@', '@I2@', c).label).toBe('Parent');
   });
 });
+
+describe('computeRelationship — deeper ancestors (b=0)', () => {
+  function chain(generations) {
+    // Build a parent chain: I1 → I2 → I3 → ... where I_k+1 is the parent of I_k.
+    const people = {};
+    const parents = {};
+    const children = {};
+    for (let i = 1; i <= generations; i++) {
+      people[`@I${i}@`] = i === generations ? { sex: 'F' } : {};
+    }
+    for (let i = 1; i < generations; i++) {
+      parents[`@I${i}@`] = ['@I' + (i + 1) + '@', null];
+      children[`@I${i + 1}@`] = [`@I${i}@`];
+    }
+    return ctx({ people, parents, children });
+  }
+
+  it('Grandmother (a=2)', () => {
+    expect(computeRelationship('@I1@', '@I3@', chain(3)).label).toBe('Grandmother');
+  });
+
+  it('Great-Grandmother (a=3)', () => {
+    expect(computeRelationship('@I1@', '@I4@', chain(4)).label).toBe('Great-Grandmother');
+  });
+
+  it('2× Great-Grandmother (a=4)', () => {
+    expect(computeRelationship('@I1@', '@I5@', chain(5)).label).toBe('2× Great-Grandmother');
+  });
+
+  it('5× Great-Grandparent (a=7, sex unknown)', () => {
+    const c = chain(8);
+    c.PEOPLE['@I8@'] = {}; // unknown sex
+    expect(computeRelationship('@I1@', '@I8@', c).label).toBe('5× Great-Grandparent');
+  });
+});

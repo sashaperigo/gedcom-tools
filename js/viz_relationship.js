@@ -9,6 +9,12 @@ function gendered(sex, mLabel, fLabel, neutralLabel) {
   return neutralLabel;
 }
 
+function greatPrefix(greatCount) {
+  if (greatCount <= 0) return '';
+  if (greatCount === 1) return 'Great-';
+  return `${greatCount}× Great-`;
+}
+
 // BFS up via PARENTS. Returns Map<ancestorXref, Array<{depth, viaParentXref}>>.
 // viaParentXref = the immediate child of the ancestor on the path back toward `start`.
 // Includes start itself at depth 0 (viaParentXref=null).
@@ -34,9 +40,14 @@ function bfsUp(start, parents, maxDepth) {
 
 function formatBloodLabel(a, b, otherSex) {
   if (a === 0 && b === 0) return 'Self';
-  if (b === 0 && a === 1) {
-    return gendered(otherSex, 'Father', 'Mother', 'Parent');
+
+  // Direct ancestors (b=0)
+  if (b === 0 && a >= 1) {
+    if (a === 1) return gendered(otherSex, 'Father', 'Mother', 'Parent');
+    if (a === 2) return gendered(otherSex, 'Grandfather', 'Grandmother', 'Grandparent');
+    return greatPrefix(a - 2) + gendered(otherSex, 'Grandfather', 'Grandmother', 'Grandparent');
   }
+
   return null;
 }
 
@@ -55,5 +66,5 @@ function computeRelationship(viewerXref, otherXref, ctx) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, bfsUp, formatBloodLabel, gendered };
+  module.exports = { computeRelationship, bfsUp, formatBloodLabel, gendered, greatPrefix };
 }
