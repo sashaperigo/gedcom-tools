@@ -388,3 +388,25 @@ describe('computeRelationship — pedigree collapse', () => {
     expect(computeRelationship('@V@', '@O@', c).label).toBe('Half-1st Cousin');
   });
 });
+
+describe('computeRelationship — affinity: spouse of viewer', () => {
+  function spouseCtx(spouseSex) {
+    return ctx({
+      people: { '@V@': { sex: 'F' }, '@S@': { sex: spouseSex } },
+      parents: { '@V@': [null, null], '@S@': [null, null] },
+      children: {},
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: spouseSex === 'M' ? '@S@' : '@V@', wife: spouseSex === 'F' ? '@S@' : '@V@', chil: [] } },
+    });
+  }
+
+  it('Husband (sex=M)', () => {
+    expect(computeRelationship('@V@', '@S@', spouseCtx('M')).label).toBe('Husband');
+  });
+  it('Wife (sex=F)', () => {
+    expect(computeRelationship('@V@', '@S@', spouseCtx('F')).label).toBe('Wife');
+  });
+  it('Spouse (sex unknown)', () => {
+    expect(computeRelationship('@V@', '@S@', spouseCtx(undefined)).label).toBe('Spouse');
+  });
+});

@@ -167,20 +167,47 @@ function pickClosestPath(paths) {
   return best;
 }
 
+function getSpousesOf(xref, ctx) {
+  const rel = ctx.RELATIVES[xref];
+  if (rel && Array.isArray(rel.spouses)) return rel.spouses;
+  // Fallback: scan FAMILIES for the partner of xref
+  const spouses = [];
+  for (const fam of Object.values(ctx.FAMILIES || {})) {
+    if (fam.husb === xref && fam.wife) spouses.push(fam.wife);
+    if (fam.wife === xref && fam.husb) spouses.push(fam.husb);
+  }
+  return spouses;
+}
+
+function findAffinityLabel(viewer, other, ctx) {
+  // Tier 1: other is the viewer's spouse?
+  const viewerSpouses = getSpousesOf(viewer, ctx);
+  if (viewerSpouses.includes(other)) {
+    const sex = (ctx.PEOPLE[other] || {}).sex || null;
+    return gendered(sex, 'Husband', 'Wife', 'Spouse');
+  }
+  return null;
+}
+
 function computeRelationship(viewerXref, otherXref, ctx) {
   if (otherXref === viewerXref) {
     return { label: 'Self', debug: { a: 0, b: 0 } };
   }
   const paths = findBloodPaths(viewerXref, otherXref, ctx);
-  if (paths.length === 0) return null;
-  const path = pickClosestPath(paths);
-  const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
-  const isHalf = !isFullRelationship(path, ctx);
-  const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
-  if (label === null) return null;
-  return { label, debug: { a: path.a, b: path.b, mrca: path.mrca, half: isHalf } };
+  if (paths.length > 0) {
+    const path = pickClosestPath(paths);
+    const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
+    const isHalf = !isFullRelationship(path, ctx);
+    const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
+    if (label !== null) {
+      return { label, debug: { a: path.a, b: path.b, mrca: path.mrca, half: isHalf } };
+    }
+  }
+  const affinity = findAffinityLabel(viewerXref, otherXref, ctx);
+  if (affinity) return { label: affinity, debug: { affinity: true } };
+  return null;
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship };
+  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship, getSpousesOf, findAffinityLabel };
 }
