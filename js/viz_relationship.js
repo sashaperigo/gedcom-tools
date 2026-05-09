@@ -180,15 +180,53 @@ function getSpousesOf(xref, ctx) {
 }
 
 function findAffinityLabel(viewer, other, ctx) {
-  // Tier 1: spouse of viewer
   const viewerSpouses = getSpousesOf(viewer, ctx);
+  const viewerParents = (ctx.PARENTS[viewer] || [null, null]).filter(Boolean);
+
+  // ── Tier 1: spouse of viewer ─────────────────────────────────────
   if (viewerSpouses.includes(other)) {
     const sex = (ctx.PEOPLE[other] || {}).sex || null;
     return gendered(sex, 'Husband', 'Wife', 'Spouse');
   }
 
-  // Tier 3 (specific in-laws). Step (tier 2) handled in next task.
-  // 3a: parent of viewer's spouse → mother/father-in-law
+  // ── Tier 2: step relationships ───────────────────────────────────
+  // Step-parent: spouse of viewer's bio parent who is NOT viewer's other bio parent
+  for (const par of viewerParents) {
+    const parentSpouses = getSpousesOf(par, ctx);
+    if (parentSpouses.includes(other) && !viewerParents.includes(other)) {
+      const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      return gendered(sex, 'Step-Father', 'Step-Mother', 'Step-Parent');
+    }
+  }
+
+  // Step-child: child of viewer's spouse who is NOT viewer's bio child
+  const viewerChildren = ctx.CHILDREN[viewer] || [];
+  for (const sp of viewerSpouses) {
+    const spChildren = ctx.CHILDREN[sp] || [];
+    if (spChildren.includes(other) && !viewerChildren.includes(other)) {
+      const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      return gendered(sex, 'Step-Son', 'Step-Daughter', 'Step-Child');
+    }
+  }
+
+  // Step-sibling: child of viewer's step-parent with no shared bio parent
+  for (const par of viewerParents) {
+    for (const stepPar of getSpousesOf(par, ctx)) {
+      if (viewerParents.includes(stepPar)) continue; // bio parent, not step
+      const stepParChildren = ctx.CHILDREN[stepPar] || [];
+      if (stepParChildren.includes(other)) {
+        const otherParents = (ctx.PARENTS[other] || [null, null]).filter(Boolean);
+        const sharesBioParent = otherParents.some(p => viewerParents.includes(p));
+        if (!sharesBioParent) {
+          const sex = (ctx.PEOPLE[other] || {}).sex || null;
+          return gendered(sex, 'Step-Brother', 'Step-Sister', 'Step-Sibling');
+        }
+      }
+    }
+  }
+
+  // ── Tier 3: specific in-laws ─────────────────────────────────────
+  // 3a: parent of viewer's spouse
   for (const sp of viewerSpouses) {
     const spParents = ctx.PARENTS[sp] || [null, null];
     if (spParents.includes(other)) {
@@ -197,7 +235,7 @@ function findAffinityLabel(viewer, other, ctx) {
     }
   }
 
-  // 3b: sibling of viewer's spouse → sister/brother-in-law
+  // 3b: sibling of viewer's spouse
   for (const sp of viewerSpouses) {
     const spParents = ctx.PARENTS[sp] || [null, null];
     for (const p of spParents) {
@@ -210,11 +248,9 @@ function findAffinityLabel(viewer, other, ctx) {
     }
   }
 
-  // 3c: spouse of viewer's sibling → sister/brother-in-law
-  const viewerParents = ctx.PARENTS[viewer] || [null, null];
-  for (const p of viewerParents) {
-    if (!p) continue;
-    for (const sib of (ctx.CHILDREN[p] || [])) {
+  // 3c: spouse of viewer's sibling
+  for (const par of viewerParents) {
+    for (const sib of (ctx.CHILDREN[par] || [])) {
       if (sib === viewer) continue;
       if (getSpousesOf(sib, ctx).includes(other)) {
         const sex = (ctx.PEOPLE[other] || {}).sex || null;
@@ -223,8 +259,8 @@ function findAffinityLabel(viewer, other, ctx) {
     }
   }
 
-  // 3d: spouse of viewer's child → son/daughter-in-law
-  for (const child of (ctx.CHILDREN[viewer] || [])) {
+  // 3d: spouse of viewer's child
+  for (const child of viewerChildren) {
     if (getSpousesOf(child, ctx).includes(other)) {
       const sex = (ctx.PEOPLE[other] || {}).sex || null;
       return gendered(sex, 'Son-in-law', 'Daughter-in-law', 'Child-in-law');

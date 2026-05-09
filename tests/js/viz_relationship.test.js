@@ -456,3 +456,47 @@ describe('computeRelationship — affinity: specific in-laws', () => {
     expect(computeRelationship('@V@', '@DH@', c).label).toBe('Son-in-law');
   });
 });
+
+describe('computeRelationship — affinity: step relationships', () => {
+  it('Step-Mother (spouse of viewer\'s father, not viewer\'s bio mother)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@DAD@': { sex: 'M' }, '@STEPMOM@': { sex: 'F' }, '@BIOMOM@': { sex: 'F' } },
+      parents: { '@V@': ['@DAD@', '@BIOMOM@'] },
+      children: { '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'] },
+      relatives: { '@DAD@': { spouses: ['@BIOMOM@', '@STEPMOM@'] }, '@STEPMOM@': { spouses: ['@DAD@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@STEPMOM@', c).label).toBe('Step-Mother');
+  });
+
+  it('Step-Daughter (viewer\'s spouse\'s daughter, not viewer\'s bio)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@SP@': { sex: 'F' }, '@SD@': { sex: 'F' }, '@SDX@': { sex: 'M' } },
+      parents: { '@SD@': ['@SDX@', '@SP@'] },
+      children: { '@SP@': ['@SD@'], '@SDX@': ['@SD@'] },
+      relatives: { '@V@': { spouses: ['@SP@'] }, '@SP@': { spouses: ['@V@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@SD@', c).label).toBe('Step-Daughter');
+  });
+
+  it('Step-Sister (child of viewer\'s step-mother, no shared bio parent)', () => {
+    const c = ctx({
+      people: {
+        '@V@': {}, '@DAD@': { sex: 'M' }, '@BIOMOM@': { sex: 'F' },
+        '@STEPMOM@': { sex: 'F' }, '@SS@': { sex: 'F' }, '@SSX@': { sex: 'M' },
+      },
+      parents: {
+        '@V@': ['@DAD@', '@BIOMOM@'],
+        '@SS@': ['@SSX@', '@STEPMOM@'],
+      },
+      children: {
+        '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'],
+        '@STEPMOM@': ['@SS@'], '@SSX@': ['@SS@'],
+      },
+      relatives: { '@DAD@': { spouses: ['@BIOMOM@', '@STEPMOM@'] }, '@STEPMOM@': { spouses: ['@DAD@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@SS@', c).label).toBe('Step-Sister');
+  });
+});
