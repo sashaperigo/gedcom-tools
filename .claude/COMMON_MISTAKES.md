@@ -75,10 +75,20 @@ Data-structure tests (edge objects per FAM, children grouped by FAM) can pass wh
 
 ---
 
+### 8. Remove-parent + add-parent-from-tree creates duplicate FAMs (FIXED)
+
+**Symptom**: After removing parent A from a child (leaving parent B), then adding parent C "from your tree" where B and C already share a FAM record, C shows up twice as B's spouse in the UI.
+**Root cause**: `change_parent` creates an intermediate FAM with just B. Then `_wire_relationship` `parent_of` adds C to that intermediate FAM without checking if B and C already share one.
+**Fix** (committed 2026-05-08): `_wire_relationship` now detects the shared FAM and redirects the child there, pruning the orphaned intermediate FAM via `_prune_empty_fam`.
+**Relevant code**: `serve_viz.py` — `_wire_relationship` `parent_of` branch (~line 1319), `_prune_empty_fam` (~line 1210), `_remove_fams_from_indi` (~line 589).
+**Tests**: `tests/test_wire_relationship.py::TestWireRelationshipParentOfSharedFam`.
+
+---
+
 **Update this file when:**
 - Bug took >1 hour to debug
 - Error could cause production issue
 - Mistake repeated across sessions
 - Pattern violates framework conventions
 
-**Last Updated**: 2026-05-06
+**Last Updated**: 2026-05-08
