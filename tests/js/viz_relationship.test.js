@@ -113,3 +113,34 @@ describe('computeRelationship — descendants (a=0, b≥1)', () => {
     expect(computeRelationship('@I1@', '@I6@', c).label).toBe('3× Great-Grandson');
   });
 });
+
+describe('computeRelationship — full siblings (a=1, b=1)', () => {
+  function fullSibCtx(otherSex) {
+    return ctx({
+      people: {
+        '@I1@': {},
+        '@I2@': { sex: otherSex },
+        '@DAD@': { sex: 'M' },
+        '@MOM@': { sex: 'F' },
+      },
+      parents: {
+        '@I1@': ['@DAD@', '@MOM@'],
+        '@I2@': ['@DAD@', '@MOM@'],
+      },
+      children: {
+        '@DAD@': ['@I1@', '@I2@'],
+        '@MOM@': ['@I1@', '@I2@'],
+      },
+    });
+  }
+
+  it('Sister (sex=F)', () => {
+    expect(computeRelationship('@I1@', '@I2@', fullSibCtx('F')).label).toBe('Sister');
+  });
+  it('Brother (sex=M)', () => {
+    expect(computeRelationship('@I1@', '@I2@', fullSibCtx('M')).label).toBe('Brother');
+  });
+  it('Sibling (sex unknown)', () => {
+    expect(computeRelationship('@I1@', '@I2@', fullSibCtx(undefined)).label).toBe('Sibling');
+  });
+});

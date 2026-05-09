@@ -77,6 +77,11 @@ function formatBloodLabel(a, b, otherSex) {
     return greatPrefix(b - 2) + gendered(otherSex, 'Grandson', 'Granddaughter', 'Grandchild');
   }
 
+  // Sibling line (a=1, b=1)
+  if (a === 1 && b === 1) {
+    return gendered(otherSex, 'Brother', 'Sister', 'Sibling');
+  }
+
   return null;
 }
 
