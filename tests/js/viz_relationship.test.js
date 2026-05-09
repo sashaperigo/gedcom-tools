@@ -313,3 +313,52 @@ describe('computeRelationship — cousins', () => {
     expect(computeRelationship(viewer, other, c)).toBeNull();
   });
 });
+
+describe('computeRelationship — half-prefix propagation', () => {
+  it('Half-Aunt: parent has half-sibling (shared grandparent only)', () => {
+    const c = ctx({
+      people: {
+        '@VIEW@': {},
+        '@PARENT@': { sex: 'F' },
+        '@AUNT@': { sex: 'F' },
+        '@GRANDMA@': { sex: 'F' },
+        '@GP_DAD1@': { sex: 'M' },
+        '@GP_DAD2@': { sex: 'M' },
+      },
+      parents: {
+        '@VIEW@': [null, '@PARENT@'],
+        '@PARENT@': ['@GP_DAD1@', '@GRANDMA@'],
+        '@AUNT@':   ['@GP_DAD2@', '@GRANDMA@'],
+      },
+      children: {
+        '@PARENT@': ['@VIEW@'],
+        '@GRANDMA@': ['@PARENT@', '@AUNT@'],
+        '@GP_DAD1@': ['@PARENT@'],
+        '@GP_DAD2@': ['@AUNT@'],
+      },
+    });
+    expect(computeRelationship('@VIEW@', '@AUNT@', c).label).toBe('Half-Aunt');
+  });
+
+  it('Half-1st Cousin: cousin via half-sibling parents', () => {
+    const c = ctx({
+      people: {
+        '@V@': {}, '@C@': {},
+        '@PV@': { sex: 'F' }, '@PC@': { sex: 'F' },
+        '@GMA@': { sex: 'F' }, '@DAD1@': { sex: 'M' }, '@DAD2@': { sex: 'M' },
+      },
+      parents: {
+        '@V@': [null, '@PV@'],
+        '@C@': [null, '@PC@'],
+        '@PV@': ['@DAD1@', '@GMA@'],
+        '@PC@': ['@DAD2@', '@GMA@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@PC@': ['@C@'],
+        '@GMA@': ['@PV@', '@PC@'],
+        '@DAD1@': ['@PV@'], '@DAD2@': ['@PC@'],
+      },
+    });
+    expect(computeRelationship('@V@', '@C@', c).label).toBe('Half-1st Cousin');
+  });
+});
