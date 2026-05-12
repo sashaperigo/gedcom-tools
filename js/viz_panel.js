@@ -564,16 +564,19 @@ function renderPanel() {
         if (existing) existing.remove();
         const idBadge = document.createElement('div');
         idBadge.className = 'detail-person-id';
-        idBadge.textContent = 'Person \xb7 ' + xref.toUpperCase();
-        idBadge.title = 'Click to copy ID';
-        idBadge.style.cursor = 'pointer';
-        idBadge.addEventListener('click', () => {
+        idBadge.appendChild(document.createTextNode('Person \xb7 '));
+        const xrefSpan = document.createElement('span');
+        xrefSpan.textContent = xref.toUpperCase();
+        xrefSpan.title = 'Click to copy ID';
+        xrefSpan.style.cursor = 'pointer';
+        xrefSpan.addEventListener('click', () => {
             navigator.clipboard.writeText(xref).then(() => {
-                const prev = idBadge.textContent;
-                idBadge.textContent = 'Copied!';
-                setTimeout(() => { idBadge.textContent = prev; }, 1200);
+                const prev = xrefSpan.textContent;
+                xrefSpan.textContent = 'Copied!';
+                setTimeout(() => { xrefSpan.textContent = prev; }, 1200);
             });
         });
+        idBadge.appendChild(xrefSpan);
         headerInner.insertBefore(idBadge, headerInner.firstChild);
     }
 

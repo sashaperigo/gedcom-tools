@@ -269,7 +269,7 @@ header h1 .root-name-accent {
     margin-bottom: 6px;
 }
 
-.detail-person-id:hover {
+.detail-person-id span:hover {
     color: var(--text-secondary);
 }
 
