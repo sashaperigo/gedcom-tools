@@ -602,7 +602,8 @@ function _genLabel(gen) {
     if (gen === -3) return 'Great-grandparents';
     if (gen === 1) return 'Children';
     if (gen === 2) return 'Grandchildren';
-    return gen < 0 ? `Gen ${Math.abs(gen)}` : `Gen +${gen}`;
+    if (gen < 0) return `${Math.abs(gen) - 2}× Great-grandparents`;
+    return `Gen +${gen}`;
 }
 
 function _updateGenLabels(nodes) {

@@ -121,7 +121,6 @@ function formatBloodLabel(a, b, otherSex, isHalf) {
   // Cousins (a≥2 AND b≥2)
   if (a >= 2 && b >= 2) {
     const cousinNum = Math.min(a, b) - 1;
-    if (cousinNum > 11) return null; // cap (FamilySearch chart bound)
     const removed = Math.abs(a - b);
     const removedPart = removed > 0 ? ` ${removed}× Removed` : '';
     return halfPrefix + ordinal(cousinNum) + ' Cousin' + removedPart;

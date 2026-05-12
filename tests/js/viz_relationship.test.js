@@ -328,13 +328,13 @@ describe('computeRelationship — cousins', () => {
     const { c, viewer, other } = cousinCtx(6, 9);
     expect(computeRelationship(viewer, other, c).label).toBe('5th Cousin 3× Removed');
   });
-  it('11th Cousin (a=12, b=12) — boundary at chart cap', () => {
+  it('11th Cousin (a=12, b=12)', () => {
     const { c, viewer, other } = cousinCtx(12, 12);
     expect(computeRelationship(viewer, other, c).label).toBe('11th Cousin');
   });
-  it('returns null past 11th cousin cap (a=13, b=13)', () => {
+  it('12th Cousin (a=13, b=13)', () => {
     const { c, viewer, other } = cousinCtx(13, 13);
-    expect(computeRelationship(viewer, other, c)).toBeNull();
+    expect(computeRelationship(viewer, other, c).label).toBe('12th Cousin');
   });
 });
 
