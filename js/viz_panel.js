@@ -781,20 +781,23 @@ function renderPanel() {
         });
         const relRows = relEvents.map(r => ({ kind: 'rel', year: r.year, sortYear: r.year, section: r.section, rel: r }));
 
-        // Sort own events chronologically (nulls/undated last) so undated events
-        // (e.g. MARR with no date) don't strand later dated events at the end.
-        ownRows.sort((a, b) => (a.sortYear ?? Infinity) - (b.sortYear ?? Infinity));
+        const _sectionOrder = { 'Early Life': 0, 'Life': 1, 'Later Life': 2 };
+        const _rowSortKey = r => [_sectionOrder[r.section] ?? 1, r.sortYear ?? Infinity];
+        const _cmpRows = (a, b) => {
+            const [as0, as1] = _rowSortKey(a), [bs0, bs1] = _rowSortKey(b);
+            return as0 !== bs0 ? as0 - bs0 : as1 - bs1;
+        };
 
-        // Merge: own events in chronological order; relative events interleaved by year.
-        // At equal year, own row comes first.
+        // Sort own events by section order first, then chronologically within section.
+        ownRows.sort(_cmpRows);
+
+        // Merge own + relative events, preserving section-then-year order.
+        // At equal sort key, own row comes first.
         const merged = [];
         let oi = 0, ri = 0;
         while (oi < ownRows.length && ri < relRows.length) {
-            const o = ownRows[oi], r = relRows[ri];
-            const oy = o.sortYear ?? Infinity;
-            const ry = r.sortYear;
-            if (oy <= ry) { merged.push(o); oi++; }
-            else          { merged.push(r); ri++; }
+            if (_cmpRows(ownRows[oi], relRows[ri]) <= 0) merged.push(ownRows[oi++]);
+            else merged.push(relRows[ri++]);
         }
         while (oi < ownRows.length) merged.push(ownRows[oi++]);
         while (ri < relRows.length) merged.push(relRows[ri++]);
