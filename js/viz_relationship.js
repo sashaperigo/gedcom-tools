@@ -1,9 +1,6 @@
 // Compute the kinship label between two people in the JS graph.
 // Reads (via injected ctx, falling back to globals): PEOPLE, PARENTS, CHILDREN, RELATIVES, FAMILIES.
 
-// 11th cousin / 10× great-grandparent (FamilySearch chart cap) requires depth 12 from MRCA.
-const MAX_DEPTH = 12;
-
 function gendered(sex, mLabel, fLabel, neutralLabel) {
   if (sex === 'M') return mLabel;
   if (sex === 'F') return fLabel;
@@ -138,10 +135,10 @@ function formatBloodLabel(a, b, otherSex, isHalf) {
 //   viewerLeg = MRCA's child on viewer's path (=== viewer if a===1; null if a===0)
 //   otherLeg  = MRCA's child on other's path  (=== other  if b===1; null if b===0)
 function findBloodPaths(viewer, other, ctx) {
-  const ancestors = bfsUp(viewer, ctx.PARENTS, MAX_DEPTH);
+  const ancestors = bfsUp(viewer, ctx.PARENTS, Infinity);
   const paths = [];
   for (const [ancestorXref, viewerPaths] of ancestors) {
-    const descendants = bfsDown(ancestorXref, ctx.CHILDREN, MAX_DEPTH);
+    const descendants = bfsDown(ancestorXref, ctx.CHILDREN, Infinity);
     const otherPaths = descendants.get(other);
     if (!otherPaths) continue;
     for (const vp of viewerPaths) {
