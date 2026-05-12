@@ -269,6 +269,10 @@ header h1 .root-name-accent {
     margin-bottom: 6px;
 }
 
+.detail-person-id:hover {
+    color: var(--text-secondary);
+}
+
 #detail-name {
     font-size: 20px;
     font-weight: 600;

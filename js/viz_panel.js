@@ -565,6 +565,15 @@ function renderPanel() {
         const idBadge = document.createElement('div');
         idBadge.className = 'detail-person-id';
         idBadge.textContent = 'Person \xb7 ' + xref.toUpperCase();
+        idBadge.title = 'Click to copy ID';
+        idBadge.style.cursor = 'pointer';
+        idBadge.addEventListener('click', () => {
+            navigator.clipboard.writeText(xref).then(() => {
+                const prev = idBadge.textContent;
+                idBadge.textContent = 'Copied!';
+                setTimeout(() => { idBadge.textContent = prev; }, 1200);
+            });
+        });
         headerInner.insertBefore(idBadge, headerInner.firstChild);
     }
 
