@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from export_minimal import export_minimal
+from scripts.export_minimal import export_minimal
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'minimal_export.ged'
 

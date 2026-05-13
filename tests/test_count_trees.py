@@ -13,7 +13,7 @@ Covers connected-component counting on the family graph:
 from pathlib import Path
 
 
-from count_trees import count_trees
+from scripts.count_trees import count_trees
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'trees_sample.ged'
 

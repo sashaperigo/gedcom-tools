@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from normalize_ancestry import normalize_ancestry
+from scripts.normalize_ancestry import normalize_ancestry
 
 # ---------------------------------------------------------------------------
 # Fixtures

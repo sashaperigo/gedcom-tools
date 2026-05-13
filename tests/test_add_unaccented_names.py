@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from add_unaccented_names import _remove_accents, add_unaccented_names
+from scripts.add_unaccented_names import _remove_accents, add_unaccented_names
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'accented_names.ged'
 

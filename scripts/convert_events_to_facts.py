@@ -12,8 +12,8 @@ Converts misclassified EVEN records to their correct GEDCOM 5.5.1 types:
   EVEN TYPE Children          → NCHI <count>
 
 Usage:
-    python convert_events_to_facts.py --dry-run path/to/file.ged
-    python convert_events_to_facts.py path/to/file.ged
+    python -m scripts.convert_events_to_facts --dry-run path/to/file.ged
+    python -m scripts.convert_events_to_facts path/to/file.ged
 """
 
 import argparse

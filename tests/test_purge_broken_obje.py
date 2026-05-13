@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-from purge_broken_obje import purge_broken_obje
+from scripts.purge_broken_obje import purge_broken_obje
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'obje_mixed.ged'
 

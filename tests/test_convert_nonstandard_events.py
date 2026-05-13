@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from convert_nonstandard_events import convert_nonstandard_events
+from scripts.convert_nonstandard_events import convert_nonstandard_events
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'nonstandard_events.ged'
 

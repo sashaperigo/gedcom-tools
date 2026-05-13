@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from extract_occupations import (
+from scripts.extract_occupations import (
     IGNORED_OCCUPATIONS,
     extract_occupation_from_note,
     extract_occupations,

@@ -8,13 +8,13 @@ This tool strips those tags (and all their child lines) from the file.
 
 Usage:
   # Strip in-place:
-  python strip_ancestry_artifacts.py yourfile.ged
+  python -m scripts.strip_ancestry_artifacts yourfile.ged
 
   # Write cleaned output to a new file:
-  python strip_ancestry_artifacts.py yourfile.ged --output clean.ged
+  python -m scripts.strip_ancestry_artifacts yourfile.ged --output clean.ged
 
   # Preview what would be removed without writing:
-  python strip_ancestry_artifacts.py yourfile.ged --dry-run
+  python -m scripts.strip_ancestry_artifacts yourfile.ged --dry-run
 """
 
 import argparse

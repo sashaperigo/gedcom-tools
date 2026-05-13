@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from strip_ancestry_artifacts import (
+from scripts.strip_ancestry_artifacts import (
     ANCESTRY_TAGS,
     strip_ancestry_artifacts,
 )

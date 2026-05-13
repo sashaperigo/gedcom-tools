@@ -22,9 +22,9 @@ This script converts each block to standard GEDCOM:
       1 NOTE Some Title: https://...url...
 
 Usage:
-  python convert_wlnk.py yourfile.ged
-  python convert_wlnk.py yourfile.ged --output clean.ged
-  python convert_wlnk.py yourfile.ged --dry-run
+  python -m scripts.convert_wlnk yourfile.ged
+  python -m scripts.convert_wlnk yourfile.ged --output clean.ged
+  python -m scripts.convert_wlnk yourfile.ged --dry-run
 """
 
 import argparse

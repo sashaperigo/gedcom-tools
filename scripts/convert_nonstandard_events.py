@@ -10,9 +10,9 @@ Handles three Ancestry/FamilySearch proprietary event tags:
                                  (or a new standalone DEAT if none follows)
 
 Usage:
-  python convert_nonstandard_events.py yourfile.ged
-  python convert_nonstandard_events.py yourfile.ged --output clean.ged
-  python convert_nonstandard_events.py yourfile.ged --dry-run
+  python -m scripts.convert_nonstandard_events yourfile.ged
+  python -m scripts.convert_nonstandard_events yourfile.ged --output clean.ged
+  python -m scripts.convert_nonstandard_events yourfile.ged --dry-run
 """
 
 import argparse

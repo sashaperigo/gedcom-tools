@@ -21,9 +21,9 @@ the parent event block, preserving the original NOTE unchanged:
     2 DATE 1921
 
 Usage:
-  python extract_occupations.py yourfile.ged
-  python extract_occupations.py yourfile.ged --output clean.ged
-  python extract_occupations.py yourfile.ged --dry-run
+  python -m scripts.extract_occupations yourfile.ged
+  python -m scripts.extract_occupations yourfile.ged --output clean.ged
+  python -m scripts.extract_occupations yourfile.ged --dry-run
 """
 
 import argparse

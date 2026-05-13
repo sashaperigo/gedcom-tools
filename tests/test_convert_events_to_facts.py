@@ -14,7 +14,7 @@ import textwrap
 
 import pytest
 
-from convert_events_to_facts import convert_lines
+from scripts.convert_events_to_facts import convert_lines
 
 
 def ged(text):

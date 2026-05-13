@@ -27,13 +27,13 @@ appended to it. No source information is ever discarded.
 
 Usage:
   # Merge in-place:
-  python purge_duplicate_events.py yourfile.ged
+  python -m scripts.purge_duplicate_events yourfile.ged
 
   # Write merged output to a new file:
-  python purge_duplicate_events.py yourfile.ged --output clean.ged
+  python -m scripts.purge_duplicate_events yourfile.ged --output clean.ged
 
   # Preview what would change without writing:
-  python purge_duplicate_events.py yourfile.ged --dry-run
+  python -m scripts.purge_duplicate_events yourfile.ged --dry-run
 """
 
 import argparse

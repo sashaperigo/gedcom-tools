@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from convert_physical_attrs import convert_physical_attrs
+from scripts.convert_physical_attrs import convert_physical_attrs
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'physical_attrs.ged'
 

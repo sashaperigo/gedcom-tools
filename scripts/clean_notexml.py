@@ -19,9 +19,9 @@ CONC continuation lines that were part of a notexml block are consumed
 during reconstruction and replaced by the clean CONT output.
 
 Usage:
-  python clean_notexml.py yourfile.ged
-  python clean_notexml.py yourfile.ged --output clean.ged
-  python clean_notexml.py yourfile.ged --dry-run
+  python -m scripts.clean_notexml yourfile.ged
+  python -m scripts.clean_notexml yourfile.ged --output clean.ged
+  python -m scripts.clean_notexml yourfile.ged --dry-run
 """
 
 import argparse

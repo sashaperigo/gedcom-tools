@@ -23,13 +23,13 @@ for local existence.
 
 Usage:
   # Remove broken OBJE blocks in-place:
-  python purge_broken_obje.py yourfile.ged
+  python -m scripts.purge_broken_obje yourfile.ged
 
   # Write cleaned output to a new file:
-  python purge_broken_obje.py yourfile.ged --output clean.ged
+  python -m scripts.purge_broken_obje yourfile.ged --output clean.ged
 
   # Preview what would be removed without writing:
-  python purge_broken_obje.py yourfile.ged --dry-run
+  python -m scripts.purge_broken_obje yourfile.ged --dry-run
 """
 
 import argparse

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from clean_notexml import clean_notexml
+from scripts.clean_notexml import clean_notexml
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'notexml_sample.ged'
 

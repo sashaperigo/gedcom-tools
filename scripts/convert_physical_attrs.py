@@ -22,9 +22,9 @@ Multiple DSCR tags on the same individual are valid in GEDCOM 5.5.1 and will
 coexist with any pre-existing DSCR entries.
 
 Usage:
-  python convert_physical_attrs.py yourfile.ged
-  python convert_physical_attrs.py yourfile.ged --output clean.ged
-  python convert_physical_attrs.py yourfile.ged --dry-run
+  python -m scripts.convert_physical_attrs yourfile.ged
+  python -m scripts.convert_physical_attrs yourfile.ged --output clean.ged
+  python -m scripts.convert_physical_attrs yourfile.ged --dry-run
 """
 
 import argparse

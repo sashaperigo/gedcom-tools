@@ -18,19 +18,19 @@ Runs the following steps in order:
 
 Usage:
   # Write result to yourfile_normalized.ged (default — original untouched):
-  python normalize_ancestry.py yourfile.ged
+  python -m scripts.normalize_ancestry yourfile.ged
 
   # Write result to a specific output file:
-  python normalize_ancestry.py yourfile.ged --output clean.ged
+  python -m scripts.normalize_ancestry yourfile.ged --output clean.ged
 
   # Overwrite the original file in place:
-  python normalize_ancestry.py yourfile.ged --in-place
+  python -m scripts.normalize_ancestry yourfile.ged --in-place
 
   # Preview all changes without writing:
-  python normalize_ancestry.py yourfile.ged --dry-run
+  python -m scripts.normalize_ancestry yourfile.ged --dry-run
 
   # Skip specific steps:
-  python normalize_ancestry.py yourfile.ged --skip purge_obje linter
+  python -m scripts.normalize_ancestry yourfile.ged --skip purge_obje linter
 """
 
 import argparse
@@ -39,15 +39,15 @@ import shutil
 import sys
 import tempfile
 
-from strip_ancestry_artifacts import strip_ancestry_artifacts
-from convert_physical_attrs import convert_physical_attrs
-from add_unaccented_names import add_unaccented_names
-from convert_nonstandard_events import convert_nonstandard_events
-from convert_wlnk import convert_wlnk
-from clean_notexml import clean_notexml
-from extract_occupations import extract_occupations, purge_blocked_occupations
-from purge_duplicate_events import purge_duplicate_events
-from purge_broken_obje import purge_broken_obje
+from .strip_ancestry_artifacts import strip_ancestry_artifacts
+from .convert_physical_attrs import convert_physical_attrs
+from .add_unaccented_names import add_unaccented_names
+from .convert_nonstandard_events import convert_nonstandard_events
+from .convert_wlnk import convert_wlnk
+from .clean_notexml import clean_notexml
+from .extract_occupations import extract_occupations, purge_blocked_occupations
+from .purge_duplicate_events import purge_duplicate_events
+from .purge_broken_obje import purge_broken_obje
 from gedcom_linter import lint_and_fix
 
 

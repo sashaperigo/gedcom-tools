@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from purge_duplicate_events import purge_duplicate_events
+from scripts.purge_duplicate_events import purge_duplicate_events
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'duplicate_events.ged'
 
@@ -413,7 +413,7 @@ class TestOutputIntegrity:
 # FAM / MARR deduplication
 # ===========================================================================
 
-from purge_duplicate_events import (  # noqa: E402
+from scripts.purge_duplicate_events import (  # noqa: E402
     _marr_dates_compatible,
     _marr_blocks_are_duplicate,
     _process_fam_record,

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from convert_wlnk import convert_wlnk
+from scripts.convert_wlnk import convert_wlnk
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'wlnk_sample.ged'
 

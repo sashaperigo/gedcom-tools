@@ -7,7 +7,7 @@ family record (FAM) creates edges between all its members (HUSB, WIFE, CHIL).
 Connected components of this graph are the distinct family trees.
 
 Usage:
-  python count_trees.py yourfile.ged
+  python -m scripts.count_trees yourfile.ged
 """
 
 import argparse

@@ -22,9 +22,9 @@ A name is skipped if:
   - The individual already has a NAME entry whose value matches the unaccented form.
 
 Usage:
-  python add_unaccented_names.py yourfile.ged
-  python add_unaccented_names.py yourfile.ged --output clean.ged
-  python add_unaccented_names.py yourfile.ged --dry-run
+  python -m scripts.add_unaccented_names yourfile.ged
+  python -m scripts.add_unaccented_names yourfile.ged --output clean.ged
+  python -m scripts.add_unaccented_names yourfile.ged --dry-run
 """
 
 import argparse

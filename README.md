@@ -24,10 +24,10 @@ python gedcom_linter.py yourfile.ged
 Runs all cleaning steps in sequence on an Ancestry.com GEDCOM export and writes a clean output file.
 
 ```bash
-python normalize_ancestry.py yourfile.ged                  # → yourfile_normalized.ged
-python normalize_ancestry.py yourfile.ged --output clean.ged
-python normalize_ancestry.py yourfile.ged --in-place
-python normalize_ancestry.py yourfile.ged --dry-run
+python -m scripts.normalize_ancestry yourfile.ged                  # → yourfile_normalized.ged
+python -m scripts.normalize_ancestry yourfile.ged --output clean.ged
+python -m scripts.normalize_ancestry yourfile.ged --in-place
+python -m scripts.normalize_ancestry yourfile.ged --dry-run
 ```
 
 **Pipeline steps (in order):**
@@ -77,11 +77,11 @@ gedcom-lint --fix-all --dry-run yourfile.ged
 Strips citations and optional fields to produce a clean, minimal GEDCOM suitable for sharing or importing into other tools.
 
 ```bash
-python export_minimal.py yourfile.ged                  # → yourfile_minimal.txt
-python export_minimal.py yourfile.ged --output out.txt
-python export_minimal.py yourfile.ged --keep-fact-sources   # preserve fact-level SOUR
-python export_minimal.py yourfile.ged --strip-sour-bodies   # reduce SOUR records to header+TITL
-python export_minimal.py yourfile.ged --dry-run
+python -m scripts.export_minimal yourfile.ged                  # → yourfile_minimal.txt
+python -m scripts.export_minimal yourfile.ged --output out.txt
+python -m scripts.export_minimal yourfile.ged --keep-fact-sources   # preserve fact-level SOUR
+python -m scripts.export_minimal yourfile.ged --strip-sour-bodies   # reduce SOUR records to header+TITL
+python -m scripts.export_minimal yourfile.ged --dry-run
 ```
 
 Runs the full normalization pipeline first (minus AKA name expansion), then:

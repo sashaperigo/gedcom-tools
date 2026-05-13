@@ -24,11 +24,11 @@ Applies a two-step pipeline:
 The output is saved as a .txt file (default: <input_stem>_minimal.txt).
 
 Usage:
-  python export_minimal.py yourfile.ged
-  python export_minimal.py yourfile.ged --output compact.txt
-  python export_minimal.py yourfile.ged --keep-fact-sources
-  python export_minimal.py yourfile.ged --strip-sour-bodies
-  python export_minimal.py yourfile.ged --dry-run
+  python -m scripts.export_minimal yourfile.ged
+  python -m scripts.export_minimal yourfile.ged --output compact.txt
+  python -m scripts.export_minimal yourfile.ged --keep-fact-sources
+  python -m scripts.export_minimal yourfile.ged --strip-sour-bodies
+  python -m scripts.export_minimal yourfile.ged --dry-run
 """
 
 import argparse
@@ -304,7 +304,7 @@ def export_minimal(
     if skip_normalize:
         work_path = path_in
     else:
-        from normalize_ancestry import normalize_ancestry
+        from .normalize_ancestry import normalize_ancestry
         tmp_fd, tmp_norm = tempfile.mkstemp(suffix='.ged')
         os.close(tmp_fd)
         try:
