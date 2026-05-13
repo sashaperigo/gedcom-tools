@@ -22,7 +22,6 @@ const _EVT_LABEL = {
     MARR: 'Marriage',
     DIV: 'Divorce',
     ANUL: 'Annulment',
-    CREM: 'Cremation',
     NATU: 'Naturalization',
     EMIG: 'Emigration',
     IMMI: 'Immigration',
