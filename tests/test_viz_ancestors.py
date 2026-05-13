@@ -1014,3 +1014,61 @@ class TestEmigAndIndiMarr:
         marr_events = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
         assert len(marr_events) == 1, f"Expected 1 MARR event, got {len(marr_events)}"
         assert marr_events[0].get('fam_xref') == '@F1@'
+
+
+class TestCremAndAnul:
+    """CREM (cremation) INDI event and ANUL (annulment) FAM event."""
+
+    def _parse(self, tmp_path, ged_text):
+        ged = tmp_path / 'test.ged'
+        ged.write_text(_GED_HEADER + ged_text + '0 TRLR\n', encoding='utf-8')
+        return parse_gedcom(str(ged))
+
+    def test_crem_event_parsed_from_indi(self, tmp_path):
+        indis, _, _ = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME John /Doe/\n'
+            '1 CREM\n2 DATE 1 JAN 2000\n2 PLAC Rome, Italy\n'
+        )
+        crem = next((e for e in indis['@I1@']['events'] if e['tag'] == 'CREM'), None)
+        assert crem is not None
+        assert crem['date'] == '1 JAN 2000'
+        assert 'Rome' in crem['place']
+
+    def test_crem_appears_in_build_people_json(self, tmp_path):
+        indis, fams, sources = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME John /Doe/\n'
+            '1 CREM\n2 DATE 2000\n2 PLAC Rome, Italy\n'
+        )
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        events = people['@I1@']['events']
+        assert any(e['tag'] == 'CREM' for e in events)
+
+    def test_anul_parsed_from_fam(self, tmp_path):
+        indis, fams, _ = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME Jane /Smith/\n1 SEX F\n1 FAMS @F1@\n'
+            '0 @I2@ INDI\n1 NAME Bob /Jones/\n1 SEX M\n1 FAMS @F1@\n'
+            '0 @F1@ FAM\n1 HUSB @I2@\n1 WIFE @I1@\n'
+            '1 MARR\n2 DATE 1980\n'
+            '1 ANUL\n2 DATE 1985\n2 PLAC Rome, Italy\n'
+        )
+        fam = fams['@F1@']
+        assert 'anuls' in fam
+        assert len(fam['anuls']) == 1
+        assert fam['anuls'][0]['date'] == '1985'
+        assert 'Rome' in fam['anuls'][0]['place']
+
+    def test_anul_appears_in_build_people_json(self, tmp_path):
+        indis, fams, sources = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME Jane /Smith/\n1 SEX F\n1 FAMS @F1@\n'
+            '0 @I2@ INDI\n1 NAME Bob /Jones/\n1 SEX M\n1 FAMS @F1@\n'
+            '0 @F1@ FAM\n1 HUSB @I2@\n1 WIFE @I1@\n'
+            '1 MARR\n2 DATE 1980\n'
+            '1 ANUL\n2 DATE 1985\n2 PLAC Rome, Italy\n'
+        )
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        events = people['@I1@']['events']
+        anul = next((e for e in events if e['tag'] == 'ANUL'), None)
+        assert anul is not None
+        assert anul['date'] == '1985'
+        assert anul.get('fam_xref') == '@F1@'
+        assert anul.get('anul_idx') == 0

@@ -21,6 +21,8 @@ const _EVT_LABEL = {
     CREM: 'Cremation',
     MARR: 'Marriage',
     DIV: 'Divorce',
+    ANUL: 'Annulment',
+    CREM: 'Cremation',
     NATU: 'Naturalization',
     EMIG: 'Emigration',
     IMMI: 'Immigration',
@@ -830,7 +832,7 @@ async function submitNameModal() {
 // ---------------------------------------------------------------------------
 
 // Tags whose events live in FAM records (not in INDI)
-const _FAM_EVENT_TAGS = new Set(['MARR', 'DIV']);
+const _FAM_EVENT_TAGS = new Set(['MARR', 'DIV', 'ANUL']);
 
 // Pure helper: filter ALL_PEOPLE by name substring (case-insensitive), max 12
 function _filterSpouseResults(query, allPeople) {
@@ -1077,8 +1079,8 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
     const targetXref = isFamEvt ? evt.fam_xref : xref;
     let eventOcc;
     if (isFamEvt) {
-        eventOcc = (tag === 'DIV') ?
-            (evt.div_idx != null ? evt.div_idx : 0) :
+        eventOcc = (tag === 'DIV') ? (evt.div_idx != null ? evt.div_idx : 0) :
+            (tag === 'ANUL') ? (evt.anul_idx != null ? evt.anul_idx : 0) :
             (evt.marr_idx != null ? evt.marr_idx : 0);
     } else {
         eventOcc = (evt && evt.event_idx != null) ? evt.event_idx : 0;
@@ -1353,7 +1355,7 @@ const _applyToEventsState = { rows: [], mode: null };
 function _applyToEventLabel(ev) {
     const tag = ev && ev.tag;
     let label = _evtLabel(tag, ev && ev.type) || tag || '';
-    if (tag === 'MARR' || tag === 'DIV') {
+    if (tag === 'MARR' || tag === 'DIV' || tag === 'ANUL') {
         const fam = (typeof FAMILIES !== 'undefined' && FAMILIES) ? FAMILIES[ev.fam_xref] : null;
         // Best-effort spouse label — fall back silently when data isn't loaded.
         const spouseXref = fam && fam.spouseXrefs && fam.spouseXrefs.find(x => x !== ev.indi_xref);
@@ -1370,7 +1372,7 @@ function _buildApplyToEventsRows(person, sourceXref) {
     const events = (person && person.events) || [];
     return events.map(ev => {
         const isFam = (ev.event_idx == null) && !!ev.fam_xref;
-        const occ = isFam ? (ev.tag === 'MARR' ? ev.marr_idx : ev.div_idx) : ev.event_idx;
+        const occ = isFam ? (ev.tag === 'MARR' ? ev.marr_idx : (ev.tag === 'ANUL' ? ev.anul_idx : ev.div_idx)) : ev.event_idx;
         const cites = ev.citations || [];
         const matchingIndices = [];
         if (sourceXref) {
@@ -1564,7 +1566,7 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
             const fact = (person.events || []).find(f => {
                 if (f.tag !== factTag) return false;
                 if (isFamCite) {
-                    const famIdx = f.tag === 'MARR' ? f.marr_idx : f.div_idx;
+                    const famIdx = f.tag === 'MARR' ? f.marr_idx : (f.tag === 'ANUL' ? f.anul_idx : f.div_idx);
                     return f.fam_xref === _editCitationApiXref && famIdx === _editCitationEventOcc;
                 }
                 return f.event_idx === _editCitationEventOcc;

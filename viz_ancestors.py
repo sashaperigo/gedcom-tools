@@ -36,7 +36,7 @@ _AGE_PARSE_RE = re.compile(r'^(?:(\d+)Y)?\s*(?:(\d+)M)?\s*(?:(\d+)D)?$')
 _EVENT_TAGS = frozenset({
     'BIRT', 'DEAT', 'BURI', 'RESI', 'OCCU', 'CHR', 'BAPM',
     'NATU', 'IMMI', 'EMIG', 'EVEN', 'FACT', 'NATI', 'RELI', 'TITL',
-    'ADOP', 'EDUC', 'RETI', 'MARR', 'DIV', 'CONF', 'PROB',
+    'ADOP', 'EDUC', 'RETI', 'MARR', 'DIV', 'CONF', 'PROB', 'CREM',
     'NCHI', 'DSCR',
 })
 
@@ -119,10 +119,11 @@ def _fam_handle_lvl1(state: dict, tag: str, val: str, rec: dict) -> None:
     elif tag == 'CHIL':
         rec['chil'].append(val)
         state['current_evt'] = None
-    elif tag in ('MARR', 'DIV'):
+    elif tag in ('MARR', 'DIV', 'ANUL'):
         evt = {'tag': tag, 'type': None, 'date': None, 'place': None,
                'note': None, 'age': None, 'addr': None, 'citations': []}
-        rec.setdefault('marrs' if tag == 'MARR' else 'divs', []).append(evt)
+        key = 'marrs' if tag == 'MARR' else ('divs' if tag == 'DIV' else 'anuls')
+        rec.setdefault(key, []).append(evt)
         state['current_evt'] = evt
     else:
         state['current_evt'] = None
@@ -812,6 +813,14 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                                    'event_idx': None, 'div_idx': div_idx,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
+                for anul_idx, anul in enumerate(fam.get('anuls', [])):
+                    if not any(anul.get(f) for f in ('date', 'place', 'addr', 'note', 'type')):
+                        continue
+                    anul_cites = [_normalize_citation(c) for c in anul.get('citations', [])]
+                    events.append({**anul, 'citations': anul_cites,
+                                   'event_idx': None, 'anul_idx': anul_idx,
+                                   'spouse': spouse_name, 'spouse_xref': spouse_xref,
+                                   'fam_xref': fam_xref})
             # MARR on the INDI record is a fallback for persons with no FAMS link.
             # If FAM-sourced MARR events were appended, suppress any INDI-level
             # MARR events (event_idx is not None, no fam_xref) to avoid duplicates.
@@ -975,6 +984,9 @@ def build_all_places(indis: dict, fams: dict | None = None) -> list[str]:
             for div in fam.get('divs', []):
                 if div.get('place'):
                     places.add(div['place'])
+            for anul in fam.get('anuls', []):
+                if anul.get('place'):
+                    places.add(anul['place'])
     return sorted(places)
 
 

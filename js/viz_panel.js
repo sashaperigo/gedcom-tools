@@ -136,7 +136,9 @@ const EVENT_LABELS = {
     OCCU: 'Occupation',
     IMMI: 'Immigration',
     EMIG: 'Emigration',
+    CREM: 'Cremation',
     NATU: 'Naturalization',
+    ANUL: 'Annulment',
     ADOP: 'Adoption',
     EDUC: 'Education',
     RETI: 'Retirement',
@@ -182,6 +184,8 @@ function buildProse(evt) {
             }
         case 'BURI':
             return { prose: short ? `Buried in ${short}` : (date ? `Buried ${date}` : 'Burial'), meta: meta() };
+        case 'CREM':
+            return { prose: short ? `Cremated in ${short}` : (date ? `Cremated ${date}` : 'Cremation'), meta: meta() };
         case 'RESI':
             return { prose: short ? `Lived in ${short}` : (date ? `Lived ${date}` : 'Residence'), meta: meta() };
         case 'OCCU':
@@ -214,6 +218,11 @@ function buildProse(evt) {
         case 'DIV': {
             const who = evt.spouse || '';
             const prose = who ? `Divorced ${who}` : (date ? `Divorced ${date}` : 'Divorce');
+            return { prose, meta: meta() };
+        }
+        case 'ANUL': {
+            const who = evt.spouse || '';
+            const prose = who ? `Annulment from ${who}` : (date ? `Annulment ${date}` : 'Annulment');
             return { prose, meta: meta() };
         }
         case 'FACT':
@@ -275,6 +284,7 @@ function dotColor(evt) {
         case 'DEAT':
             return '#e4e4ff';
         case 'BURI':
+        case 'CREM':
             return '#727298';
         case 'RESI':
             return '#38bdf8';
@@ -758,13 +768,13 @@ function renderPanel() {
     // Filter: exclude NATI (shown above), name records, and blank events
     const allVisible = (data.events || []).map((e, i) => ({ ...e, _origIdx: i })).filter(e =>
         e.tag !== 'NATI' &&
-        (e.tag === 'MARR' || e.date || e.place || e.note || e.type || e.cause || e.addr || e.inline_val) &&
+        (e.tag === 'MARR' || e.tag === 'ANUL' || e.date || e.place || e.note || e.type || e.cause || e.addr || e.inline_val) &&
         !e._name_record
     );
     const _keepInTimeline = e =>
         e.tag !== 'RELI' && (
             e.date ||
-            e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'PROB' || e.tag === 'MARR' ||
+            e.tag === 'BIRT' || e.tag === 'DEAT' || e.tag === 'BURI' || e.tag === 'CREM' || e.tag === 'PROB' || e.tag === 'MARR' || e.tag === 'ANUL' ||
             e.tag === 'BAPM' || e.tag === 'CONF' ||
             e.type === 'Arrival' || e.type === 'Departure');
     const undatedFactoids = allVisible.filter(e => !_keepInTimeline(e));
@@ -781,7 +791,7 @@ function renderPanel() {
             const _yrMatch = evt.date ? _YR_RE.exec(evt.date) : null;
             const evtYear = _yrMatch ? (parseInt(_yrMatch[1], 10) || null) : null;
             const _typ = (evt.type || '').toLowerCase();
-            const _isDeathRelated = evt.tag === 'DEAT' || evt.tag === 'BURI' || evt.tag === 'PROB' ||
+            const _isDeathRelated = evt.tag === 'DEAT' || evt.tag === 'BURI' || evt.tag === 'CREM' || evt.tag === 'PROB' ||
                 (evt.tag === 'EVEN' && (_typ.includes('death') || _typ.includes('obituar') || _typ.includes('avis de d') || _typ.includes('probate')));
             let section = 'Life';
             if (evt.tag === 'BIRT' || (evtYear && by && evtYear <= by + 18)) section = 'Early Life';
@@ -894,6 +904,37 @@ function renderPanel() {
                         `</div>` +
                         divSrcBadge +
                         divKebab +
+                        `</div>`;
+                    continue;
+                }
+
+                if (evt.tag === 'ANUL') {
+                    const spXref = evt.spouse_xref;
+                    const spClickable = spXref && (typeof PARENTS !== 'undefined') && PARENTS[spXref];
+                    const spXrefAttr = spClickable ? escHtml(spXref) : '';
+                    const anulClick = spClickable ?
+                        ` style="cursor:pointer" data-spouse-xref="${spXrefAttr}" onclick="setState({focusXref:this.dataset.spouseXref,panelXref:this.dataset.spouseXref,panelOpen:true})"` : '';
+                    const proseHtml = spClickable ?
+                        `<div class="marr-prose marr-link">${escHtml(prose)}</div>` :
+                        `<div class="marr-prose">${escHtml(prose)}</div>`;
+                    const anulFamXrefQ = JSON.stringify(evt.fam_xref).replace(/"/g, '&quot;');
+                    const anulKebab = evt.fam_xref ? _buildEventKebabHtml([
+                        { icon: '✏', label: 'Edit', onclick: `editEvent(${xrefQ},null,'ANUL',${anulFamXrefQ},${evt.anul_idx ?? 0})` },
+                        { icon: '✕', label: 'Delete', danger: true, onclick: `deleteMarriage(${xrefQ},${anulFamXrefQ},${evt.anul_idx ?? 0},'ANUL')` },
+                    ]) : '';
+                    const anulSrcBadge = buildSourceBadgeHtml(evt.citations, xref, evt._origIdx);
+                    const yearLabelSpan = evtYear ? `<span class="marr-year">${evtYear}</span>` : '';
+                    const ageStr = _buildAgeHtml(evt, evtYear, by);
+                    html +=
+                        `<div class="div-card"${anulClick}>` +
+                        `<div class="evt-year-col">${yearLabelSpan}${ageStr}<span class="evt-tag-abbrev">ANUL</span></div>` +
+                        `<div class="evt-content">` +
+                        proseHtml +
+                        (meta && meta !== String(evtYear) ? `<div class="marr-meta">${escHtml(meta)}</div>` : '') +
+                        noteInl +
+                        `</div>` +
+                        anulSrcBadge +
+                        anulKebab +
                         `</div>`;
                     continue;
                 }
