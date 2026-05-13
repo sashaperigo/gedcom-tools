@@ -3779,6 +3779,108 @@ def fix_duplicate_resi(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Duplicate event deduplication — BIRT/DEAT/BAPM/BURI/NATU  (spec 2.x)
+# ---------------------------------------------------------------------------
+
+_DUP_EVENT_TAGS = ('BIRT', 'DEAT', 'BAPM', 'BURI', 'NATU')
+_DUP_MONTH_RE = re.compile(
+    r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b', re.I
+)
+_DUP_YEAR_RE = re.compile(r'\b(\d{4})\b')
+
+
+def _dup_is_full_date(d: str) -> bool:
+    return bool(d) and bool(_DUP_MONTH_RE.search(d))
+
+
+def _dup_year_of(d: str) -> int | None:
+    m = _DUP_YEAR_RE.search(d or '')
+    return int(m.group(1)) if m else None
+
+
+def _dup_date_compatible(v_date: str | None, s_date: str | None) -> bool:
+    """True if victim's DATE is a subset of (or equal to) survivor's DATE."""
+    if v_date is None:
+        return True
+    if v_date == s_date:
+        return True
+    if s_date is None:
+        return False
+    if (not _dup_is_full_date(v_date)
+            and _dup_is_full_date(s_date)
+            and _dup_year_of(v_date) == _dup_year_of(s_date)):
+        return True
+    return False
+
+
+def _dup_get_fields(lines: list[str], s: int, e: int) -> dict[str, str]:
+    """Return {TAG: value} for all level-2 non-SOUR fields in lines[s:e]."""
+    fields: dict[str, str] = {}
+    for line in lines[s + 1:e]:
+        stripped = line.rstrip('\n')
+        if not stripped.startswith('2 '):
+            continue
+        parts = stripped.split(' ', 2)
+        tag = parts[1]
+        if tag == 'SOUR':
+            continue
+        val = parts[2] if len(parts) > 2 else ''
+        if tag not in fields:
+            fields[tag] = val
+    return fields
+
+
+def _dup_get_sour_blocks(lines: list[str], s: int, e: int) -> list[list[str]]:
+    """Return source sub-blocks (each a list of raw lines) from an event block."""
+    blocks: list[list[str]] = []
+    i = s + 1
+    while i < e:
+        if lines[i].startswith('2 SOUR '):
+            block = [lines[i]]
+            j = i + 1
+            while j < e and re.match(r'^[3-9] ', lines[j]):
+                block.append(lines[j])
+                j += 1
+            blocks.append(block)
+            i = j
+        else:
+            i += 1
+    return blocks
+
+
+def _dup_is_subset(v_fields: dict[str, str], s_fields: dict[str, str]) -> bool:
+    """True if every field in victim is compatible with survivor."""
+    for tag, v_val in v_fields.items():
+        if tag == 'DATE':
+            if not _dup_date_compatible(v_val, s_fields.get('DATE')):
+                return False
+        else:
+            s_val = s_fields.get(tag)
+            if s_val is None or v_val.strip() != s_val.strip():
+                return False
+    return True
+
+
+def _dup_event_blocks(
+    lines: list[str], rec_s: int, rec_e: int, tag: str
+) -> list[tuple[int, int]]:
+    """Return list of (start, end) index pairs for all level-1 `tag` blocks."""
+    blocks: list[tuple[int, int]] = []
+    i = rec_s
+    while i < rec_e:
+        s = lines[i].rstrip('\n')
+        if s == f'1 {tag}' or s.startswith(f'1 {tag} '):
+            j = i + 1
+            while j < rec_e and not lines[j].startswith('1 '):
+                j += 1
+            blocks.append((i, j))
+            i = j
+        else:
+            i += 1
+    return blocks
+
+
+# ---------------------------------------------------------------------------
 # FACT AKA → proper NAME tag  (spec 2.3)
 # ---------------------------------------------------------------------------
 
