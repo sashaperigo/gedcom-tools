@@ -3880,6 +3880,158 @@ def _dup_event_blocks(
     return blocks
 
 
+def scan_duplicate_events(path: str) -> list[tuple[str, str]]:
+    """
+    Return (xref, tag) for each individual that has at least one pair of
+    duplicate event blocks of a type in _DUP_EVENT_TAGS.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    _INDI_RE = re.compile(r'^0 (@[^@]+@) INDI')
+    issues: list[tuple[str, str]] = []
+    records: list[tuple[str, int, int]] = []
+    cur_xref: str | None = None
+    cur_start = 0
+
+    for i, line in enumerate(lines):
+        m = _INDI_RE.match(line)
+        if m:
+            if cur_xref is not None:
+                records.append((cur_xref, cur_start, i))
+            cur_xref, cur_start = m.group(1), i
+        elif line.startswith('0 ') and cur_xref is not None:
+            records.append((cur_xref, cur_start, i))
+            cur_xref = None
+    if cur_xref is not None:
+        records.append((cur_xref, cur_start, len(lines)))
+
+    for xref, rec_s, rec_e in records:
+        for tag in _DUP_EVENT_TAGS:
+            blocks = _dup_event_blocks(lines, rec_s, rec_e, tag)
+            if len(blocks) < 2:
+                continue
+            for i in range(len(blocks)):
+                for j in range(i + 1, len(blocks)):
+                    a_f = _dup_get_fields(lines, *blocks[i])
+                    b_f = _dup_get_fields(lines, *blocks[j])
+                    if _dup_is_subset(a_f, b_f) or _dup_is_subset(b_f, a_f):
+                        issues.append((xref, tag))
+                        break
+                else:
+                    continue
+                break
+
+    return issues
+
+
+def fix_duplicate_events(path: str, dry_run: bool = False) -> int:
+    """
+    Remove duplicate BIRT/DEAT/BAPM/BURI/NATU event blocks, merging unique
+    source citations from the removed block into the kept block.
+    Returns the number of event blocks removed.
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    _INDI_RE = re.compile(r'^0 (@[^@]+@) INDI')
+    records: list[tuple[str, int, int]] = []
+    cur_xref: str | None = None
+    cur_start = 0
+
+    for i, line in enumerate(lines):
+        m = _INDI_RE.match(line)
+        if m:
+            if cur_xref is not None:
+                records.append((cur_xref, cur_start, i))
+            cur_xref, cur_start = m.group(1), i
+        elif line.startswith('0 ') and cur_xref is not None:
+            records.append((cur_xref, cur_start, i))
+            cur_xref = None
+    if cur_xref is not None:
+        records.append((cur_xref, cur_start, len(lines)))
+
+    deletions: set[int] = set()
+    insertions: dict[int, list[str]] = {}
+    total_removed = 0
+
+    for _xref, rec_s, rec_e in records:
+        for tag in _DUP_EVENT_TAGS:
+            blocks = _dup_event_blocks(lines, rec_s, rec_e, tag)
+            if len(blocks) < 2:
+                continue
+
+            absorbed: set[int] = set()
+            survivors: set[int] = set()
+            for i in range(len(blocks)):
+                if i in absorbed:
+                    continue
+                for j in range(i + 1, len(blocks)):
+                    if j in absorbed:
+                        continue
+                    bs, be = blocks[i]
+                    js, je = blocks[j]
+                    a_f = _dup_get_fields(lines, bs, be)
+                    b_f = _dup_get_fields(lines, js, je)
+                    a_sub_b = _dup_is_subset(a_f, b_f)
+                    b_sub_a = _dup_is_subset(b_f, a_f)
+
+                    if a_sub_b and not b_sub_a:
+                        # only merge if i hasn't already won a prior merge
+                        if i in survivors:
+                            continue
+                        v_s, v_e, v_idx, s_s, s_e, s_idx = bs, be, i, js, je, j
+                    elif b_sub_a and not a_sub_b:
+                        # only merge if j hasn't already won a prior merge
+                        if j in survivors:
+                            continue
+                        v_s, v_e, v_idx, s_s, s_e, s_idx = js, je, j, bs, be, i
+                    elif a_sub_b and b_sub_a:
+                        a_n = len(_dup_get_sour_blocks(lines, bs, be))
+                        b_n = len(_dup_get_sour_blocks(lines, js, je))
+                        if a_n <= b_n:
+                            if i in survivors:
+                                continue
+                            v_s, v_e, v_idx, s_s, s_e, s_idx = bs, be, i, js, je, j
+                        else:
+                            if j in survivors:
+                                continue
+                            v_s, v_e, v_idx, s_s, s_e, s_idx = js, je, j, bs, be, i
+                    else:
+                        continue
+
+                    surv_keys = {
+                        src[0].rstrip('\n')
+                        for src in _dup_get_sour_blocks(lines, s_s, s_e)
+                    }
+                    new_srcs = [
+                        src for src in _dup_get_sour_blocks(lines, v_s, v_e)
+                        if src[0].rstrip('\n') not in surv_keys
+                    ]
+                    for k in range(v_s, v_e):
+                        deletions.add(k)
+                    if new_srcs:
+                        flat = [ln for src in new_srcs for ln in src]
+                        insertions.setdefault(s_e, []).extend(flat)
+                    absorbed.add(v_idx)
+                    survivors.add(s_idx)
+                    total_removed += 1
+                    if v_idx == i:
+                        break  # i is now a victim; stop searching for more j
+
+    if total_removed and not dry_run:
+        out: list[str] = []
+        for k, line in enumerate(lines):
+            if k in insertions:
+                out.extend(insertions[k])
+            if k not in deletions:
+                out.append(line)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(out)
+
+    return total_removed
+
+
 # ---------------------------------------------------------------------------
 # FACT AKA → proper NAME tag  (spec 2.3)
 # ---------------------------------------------------------------------------
@@ -5230,6 +5382,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_unknown_surname(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_resi(path, dry_run=dry_run)
+    fixes_applied += fix_duplicate_events(path, dry_run=dry_run)
     fixes_applied += fix_bapm_without_birth(path, dry_run=dry_run)
     fixes_applied += fix_missing_age_at_death(path, dry_run=dry_run)
     fixes_applied += fix_bare_events(path, dry_run=dry_run)
@@ -5401,6 +5554,11 @@ def main():
         help='Merge duplicate RESI events (same date+place) within individual records',
     )
     parser.add_argument(
+        '--fix-duplicate-events', action='store_true',
+        help='Merge duplicate BIRT/DEAT/BAPM/BURI/NATU event blocks within '
+             'individuals, preserving unique source citations',
+    )
+    parser.add_argument(
         '--fix-bare-events', action='store_true',
         help='Append Y to bare BIRT/CHR/DEAT tags with no value and no children',
     )
@@ -5458,6 +5616,7 @@ def main():
         args.fix_duplicate_families = True
         args.fix_duplicate_names = True
         args.fix_duplicate_resi = True
+        args.fix_duplicate_events = True
         args.fix_bare_events = True
         args.fix_birth_from_bapm = True
         args.fix_presumed_deceased = True
@@ -5709,6 +5868,15 @@ def main():
         else:
             print(f'  {removed} duplicate RESI event(s) removed.')
 
+    if args.fix_duplicate_events:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Merging duplicate BIRT/DEAT/BAPM/BURI/NATU events in: {args.gedfile}')
+        removed = fix_duplicate_events(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {removed} duplicate event block(s) would be removed.')
+        else:
+            print(f'  {removed} duplicate event block(s) removed.')
+
     if args.fix_bare_events:
         mode = 'DRY RUN' if args.dry_run else 'FIX'
         print(f'[{mode}] Appending Y to bare event tags in: {args.gedfile}')
@@ -5789,6 +5957,7 @@ def main():
                 args.fix_dateless_dates, args.fix_aka_facts,
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
+                args.fix_duplicate_events,
                 args.fix_bare_events, args.fix_birth_from_bapm,
                 args.fix_age_at_death,
                 args.fix_record_order, args.fix_sort_events,
