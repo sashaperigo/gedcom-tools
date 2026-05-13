@@ -1,19 +1,8 @@
 """Tests for age-at-death linter functions."""
-import textwrap
-from pathlib import Path
-
-import pytest
-
 from gedcom_linter import (
     _parse_age_date,
     _age_keyword,
 )
-
-
-def write_ged(tmp_path, content: str) -> Path:
-    p = tmp_path / 'test.ged'
-    p.write_text(textwrap.dedent(content), encoding='utf-8')
-    return p
 
 
 # ---------------------------------------------------------------------------

@@ -3460,6 +3460,8 @@ def _age_keyword(
             return None
         if diff == 0:
             return 'INFANT' if (approx and bd is None and dd is None) else 'STILLBORN'
+        # INFANT: keep strict at < 12 months — at month precision, the 12-month
+        # boundary is reliable enough that an approximation margin isn't needed.
         if diff < 12:
             return 'INFANT'
         if diff / 12 < 8 + margin:
