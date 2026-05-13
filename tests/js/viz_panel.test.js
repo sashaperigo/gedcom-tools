@@ -29,6 +29,7 @@ function makeFakeEl(id = '') {
         querySelectorAll: () => [],
         insertBefore: () => {},
         appendChild: () => {},
+        addEventListener: () => {},
         remove: () => {},
     };
 }
@@ -40,6 +41,7 @@ const _callbacks = [];
 global.document = {
     getElementById: () => null,
     createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
     addEventListener: () => {},
 };
 global.PEOPLE = {};
@@ -95,6 +97,7 @@ describe('initPanel', () => {
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : null,
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -112,6 +115,7 @@ describe('initPanel', () => {
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : null,
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -148,6 +152,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -165,6 +170,7 @@ describe('renderPanel', () => {
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : makeFakeEl(id),
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -196,6 +202,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -227,6 +234,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -260,6 +268,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -294,6 +303,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -329,6 +339,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -366,6 +377,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -416,6 +428,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -466,6 +479,7 @@ describe('renderPanel', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -516,6 +530,7 @@ describe('renderPanel — restored section headers', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -551,6 +566,7 @@ describe('renderPanel — restored section headers', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -591,6 +607,7 @@ describe('renderPanel — restored section headers', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -638,6 +655,7 @@ describe('renderPanel — RESI rollup', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -711,6 +729,7 @@ describe('renderPanel — EVEN tag uses type label', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -749,6 +768,7 @@ describe('renderPanel — BIRT event row has no inline convert button', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -787,6 +807,7 @@ describe('renderPanel — blank fact filter', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -829,6 +850,7 @@ describe('renderPanel — aliases (AKA)', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -873,6 +895,7 @@ describe('renderPanel — marriage card', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -901,6 +924,7 @@ describe('renderPanel — marriage card uses evt-year-col layout', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -947,6 +971,7 @@ describe('renderPanel — event note in italics', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -993,6 +1018,7 @@ describe('renderPanel — source badge count', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1033,6 +1059,7 @@ describe('renderPanel — NATI events in detail-nationalities (C2)', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1071,6 +1098,7 @@ describe('renderPanel — NATI events in detail-nationalities (C2)', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1135,6 +1163,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1164,6 +1193,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1196,6 +1226,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1236,6 +1267,7 @@ describe('renderPanel — collapsible family section (C3)', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1280,6 +1312,7 @@ describe('renderPanel — person-level sources section', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1374,6 +1407,7 @@ describe('convertEventTag', () => {
         global.document = {
             getElementById: (id) => id === 'detail-panel' ? panelEl : makeFakeEl(id),
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         initPanel(panelEl);
@@ -1506,6 +1540,7 @@ describe('renderPanel — accent bar color by sex', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'Test', sex: 'M', events: [], notes: [], sources: [] } };
@@ -1529,6 +1564,7 @@ describe('renderPanel — accent bar color by sex', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'Test', sex: 'F', events: [], notes: [], sources: [] } };
@@ -1548,6 +1584,7 @@ describe('renderPanel — accent bar color by sex', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'Test', sex: 'M', events: [], notes: [], sources: [] } };
@@ -1576,6 +1613,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1602,6 +1640,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1627,6 +1666,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1652,6 +1692,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1680,6 +1721,7 @@ describe('renderPanel — fact-row layout for undated facts', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1725,6 +1767,7 @@ describe('renderPanel — note badge inside note-card', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1764,6 +1807,7 @@ describe('renderPanel — no-year class on dateless main-timeline events', () =>
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1798,6 +1842,7 @@ describe('renderPanel — family toggle arrow before text', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = { '@I1@': { name: 'T', sex: 'M', events: [], notes: [], sources: [] } };
@@ -1839,6 +1884,7 @@ describe('renderPanel — source card page reference', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1864,6 +1910,7 @@ describe('renderPanel — source card page reference', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -1912,6 +1959,7 @@ describe('renderPanel — bare DEAT Y produces no timeline card', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
 
@@ -1947,6 +1995,7 @@ describe('renderPanel — age column on standard events', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE[xref] = personData;
@@ -2021,6 +2070,7 @@ describe('renderPanel — age column on RESI ranges', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE['@I1@'] = {
@@ -2068,6 +2118,7 @@ describe('renderPanel — age column on marriage card', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE['@I1@'] = {
@@ -2110,6 +2161,7 @@ describe('renderPanel — age column on divorce card', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE['@I1@'] = {
@@ -2152,6 +2204,7 @@ describe('renderPanel — age column on relative-event row', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         // Focal person born 1926, mother dies 1941 → he's 15.
@@ -2209,6 +2262,7 @@ describe('renderPanel — AFT death sorts after same-year child birth', () => {
                 return null;
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
         global.PEOPLE = {
@@ -2275,6 +2329,7 @@ describe('renderPanel — event card kebab menu', () => {
                 return makeFakeEl(id);
             },
             createElement: (tag) => makeFakeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, data: text }),
             addEventListener: () => {},
         };
     }

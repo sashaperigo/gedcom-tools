@@ -56,6 +56,13 @@ _FULL_SOURCE = _HTML_TEMPLATE + ''.join(
     f.read_text(encoding='utf-8') for f in sorted(_JS_DIR.glob('*.js'))
 )
 
+# viz_modals.js was split into viz_modal_{events,sources,people,shared}.js.
+# Concatenate the split files for substring assertions; viz_modals.js itself
+# is now a node-only compat shim with no real code.
+_MODALS_SRC = ''.join(
+    f.read_text(encoding='utf-8') for f in sorted(_JS_DIR.glob('viz_modal_*.js'))
+)
+
 
 # ---------------------------------------------------------------------------
 # Shared fixture data
@@ -1214,14 +1221,14 @@ class TestAddEventModalSourceSection:
 
     def test_toggle_function_defined_in_modals_js(self):
         """viz_modals.js must define _toggleEventModalSourceSection."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         assert '_toggleEventModalSourceSection' in modals_src, (
             'js/viz_modals.js must define _toggleEventModalSourceSection()'
         )
 
     def test_source_section_cleared_in_addEvent(self):
         """addEvent() must reset event-modal-source and event-modal-page."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         assert 'event-modal-source' in modals_src, (
             'addEvent() must reference event-modal-source to reset it'
         )
@@ -1231,7 +1238,7 @@ class TestAddEventModalSourceSection:
 
     def test_submit_calls_add_citation_when_source_selected(self):
         """submitEventModal must call apiAddCitation after a successful add_event when a source is selected."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         submit_fn_start = modals_src.index('async function submitEventModal()')
         submit_fn_body = modals_src[submit_fn_start:submit_fn_start + 8000]
         assert 'apiAddCitation' in submit_fn_body, (
@@ -1240,33 +1247,33 @@ class TestAddEventModalSourceSection:
 
     def test_submit_uses_paste_fields_when_armed(self):
         """submitEventModal must use _copiedCitation fields when _eventModalPasteOnSave is true."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         submit_fn_start = modals_src.index('async function submitEventModal()')
         submit_fn_body = modals_src[submit_fn_start:submit_fn_start + 8000]
         assert '_eventModalPasteOnSave' in submit_fn_body, (
             'submitEventModal() must check _eventModalPasteOnSave before attaching citation'
         )
-        assert '_copiedCitation' in submit_fn_body, (
-            'submitEventModal() must read _copiedCitation fields when paste is armed'
+        assert 'getCopiedCitation' in submit_fn_body, (
+            'submitEventModal() must read the copied citation (via getCopiedCitation) when paste is armed'
         )
 
     def test_refresh_paste_btn_defined(self):
         """viz_modals.js must define _refreshEventModalPasteBtn."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         assert '_refreshEventModalPasteBtn' in modals_src, (
             'js/viz_modals.js must define _refreshEventModalPasteBtn()'
         )
 
     def test_toggle_paste_btn_defined(self):
         """viz_modals.js must define _toggleEventModalPasteBtn."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         assert '_toggleEventModalPasteBtn' in modals_src, (
             'js/viz_modals.js must define _toggleEventModalPasteBtn()'
         )
 
     def test_addEvent_resets_paste_flag(self):
         """addEvent() must reset _eventModalPasteOnSave and call _refreshEventModalPasteBtn."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         assert '_eventModalPasteOnSave' in modals_src, (
             'js/viz_modals.js must declare _eventModalPasteOnSave'
         )
@@ -1292,7 +1299,7 @@ class TestAddEventModalSourceSection:
 
     def test_fact_key_derived_from_response(self):
         """submitEventModal must build factKey from the add_event response event_idx."""
-        modals_src = (Path(__file__).parent.parent / 'js' / 'viz_modals.js').read_text()
+        modals_src = _MODALS_SRC
         submit_fn_start = modals_src.index('async function submitEventModal()')
         submit_fn_body = modals_src[submit_fn_start:submit_fn_start + 8000]
         assert 'factKey' in submit_fn_body, (
