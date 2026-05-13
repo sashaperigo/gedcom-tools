@@ -135,6 +135,7 @@ const EVENT_LABELS = {
     RESI: 'Residence',
     OCCU: 'Occupation',
     IMMI: 'Immigration',
+    EMIG: 'Emigration',
     NATU: 'Naturalization',
     ADOP: 'Adoption',
     EDUC: 'Education',

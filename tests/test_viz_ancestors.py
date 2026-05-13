@@ -950,3 +950,67 @@ class TestNameSubTags:
         assert people['@I1@']['name_suffix'] == 'I'
         assert people['@I1@']['name_given'] == 'Pietro'
         assert people['@I1@']['name_surname'] == 'Capponi'
+
+
+_GED_HEADER = (
+    '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+    '0 @U1@ SUBM\n1 NAME Test\n'
+)
+
+
+class TestEmigAndIndiMarr:
+    """EMIG events and MARR events that live directly on an INDI record."""
+
+    def _parse(self, tmp_path, ged_text):
+        ged = tmp_path / 'test.ged'
+        ged.write_text(_GED_HEADER + ged_text + '0 TRLR\n', encoding='utf-8')
+        return parse_gedcom(str(ged))
+
+    def test_emig_event_parsed_from_indi(self, tmp_path):
+        """EMIG tag on an INDI record must appear in parsed events."""
+        indis, _, _ = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n'
+            '1 EMIG\n2 DATE 1912\n2 PLAC Smyrna, Izmir, Turkey\n'
+        )
+        emig = next((e for e in indis['@I1@']['events'] if e['tag'] == 'EMIG'), None)
+        assert emig is not None
+        assert emig['date'] == '1912'
+        assert 'Smyrna' in emig['place']
+
+    def test_emig_appears_in_build_people_json(self, tmp_path):
+        """EMIG event must propagate through build_people_json."""
+        indis, fams, sources = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n'
+            '1 EMIG\n2 DATE 1912\n2 PLAC Smyrna, Izmir, Turkey\n'
+        )
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        events = people['@I1@']['events']
+        emig = next((e for e in events if e['tag'] == 'EMIG'), None)
+        assert emig is not None
+        assert emig['date'] == '1912'
+
+    def test_marr_on_indi_with_no_fams(self, tmp_path):
+        """MARR on an INDI with no FAMS link must appear in build_people_json events."""
+        indis, fams, sources = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n1 SEX F\n'
+            '1 MARR\n2 DATE 1897\n2 NOTE Married Augusto Braggiotti.\n'
+        )
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        events = people['@I1@']['events']
+        marr = next((e for e in events if e['tag'] == 'MARR'), None)
+        assert marr is not None
+        assert marr['date'] == '1897'
+
+    def test_marr_on_indi_with_fam_marr_no_duplicate(self, tmp_path):
+        """MARR on an INDI that also has a FAMS with a real MARR event must not duplicate."""
+        indis, fams, sources = self._parse(tmp_path,
+            '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n1 SEX F\n'
+            '1 FAMS @F1@\n'
+            '1 MARR\n2 DATE 1897\n'
+            '0 @I2@ INDI\n1 NAME Augusto /Braggiotti/\n1 SEX M\n1 FAMS @F1@\n'
+            '0 @F1@ FAM\n1 HUSB @I2@\n1 WIFE @I1@\n1 MARR\n2 DATE 1897\n2 PLAC Smyrna\n'
+        )
+        people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
+        marr_events = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
+        assert len(marr_events) == 1, f"Expected 1 MARR event, got {len(marr_events)}"
+        assert marr_events[0].get('fam_xref') == '@F1@'

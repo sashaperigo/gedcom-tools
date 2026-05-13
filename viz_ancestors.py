@@ -35,8 +35,8 @@ _AGE_PARSE_RE = re.compile(r'^(?:(\d+)Y)?\s*(?:(\d+)M)?\s*(?:(\d+)D)?$')
 
 _EVENT_TAGS = frozenset({
     'BIRT', 'DEAT', 'BURI', 'RESI', 'OCCU', 'CHR', 'BAPM',
-    'NATU', 'IMMI', 'EVEN', 'FACT', 'NATI', 'RELI', 'TITL',
-    'ADOP', 'EDUC', 'RETI', 'DIV', 'CONF', 'PROB',
+    'NATU', 'IMMI', 'EMIG', 'EVEN', 'FACT', 'NATI', 'RELI', 'TITL',
+    'ADOP', 'EDUC', 'RETI', 'MARR', 'DIV', 'CONF', 'PROB',
     'NCHI', 'DSCR',
 })
 
@@ -812,6 +812,13 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
                                    'event_idx': None, 'div_idx': div_idx,
                                    'spouse': spouse_name, 'spouse_xref': spouse_xref,
                                    'fam_xref': fam_xref})
+            # MARR on the INDI record is a fallback for persons with no FAMS link.
+            # If FAM-sourced MARR events were appended, suppress any INDI-level
+            # MARR events (event_idx is not None, no fam_xref) to avoid duplicates.
+            has_fam_marr = any(e['tag'] == 'MARR' and e.get('fam_xref') for e in events)
+            if has_fam_marr:
+                events = [e for e in events
+                          if not (e['tag'] == 'MARR' and e.get('fam_xref') is None)]
         age_at_death = next(
             (cls for e in events
              if e['tag'] == 'DEAT' and e.get('age')
