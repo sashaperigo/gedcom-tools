@@ -473,9 +473,38 @@ function _packRowWithDescendants(items, y, role, expandedChildrenPersons, anchor
     }));
 }
 
-// ---------------------------------------------------------------------------
-// Exports (for tests and other modules)
-// ---------------------------------------------------------------------------
+// Phase 3 of computeLayout: place children of every non-focus person in
+// `expandedChildrenPersons`. Iterates to a fixed point because an expanded
+// person may not yet be present in `nodes` until another expanded ancestor
+// has been processed first (e.g., grandma's pass places her son, then the
+// son's pass can place his children). Within each pass, parents are sorted
+// by distance from focus center so the parent CLOSEST to focus gets first
+// claim on the gap nearest its ideal position.
+function _placeNonFocusExpandedChildren(focusXref, expandedChildrenPersons, visibleSpouseFams, nodes, edges) {
+    const { NODE_W_FOCUS, NODE_W } = DESIGN;
+    const focusCenterX = NODE_W_FOCUS / 2;
+    const remaining = new Set([...expandedChildrenPersons].filter(xref => xref !== focusXref));
+    let progressed = true;
+    while (progressed && remaining.size > 0) {
+        progressed = false;
+        const ready = [...remaining]
+            .filter(x => nodes.find(n => n.xref === x))
+            .sort((a, b) => {
+                const na = nodes.find(n => n.xref === a);
+                const nb = nodes.find(n => n.xref === b);
+                const ax = (na?.x ?? 0) + NODE_W / 2;
+                const bx = (nb?.x ?? 0) + NODE_W / 2;
+                const da = Math.abs(ax - focusCenterX);
+                const db = Math.abs(bx - focusCenterX);
+                return da - db || (na?.x ?? 0) - (nb?.x ?? 0);
+            });
+        for (const personXref of ready) {
+            _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges);
+            remaining.delete(personXref);
+            progressed = true;
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Exports (node only)
@@ -487,6 +516,7 @@ if (typeof module !== 'undefined') {
         _focusChildrenExtents,
         _descendantHalfwidth,
         _packRowWithDescendants,
+        _placeNonFocusExpandedChildren,
     };
     if (typeof global !== 'undefined') Object.assign(global, module.exports);
 }

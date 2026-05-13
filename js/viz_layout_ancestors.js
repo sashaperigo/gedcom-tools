@@ -272,16 +272,137 @@ function _placeAncestorSiblings(ancXref, ancX, ancY, expandedSiblingsXrefs, effe
 }
 
 // ---------------------------------------------------------------------------
-// Contour-based separation (Reingold-Tilford style)
-// ---------------------------------------------------------------------------
+// Phase 2 of computeLayout: place focus's parents (Generation -1) plus the
+// umbrella linking the parent couple to focus + its gen-0 siblings. Reads
+// existing nodes to find gen-0 siblings for the umbrella spread; appends
+// parent nodes, the marriage edge between them, and the umbrella edges.
+// Returns { fatherXref, motherXref, fatherX, motherX } so Phase 1.5 can
+// run contour comparison against the focus-parents subtree.
+function _placeFocusParents(focusXref, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams) {
+    const { NODE_W, NODE_W_FOCUS, NODE_H, ROW_HEIGHT } = DESIGN;
+    const focusParents = PARENTS[focusXref] ?? [];
+    const fatherXref = focusParents[0] ?? null;
+    const motherXref = focusParents[1] ?? null;
+    let fatherX = null;
+    let motherX = null;
 
-// Each contour is an array indexed by depth (0 = the root row itself).
-// Element d = distance from the subtree-root center to the rightmost
-// (_rightContour) or leftmost (_leftContour) point of the subtree at depth d.
+    if (!fatherXref && !motherXref) {
+        return { fatherXref, motherXref, fatherX, motherX };
+    }
 
-// Clearance kept on the chevron side of every ancestor pill that has siblings,
-// so the r=8 sibling-expand chevron at 4px offset doesn't collide with a
-// neighbor pill or an adjacent couple across the row. 40 = r(8)*2 + gap(4) + buffer(20).
+    const focusCenterX = NODE_W_FOCUS / 2;
+    const ancUmbrellaY = -(ROW_HEIGHT - NODE_H) / 2;
+    const parentBottomY = -ROW_HEIGHT + NODE_H;
+    const parentMidY = -ROW_HEIGHT + NODE_H / 2;
+
+    // Anchor drop and per-child drops span the focus and all gen-0 siblings:
+    // they're the biological children of the parents sitting at y=0.
+    // Focus uses NODE_W_FOCUS; siblings use NODE_W.
+    const childCenters = [focusCenterX];
+    nodes.forEach(n => {
+        if (n.generation === 0 && n.role === 'sibling') {
+            childCenters.push(n.x + NODE_W / 2);
+        }
+    });
+    childCenters.sort((a, b) => a - b);
+
+    // Parent couple re-centers over the sibling group (focus + siblings),
+    // not over the focus alone. Keeps the drop from the marriage line to
+    // the umbrella crossbar perfectly vertical — no L-shape.
+    const focusGroupCenterX = (childCenters[0] + childCenters[childCenters.length - 1]) / 2;
+
+    if (fatherXref && motherXref) {
+        const sep = _requiredSeparation(fatherXref, motherXref, effectiveExpandedAncestors, expandedSiblingsXrefs);
+        fatherX = focusGroupCenterX - sep / 2 - NODE_W / 2;
+        motherX = focusGroupCenterX + sep / 2 - NODE_W / 2;
+
+        nodes.push({ xref: fatherXref, x: fatherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+        nodes.push({ xref: motherXref, x: motherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+
+        edges.push({
+            x1: fatherX + NODE_W,
+            y1: parentMidY,
+            x2: motherX,
+            y2: parentMidY,
+            type: 'marriage',
+        });
+
+        // Siblings before parents so _placeAncestors can emit an umbrella
+        // spanning each ancestor + its siblings.
+        _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+
+        _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+    } else {
+        const singleParent = fatherXref || motherXref;
+        const singleParentX = focusGroupCenterX - NODE_W / 2;
+        nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
+        _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+        if (fatherXref) fatherX = singleParentX; else motherX = singleParentX;
+    }
+
+    // Umbrella anchor drop (mirrors the descendant umbrella).
+    const anchorTopY = (fatherXref && motherXref) ? parentMidY : parentBottomY;
+    edges.push({
+        x1: focusGroupCenterX,
+        y1: anchorTopY,
+        x2: focusGroupCenterX,
+        y2: ancUmbrellaY,
+        type: 'ancestor',
+    });
+
+    if (childCenters.length > 1) {
+        edges.push({
+            x1: childCenters[0],
+            y1: ancUmbrellaY,
+            x2: childCenters[childCenters.length - 1],
+            y2: ancUmbrellaY,
+            type: 'ancestor',
+        });
+    }
+
+    childCenters.forEach(cx => {
+        edges.push({
+            x1: cx,
+            y1: ancUmbrellaY,
+            x2: cx,
+            y2: 0,
+            type: 'ancestor',
+        });
+    });
+
+    return { fatherXref, motherXref, fatherX, motherX };
+}
+
+// Phase 1.5 of computeLayout: place focus-spouse ancestor subtrees with
+// Reingold-Tilford contour comparison against the focus-parents subtree.
+// If a spouse-parents subtree would overlap, shift the spouse subtree
+// outward by the shortfall before placing its ancestors. Spouse-siblings
+// are emitted by Phase 1 (role='spouse_sibling'); do NOT call
+// _placeAncestorSiblings here or they'd be emitted twice.
+function _placeFocusSpouseAncestors(focusSpouses, fatherXref, motherXref, fatherX, motherX, expandedAncestors, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref) {
+    for (const entry of focusSpouses) {
+        // Gate on the original expandedAncestors set — not the force-expanded one.
+        // Force-expand exists so an ancestor-row sibling group hangs from a
+        // proper umbrella; focus-spouse siblings are placed inline by Phase 1
+        // and need no umbrella, so spouse-only-sibling expansion must not pull
+        // spouse-parents into the layout.
+        if (!expandedAncestors || !expandedAncestors.has(entry.xref)) {
+            continue;
+        }
+        const shift = _computeFocusSpouseShift(
+            entry, fatherXref, motherXref, fatherX, motherX,
+            effectiveExpandedAncestors, expandedSiblingsXrefs,
+        );
+        if (shift !== 0) {
+            _shiftFocusSpouseSubtree(nodes, edges, entry, shift);
+            entry.originalX += shift;
+        }
+        _placeAncestors(entry.xref, entry.originalX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Exports (node only)
@@ -292,6 +413,8 @@ if (typeof module !== 'undefined') {
         _placeAncestors,
         _emitChildUmbrella,
         _placeAncestorSiblings,
+        _placeFocusParents,
+        _placeFocusSpouseAncestors,
     };
     if (typeof global !== 'undefined') Object.assign(global, module.exports);
 }

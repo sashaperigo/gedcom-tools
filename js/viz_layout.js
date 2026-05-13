@@ -342,137 +342,13 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     }
 
     // ── Phase 2: Generation -1 (parents) with umbrella over focus + siblings ─
-
-    const focusParents = PARENTS[focusXref] ?? [];
-    const fatherXref = focusParents[0] ?? null;
-    const motherXref = focusParents[1] ?? null;
-    // Hoisted so Phase 1.5 (focus-spouse ancestors) can read them for
-    // contour-based separation against the focus-parents subtree.
-    let fatherX = null;
-    let motherX = null;
-
-    if (fatherXref || motherXref) {
-        const focusCenterX = NODE_W_FOCUS / 2;
-        const ancUmbrellaY = -(ROW_HEIGHT - NODE_H) / 2; // halfway between parent row bottom and focus row top
-        const parentBottomY = -ROW_HEIGHT + NODE_H;
-        const parentMidY = -ROW_HEIGHT + NODE_H / 2;
-
-        // Anchor drop and per-child drops span the focus and all gen-0 siblings:
-        // they're the biological children of the parents sitting at y=0.
-        // Focus uses NODE_W_FOCUS; siblings use NODE_W.
-        const childCenters = [focusCenterX];
-        nodes.forEach(n => {
-            if (n.generation === 0 && n.role === 'sibling') {
-                childCenters.push(n.x + NODE_W / 2);
-            }
-        });
-        childCenters.sort((a, b) => a - b);
-
-        // Parent couple re-centers over the sibling group (focus + siblings),
-        // not over the focus alone. This keeps the drop from the marriage line
-        // to the umbrella crossbar perfectly vertical — no L-shape.
-        const focusGroupCenterX = (childCenters[0] + childCenters[childCenters.length - 1]) / 2;
-
-        if (fatherXref && motherXref) {
-            // Both parents: symmetric around groupCenter. Father left, mother right.
-            // Separation is driven by each parent's subtree contour so that deep
-            // ancestors on either side don't collide while keeping the marriage-line
-            // midpoint above the sibling group.
-            const sep = _requiredSeparation(fatherXref, motherXref, effectiveExpandedAncestors, expandedSiblingsXrefs);
-            fatherX = focusGroupCenterX - sep / 2 - NODE_W / 2;
-            motherX = focusGroupCenterX + sep / 2 - NODE_W / 2;
-
-            nodes.push({ xref: fatherXref, x: fatherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-            nodes.push({ xref: motherXref, x: motherX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-
-            // Marriage edge between parents (father right edge → mother left edge).
-            edges.push({
-                x1: fatherX + NODE_W,
-                y1: parentMidY,
-                x2: motherX,
-                y2: parentMidY,
-                type: 'marriage',
-            });
-
-            // Place siblings BEFORE parents so _placeAncestors can emit an umbrella
-            // spanning each ancestor + its siblings.
-            _placeAncestorSiblings(fatherXref, fatherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-            _placeAncestorSiblings(motherXref, motherX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-
-            _placeAncestors(fatherXref, fatherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-            _placeAncestors(motherXref, motherX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-        } else {
-            // Single parent: centered on the sibling group.
-            const singleParent = fatherXref || motherXref;
-            const singleParentX = focusGroupCenterX - NODE_W / 2;
-            nodes.push({ xref: singleParent, x: singleParentX, y: -ROW_HEIGHT, generation: -1, role: 'ancestor' });
-            _placeAncestorSiblings(singleParent, singleParentX, -ROW_HEIGHT, expandedSiblingsXrefs, effectiveExpandedAncestors, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-            _placeAncestors(singleParent, singleParentX, -ROW_HEIGHT, -1, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-            if (fatherXref) fatherX = singleParentX; else motherX = singleParentX;
-        }
-
-        // Umbrella anchor drop (mirrors the descendant umbrella).
-        // Since the parent couple sits directly above the sibling group center,
-        // the anchor drop is a single straight vertical segment at groupCenterX.
-        const anchorTopY = (fatherXref && motherXref) ? parentMidY : parentBottomY;
-        edges.push({
-            x1: focusGroupCenterX,
-            y1: anchorTopY,
-            x2: focusGroupCenterX,
-            y2: ancUmbrellaY,
-            type: 'ancestor',
-        });
-
-        // Crossbar spans leftmost→rightmost child center (only if >1 child of parents).
-        if (childCenters.length > 1) {
-            edges.push({
-                x1: childCenters[0],
-                y1: ancUmbrellaY,
-                x2: childCenters[childCenters.length - 1],
-                y2: ancUmbrellaY,
-                type: 'ancestor',
-            });
-        }
-
-        // Per-child drop from umbrella down to each child's top.
-        childCenters.forEach(cx => {
-            edges.push({
-                x1: cx,
-                y1: ancUmbrellaY,
-                x2: cx,
-                y2: 0,
-                type: 'ancestor',
-            });
-        });
-    }
+    const { fatherXref, motherXref, fatherX, motherX } = _placeFocusParents(
+        focusXref, effectiveExpandedAncestors, expandedSiblingsXrefs,
+        expandedChildrenPersons, nodes, edges, visibleSpouseFams,
+    );
 
     // ── Phase 1.5: focus-spouse ancestors with collision avoidance ──────────
-    //
-    // For each focus-spouse, apply Reingold-Tilford contour comparison
-    // (via _requiredSeparation) against the focus-parents subtree. If the
-    // spouse-parents subtree would overlap, shift the spouse subtree
-    // outward by the shortfall before placing its ancestor subtree.
-    for (const entry of focusSpouses) {
-        // Gate on the original expandedAncestors set — not the force-expanded one.
-        // Force-expand exists so an ancestor-row sibling group hangs from a
-        // proper umbrella; focus-spouse siblings are placed inline by Phase 1
-        // and need no umbrella, so spouse-only-sibling expansion must not pull
-        // spouse-parents into the layout.
-        if (!expandedAncestors || !expandedAncestors.has(entry.xref)) {
-            continue;
-        }
-        const shift = _computeFocusSpouseShift(
-            entry, fatherXref, motherXref, fatherX, motherX,
-            effectiveExpandedAncestors, expandedSiblingsXrefs,
-        );
-        if (shift !== 0) {
-            _shiftFocusSpouseSubtree(nodes, edges, entry, shift);
-            entry.originalX += shift;
-        }
-        // Spouse-siblings are emitted by Phase 1 (role='spouse_sibling') —
-        // do NOT call _placeAncestorSiblings here or they'd be emitted twice.
-        _placeAncestors(entry.xref, entry.originalX, 0, 0, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
-    }
+    _placeFocusSpouseAncestors(focusSpouses, fatherXref, motherXref, fatherX, motherX, expandedAncestors, effectiveExpandedAncestors, expandedSiblingsXrefs, expandedChildrenPersons, nodes, edges, visibleSpouseFams, focusXref);
 
     // ── Phase 2: Generation +1 (children + umbrella) ─────────────────────────
     //
@@ -668,42 +544,7 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
     }
 
     // ── Phase 3: Expanded children of non-focus persons ─────────────────────
-    // Skip focusXref — Phase 2 already placed the focus person's children.
-    // Sort by distance from focus center (ascending) so the parent CLOSEST to
-    // the focus gets first claim on the gap nearest its ideal position. With
-    // x-ascending order, two ancestors on the same side both fight for the
-    // outer gap: the outer parent's wide cluster fills it, then the inner
-    // parent's children can't fit and pickStartInFreeGap pushes them past the
-    // focus to the far side. Distance-asc places the inner parent first
-    // (under its parent) and lets the outer parent fill the remaining outer
-    // space. Tie-break by x so behavior stays deterministic across same-distance
-    // parents on opposite sides of the focus.
-    // Iterate to a fixed point: an expanded person may not be present in
-    // `nodes` until another expanded ancestor has been processed first
-    // (e.g., grandma's pass places her son, then the son's pass can place
-    // his children). One linear sort can't satisfy that dependency.
-    const phase3FocusCenterX = NODE_W_FOCUS / 2;
-    const remaining = new Set([...expandedChildrenPersons].filter(xref => xref !== focusXref));
-    let progressed = true;
-    while (progressed && remaining.size > 0) {
-        progressed = false;
-        const ready = [...remaining]
-            .filter(x => nodes.find(n => n.xref === x))
-            .sort((a, b) => {
-                const na = nodes.find(n => n.xref === a);
-                const nb = nodes.find(n => n.xref === b);
-                const ax = (na?.x ?? 0) + NODE_W / 2;
-                const bx = (nb?.x ?? 0) + NODE_W / 2;
-                const da = Math.abs(ax - phase3FocusCenterX);
-                const db = Math.abs(bx - phase3FocusCenterX);
-                return da - db || (na?.x ?? 0) - (nb?.x ?? 0);
-            });
-        for (const personXref of ready) {
-            _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes, edges);
-            remaining.delete(personXref);
-            progressed = true;
-        }
-    }
+    _placeNonFocusExpandedChildren(focusXref, expandedChildrenPersons, visibleSpouseFams, nodes, edges);
 
     return { nodes, edges };
 }
