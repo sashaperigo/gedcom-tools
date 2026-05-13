@@ -3480,6 +3480,122 @@ def _age_keyword(
     return None
 
 
+def scan_missing_age_at_death(path: str) -> list[tuple[str, str, str, str]]:
+    """
+    Return (xref, name, birt_date_raw, deat_date_raw) for INDI records that
+    have both a BIRT DATE and a DEAT DATE, no existing AGE tag under DEAT,
+    and a computable age keyword (STILLBORN, INFANT, or CHILD).
+    """
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    issues: list[tuple[str, str, str, str]] = []
+    xref = name = birt_date = deat_date = None
+    in_birt = in_deat = False
+    deat_has_age = False
+
+    def _flush():
+        nonlocal xref, name, birt_date, deat_date, in_birt, in_deat, deat_has_age
+        if xref and birt_date and deat_date and not deat_has_age:
+            b = _parse_age_date(birt_date)
+            d = _parse_age_date(deat_date)
+            if b and d and _age_keyword(b, d):
+                issues.append((xref, name or 'Unknown', birt_date, deat_date))
+        xref = name = birt_date = deat_date = None
+        in_birt = in_deat = deat_has_age = False
+
+    for line in lines:
+        s = line.rstrip('\n')
+        m0 = re.match(r'^0 (@[^@]+@) INDI', s)
+        if m0:
+            _flush()
+            xref = m0.group(1)
+            continue
+        if s.startswith('0 '):
+            _flush()
+            continue
+        if xref is None:
+            continue
+        m1 = re.match(r'^1 (\S+)', s)
+        if m1:
+            in_birt = m1.group(1) == 'BIRT'
+            in_deat = m1.group(1) == 'DEAT'
+            if in_deat:
+                deat_has_age = False
+        m1n = re.match(r'^1 NAME (.+)', s)
+        if m1n and name is None:
+            name = m1n.group(1).strip()
+        m2 = re.match(r'^2 (\S+)(?: (.+))?', s)
+        if m2:
+            tag, val = m2.group(1), (m2.group(2) or '').strip()
+            if tag == 'DATE':
+                if in_birt and birt_date is None:
+                    birt_date = val
+                elif in_deat and deat_date is None:
+                    deat_date = val
+            elif tag == 'AGE' and in_deat:
+                deat_has_age = True
+
+    _flush()
+    return issues
+
+
+def fix_missing_age_at_death(path: str, dry_run: bool = False) -> int:
+    """
+    Insert '2 AGE <KEYWORD>' immediately after '2 DATE' within each DEAT
+    event block for individuals with a computable STILLBORN/INFANT/CHILD age.
+    Returns the number of AGE tags inserted.
+    """
+    issues = scan_missing_age_at_death(path)
+    if not issues:
+        return 0
+
+    eligible: dict[str, str] = {}
+    for xref, _name, birt_raw, deat_raw in issues:
+        b = _parse_age_date(birt_raw)
+        d = _parse_age_date(deat_raw)
+        if b and d:
+            kw = _age_keyword(b, d)
+            if kw:
+                eligible[xref] = kw
+
+    with open(path, encoding='utf-8') as f:
+        lines = f.readlines()
+
+    out: list[str] = []
+    cur_xref: str | None = None
+    in_deat = False
+    age_inserted = False
+    count = 0
+
+    for line in lines:
+        s = line.rstrip('\n')
+        m0 = re.match(r'^0 (@[^@]+@) INDI', s)
+        if m0:
+            cur_xref = m0.group(1) if m0.group(1) in eligible else None
+            in_deat = age_inserted = False
+        elif s.startswith('0 '):
+            cur_xref = None
+        if cur_xref:
+            m1 = re.match(r'^1 (\S+)', s)
+            if m1:
+                in_deat = m1.group(1) == 'DEAT'
+                if in_deat:
+                    age_inserted = False
+            if in_deat and not age_inserted and re.match(r'^2 DATE\b', s):
+                out.append(line)
+                out.append(f'2 AGE {eligible[cur_xref]}\n')
+                count += 1
+                age_inserted = True
+                continue
+        out.append(line)
+
+    if count and not dry_run:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.writelines(out)
+    return count
+
+
 # ---------------------------------------------------------------------------
 # Bidirectional pointer consistency  (spec 1.13)
 # ---------------------------------------------------------------------------
@@ -5013,6 +5129,7 @@ def lint_and_fix(path: str, dry_run: bool = False) -> dict:
     fixes_applied += fix_duplicate_names(path, dry_run=dry_run)
     fixes_applied += fix_duplicate_resi(path, dry_run=dry_run)
     fixes_applied += fix_bapm_without_birth(path, dry_run=dry_run)
+    fixes_applied += fix_missing_age_at_death(path, dry_run=dry_run)
     fixes_applied += fix_bare_events(path, dry_run=dry_run)
     fixes_applied += fix_sole_event_type_alternate(path, dry_run=dry_run)
     fixes_applied += fix_record_order(path, dry_run=dry_run)
@@ -5196,6 +5313,11 @@ def main():
              'before today and who have no death record',
     )
     parser.add_argument(
+        '--fix-age-at-death', action='store_true',
+        help='Insert AGE STILLBORN/INFANT/CHILD tags on DEAT events for '
+             'individuals who died as children',
+    )
+    parser.add_argument(
         '--merge-sources', nargs=2, metavar=('KEEP', 'REMOVE'),
         help='Remap all citations from REMOVE xref to KEEP xref and delete REMOVE. '
              'Example: --merge-sources @S100@ @S200@',
@@ -5237,6 +5359,7 @@ def main():
         args.fix_bare_events = True
         args.fix_birth_from_bapm = True
         args.fix_presumed_deceased = True
+        args.fix_age_at_death = True
         args.fix_record_order = True
         args.fix_sort_events = True
         args.fix_conc_cont_levels = True
@@ -5511,6 +5634,15 @@ def main():
         else:
             print(f'  {fixed} individual(s) marked as presumed deceased.')
 
+    if args.fix_age_at_death:
+        mode = 'DRY RUN' if args.dry_run else 'FIX'
+        print(f'[{mode}] Adding AGE at death for children/infants/stillborns: {args.gedfile}')
+        fixed = fix_missing_age_at_death(args.gedfile, dry_run=args.dry_run)
+        if args.dry_run:
+            print(f'  {fixed} individual(s) would have 2 AGE inserted.')
+        else:
+            print(f'  {fixed} individual(s) given AGE at death.')
+
     if args.merge_sources:
         keep, remove = args.merge_sources
         mode = 'DRY RUN' if args.dry_run else 'FIX'
@@ -5556,6 +5688,7 @@ def main():
                 args.fix_broken_xrefs, args.fix_duplicate_families,
                 args.fix_duplicate_names, args.fix_duplicate_resi,
                 args.fix_bare_events, args.fix_birth_from_bapm,
+                args.fix_age_at_death,
                 args.fix_record_order, args.fix_sort_events,
                 args.fix_conc_cont_levels, args.fix_note_reflow,
                 args.merge_sources]):
