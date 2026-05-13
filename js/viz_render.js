@@ -591,36 +591,6 @@ function render() {
         _treeRoot.appendChild(g);
     }
 
-    // ── Generation rail ──────────────────────────────────────────────────────
-    _updateGenLabels(nodes);
-}
-
-function _genLabel(gen) {
-    if (gen === 0) return 'Self';
-    if (gen === -1) return 'Parents';
-    if (gen === -2) return 'Grandparents';
-    if (gen === -3) return 'Great-grandparents';
-    if (gen === 1) return 'Children';
-    if (gen === 2) return 'Grandchildren';
-    if (gen < 0) return `${Math.abs(gen) - 2}× Great-grandparents`;
-    return `Gen +${gen}`;
-}
-
-function _updateGenLabels(nodes) {
-    const container = document.getElementById('gen-labels');
-    if (!container) return;
-
-    // Collect unique generations present
-    const gens = [...new Set(nodes.map(n => n.generation))].sort((a, b) => a - b);
-    if (gens.length === 0) { container.innerHTML = ''; return; }
-
-    container.innerHTML = '';
-    for (const gen of gens) {
-        const div = document.createElement('div');
-        div.className = 'gen-label';
-        div.textContent = _genLabel(gen);
-        container.appendChild(div);
-    }
 }
 
 // ---------------------------------------------------------------------------
