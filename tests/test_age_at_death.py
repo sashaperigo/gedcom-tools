@@ -87,8 +87,8 @@ class TestAgeKeyword:
         assert _age_keyword((1920,1,1,False), (1920,12,30,False)) == 'INFANT'
 
     def test_full_date_exactly_one_year_not_infant(self):
-        # 1 Jan 1920 -> 1 Jan 1921 = 366 days (leap) -> not INFANT
-        assert _age_keyword((1920,1,1,False), (1921,1,1,False)) is None
+        # 1 Jan 1920 -> 1 Jan 1921 = 366 days (leap year) -> past infancy, so CHILD
+        assert _age_keyword((1920,1,1,False), (1921,1,1,False)) == 'CHILD'
 
     def test_month_year_11_months_infant(self):
         assert _age_keyword((1920,1,None,False), (1920,12,None,False)) == 'INFANT'

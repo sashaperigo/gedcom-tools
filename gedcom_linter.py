@@ -3448,7 +3448,7 @@ def _age_keyword(
         years = delta / 365.25
         if years < 1 + margin:
             return 'INFANT'
-        if years >= 2 and years < 8 + margin:
+        if years < 8 + margin:
             return 'CHILD'
         return None
 
