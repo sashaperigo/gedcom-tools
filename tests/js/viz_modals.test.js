@@ -3,7 +3,8 @@ import { createRequire } from 'module';
 const require = createRequire(
     import.meta.url);
 
-// viz_modals.js references DOM globals; stub the minimum needed for import.
+// viz_modals.js (the compatibility shim) loads the 4 split modules and
+// references DOM globals at module load time; stub the minimum needed.
 global.document = {
     getElementById: () => null,
     addEventListener: () => {},
