@@ -3372,6 +3372,113 @@ def fix_presumed_deceased(path: str, dry_run: bool = False) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Age at death — STILLBORN / INFANT / CHILD  (spec 2.x)
+# ---------------------------------------------------------------------------
+
+_AGE_DATE_APPROX_RE = re.compile(r'^(ABT|EST|CAL)\b', re.I)
+_AGE_DATE_PREFIX_RE = re.compile(r'^(ABT|CAL|EST|BEF|AFT|FROM|BET)\s*', re.I)
+_AGE_DATE_BET_RE    = re.compile(r'^BET\s+(.+?)\s+AND\s+(.+)$', re.I)
+_AGE_DATE_FROM_RE   = re.compile(r'^FROM\s+(.+?)\s+TO\s+(.+)$', re.I)
+_AGE_MONTH_NUM = {
+    'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5,  'JUN': 6,
+    'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12,
+}
+_AGE_APPROX_MARGIN = 2
+
+
+def _parse_age_date(val: str) -> tuple[int, int | None, int | None, bool] | None:
+    """
+    Parse a GEDCOM date string for age-at-death computation.
+    Returns (year, month_or_None, day_or_None, approximate) or None if unparseable.
+    approximate=True when ABT/EST/CAL was present.
+    For BET/FROM ranges, uses the first date.
+    BEF/AFT are treated as non-approximate (bounded, not uncertain).
+    """
+    s = val.strip()
+    approximate = bool(_AGE_DATE_APPROX_RE.match(s))
+    m = _AGE_DATE_BET_RE.match(s)
+    if m:
+        s = m.group(1).strip()
+        approximate = approximate or bool(_AGE_DATE_APPROX_RE.match(s))
+    m = _AGE_DATE_FROM_RE.match(s)
+    if m:
+        s = m.group(1).strip()
+        approximate = approximate or bool(_AGE_DATE_APPROX_RE.match(s))
+    s = _AGE_DATE_PREFIX_RE.sub('', s).strip()
+    year = month = day = None
+    for part in s.split():
+        if part.upper() in _AGE_MONTH_NUM:
+            month = _AGE_MONTH_NUM[part.upper()]
+        elif re.match(r'^\d{3,4}$', part):
+            year = int(part)
+        elif re.match(r'^\d{1,2}$', part):
+            day = int(part)
+    if year is None:
+        return None
+    return (year, month, day, approximate)
+
+
+def _age_keyword(
+    birt: tuple[int, int | None, int | None, bool],
+    deat: tuple[int, int | None, int | None, bool],
+) -> str | None:
+    """
+    Return 'STILLBORN', 'INFANT', 'CHILD', or None based on age at death.
+    When either date is approximate (ABT/EST/CAL), threshold upper-bounds
+    are expanded by _AGE_APPROX_MARGIN years. STILLBORN requires same-date
+    or same-year-exact evidence and is never expanded.
+    """
+    by, bm, bd, ba = birt
+    dy, dm, dd, da = deat
+    approx = ba or da
+    margin = _AGE_APPROX_MARGIN if approx else 0
+
+    if bm is not None and bd is not None and dm is not None and dd is not None:
+        from datetime import date as _date
+        try:
+            b = _date(by, bm, bd)
+            d = _date(dy, dm, dd)
+        except ValueError:
+            return None
+        if d < b:
+            return None
+        delta = (d - b).days
+        if delta == 0:
+            return 'STILLBORN'
+        years = delta / 365.25
+        if years < 1 + margin:
+            return 'INFANT'
+        if years >= 2 and years < 8 + margin:
+            return 'CHILD'
+        return None
+
+    if bm is not None and dm is not None:
+        birt_mo = by * 12 + bm
+        deat_mo = dy * 12 + dm
+        diff = deat_mo - birt_mo
+        if diff < 0:
+            return None
+        if diff == 0:
+            return 'INFANT' if (approx and bd is None and dd is None) else 'STILLBORN'
+        if diff < 12:
+            return 'INFANT'
+        if diff / 12 < 8 + margin:
+            return 'CHILD'
+        return None
+
+    diff = dy - by
+    if diff < 0:
+        return None
+    if diff == 0:
+        return 'INFANT' if approx else 'STILLBORN'
+    if diff <= 1 + margin:
+        return 'INFANT'
+    if diff < 8 + margin:
+        return 'CHILD'
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Bidirectional pointer consistency  (spec 1.13)
 # ---------------------------------------------------------------------------
 
