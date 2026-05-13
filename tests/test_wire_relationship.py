@@ -9,8 +9,6 @@ Covers:
 import os
 from pathlib import Path
 
-import pytest
-
 # serve_viz.py sys.exit()s at import if GED_FILE is not set; point at the
 # existing fixture so the module loads cleanly.
 _FIXTURE_GED = str(Path(__file__).parent / 'fixtures' / 'ancestors_sample.ged')
