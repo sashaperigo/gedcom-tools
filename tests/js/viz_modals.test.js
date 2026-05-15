@@ -1305,45 +1305,13 @@ describe('showEditSourceModal', () => {
     });
 });
 
-describe('showAddGodparentModal', () => {
-    let overlay, searchInp;
+// ── godparent flow through the shared Add Person modal ──────────────────
 
-    beforeEach(() => {
-        overlay = _fakeModalEl('add-godparent-modal-overlay');
-        searchInp = _fakeModalEl('add-godparent-modal-search');
-
-        global.ALL_PEOPLE = [
-            { id: '@I5@', name: 'Kostas Manolakis', birth_year: '1860' },
-        ];
-
-        global.document = {
-            getElementById(id) {
-                if (id === 'add-godparent-modal-overlay') return overlay;
-                if (id === 'add-godparent-modal-search') return searchInp;
-                return _fakeModalEl(id);
-            },
-            addEventListener: () => {},
-        };
-    });
-
-    it('opens the overlay', () => {
-        if (!showAddGodparentModal) return;
-        showAddGodparentModal('@I4@');
-        expect(overlay.classList.contains('open')).toBe(true);
-    });
-
-    it('clears the search input', () => {
-        if (!showAddGodparentModal) return;
-        searchInp.value = 'old search';
-        showAddGodparentModal('@I4@');
-        expect(searchInp.value).toBe('');
-    });
-});
-
-// ── submitAddGodparentModal — rela derived from sex ───────────────────────
-
-describe('submitAddGodparentModal derives rela from godparent sex', () => {
-    let overlay, searchInp;
+describe('openAddPersonModal + submitAddPersonModal for godparent_of', () => {
+    let elements;
+    let modeRadios;
+    let statusRadios;
+    let _origSetTimeout;
 
     function _fakeEl(id) {
         return {
@@ -1352,75 +1320,235 @@ describe('submitAddGodparentModal derives rela from godparent sex', () => {
             textContent: '',
             style: {},
             value: '',
+            dataset: {},
             classList: {
                 _classes: new Set(),
                 add(c) { this._classes.add(c); },
                 remove(c) { this._classes.delete(c); },
                 contains(c) { return this._classes.has(c); },
             },
+            querySelectorAll: () => [],
+            focus: () => {},
         };
+    }
+
+    function _makeRadios(name, values, defaultValue) {
+        return values.map(v => ({
+            name, value: v, checked: v === defaultValue,
+        }));
     }
 
     beforeEach(() => {
-        overlay = _fakeEl('add-godparent-modal-overlay');
-        searchInp = _fakeEl('add-godparent-modal-search');
+        elements = {};
+        modeRadios = _makeRadios('add-person-mode', ['new', 'existing'], 'new');
+        statusRadios = _makeRadios('add-person-modal-status', ['deceased', 'living'], 'deceased');
+
+        global.ALL_PEOPLE = [
+            { id: '@I5@', name: 'Kostas Manolakis', birth_year: '1860' },
+        ];
+        global.PEOPLE = {};
+        global.window = global.window || {};
+        global.renderPanel = () => {};
+        global.setState = () => {};
+        global._applyFamilyMaps = () => {};
 
         global.document = {
             getElementById(id) {
-                if (id === 'add-godparent-modal-overlay') return overlay;
-                if (id === 'add-godparent-modal-search') return searchInp;
-                return _fakeEl(id);
+                if (!elements[id]) elements[id] = _fakeEl(id);
+                return elements[id];
+            },
+            getElementsByName(name) {
+                if (name === 'add-person-mode') return modeRadios;
+                if (name === 'add-person-modal-status') return statusRadios;
+                return [];
             },
             addEventListener: () => {},
         };
-
-        global.renderPanel = () => {};
+        _origSetTimeout = global.setTimeout;
+        global.setTimeout = (fn) => fn();
     });
 
-    async function _submit(childXref, godparentXref, sex) {
-        const calls = [];
-        global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
-        global.PEOPLE = {
-            [childXref]: { name: 'Child' },
-            [godparentXref]: { name: 'Godparent', sex },
-        };
-        const { showAddGodparentModal, _selectGodparent, submitAddGodparentModal } =
-        require('../../js/viz_modals.js');
-        showAddGodparentModal(childXref);
-        _selectGodparent(godparentXref, 'Godparent');
-        await submitAddGodparentModal();
-        return calls;
+    afterEach(() => {
+        global.setTimeout = _origSetTimeout;
+    });
+
+    function _loadModule() {
+        for (const key of Object.keys(require.cache)) {
+            if (key.includes('viz_modal_') || key.endsWith('/viz_modals.js')) {
+                delete require.cache[key];
+            }
+        }
+        return require('../../js/viz_modals.js');
     }
 
-    it('uses Godfather when godparent sex is M', async () => {
-        const calls = await _submit('@I1@', '@I5@', 'M');
-        expect(calls.length).toBe(1);
-        expect(calls[0][2]).toBe('Godfather');
+    function _setMode(mode) {
+        for (const r of modeRadios) r.checked = (r.value === mode);
+    }
+
+    describe('open: default mode is "From your tree"', () => {
+        it('checks the existing radio when relType is godparent_of', () => {
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@I1@', 'godparent_of');
+            expect(modeRadios.find(r => r.value === 'existing').checked).toBe(true);
+            expect(modeRadios.find(r => r.value === 'new').checked).toBe(false);
+        });
+
+        it('keeps the "new" default for parent_of', () => {
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@I1@', 'parent_of');
+            expect(modeRadios.find(r => r.value === 'new').checked).toBe(true);
+        });
+
+        it('sets the title to "Add Godparent"', () => {
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@I1@', 'godparent_of');
+            expect(elements['add-person-modal-title'].textContent).toBe('Add Godparent');
+        });
     });
 
-    it('uses Godmother when godparent sex is F', async () => {
-        const calls = await _submit('@I1@', '@I5@', 'F');
-        expect(calls.length).toBe(1);
-        expect(calls[0][2]).toBe('Godmother');
+    describe('existing mode: rela derived from picked person sex', () => {
+        async function _runExisting(childXref, godparentXref, sex) {
+            const calls = [];
+            global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
+            global.PEOPLE = {
+                [childXref]: { name: 'Child' },
+                [godparentXref]: { name: 'Godparent', sex },
+            };
+            const { openAddPersonModal, _selectAddPersonFromTree, submitAddPersonModal } = _loadModule();
+            openAddPersonModal(childXref, 'godparent_of');
+            _setMode('existing');
+            _selectAddPersonFromTree(godparentXref, 'Godparent');
+            await submitAddPersonModal();
+            return calls;
+        }
+
+        it('uses Godfather when picked sex is M', async () => {
+            const calls = await _runExisting('@I1@', '@I5@', 'M');
+            expect(calls.length).toBe(1);
+            expect(calls[0][0]).toBe('@I1@');
+            expect(calls[0][1].godparent_xref).toBe('@I5@');
+            expect(calls[0][1].rela).toBe('Godfather');
+        });
+
+        it('uses Godmother when picked sex is F', async () => {
+            const calls = await _runExisting('@I1@', '@I5@', 'F');
+            expect(calls[0][1].rela).toBe('Godmother');
+        });
+
+        it('uses Godparent when picked sex is U', async () => {
+            const calls = await _runExisting('@I1@', '@I5@', 'U');
+            expect(calls[0][1].rela).toBe('Godparent');
+        });
+
+        it('uses Godparent when picked xref is not in PEOPLE', async () => {
+            const calls = [];
+            global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
+            global.PEOPLE = { '@I1@': { name: 'Child' } };
+            const { openAddPersonModal, _selectAddPersonFromTree, submitAddPersonModal } = _loadModule();
+            openAddPersonModal('@I1@', 'godparent_of');
+            _setMode('existing');
+            _selectAddPersonFromTree('@I5@', 'Unknown');
+            await submitAddPersonModal();
+            expect(calls[0][1].rela).toBe('Godparent');
+        });
+
+        it('alerts and does not call API when nothing is selected', async () => {
+            global.alert = vi.fn();
+            const calls = [];
+            global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
+            global.PEOPLE = { '@I1@': { name: 'Child' } };
+            const { openAddPersonModal, submitAddPersonModal } = _loadModule();
+            openAddPersonModal('@I1@', 'godparent_of');
+            _setMode('existing');
+            await submitAddPersonModal();
+            expect(calls.length).toBe(0);
+            expect(global.alert).toHaveBeenCalledTimes(1);
+        });
     });
 
-    it('uses Godparent when godparent sex is U', async () => {
-        const calls = await _submit('@I1@', '@I5@', 'U');
-        expect(calls.length).toBe(1);
-        expect(calls[0][2]).toBe('Godparent');
+    describe('new mode: builds new_person payload from form', () => {
+        function _fillForm({ given='', surn='', sex='U', birthDate='', birthPlace='', status='deceased', deathDate='', deathPlace='' }) {
+            elements['add-person-modal-given']       = Object.assign(_fakeEl('add-person-modal-given'),       { value: given });
+            elements['add-person-modal-surname']     = Object.assign(_fakeEl('add-person-modal-surname'),     { value: surn });
+            elements['add-person-modal-suffix']      = Object.assign(_fakeEl('add-person-modal-suffix'),      { value: '' });
+            elements['add-person-modal-sex']         = Object.assign(_fakeEl('add-person-modal-sex'),         { value: sex });
+            elements['add-person-modal-birth-date']  = Object.assign(_fakeEl('add-person-modal-birth-date'),  { value: birthDate });
+            elements['add-person-modal-birth-place'] = Object.assign(_fakeEl('add-person-modal-birth-place'), { value: birthPlace });
+            elements['add-person-modal-death-date']  = Object.assign(_fakeEl('add-person-modal-death-date'),  { value: deathDate });
+            elements['add-person-modal-death-place'] = Object.assign(_fakeEl('add-person-modal-death-place'), { value: deathPlace });
+            for (const r of statusRadios) r.checked = (r.value === status);
+        }
+
+        async function _runNew(formValues) {
+            const calls = [];
+            global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
+            global.PEOPLE = { '@I1@': { name: 'Child' } };
+            const { openAddPersonModal, submitAddPersonModal } = _loadModule();
+            openAddPersonModal('@I1@', 'godparent_of');
+            _setMode('new');
+            _fillForm(formValues);
+            await submitAddPersonModal();
+            return calls;
+        }
+
+        it('passes given/surn/sex and Godmother rela when sex=F', async () => {
+            const calls = await _runNew({ given: 'Maria', surn: 'Papadopoulos', sex: 'F', status: 'living' });
+            expect(calls.length).toBe(1);
+            expect(calls[0][0]).toBe('@I1@');
+            expect(calls[0][1].new_person.given).toBe('Maria');
+            expect(calls[0][1].new_person.surn).toBe('Papadopoulos');
+            expect(calls[0][1].new_person.sex).toBe('F');
+            expect(calls[0][1].rela).toBe('Godmother');
+        });
+
+        it('uses Godfather rela when form sex=M', async () => {
+            const calls = await _runNew({ given: 'Yorgos', surn: 'X', sex: 'M', status: 'living' });
+            expect(calls[0][1].rela).toBe('Godfather');
+        });
+
+        it('uses Godparent rela when form sex=U', async () => {
+            const calls = await _runNew({ given: 'Pat', surn: 'Q', sex: 'U', status: 'living' });
+            expect(calls[0][1].rela).toBe('Godparent');
+        });
+
+        it('passes status=deceased without death date', async () => {
+            const calls = await _runNew({ given: 'Old', surn: 'Person', sex: 'M', status: 'deceased' });
+            expect(calls[0][1].new_person.status).toBe('deceased');
+            expect(calls[0][1].new_person.death_date).toBe('');
+        });
+
+        it('passes status=deceased with death date+place', async () => {
+            const calls = await _runNew({
+                given: 'Old', surn: 'Person', sex: 'M', status: 'deceased',
+                deathDate: '12 MAR 1942', deathPlace: 'Smyrna',
+            });
+            expect(calls[0][1].new_person.death_date).toBe('12 MAR 1942');
+            expect(calls[0][1].new_person.death_place).toBe('Smyrna');
+        });
+
+        it('alerts and does not call API when given and surn are both empty', async () => {
+            global.alert = vi.fn();
+            const calls = await _runNew({ given: '', surn: '', sex: 'F', status: 'living' });
+            expect(calls.length).toBe(0);
+            expect(global.alert).toHaveBeenCalledTimes(1);
+        });
     });
 
-    it('uses Godparent when godparent xref is not in PEOPLE', async () => {
-        const calls = [];
-        global.apiAddGodparent = async (...args) => { calls.push(args); return {}; };
-        global.PEOPLE = { '@I1@': { name: 'Child' } }; // godparent @I5@ absent
-        const { showAddGodparentModal, _selectGodparent, submitAddGodparentModal } =
-        require('../../js/viz_modals.js');
-        showAddGodparentModal('@I1@');
-        _selectGodparent('@I5@', 'Unknown');
-        await submitAddGodparentModal();
-        expect(calls.length).toBe(1);
-        expect(calls[0][2]).toBe('Godparent');
+    describe('success path: merges PEOPLE from response', () => {
+        it('updates PEOPLE for the subject in existing mode', async () => {
+            const updated = { name: 'Child Updated', events: [] };
+            global.apiAddGodparent = async () => ({ people: { '@I1@': updated } });
+            global.PEOPLE = {
+                '@I1@': { name: 'Child' },
+                '@I5@': { name: 'Godparent', sex: 'F' },
+            };
+            const { openAddPersonModal, _selectAddPersonFromTree, submitAddPersonModal } = _loadModule();
+            openAddPersonModal('@I1@', 'godparent_of');
+            _setMode('existing');
+            _selectAddPersonFromTree('@I5@', 'Godparent');
+            await submitAddPersonModal();
+            expect(global.PEOPLE['@I1@']).toEqual(updated);
+        });
     });
 });
 

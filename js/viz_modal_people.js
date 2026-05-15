@@ -426,84 +426,6 @@ async function submitAddNoteModal() {
 // modals (only one is open at a time).
 
 
-let _addGodparentXref = null,
-    _addGodparentSelectedXref = null;
-
-
-function showAddGodparentModal(xref) {
-    _addGodparentXref = xref;
-    _addGodparentSelectedXref = null;
-
-    const overlayEl = document.getElementById('add-godparent-modal-overlay');
-    const searchEl = document.getElementById('add-godparent-modal-search');
-    const resultsEl = document.getElementById('add-godparent-modal-results');
-    const titleEl = document.getElementById('add-godparent-modal-title');
-
-    if (titleEl) titleEl.textContent = 'Add Godparent';
-    if (searchEl) searchEl.value = '';
-    if (resultsEl) resultsEl.innerHTML = '';
-
-    if (overlayEl) overlayEl.classList.add('open');
-    if (searchEl) setTimeout(() => searchEl.focus && searchEl.focus(), 50);
-}
-
-
-function closeAddGodparentModal() {
-    const overlayEl = document.getElementById('add-godparent-modal-overlay');
-    if (overlayEl) overlayEl.classList.remove('open');
-    _addGodparentXref = _addGodparentSelectedXref = null;
-}
-
-
-function _renderGodparentResults(query) {
-    const container = document.getElementById('add-godparent-modal-results');
-    if (!container) return;
-    const q = query.trim().toLowerCase();
-    if (!q) { container.innerHTML = ''; return; }
-    const hits = (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
-        .filter(p => p.name && p.name.toLowerCase().includes(q))
-        .slice(0, 12);
-    container.innerHTML = hits.map(p =>
-        `<div class="godparent-result-item" data-xref="${escHtml(p.id)}" data-name="${escHtml(p.name)}">${escHtml(p.name)}${p.birth_year ? ' (' + p.birth_year + ')' : ''}</div>`
-    ).join('');
-}
-
-
-function _selectGodparent(xref, name) {
-    const inp = document.getElementById('add-godparent-modal-search');
-    const res = document.getElementById('add-godparent-modal-results');
-    if (inp) inp.value = name;
-    if (res) res.innerHTML = '';
-    _addGodparentSelectedXref = xref;
-}
-
-document.addEventListener('click', e => {
-    const item = e.target.closest('.godparent-result-item');
-    if (item) _selectGodparent(item.dataset.xref, item.dataset.name);
-});
-
-document.addEventListener('input', e => {
-    if (e.target.id === 'add-godparent-modal-search') _renderGodparentResults(e.target.value);
-});
-
-
-async function submitAddGodparentModal() {
-    const xref = _addGodparentXref;
-    const godparentXref = _addGodparentSelectedXref;
-    const sex = (typeof PEOPLE !== 'undefined' && PEOPLE[godparentXref]?.sex) || 'U';
-    const rela = sex === 'M' ? 'Godfather' : sex === 'F' ? 'Godmother' : 'Godparent';
-    closeAddGodparentModal();
-    if (!godparentXref) { alert('Please select a godparent from the search results.'); return; }
-    try {
-        const resp = await apiAddGodparent(xref, godparentXref, rela);
-        if (resp && resp.people && resp.people[xref]) PEOPLE[xref] = resp.people[xref];
-        if (typeof renderPanel !== 'undefined') renderPanel();
-    } catch (e) {
-        alert('Save failed: ' + e);
-    }
-}
-
-
 async function deleteGodparent(xref, godparentXref) {
     const gpName = (typeof PEOPLE !== 'undefined' && PEOPLE[godparentXref]?.name) || godparentXref;
     if (!confirm('Remove ' + gpName + ' as godparent? The GEDCOM file will be updated immediately.')) return;
@@ -529,6 +451,7 @@ const _ADD_PERSON_REL_LABELS = {
     sibling_of: 'Sibling',
     spouse_of: 'Spouse',
     child_of: 'Child',
+    godparent_of: 'Godparent',
 };
 
 
@@ -618,18 +541,15 @@ function openAddPersonModal(xref, relType) {
     }
 
     if (overlayEl) overlayEl.classList.add('open');
-    for (const r of document.getElementsByName('add-person-mode')) r.checked = (r.value === 'new');
+    const defaultMode = (relType === 'godparent_of') ? 'existing' : 'new';
+    for (const r of document.getElementsByName('add-person-mode')) r.checked = (r.value === defaultMode);
     _addPersonFromTreeXref = null;
-    const fromTreeEl = document.getElementById('add-person-from-tree');
-    if (fromTreeEl) fromTreeEl.style.display = 'none';
     const treeSearchEl = document.getElementById('add-person-tree-search');
     if (treeSearchEl) treeSearchEl.value = '';
     const treeResultsEl = document.getElementById('add-person-tree-results');
     if (treeResultsEl) treeResultsEl.innerHTML = '';
-    const modalEl = document.getElementById('add-person-modal');
-    const formRows = modalEl ? modalEl.querySelectorAll('.add-person-row-name, .add-person-row-full, .add-person-row-2col') : [];
-    formRows.forEach(el => { el.style.display = ''; });
-    if (givenEl) setTimeout(() => givenEl.focus && givenEl.focus(), 50);
+    _onAddPersonModeChange();
+    if (defaultMode === 'new' && givenEl) setTimeout(() => givenEl.focus && givenEl.focus(), 50);
 }
 
 
@@ -705,17 +625,19 @@ function _selectChangeParent(xref, name) {
     _changeParentNewXref = xref;
 }
 
+function _selectAddPersonFromTree(xref, name) {
+    _addPersonFromTreeXref = xref;
+    const inp = document.getElementById('add-person-tree-search');
+    const res = document.getElementById('add-person-tree-results');
+    if (inp) inp.value = name;
+    if (res) res.innerHTML = '';
+}
+
 document.addEventListener('click', e => {
     const cpItem = e.target.closest('.change-parent-result-item');
     if (cpItem) { _selectChangeParent(cpItem.dataset.xref, cpItem.dataset.name); return; }
     const apItem = e.target.closest('.add-person-tree-result-item');
-    if (apItem) {
-        _addPersonFromTreeXref = apItem.dataset.xref;
-        const inp = document.getElementById('add-person-tree-search');
-        const res = document.getElementById('add-person-tree-results');
-        if (inp) inp.value = apItem.dataset.name;
-        if (res) res.innerHTML = '';
-    }
+    if (apItem) _selectAddPersonFromTree(apItem.dataset.xref, apItem.dataset.name);
 });
 
 document.addEventListener('input', e => {
@@ -789,6 +711,58 @@ async function _postChangeParent(childXref, currentXref, newXref) {
 }
 
 
+function _relaForSex(sex) {
+    return sex === 'M' ? 'Godfather' : sex === 'F' ? 'Godmother' : 'Godparent';
+}
+
+
+async function _submitGodparentFromAddPersonModal(mode, childXref) {
+    if (!childXref) { alert('Missing relationship context.'); return; }
+
+    let opts;
+    if (mode === 'existing') {
+        if (!_addPersonFromTreeXref) {
+            alert('Please select a person from the search results.');
+            return;
+        }
+        const pickedSex = (typeof PEOPLE !== 'undefined' && PEOPLE[_addPersonFromTreeXref]?.sex) || 'U';
+        opts = { godparent_xref: _addPersonFromTreeXref, rela: _relaForSex(pickedSex) };
+    } else {
+        const given      = (document.getElementById('add-person-modal-given').value       || '').trim();
+        const surn       = (document.getElementById('add-person-modal-surname').value     || '').trim();
+        const suffix     = (document.getElementById('add-person-modal-suffix').value      || '').trim();
+        const sex        = document.getElementById('add-person-modal-sex').value || 'U';
+        const birthDate  = (document.getElementById('add-person-modal-birth-date').value  || '').trim();
+        const birthPlace = (document.getElementById('add-person-modal-birth-place').value || '').trim();
+        const deathDate  = (document.getElementById('add-person-modal-death-date').value  || '').trim();
+        const deathPlace = (document.getElementById('add-person-modal-death-place').value || '').trim();
+        let status = '';
+        for (const r of document.getElementsByName('add-person-modal-status')) {
+            if (r.checked) { status = r.value; break; }
+        }
+        if (!given && !surn) { alert('Given name or surname is required.'); return; }
+        opts = {
+            new_person: {
+                given, surn, suffix, sex,
+                birth_date: birthDate, birth_place: birthPlace,
+                status, death_date: deathDate, death_place: deathPlace,
+            },
+            rela: _relaForSex(sex),
+        };
+    }
+
+    try {
+        const resp = await apiAddGodparent(childXref, opts);
+        if (resp && resp.people)
+            for (const [k, v] of Object.entries(resp.people)) PEOPLE[k] = v;
+        closeAddPersonModal();
+        if (typeof renderPanel !== 'undefined') renderPanel();
+    } catch (e) {
+        alert('Save failed: ' + e);
+    }
+}
+
+
 async function submitAddPersonModal() {
     let mode = 'new';
     for (const r of document.getElementsByName('add-person-mode')) {
@@ -797,6 +771,11 @@ async function submitAddPersonModal() {
 
     const relXref = _addPersonRelXref;
     const relType = _addPersonRelType;
+
+    if (relType === 'godparent_of') {
+        await _submitGodparentFromAddPersonModal(mode, relXref);
+        return;
+    }
 
     if (mode === 'existing') {
         if (!_addPersonFromTreeXref) {
@@ -1046,10 +1025,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         showEditNameModal,
         showAddNoteModal,
-        showAddGodparentModal,
-        submitAddGodparentModal,
         deleteGodparent,
-        _selectGodparent,
         editName,
         deleteNote,
         submitNoteEdit,
@@ -1060,6 +1036,10 @@ if (typeof module !== 'undefined' && module.exports) {
         toggleSpouseMenuFam,
         _buildSpouseMenuRows,
         deletePerson,
+        openAddPersonModal,
+        closeAddPersonModal,
+        submitAddPersonModal,
+        _selectAddPersonFromTree,
         _onAddPersonModeChange,
         _renderAddPersonTreeResults,
     };

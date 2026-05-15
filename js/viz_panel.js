@@ -479,7 +479,7 @@ function _buildGodparentPillsHtml(evt, xref, xrefQ) {
         html += `<span class="panel-godparent-pill" data-xref="${escHtml(asso.xref)}" onclick="setState({focusXref:${xrefJs},panelXref:${xrefJs},panelOpen:true})">${gpName}${roleSuffix}${delBtn}</span>`;
     }
     if (assoArr.length < 2) {
-        html += `<button class="panel-add-godparent-btn" onclick="showAddGodparentModal(${xrefQ})">+ Add Godparent</button>`;
+        html += `<button class="panel-add-godparent-btn" onclick="openAddPersonModal(${xrefQ},'godparent_of')">+ Add Godparent</button>`;
     }
     html += `</div>`;
     return html;
