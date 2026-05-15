@@ -2574,6 +2574,141 @@ class TestAddGodparentEndpoint:
         assert 'events' in people['@I1@']
 
 
+class TestAddGodparentNewPerson:
+    """new_person mode: /api/add_godparent creates a new INDI and links the ASSO."""
+
+    def test_creates_new_indi_with_name_and_sex(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@',
+            'new_person': {
+                'given': 'Maria', 'surn': 'Papadopoulos', 'sex': 'F',
+            },
+            'rela': 'Godmother',
+        })
+        assert resp.get('ok') is True
+        new_xref = resp.get('xref')
+        assert new_xref and new_xref.startswith('@I') and new_xref.endswith('@')
+        text = _ged_text(ged)
+        assert f'0 {new_xref} INDI' in text
+        assert '1 NAME Maria /Papadopoulos/' in text
+        assert '1 SEX F' in text
+
+    def test_links_godparent_asso_on_subject(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@',
+            'new_person': {'given': 'Maria', 'surn': 'Papadopoulos', 'sex': 'F'},
+            'rela': 'Godmother',
+        })
+        new_xref = resp['xref']
+        lines = _ged_text(ged).splitlines()
+        indi_start = next(i for i, l in enumerate(lines) if '0 @I1@ INDI' in l)
+        indi_end = next(i for i in range(indi_start + 1, len(lines)) if lines[i].startswith('0 '))
+        block = '\n'.join(lines[indi_start:indi_end])
+        assert f'1 ASSO {new_xref}' in block
+        assert '2 RELA Godmother' in block
+
+    def test_reciprocal_godchild_asso_on_new_person(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@',
+            'new_person': {'given': 'Maria', 'surn': 'Papadopoulos', 'sex': 'F'},
+            'rela': 'Godmother',
+        })
+        new_xref = resp['xref']
+        lines = _ged_text(ged).splitlines()
+        gp_start = next(i for i, l in enumerate(lines) if f'0 {new_xref} INDI' in l)
+        gp_end = next((i for i in range(gp_start + 1, len(lines)) if lines[i].startswith('0 ')), len(lines))
+        block = '\n'.join(lines[gp_start:gp_end])
+        assert '1 ASSO @I1@' in block
+        assert '2 RELA Godchild' in block
+
+    def test_deceased_no_dates_emits_deat_y(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@',
+            'new_person': {
+                'given': 'Yorgos', 'surn': 'Old', 'sex': 'M',
+                'status': 'deceased',
+            },
+            'rela': 'Godfather',
+        })
+        new_xref = resp['xref']
+        lines = _ged_text(ged).splitlines()
+        gp_start = next(i for i, l in enumerate(lines) if f'0 {new_xref} INDI' in l)
+        gp_end = next((i for i in range(gp_start + 1, len(lines)) if lines[i].startswith('0 ')), len(lines))
+        block = '\n'.join(lines[gp_start:gp_end])
+        assert '1 DEAT Y' in block
+
+    def test_deceased_with_date_emits_deat_date(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@',
+            'new_person': {
+                'given': 'Yorgos', 'surn': 'Old', 'sex': 'M',
+                'status': 'deceased', 'death_date': '12 MAR 1942',
+                'death_place': 'Smyrna',
+            },
+            'rela': 'Godfather',
+        })
+        new_xref = resp['xref']
+        lines = _ged_text(ged).splitlines()
+        gp_start = next(i for i, l in enumerate(lines) if f'0 {new_xref} INDI' in l)
+        gp_end = next((i for i in range(gp_start + 1, len(lines)) if lines[i].startswith('0 ')), len(lines))
+        block = '\n'.join(lines[gp_start:gp_end])
+        assert '1 DEAT' in block
+        assert '1 DEAT Y' not in block
+        assert '2 DATE 12 MAR 1942' in block
+        assert '2 PLAC Smyrna' in block
+
+    def test_empty_given_and_surn_rejected(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_godparent', {
+                'xref': '@I1@',
+                'new_person': {'given': '', 'surn': '', 'sex': 'U'},
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_both_godparent_xref_and_new_person_rejected(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_godparent', {
+                'xref': '@I1@',
+                'godparent_xref': '@I4@',
+                'new_person': {'given': 'Maria', 'surn': 'X', 'sex': 'F'},
+            })
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_neither_godparent_xref_nor_new_person_rejected(self, live_server):
+        ged, post, _, _ = live_server
+        import urllib.error
+        try:
+            post('/api/add_godparent', {'xref': '@I1@'})
+            assert False, 'Should have raised'
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+
+    def test_response_includes_both_xrefs_in_people(self, live_server):
+        ged, post, _, _ = live_server
+        resp = post('/api/add_godparent', {
+            'xref': '@I1@',
+            'new_person': {'given': 'Maria', 'surn': 'X', 'sex': 'F'},
+            'rela': 'Godmother',
+        })
+        new_xref = resp['xref']
+        people = resp.get('people') or {}
+        assert '@I1@' in people
+        assert new_xref in people
+
+
 # ===========================================================================
 # /api/delete_godparent
 # ===========================================================================

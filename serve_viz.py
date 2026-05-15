@@ -809,6 +809,52 @@ def _build_sour_block(xref: str, titl: str, auth: str, publ: str, repo: str, not
 def _next_indi_xref(lines: list[str]) -> str: return _next_xref(lines, 'I')
 
 
+def _build_indi_lines(lines, given, surn, suffix, sex, birth_date, birth_place,
+                       status, death_date, death_place):
+    """Allocate a fresh xref and build a new INDI block, inserted before 0 TRLR.
+
+    Returns (new_xref, updated_lines). Caller is responsible for further edits
+    (FAM wiring, ASSO records) and for the final atomic write.
+    """
+    new_xref = _next_indi_xref(lines)
+    if surn:
+        name_val = f'{given} /{surn}/' if given else f'/{surn}/'
+    else:
+        name_val = given
+    new_indi = [f'0 {new_xref} INDI', f'1 NAME {name_val}']
+    if given:
+        new_indi.append(f'2 GIVN {given}')
+    if surn:
+        new_indi.append(f'2 SURN {surn}')
+    if suffix:
+        new_indi.append(f'2 NSFX {suffix}')
+    if sex in ('M', 'F'):
+        new_indi.append(f'1 SEX {sex}')
+    if birth_date or birth_place:
+        new_indi.append('1 BIRT')
+        if birth_date:
+            new_indi.append(f'2 DATE {birth_date}')
+        if birth_place:
+            new_indi.append(f'2 PLAC {birth_place}')
+    deceased = (status == 'deceased')
+    has_death_detail = bool(death_date or death_place)
+    if deceased or has_death_detail:
+        if has_death_detail:
+            new_indi.append('1 DEAT')
+            if death_date:
+                new_indi.append(f'2 DATE {death_date}')
+            if death_place:
+                new_indi.append(f'2 PLAC {death_place}')
+        else:
+            # GEDCOM 5.5.1 sentinel for "deceased, details unknown"
+            new_indi.append('1 DEAT Y')
+    trlr_idx = next(
+        (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
+    )
+    updated = lines[:trlr_idx] + new_indi + lines[trlr_idx:]
+    return new_xref, updated
+
+
 def _find_fact_for_citation(
     lines: list[str], xref: str, fact_key: str | None
 ) -> tuple[int | None, str | None]:
@@ -2019,46 +2065,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
 
             lines = GED.read_text(encoding='utf-8').splitlines()
-            new_xref = _next_indi_xref(lines)
-
-            # Build the new INDI block
-            if surn:
-                name_val = f'{given} /{surn}/' if given else f'/{surn}/'
-            else:
-                name_val = given
-            new_indi = [f'0 {new_xref} INDI', f'1 NAME {name_val}']
-            if given:
-                new_indi.append(f'2 GIVN {given}')
-            if surn:
-                new_indi.append(f'2 SURN {surn}')
-            if suffix:
-                new_indi.append(f'2 NSFX {suffix}')
-            if sex in ('M', 'F'):
-                new_indi.append(f'1 SEX {sex}')
-            if birth_date or birth_place:
-                new_indi.append('1 BIRT')
-                if birth_date:
-                    new_indi.append(f'2 DATE {birth_date}')
-                if birth_place:
-                    new_indi.append(f'2 PLAC {birth_place}')
-            deceased = (status == 'deceased')
-            has_death_detail = bool(death_date or death_place)
-            if deceased or has_death_detail:
-                if has_death_detail:
-                    new_indi.append('1 DEAT')
-                    if death_date:
-                        new_indi.append(f'2 DATE {death_date}')
-                    if death_place:
-                        new_indi.append(f'2 PLAC {death_place}')
-                else:
-                    # GEDCOM 5.5.1 sentinel for "deceased, details unknown"
-                    new_indi.append('1 DEAT Y')
-
-            # Insert new INDI before TRLR
-            trlr_idx = next(
-                (i for i, l in enumerate(lines) if l.strip() == '0 TRLR'), len(lines)
+            new_xref, lines = _build_indi_lines(
+                lines, given, surn, suffix, sex,
+                birth_date, birth_place, status, death_date, death_place,
             )
-            lines = lines[:trlr_idx] + new_indi + lines[trlr_idx:]
 
             # Handle relationship
             other_parent_xref = body.get('other_parent_xref') if rel_type == 'child_of' else None
@@ -2068,7 +2078,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
 
             _write_gedcom_atomic(lines)
-            print(f"[person-add] {new_xref} {name_val} ({rel_type} {rel_xref})")
+            print(f"[person-add] {new_xref} {given} {surn} ({rel_type} {rel_xref})")
             regenerate(body.get('current_person'))
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
             indis, fams, sources = parse_gedcom(str(GED))
@@ -2232,18 +2242,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == '/api/add_godparent':
             xref           = (body.get('xref') or '').strip()
             godparent_xref = (body.get('godparent_xref') or '').strip()
+            new_person     = body.get('new_person') or None
             rela           = (body.get('rela') or 'Godparent').strip()
             if not xref:
                 self.send_error(400, 'xref is required')
                 return
-            if not godparent_xref:
-                self.send_error(400, 'godparent_xref is required')
+            if godparent_xref and new_person:
+                self.send_error(400, 'supply either godparent_xref or new_person, not both')
+                return
+            if not godparent_xref and not new_person:
+                self.send_error(400, 'godparent_xref or new_person is required')
                 return
             if rela not in ('Godparent', 'Godfather', 'Godmother'):
                 resp = json.dumps({'ok': False,
                                     'error': f'rela must be Godparent/Godfather/Godmother; got {rela!r}'}).encode()
             else:
                 lines = GED.read_text(encoding='utf-8').splitlines()
+                created_xref = None
+                if new_person:
+                    np_given       = (new_person.get('given')       or '').strip()
+                    np_surn        = (new_person.get('surn')        or '').strip()
+                    np_suffix      = (new_person.get('suffix')      or '').strip()
+                    np_sex         = (new_person.get('sex') or 'U').strip().upper()
+                    np_birth_date  = (new_person.get('birth_date')  or '').strip()
+                    np_birth_place = (new_person.get('birth_place') or '').strip()
+                    np_status      = (new_person.get('status')      or '').strip().lower()
+                    np_death_date  = (new_person.get('death_date')  or '').strip()
+                    np_death_place = (new_person.get('death_place') or '').strip()
+                    if not np_given and not np_surn:
+                        self.send_error(400, 'new_person.given or new_person.surn is required')
+                        return
+                    created_xref, lines = _build_indi_lines(
+                        lines, np_given, np_surn, np_suffix, np_sex,
+                        np_birth_date, np_birth_place, np_status,
+                        np_death_date, np_death_place,
+                    )
+                    godparent_xref = created_xref
                 _, indi_end, err = _find_indi_block(lines, xref)
                 if err:
                     self.send_error(400, err)
@@ -2255,11 +2289,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if gp_err is None:
                     new_lines = new_lines[:gp_end] + [f'1 ASSO {xref}', '2 RELA Godchild'] + new_lines[gp_end:]
                 _write_gedcom_atomic(new_lines)
-                print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})")
+                print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})"
+                      + (' [new]' if created_xref else ''))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
                 indis, fams, sources = parse_gedcom(str(GED))
-                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
-                resp = json.dumps({'ok': True, 'people': updated}).encode()
+                touched = {xref, godparent_xref} if created_xref else {xref}
+                updated = build_people_json(touched, indis, fams=fams, sources=sources)
+                payload = {'ok': True, 'people': updated}
+                if created_xref:
+                    payload['xref'] = created_xref
+                resp = json.dumps(payload).encode()
 
         elif parsed.path == '/api/delete_godparent':
             xref           = (body.get('xref') or '').strip()
