@@ -129,13 +129,15 @@ function _formatYears(person) {
     return parts.join('  ');
 }
 
-function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set(), expandedChildrenPersons = new Set(), onChildrenExpandClick = () => {}) {
+function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set(), expandedChildrenPersons = new Set(), onChildrenExpandClick = () => {}, isPanelTarget = false) {
     const {
         BG_NODE,
         BG_NODE_FOCUS,
+        BG_NODE_BLOOD,
+        BG_NODE_SPOUSE,
         BORDER,
         BORDER_FOCUS,
-        ACCENT_SPOUSE,
+        ACCENT_SOURCE,
         TEXT_PRIMARY,
         TEXT_SECONDARY,
         TEXT_MUTED,
@@ -162,8 +164,8 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         stroke = BORDER_FOCUS;
         strokeWidth = 1.5;
     } else if (isSpouse) {
-        fill = BG_NODE;
-        stroke = ACCENT_SPOUSE;
+        fill = BG_NODE_SPOUSE;
+        stroke = BORDER;
         strokeWidth = 1;
     } else if (isSpouseSib) {
         strokeWidth = 1; // fill/stroke handled by CSS .node-spouse-sib
@@ -212,6 +214,25 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         rectAttrs.fill = fill;
         rectAttrs.stroke = stroke;
     }
+    // Halo ring around the node whose detail panel is currently open.
+    // Drawn below the main rect so badges and chevrons still sit on top.
+    if (isPanelTarget) {
+        const pad = 4;
+        const ring = _svgEl('rect', {
+            x: -pad,
+            y: -pad,
+            width: w + pad * 2,
+            height: h + pad * 2,
+            rx: NODE_RADIUS + pad,
+            fill: 'none',
+            stroke: ACCENT_SOURCE,
+            'stroke-width': 2.5,
+            class: 'panel-target-ring',
+            'pointer-events': 'none',
+        });
+        g.appendChild(ring);
+    }
+
     const rect = _svgEl('rect', rectAttrs);
     g.appendChild(rect);
 
@@ -520,6 +541,7 @@ function render() {
     const expandedSiblingsXrefs = state.expandedSiblingsXrefs || new Set();
     const expandedChildrenPersons = state.expandedChildrenPersons || new Set();
     const visibleSpouseFams = state.visibleSpouseFams || new Set();
+    const panelTargetXref = state.panelOpen ? state.panelXref : null;
 
     const { nodes, edges } = computeLayout(focusXref, expandedNodes, expandedSiblingsXrefs, expandedChildrenPersons, visibleSpouseFams);
 
@@ -587,6 +609,7 @@ function render() {
             expandedSiblingsXrefs,
             expandedChildrenPersons,
             onChildrenExpandClick,
+            node.xref === panelTargetXref,
         );
         _treeRoot.appendChild(g);
     }

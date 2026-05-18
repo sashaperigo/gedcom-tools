@@ -285,13 +285,14 @@ describe('render — spouse node styles', () => {
         renderMod.initRenderer(svg);
     });
 
-    it('spouse node rect uses ACCENT_SPOUSE stroke', () => {
+    it('spouse node rect uses BG_NODE_SPOUSE fill and default border', () => {
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const spouseG = nodeGs.find(g => g._attrs['data-xref'] === '@SPOUSE@');
         expect(spouseG).toBeDefined();
         const rect = spouseG.children.find(c => c.tagName === 'rect');
-        expect(rect._attrs['stroke']).toBe(DESIGN.ACCENT_SPOUSE);
+        expect(rect._attrs['fill']).toBe(DESIGN.BG_NODE_SPOUSE);
+        expect(rect._attrs['stroke']).toBe(DESIGN.BORDER);
     });
 
     it('spouse node uses normal width (NODE_W)', () => {
@@ -1375,6 +1376,49 @@ describe('resetView', () => {
         expect(parseFloat(match[1])).toBeCloseTo(400, 0); // 800 / 2
         expect(parseFloat(match[2])).toBeCloseTo(300, 0); // 600 / 2
         expect(parseFloat(match[3])).toBeCloseTo(1, 3);
+    });
+});
+
+describe('render — panel-target ring', () => {
+    let svg;
+
+    beforeEach(() => {
+        global.PEOPLE = makeMinimalPeople();
+        global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+        global.CHILDREN = { '@FOCUS@': ['@CHILD@'] };
+        global.RELATIVES = { '@FOCUS@': { siblings: ['@SIBLING@'], spouses: ['@SPOUSE@'] } };
+        resetState();
+        loadRenderMod();
+        svg = makeSvgEl();
+        renderMod.initRenderer(svg);
+    });
+
+    it('renders no panel-target ring when panel is closed', () => {
+        const treeRoot = svg.querySelector('#tree-root');
+        const rings = treeRoot.querySelectorAll('.panel-target-ring');
+        expect(rings.length).toBe(0);
+    });
+
+    it('renders a panel-target ring on the node whose info panel is open', () => {
+        stateMod.setState({ panelOpen: true, panelXref: '@FATHER@' });
+        const treeRoot = svg.querySelector('#tree-root');
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+        const ring = fatherG.children.find(c => (c._attrs['class'] || '') === 'panel-target-ring');
+        expect(ring).toBeDefined();
+        expect(ring.tagName).toBe('rect');
+        // No other node has a ring
+        const otherRings = nodeGs
+            .filter(g => g._attrs['data-xref'] !== '@FATHER@')
+            .flatMap(g => g.children.filter(c => (c._attrs['class'] || '') === 'panel-target-ring'));
+        expect(otherRings.length).toBe(0);
+    });
+
+    it('panel-target ring is hidden when panelOpen is false even if panelXref is set', () => {
+        stateMod.setState({ panelOpen: false, panelXref: '@FATHER@' });
+        const treeRoot = svg.querySelector('#tree-root');
+        const rings = treeRoot.querySelectorAll('.panel-target-ring');
+        expect(rings.length).toBe(0);
     });
 });
 
