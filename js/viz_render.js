@@ -28,6 +28,15 @@ function _svgEl(tag, attrs) {
 }
 
 // ---------------------------------------------------------------------------
+// Spouse roles
+// ---------------------------------------------------------------------------
+
+// Roles that render as a "married-in" person — all get BG_NODE_SPOUSE fill.
+// The fourth spouse role, 'spouse_sibling', is handled via CSS class
+// (.node-spouse-sib) and is not in this set.
+const SPOUSE_ROLES = new Set(['spouse', 'descendant_spouse', 'ancestor_sibling_spouse']);
+
+// ---------------------------------------------------------------------------
 // Edge rendering
 // ---------------------------------------------------------------------------
 
@@ -150,7 +159,7 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     } = DESIGN;
 
     const isFocus = node.role === 'focus';
-    const isSpouse = node.role === 'spouse';
+    const isSpouse = SPOUSE_ROLES.has(node.role);
     const isSpouseSib = node.role === 'spouse_sibling';
     const isAncestor = node.role === 'ancestor';
 

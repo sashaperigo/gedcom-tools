@@ -1432,3 +1432,30 @@ describe('_renderNode — parent-expand chevron on focus spouse', () => {
     });
 });
 
+describe('_renderNode — unified spouse role handling', () => {
+    const renderSrc = require('fs').readFileSync(
+        require.resolve('../../js/viz_render.js'),
+        'utf8',
+    );
+
+    it('declares a SPOUSE_ROLES set in viz_render.js', () => {
+        expect(renderSrc).toMatch(/SPOUSE_ROLES\s*=\s*new Set\(/);
+    });
+
+    it('SPOUSE_ROLES includes "spouse"', () => {
+        expect(renderSrc).toMatch(/SPOUSE_ROLES[\s\S]{0,200}['"]spouse['"]/);
+    });
+
+    it('SPOUSE_ROLES includes "descendant_spouse"', () => {
+        expect(renderSrc).toMatch(/SPOUSE_ROLES[\s\S]{0,200}['"]descendant_spouse['"]/);
+    });
+
+    it('SPOUSE_ROLES includes "ancestor_sibling_spouse"', () => {
+        expect(renderSrc).toMatch(/SPOUSE_ROLES[\s\S]{0,200}['"]ancestor_sibling_spouse['"]/);
+    });
+
+    it('isSpouse check uses SPOUSE_ROLES.has(...)', () => {
+        expect(renderSrc).toMatch(/isSpouse\s*=\s*SPOUSE_ROLES\.has/);
+    });
+});
+
