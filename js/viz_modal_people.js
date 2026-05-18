@@ -239,7 +239,7 @@ function editName(xref) {
     const suffixEl = document.getElementById('name-modal-suffix');
     if (suffixEl) suffixEl.value = suffix;
     document.getElementById('name-modal-overlay').classList.add('open');
-    setTimeout(() => document.getElementById('name-modal-given').focus(), 50);
+    setTimeout(() => document.getElementById('name-modal-given')?.focus(), 50);
 }
 
 
