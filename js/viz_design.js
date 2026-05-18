@@ -6,6 +6,8 @@ var DESIGN = {
     BG_SURFACE: '#0d1526',   // --bg-surface
     BG_NODE: '#0d1526',      // --bg-surface (node cards)
     BG_NODE_FOCUS: '#2a1e4a', // --accent-bg
+    BG_NODE_BLOOD: '#2a1e4a', // violet lineage fill (same value as focus; named for call-site clarity)
+    BG_NODE_SPOUSE: '#261428', // saturated aubergine for married-in roles
     BORDER: 'rgba(148,163,184,0.18)',
     BORDER_FOCUS: '#818cf8', // --accent
     TEXT_PRIMARY: '#e2e8f0', // --text-primary
