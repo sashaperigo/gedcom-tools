@@ -179,8 +179,8 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
     } else if (isSpouseSib) {
         strokeWidth = 1; // fill/stroke handled by CSS .node-spouse-sib
     } else {
-        // ancestor, sibling, descendant
-        fill = BG_NODE;
+        // ancestor, sibling, descendant, ancestor_sibling — all blood relatives
+        fill = BG_NODE_BLOOD;
         stroke = BORDER;
         strokeWidth = 1;
     }

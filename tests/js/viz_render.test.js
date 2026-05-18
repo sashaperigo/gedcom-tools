@@ -1459,3 +1459,47 @@ describe('_renderNode — unified spouse role handling', () => {
     });
 });
 
+describe('render — blood-relative fill', () => {
+    let svg;
+
+    beforeEach(() => {
+        global.PEOPLE = makeMinimalPeople();
+        global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+        global.CHILDREN = { '@FOCUS@': ['@CHILD@'] };
+        global.RELATIVES = { '@FOCUS@': { siblings: ['@SIBLING@'], spouses: [] } };
+        resetState();
+        loadRenderMod();
+        svg = makeSvgEl();
+        renderMod.initRenderer(svg);
+    });
+
+    it('ancestor node rect uses BG_NODE_BLOOD fill', () => {
+        const treeRoot = svg.querySelector('#tree-root');
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+        const rect = fatherG.children.find(c => c.tagName === 'rect');
+        expect(rect._attrs['fill']).toBe(DESIGN.BG_NODE_BLOOD);
+    });
+
+    it('sibling node rect uses BG_NODE_BLOOD fill', () => {
+        const treeRoot = svg.querySelector('#tree-root');
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        const siblingG = nodeGs.find(g => g._attrs['data-xref'] === '@SIBLING@');
+        const rect = siblingG.children.find(c => c.tagName === 'rect');
+        expect(rect._attrs['fill']).toBe(DESIGN.BG_NODE_BLOOD);
+    });
+
+    it('descendant node rect uses BG_NODE_BLOOD fill', () => {
+        const treeRoot = svg.querySelector('#tree-root');
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        const childG = nodeGs.find(g => g._attrs['data-xref'] === '@CHILD@');
+        const rect = childG.children.find(c => c.tagName === 'rect');
+        expect(rect._attrs['fill']).toBe(DESIGN.BG_NODE_BLOOD);
+    });
+
+    it('focus node fill (BG_NODE_FOCUS) and blood fill (BG_NODE_BLOOD) share the same value', () => {
+        // Same value, different token names. Asserting equality protects the
+        // documented invariant that focus + blood relatives share their fill.
+        expect(DESIGN.BG_NODE_FOCUS).toBe(DESIGN.BG_NODE_BLOOD);
+    });
+});
