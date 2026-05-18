@@ -15,7 +15,6 @@ var DESIGN = {
     TEXT_MUTED: '#64748b',   // --text-muted
     TEXT_DIM: '#334155',     // --text-disabled
     ACCENT: '#818cf8',       // --accent
-    ACCENT_SPOUSE: '#a78bfa', // violet variant
     ACCENT_SOURCE: '#6ee7b7',
 
     // Layout constants (replaces viz_constants.js)

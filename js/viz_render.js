@@ -140,7 +140,6 @@ function _formatYears(person) {
 
 function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set(), onSiblingExpandClick = () => {}, expandedSiblingsXrefs = new Set(), expandedChildrenPersons = new Set(), onChildrenExpandClick = () => {}, isPanelTarget = false) {
     const {
-        BG_NODE,
         BG_NODE_FOCUS,
         BG_NODE_BLOOD,
         BG_NODE_SPOUSE,
@@ -185,6 +184,14 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         strokeWidth = 1;
     }
 
+    // Panel-target indicator: replace the pill's normal border with a mint
+    // stroke at the same 1.5px width as the focus stroke. This is the only
+    // panel-target chrome — no separate ring is drawn.
+    if (isPanelTarget) {
+        stroke = ACCENT_SOURCE;
+        strokeWidth = 1.5;
+    }
+
     // Text colors
     let nameFill, nameWeight, nameFontSize, yearFill;
     if (isFocus) {
@@ -214,14 +221,6 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         'data-xref': node.xref,
         cursor: 'pointer',
     });
-
-    // Panel-target indicator: replace the pill's normal border with a mint
-    // stroke at the same 1.5px width as the focus stroke. This is the only
-    // panel-target chrome — no separate ring is drawn.
-    if (isPanelTarget) {
-        stroke = ACCENT_SOURCE;
-        strokeWidth = 1.5;
-    }
 
     // Background rect — spouse-sib colors come from CSS; all others use DESIGN attrs
     const rectAttrs = { x: 0, y: 0, width: w, height: h, rx: NODE_RADIUS, 'stroke-width': strokeWidth };
