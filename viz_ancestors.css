@@ -49,6 +49,10 @@
     --sex-m: #7db4e8;
     --sex-f: #e8a0be;
 
+    /* Tree node fills (pedigree) */
+    --bg-node-blood: #2a1e4a;
+    --bg-node-spouse: #261428;
+
     /* Layout */
     --panel-w: 480px;
     --timeline-indent: 28px;
@@ -2733,7 +2737,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 
 .node-spouse-sib {
-    fill: var(--bg-app);
+    fill: var(--bg-node-spouse);
     stroke: var(--border);
 }
 
