@@ -1379,7 +1379,7 @@ describe('resetView', () => {
     });
 });
 
-describe('render — panel-target ring', () => {
+describe('render — panel-target stroke override', () => {
     let svg;
 
     beforeEach(() => {
@@ -1393,32 +1393,97 @@ describe('render — panel-target ring', () => {
         renderMod.initRenderer(svg);
     });
 
-    it('renders no panel-target ring when panel is closed', () => {
+    it('does not produce a separate panel-target-ring element under any state', () => {
+        stateMod.setState({ panelOpen: true, panelXref: '@FATHER@' });
         const treeRoot = svg.querySelector('#tree-root');
         const rings = treeRoot.querySelectorAll('.panel-target-ring');
         expect(rings.length).toBe(0);
     });
 
-    it('renders a panel-target ring on the node whose info panel is open', () => {
+    it('overrides the main rect stroke to ACCENT_SOURCE at width 1.5 when panel is open on that node', () => {
         stateMod.setState({ panelOpen: true, panelXref: '@FATHER@' });
         const treeRoot = svg.querySelector('#tree-root');
         const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
         const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
-        const ring = fatherG.children.find(c => (c._attrs['class'] || '') === 'panel-target-ring');
-        expect(ring).toBeDefined();
-        expect(ring.tagName).toBe('rect');
-        // No other node has a ring
-        const otherRings = nodeGs
-            .filter(g => g._attrs['data-xref'] !== '@FATHER@')
-            .flatMap(g => g.children.filter(c => (c._attrs['class'] || '') === 'panel-target-ring'));
-        expect(otherRings.length).toBe(0);
+        const rect = fatherG.children.find(c => c.tagName === 'rect');
+        expect(rect._attrs['stroke']).toBe(DESIGN.ACCENT_SOURCE);
+        expect(parseFloat(rect._attrs['stroke-width'])).toBe(1.5);
     });
 
-    it('panel-target ring is hidden when panelOpen is false even if panelXref is set', () => {
+    it('non-target nodes keep their role default stroke when the panel is open elsewhere', () => {
+        stateMod.setState({ panelOpen: true, panelXref: '@FATHER@' });
+        const treeRoot = svg.querySelector('#tree-root');
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        // MOTHER is an ancestor → default BORDER stroke
+        const motherG = nodeGs.find(g => g._attrs['data-xref'] === '@MOTHER@');
+        const motherRect = motherG.children.find(c => c.tagName === 'rect');
+        expect(motherRect._attrs['stroke']).toBe(DESIGN.BORDER);
+        // SPOUSE is a spouse → default BORDER stroke (after Task 2)
+        const spouseG = nodeGs.find(g => g._attrs['data-xref'] === '@SPOUSE@');
+        const spouseRect = spouseG.children.find(c => c.tagName === 'rect');
+        expect(spouseRect._attrs['stroke']).toBe(DESIGN.BORDER);
+    });
+
+    it('main rect uses role-default stroke when panelOpen is false', () => {
         stateMod.setState({ panelOpen: false, panelXref: '@FATHER@' });
         const treeRoot = svg.querySelector('#tree-root');
-        const rings = treeRoot.querySelectorAll('.panel-target-ring');
-        expect(rings.length).toBe(0);
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        const fatherG = nodeGs.find(g => g._attrs['data-xref'] === '@FATHER@');
+        const rect = fatherG.children.find(c => c.tagName === 'rect');
+        expect(rect._attrs['stroke']).toBe(DESIGN.BORDER);
+    });
+
+    it('panel-open on the focus node overrides focus stroke (indigo → mint) but preserves fill/size/stripe', () => {
+        stateMod.setState({ panelOpen: true, panelXref: '@FOCUS@' });
+        const treeRoot = svg.querySelector('#tree-root');
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        const focusG = nodeGs.find(g => g._attrs['data-xref'] === '@FOCUS@');
+        const rects = focusG.children.filter(c => c.tagName === 'rect');
+        // Main rect is the first <rect>; the accent stripe is the second.
+        const mainRect = rects[0];
+        expect(mainRect._attrs['stroke']).toBe(DESIGN.ACCENT_SOURCE);
+        expect(parseFloat(mainRect._attrs['stroke-width'])).toBe(1.5);
+        // Focus identity preserved by fill + size:
+        expect(mainRect._attrs['fill']).toBe(DESIGN.BG_NODE_FOCUS);
+        expect(parseFloat(mainRect._attrs['width'])).toBe(DESIGN.NODE_W_FOCUS);
+    });
+
+    it('spouse_sibling node as panel target overrides CSS-class stroke with inline mint stroke', () => {
+        // spouse_sibling is rendered via the .node-spouse-sib CSS class
+        // (stroke=var(--border) by default). When panel is open on such a node,
+        // an inline stroke attribute must be set so the mint indicator beats CSS.
+        global.PEOPLE = {
+            ...makeMinimalPeople(),
+            '@SPOUSE_SIB@': { name: 'Spouse Sibling', birth_year: 1900, death_year: 1970 },
+        };
+        global.PARENTS = { '@FOCUS@': ['@FATHER@', '@MOTHER@'] };
+        global.CHILDREN = { '@FOCUS@': ['@CHILD@'] };
+        global.RELATIVES = {
+            '@FOCUS@':   { siblings: [], spouses: ['@SPOUSE@'] },
+            '@SPOUSE@':  { siblings: ['@SPOUSE_SIB@'], spouses: ['@FOCUS@'] },
+        };
+        resetState();
+        // Expand the spouse's siblings so @SPOUSE_SIB@ appears in the layout
+        // with role 'spouse_sibling'.
+        stateMod.setState({ expandedSiblingsXrefs: new Set(['@SPOUSE@']) });
+        loadRenderMod();
+        const svg2 = makeSvgEl();
+        renderMod.initRenderer(svg2);
+
+        // Now open the panel on the spouse_sibling node.
+        stateMod.setState({ panelOpen: true, panelXref: '@SPOUSE_SIB@' });
+
+        const treeRoot = svg2.querySelector('#tree-root');
+        const nodeGs = treeRoot.querySelectorAll('g[data-xref]');
+        const ssG = nodeGs.find(g => g._attrs['data-xref'] === '@SPOUSE_SIB@');
+        expect(ssG, 'spouse_sibling node should exist in layout when expanded').toBeDefined();
+
+        const rect = ssG.children.find(c => c.tagName === 'rect');
+        // The rect should still carry the CSS class for fill/default stroke...
+        expect((rect._attrs['class'] || '').split(' ')).toContain('node-spouse-sib');
+        // ...AND have an inline stroke override so the mint indicator wins.
+        expect(rect._attrs['stroke']).toBe(DESIGN.ACCENT_SOURCE);
+        expect(parseFloat(rect._attrs['stroke-width'])).toBe(1.5);
     });
 });
 

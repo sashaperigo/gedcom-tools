@@ -215,31 +215,24 @@ function _renderNode(node, onNodeClick, onExpandClick, expandedNodes = new Set()
         cursor: 'pointer',
     });
 
+    // Panel-target indicator: replace the pill's normal border with a mint
+    // stroke at the same 1.5px width as the focus stroke. This is the only
+    // panel-target chrome — no separate ring is drawn.
+    if (isPanelTarget) {
+        stroke = ACCENT_SOURCE;
+        strokeWidth = 1.5;
+    }
+
     // Background rect — spouse-sib colors come from CSS; all others use DESIGN attrs
     const rectAttrs = { x: 0, y: 0, width: w, height: h, rx: NODE_RADIUS, 'stroke-width': strokeWidth };
     if (isSpouseSib) {
         rectAttrs.class = 'node-spouse-sib';
+        // When this node owns the panel, the inline stroke must override the CSS
+        // rule so the mint indicator wins over .node-spouse-sib's gray border.
+        if (isPanelTarget) rectAttrs.stroke = stroke;
     } else {
         rectAttrs.fill = fill;
         rectAttrs.stroke = stroke;
-    }
-    // Halo ring around the node whose detail panel is currently open.
-    // Drawn below the main rect so badges and chevrons still sit on top.
-    if (isPanelTarget) {
-        const pad = 4;
-        const ring = _svgEl('rect', {
-            x: -pad,
-            y: -pad,
-            width: w + pad * 2,
-            height: h + pad * 2,
-            rx: NODE_RADIUS + pad,
-            fill: 'none',
-            stroke: ACCENT_SOURCE,
-            'stroke-width': 2.5,
-            class: 'panel-target-ring',
-            'pointer-events': 'none',
-        });
-        g.appendChild(ring);
     }
 
     const rect = _svgEl('rect', rectAttrs);
