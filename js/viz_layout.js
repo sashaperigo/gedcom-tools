@@ -419,8 +419,11 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             // Halfwidths of this gen-1 child's own (Phase-3) descendant cluster,
             // measured from the child's marriage midpoint (= group center).
             // NODE_W/2 when the child has no expanded descendants.
-            const halfLeft = _descendantHalfwidth(childXref, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
-            const halfRight = _descendantHalfwidth(childXref, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref);
+            // Phase 2 emitGroup always places child spouses to the right within
+            // the child's group, so the child's visible-FAM cluster (if any)
+            // will be centered on a midpoint to the child's right.
+            const halfLeft = _descendantHalfwidth(childXref, 'left', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref, 'right');
+            const halfRight = _descendantHalfwidth(childXref, 'right', expandedChildrenPersons, undefined, visibleSpouseFams, focusXref, 'right');
             return { childXref, childSpouses, width, halfLeft, halfRight };
         };
         const visibleGroups = visibleKids.map(buildGroup);
@@ -435,7 +438,13 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
             const baseline = prev.width + H_GAP;
             const prevHasDesc = prev.halfRight > NODE_W / 2 + 0.001;
             const nextHasDesc = next.halfLeft > NODE_W / 2 + 0.001;
-            if (!prevHasDesc && !nextHasDesc) return baseline;
+            // Reservation only matters when BOTH siblings' grandkid clusters
+            // could collide at the gen-2 row. If only one side has grandkids,
+            // the other side is a bare pill on the gen-1 row — different y from
+            // the grandkid cluster, so no extra x-clearance is needed. Without
+            // this guard, an over-conservative halfwidth on the descendant side
+            // pushes a bare-pill sibling hundreds of px away unnecessarily.
+            if (!prevHasDesc || !nextHasDesc) return baseline;
             // Marriage midpoint of group sits at cursor + width/2. Cluster
             // reaches right to (mid + halfRight) and next reaches left to
             // (next_mid - halfLeft). Required advance derives from

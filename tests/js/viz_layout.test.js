@@ -4067,3 +4067,183 @@ describe('computeLayout — focus-sibling with many kids lands between leftsib k
         });
     });
 });
+
+// ── Regression: focus-child has multi-FAM expanded grandkids; bare-pill
+// siblings on its row must NOT get pushed away by an over-conservative
+// advanceFor that flat-packs the multi-FAM grandkids and reserves room
+// on both sides. In the actual layout the two FAM clusters land on
+// OPPOSITE sides of the parent, so the grandkid extent on the spouse-
+// adjacent side is small. A sibling with no own grandkids should sit at
+// baseline gap regardless of the multi-FAM parent's combined width.
+describe('computeLayout — focus-child with multi-FAM expanded grandkids does not push bare-pill siblings', () => {
+    beforeEach(() => {
+        // Mirrors the Michele/Domenico/Lucia/Isabella scenario: focus is
+        // Michele; he has 3 children (Dom oldest, then Lucia, Isabella).
+        // Dom is in expandedChildrenPersons. He has TWO FAMs with children:
+        // F_DOM_MARIA  (visible spouse on row)   → 2 kids
+        // F_DOM_CATA   (other-FAM, no on-row sp) → 5 kids
+        // Lucia and Isabella have NO expanded grandkids — just their pills
+        // plus a sibling-spouse each. They must sit at baseline gap after
+        // Dom+Maria, not pushed hundreds of pixels right.
+        resetGlobals({
+            people: {
+                '@MICHELE@':   { birth_year: 1708, sex: 'M' },
+                '@APOLLONIA@': { birth_year: 1716, sex: 'F' },
+                '@DOM@':       { birth_year: 1738, sex: 'M' },
+                '@LUCIA@':     { birth_year: 1747, sex: 'F' },
+                '@ISA@':       { birth_year: 1750, sex: 'F' },
+                '@MARIA@':     { birth_year: 1742, sex: 'F' },
+                '@CATA@':      { birth_year: 1755, sex: 'F' },
+                '@STEFANO@':   { birth_year: 1745, sex: 'M' },
+                '@GIU@':       { birth_year: 1726, sex: 'M' },
+                // Dom's visible-FAM kids (with Maria) — @D_M2@ has a spouse,
+                // matching real-world Francesca→Francesco Corsi pattern.
+                '@D_M1@':      { birth_year: 1768 },
+                '@D_M2@':      { birth_year: 1770 },
+                '@D_M2_SP@':   { birth_year: 1762, sex: 'M' },
+                // Dom's other-FAM kids (with Catarina)
+                '@D_C1@':      { birth_year: 1790 },
+                '@D_C2@':      { birth_year: 1792 },
+                '@D_C3@':      { birth_year: 1795 },
+                '@D_C4@':      { birth_year: 1797 },
+                '@D_C5@':      { birth_year: 1799 },
+            },
+            parents: {
+                '@DOM@':   ['@MICHELE@', '@APOLLONIA@'],
+                '@LUCIA@': ['@MICHELE@', '@APOLLONIA@'],
+                '@ISA@':   ['@MICHELE@', '@APOLLONIA@'],
+                '@D_M1@':  ['@DOM@', '@MARIA@'],
+                '@D_M2@':  ['@DOM@', '@MARIA@'],
+                '@D_C1@':  ['@DOM@', '@CATA@'],
+                '@D_C2@':  ['@DOM@', '@CATA@'],
+                '@D_C3@':  ['@DOM@', '@CATA@'],
+                '@D_C4@':  ['@DOM@', '@CATA@'],
+                '@D_C5@':  ['@DOM@', '@CATA@'],
+            },
+            children: {
+                '@MICHELE@': ['@DOM@', '@LUCIA@', '@ISA@'],
+                '@DOM@':     ['@D_M1@', '@D_M2@', '@D_C1@', '@D_C2@', '@D_C3@', '@D_C4@', '@D_C5@'],
+                '@LUCIA@':   [],
+                '@ISA@':     [],
+            },
+            relatives: {
+                '@MICHELE@': { siblings: [], spouses: ['@APOLLONIA@'] },
+                '@DOM@':     { siblings: ['@LUCIA@', '@ISA@'], spouses: ['@MARIA@', '@CATA@'] },
+                '@LUCIA@':   { siblings: ['@DOM@', '@ISA@'], spouses: ['@STEFANO@'] },
+                '@ISA@':     { siblings: ['@DOM@', '@LUCIA@'], spouses: ['@GIU@'] },
+                '@MARIA@':   { siblings: [], spouses: ['@DOM@'] },
+                '@CATA@':    { siblings: [], spouses: ['@DOM@'] },
+                '@STEFANO@': { siblings: [], spouses: ['@LUCIA@'] },
+                '@GIU@':     { siblings: [], spouses: ['@ISA@'] },
+                '@D_M2@':    { siblings: [], spouses: ['@D_M2_SP@'] },
+                '@D_M2_SP@': { siblings: [], spouses: ['@D_M2@'] },
+            },
+            families: {
+                '@F_MA@':     { husb: '@MICHELE@', wife: '@APOLLONIA@', chil: ['@DOM@', '@LUCIA@', '@ISA@'] },
+                '@F_DOM_M@':  { husb: '@DOM@', wife: '@MARIA@', chil: ['@D_M1@', '@D_M2@'] },
+                '@F_DOM_C@':  { husb: '@DOM@', wife: '@CATA@', chil: ['@D_C1@', '@D_C2@', '@D_C3@', '@D_C4@', '@D_C5@'] },
+                '@F_LUCIA@':  { husb: '@STEFANO@', wife: '@LUCIA@', chil: [] },
+                '@F_ISA@':    { husb: '@GIU@', wife: '@ISA@', chil: [] },
+                '@F_DM2@':    { husb: '@D_M2_SP@', wife: '@D_M2@', chil: [] },
+            },
+        });
+    });
+
+    it('Lucia (next sibling, no expanded grandkids) sits at baseline gap after Dom+Maria', () => {
+        const { nodes } = computeLayoutChecked(
+            '@MICHELE@',
+            new Set(),
+            new Set(),
+            new Set(['@DOM@']),
+        );
+        const dom = nodes.find(n => n.xref === '@DOM@');
+        const maria = nodes.find(n => n.xref === '@MARIA@');
+        const lucia = nodes.find(n => n.xref === '@LUCIA@');
+        expect(dom).toBeDefined();
+        expect(maria).toBeDefined();
+        expect(lucia).toBeDefined();
+        // Maria is Dom's spouse and is emitted to Dom's right within his group.
+        const mariaRightEdge = maria.x + NODE_W;
+        // Lucia's left edge should be just one H_GAP past Maria's right edge.
+        // Without the fix, the over-conservative advanceFor pushes Lucia
+        // hundreds of pixels right (e.g., 532+ extra px).
+        const gap = lucia.x - mariaRightEdge;
+        expect(gap, `Lucia gap from Maria=${gap}; expected ~H_GAP=${H_GAP}`).toBeLessThanOrEqual(H_GAP * 3);
+    });
+
+    // Multi-FAM umbrella overlap regression: when Dom is expanded, his
+    // visible-FAM cluster (Maria's kids) lands on his right and his
+    // other-FAM cluster (Catarina's kids) lands on his left. The other
+    // cluster's umbrella L-segment runs from x=personCenter leftward at
+    // y=otherUmbrellaY. If the visible cluster's leftmost child sits at
+    // x < personCenter, that child's vertical drop (visibleUmbrellaY →
+    // childY) crosses the L-segment. The invariant is: visible cluster's
+    // children's x-range must be disjoint from the other umbrella's
+    // x-range — i.e., leftmost visible child center must be ≥ personCenter
+    // when spouse is on the right (mirror for left).
+    // Issue 2 regression: when BOTH Dom AND Lucia have expanded grandkids,
+    // advanceFor's halfwidths must reflect that Dom's other-FAM cluster
+    // (Catarina's kids) lands on Dom's LEFT — not on Dom's right where it
+    // would push Lucia further away. _descendantHalfwidth's flat-pack
+    // estimate adds the other-FAM cluster to BOTH sides, over-reserving
+    // ~hundreds of pixels of unneeded space between Dom and Lucia.
+    it('gap between Dom and Lucia is bounded when BOTH have expanded grandkids', () => {
+        // Give Lucia 3 simple kids (single FAM, no multi-FAM split).
+        global.PEOPLE['@L_K1@'] = { birth_year: 1770 };
+        global.PEOPLE['@L_K2@'] = { birth_year: 1772 };
+        global.PEOPLE['@L_K3@'] = { birth_year: 1774 };
+        global.PARENTS['@L_K1@'] = ['@STEFANO@', '@LUCIA@'];
+        global.PARENTS['@L_K2@'] = ['@STEFANO@', '@LUCIA@'];
+        global.PARENTS['@L_K3@'] = ['@STEFANO@', '@LUCIA@'];
+        global.CHILDREN['@LUCIA@'] = ['@L_K1@', '@L_K2@', '@L_K3@'];
+        global.FAMILIES['@F_LUCIA@'].chil = ['@L_K1@', '@L_K2@', '@L_K3@'];
+
+        const { nodes } = computeLayoutChecked(
+            '@MICHELE@',
+            new Set(),
+            new Set(),
+            new Set(['@DOM@', '@LUCIA@']),
+        );
+        const dom = nodes.find(n => n.xref === '@DOM@');
+        const maria = nodes.find(n => n.xref === '@MARIA@');
+        const lucia = nodes.find(n => n.xref === '@LUCIA@');
+        const luciaKids = ['@L_K1@', '@L_K2@', '@L_K3@'].map(x => nodes.find(n => n.xref === x));
+        const domVisibleKids = ['@D_M1@', '@D_M2@'].map(x => nodes.find(n => n.xref === x));
+        // Geometric invariant the user actually cares about: Dom's visible-FAM
+        // cluster's right edge + INTER_FAM_GAP must not exceed Lucia's leftmost
+        // child's left edge. Dom's OTHER-FAM cluster (on the left) plays no
+        // role in this constraint, so the gap should be tight to the visible
+        // clusters, not to the flat-packed combined width.
+        const domVisRight = Math.max(...domVisibleKids.map(n => n.x + NODE_W));
+        const luciaLeft = Math.min(...luciaKids.map(n => n.x));
+        const requiredClearance = luciaLeft - domVisRight;
+        // Generous bound: tight clearance would be INTER_FAM_GAP=96. Allow up
+        // to 300 to absorb minor recursion/marriage-offset slack. Over-
+        // conservative flat-pack would give 700+.
+        expect(requiredClearance,
+            `Dom visible cluster→Lucia kids clearance=${requiredClearance}; over-estimate inflates it`,
+        ).toBeLessThan(300);
+    });
+
+    it('visible-FAM cluster leftmost child does not cross other-FAM umbrella territory', () => {
+        const { nodes } = computeLayoutChecked(
+            '@MICHELE@',
+            new Set(),
+            new Set(),
+            new Set(['@DOM@']),
+        );
+        const dom = nodes.find(n => n.xref === '@DOM@');
+        const personCenter = dom.x + NODE_W / 2;
+        const visibleKids = ['@D_M1@', '@D_M2@'].map(x => nodes.find(n => n.xref === x));
+        expect(visibleKids.every(Boolean)).toBe(true);
+        const leftmostVisibleCenter = Math.min(...visibleKids.map(n => n.x + NODE_W / 2));
+        // Maria (visible spouse) is on Dom's right, so the other-FAM cluster
+        // (with Catarina) lands on Dom's LEFT and its umbrella L-segment runs
+        // up to x=personCenter. The visible cluster's children must therefore
+        // sit at x ≥ personCenter, otherwise their vertical drops cross the
+        // L-segment at y=otherUmbrellaY (the "X" visible in the screenshot).
+        expect(leftmostVisibleCenter,
+            `leftmostVisCx=${leftmostVisibleCenter} should be >= personCenter=${personCenter}`,
+        ).toBeGreaterThanOrEqual(personCenter);
+    });
+});

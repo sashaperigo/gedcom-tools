@@ -126,6 +126,23 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
         otherIdealStart = personCenter - otherWidth / 2;
     }
 
+    // Multi-FAM disjoint-umbrella invariant: when both clusters exist, the
+    // other umbrella's L-segment runs up to x=personCenter on the spouse
+    // side. The visible cluster's child drops must stay on the spouse side
+    // of personCenter, otherwise the leftmost (rightmost when spouse-left)
+    // visible child's vertical drop (visibleUmbrellaY → childY) crosses the
+    // other umbrella's L-segment at y=otherUmbrellaY. Shift visibleIdealStart
+    // so the visible cluster's near-edge child center is clear of personCenter.
+    if (otherGroups.length > 0 && visibleIdealStart !== null && visibleSpouseNode) {
+        if (spouseRight) {
+            const minStart = personCenter - NODE_W / 2;
+            if (visibleIdealStart < minStart) visibleIdealStart = minStart;
+        } else {
+            const maxStart = personCenter + NODE_W / 2 - visibleWidth;
+            if (visibleIdealStart > maxStart) visibleIdealStart = maxStart;
+        }
+    }
+
     // Free-gap collision avoidance: clamp a cluster's start into the nearest
     // gap at childY big enough to hold it. Re-called per cluster so the
     // second cluster sees the first cluster's pills as obstacles.
@@ -364,7 +381,7 @@ function _focusChildrenExtents(focusXref, rightSpouseXrefs, leftSpouseXref, left
 // Used by sibling-row packing so that two adjacent siblings who both expand
 // their kids leave enough horizontal room for their cousin subtrees.
 
-function _descendantHalfwidth(xref, side, expandedChildrenPersons, visited, visibleSpouseFams, focusXref) {
+function _descendantHalfwidth(xref, side, expandedChildrenPersons, visited, visibleSpouseFams, focusXref, spouseSide) {
     const { NODE_W, H_GAP } = DESIGN;
     const CHILD_MARRIAGE_GAP = H_GAP;
     if (!expandedChildrenPersons || expandedChildrenPersons.size === 0) return NODE_W / 2;
@@ -374,66 +391,118 @@ function _descendantHalfwidth(xref, side, expandedChildrenPersons, visited, visi
     if (visited.has(xref)) return NODE_W / 2;
     visited.add(xref);
 
-    // Walk all of this person's FAMs with children.
-    const allChil = [];
+    // Partition xref's childful FAMs into visible-FAM (whose other parent is
+    // an on-row visible spouse) vs other-FAMs. This mirrors the visible/other
+    // split in _placeChildrenOfPerson: the visible cluster lands on the spouse
+    // side, centered on the marriage midpoint; the other-FAMs cluster lands
+    // on the opposite side with its near edge at xref's center.
+    const visibleSpouseSet = (visibleSpouseFams !== undefined && focusXref !== undefined &&
+                              typeof RELATIVES !== 'undefined' && RELATIVES[xref])
+        ? new Set(_visibleSpousesFor(xref, RELATIVES[xref]?.spouses ?? [], visibleSpouseFams, focusXref))
+        : new Set();
+    let visibleFamXref = null;
+    const otherKids = [];
     for (const famXref of Object.keys(FAMILIES)) {
         const fam = FAMILIES[famXref];
         if (!fam) continue;
         if (fam.husb !== xref && fam.wife !== xref) continue;
-        for (const c of (fam.chil || [])) allChil.push(c);
+        if (!(fam.chil || []).length) continue;
+        const other = fam.husb === xref ? fam.wife : fam.husb;
+        if (visibleFamXref === null && other && visibleSpouseSet.has(other)) {
+            visibleFamXref = famXref;
+        } else {
+            for (const c of fam.chil) otherKids.push(c);
+        }
     }
+    const visibleKids = visibleFamXref ? FAMILIES[visibleFamXref].chil.slice() : [];
 
-    let extent = NODE_W / 2;
-    if (allChil.length > 0) {
-        const sorted = _sortByBirthYear(allChil);
-
-        // Compute per-child slot widths (pill + visible spouses).
-        // This matches _placeChildrenOfPerson's buildGroupsForFam width formula
-        // so the parent-row spacing reflects the actual child cluster width.
-        const childWidths = sorted.map(cx => {
-            const spouses = (visibleSpouseFams !== undefined && focusXref !== undefined &&
-                            typeof RELATIVES !== 'undefined' && RELATIVES[cx])
+    // Per-cluster bounding-box: flat slot width plus recursive grand-cluster
+    // reach from each kid's pill center. Returns {width, leftFromCenter,
+    // rightFromCenter} where leftFromCenter/rightFromCenter ≥ width/2.
+    const clusterExtent = (kids) => {
+        if (kids.length === 0) return { width: 0, leftFromCenter: 0, rightFromCenter: 0 };
+        const sorted = _sortByBirthYear(kids);
+        const slotWidths = sorted.map(cx => {
+            const sp = (visibleSpouseFams !== undefined && focusXref !== undefined &&
+                       typeof RELATIVES !== 'undefined' && RELATIVES[cx])
                 ? _visibleSpousesFor(cx, RELATIVES[cx]?.spouses ?? [], visibleSpouseFams, focusXref)
                 : [];
-            return NODE_W + spouses.length * (CHILD_MARRIAGE_GAP + NODE_W);
+            return NODE_W + sp.length * (CHILD_MARRIAGE_GAP + NODE_W);
         });
-
-        const totalWidth = childWidths.reduce((sum, cw, i) => sum + cw + (i > 0 ? H_GAP : 0), 0);
-        const groupStart = -totalWidth / 2; // relative to xref center
-
-        // Per-child reach, accounting for variable slot widths and recursive grandchildren.
+        const totalWidth = slotWidths.reduce((sum, sw, i) => sum + sw + (i > 0 ? H_GAP : 0), 0);
+        let leftFromCenter = totalWidth / 2;
+        let rightFromCenter = totalWidth / 2;
+        const groupStart = -totalWidth / 2;
         let cursor = 0;
         sorted.forEach((cx, i) => {
             if (i > 0) cursor += H_GAP;
-            const childPillCenter = groupStart + cursor + NODE_W / 2;
-            const childHalf = _descendantHalfwidth(cx, side, expandedChildrenPersons, visited, visibleSpouseFams, focusXref);
-            const reach = side === 'right' ? childPillCenter + childHalf : -childPillCenter + childHalf;
-            if (reach > extent) extent = reach;
-            // The full slot (including spouse pills) also contributes to extent.
-            const slotExtent = side === 'right'
-                ? groupStart + cursor + childWidths[i]
-                : -(groupStart + cursor);
-            if (slotExtent > extent) extent = slotExtent;
-            cursor += childWidths[i];
+            const kidPillCenter = groupStart + cursor + NODE_W / 2;
+            // Recursion: Phase 3 emitClusterNodes always places kid spouses
+            // to the right within the cluster, so grand-clusters use 'right'.
+            const kidHalfLeft = _descendantHalfwidth(cx, 'left', expandedChildrenPersons, visited, visibleSpouseFams, focusXref, 'right');
+            const kidHalfRight = _descendantHalfwidth(cx, 'right', expandedChildrenPersons, visited, visibleSpouseFams, focusXref, 'right');
+            const kidLeftReach = kidHalfLeft - kidPillCenter;
+            const kidRightReach = kidHalfRight + kidPillCenter;
+            if (kidLeftReach > leftFromCenter) leftFromCenter = kidLeftReach;
+            if (kidRightReach > rightFromCenter) rightFromCenter = kidRightReach;
+            cursor += slotWidths[i];
         });
+        return { width: totalWidth, leftFromCenter, rightFromCenter };
+    };
 
-        // Centering correction: _placeChildrenOfPerson centers the cluster under the
-        // marriage midpoint (between xref and their on-row spouse), not under xref itself.
-        // When a spouse exists, this shifts the cluster left or right by roughly
-        // (SIB_MARRIAGE_GAP + NODE_W) / 2. To guarantee enough room on both sides
-        // regardless of which direction the spouse lies, conservatively add this offset
-        // to the extent in both directions.
-        const personSpouses = (visibleSpouseFams !== undefined && focusXref !== undefined &&
-                              typeof RELATIVES !== 'undefined' && RELATIVES[xref])
-            ? _visibleSpousesFor(xref, RELATIVES[xref]?.spouses ?? [], visibleSpouseFams, focusXref)
-            : [];
-        if (personSpouses.length > 0) {
-            const spousalOffset = (SIB_MARRIAGE_GAP + NODE_W) / 2;
-            if (totalWidth / 2 + spousalOffset > extent) extent = totalWidth / 2 + spousalOffset;
-        }
-    }
+    const visible = clusterExtent(visibleKids);
+    const other = clusterExtent(otherKids);
+
     visited.delete(xref);
-    return extent;
+
+    const hasOnRowSpouse = visibleFamXref !== null;
+    const marriageOffset = (SIB_MARRIAGE_GAP + NODE_W) / 2;
+
+    // Compute reaches given a spouseSide hint: visible cluster centered at
+    // xref.cx ± marriageOffset (toward spouse); other cluster's near edge at
+    // xref.cx, extending opposite-spouse direction.
+    const computeBySpouseSide = (sSide) => {
+        const visOff = sSide === 'right' ? marriageOffset : -marriageOffset;
+        let visR = 0, visL = 0;
+        if (visibleKids.length > 0) {
+            visR = Math.max(0, visOff + visible.rightFromCenter);
+            visL = Math.max(0, -visOff + visible.leftFromCenter);
+        }
+        let othR = 0, othL = 0;
+        if (otherKids.length > 0) {
+            if (sSide === 'right') {
+                othL = other.width / 2 + other.leftFromCenter;
+                othR = Math.max(0, other.rightFromCenter - other.width / 2);
+            } else {
+                othR = other.width / 2 + other.rightFromCenter;
+                othL = Math.max(0, other.leftFromCenter - other.width / 2);
+            }
+        }
+        return {
+            right: Math.max(NODE_W / 2, visR, othR),
+            left: Math.max(NODE_W / 2, visL, othL),
+        };
+    };
+
+    let halfRight, halfLeft;
+    if (!hasOnRowSpouse) {
+        // No on-row spouse: kids land as a single cluster centered on xref.
+        // (visibleKids is empty in this case; only otherKids exists.)
+        halfRight = Math.max(NODE_W / 2, other.rightFromCenter);
+        halfLeft = Math.max(NODE_W / 2, other.leftFromCenter);
+    } else if (spouseSide === 'right' || spouseSide === 'left') {
+        const r = computeBySpouseSide(spouseSide);
+        halfRight = r.right;
+        halfLeft = r.left;
+    } else {
+        // spouseSide unknown: take worst case across both scenarios.
+        const r1 = computeBySpouseSide('right');
+        const r2 = computeBySpouseSide('left');
+        halfRight = Math.max(r1.right, r2.right);
+        halfLeft = Math.max(r1.left, r2.left);
+    }
+
+    return side === 'left' ? halfLeft : halfRight;
 }
 
 // Pack `items` left-to-right on row `y`, computing inter-pair gaps from each
