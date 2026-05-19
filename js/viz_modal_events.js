@@ -295,15 +295,20 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
     _eventModalFamXref = null;
     _eventModalSpouseXref = null;
     const _preset = _FACT_PRESETS[defaultTag];
+    // Inline-type tags (NATI, OCCU, TITL, …) are specific by definition — hide the
+    // type dropdown so the user isn't shown a redundant "Event Type: Nationality" row.
+    const _inlineTypeLocked = !_preset && _INLINE_TYPE_TAGS.has(defaultTag);
+    const _inlineTypeLabel = _inlineTypeLocked
+        ? { OCCU: 'Occupation', TITL: 'Title', NATI: 'Nationality', RELI: 'Religion', EDUC: 'Education' }[defaultTag]
+        : null;
     const _title = _preset ?
         'Add ' + _preset.label + ' \u2014 ' + _personName(xref) :
+        _inlineTypeLabel ?
+        'Add ' + _inlineTypeLabel + ' \u2014 ' + _personName(xref) :
         'Add Event \u2014 ' + _personName(xref);
     document.getElementById('event-modal-title').textContent = _title;
     document.getElementById('event-modal-save-btn').textContent = 'Add';
-    // Preset fact adds (Languages, Literacy, DSCR, NCHI, …) lock the event type —
-    // the title already says what you're adding, and the dropdown doesn't carry
-    // the preset pseudo-tag as an option anyway.
-    document.getElementById('event-modal-tag-row').style.display = _preset ? 'none' : '';
+    document.getElementById('event-modal-tag-row').style.display = (_preset || _inlineTypeLocked) ? 'none' : '';
     document.getElementById('event-modal-tag').value = defaultTag;
     document.getElementById('event-modal-inline').value = '';
     document.getElementById('event-modal-type').value = prefillType || '';
@@ -335,6 +340,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
     const _dfPreset = _FACT_PRESETS[defaultTag];
     const focusId = _dfPreset ?
         (_dfPreset.showInline ? 'event-modal-inline' : 'event-modal-note') :
+        _inlineTypeLocked ? 'event-modal-inline' :
         'event-modal-tag';
     setTimeout(() => document.getElementById(focusId).focus(), 50);
 }
