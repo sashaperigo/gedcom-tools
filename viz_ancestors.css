@@ -1119,6 +1119,27 @@ header h1 .root-name-accent {
     text-decoration: underline;
 }
 
+#event-modal-convert-row {
+    margin: 4px 0 12px;
+}
+
+.event-modal-convert-btn {
+    background: rgba(129, 140, 248, 0.08);
+    border: 1px solid var(--border);
+    color: var(--accent-light);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.event-modal-convert-btn:hover {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent-hover);
+}
+
 .note-modal-save,
 .event-modal-save {
     background: var(--accent);

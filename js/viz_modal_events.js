@@ -335,8 +335,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
     const _dfPreset = _FACT_PRESETS[defaultTag];
     const focusId = _dfPreset ?
         (_dfPreset.showInline ? 'event-modal-inline' : 'event-modal-note') :
-        _INLINE_TYPE_TAGS.has(defaultTag) ? 'event-modal-inline' :
-        'event-modal-date';
+        'event-modal-tag';
     setTimeout(() => document.getElementById(focusId).focus(), 50);
 }
 
@@ -629,6 +628,7 @@ if (typeof module !== 'undefined' && module.exports) {
         _isFamEventTag,
         _buildSpouseResultsHtml,
         _FACT_PRESETS,
+        addEvent,
         editEvent,
         _onPlaceInput,
         _selectPlace,
