@@ -312,6 +312,10 @@ const _applyToEventsState = { rows: [], mode: null };
 function _applyToEventLabel(ev) {
     const tag = ev && ev.tag;
     let label = _evtLabel(tag, ev && ev.type) || tag || '';
+    if (ev && ev._name_record) {
+        const aliasName = (ev.note || '').trim();
+        return aliasName ? `${label} — ${aliasName}` : label;
+    }
     if (tag === 'MARR' || tag === 'DIV' || tag === 'ANUL') {
         const fam = (typeof FAMILIES !== 'undefined' && FAMILIES) ? FAMILIES[ev.fam_xref] : null;
         // Best-effort spouse label — fall back silently when data isn't loaded.
@@ -319,6 +323,13 @@ function _applyToEventLabel(ev) {
         const spouse = (typeof PEOPLE !== 'undefined' && PEOPLE && spouseXref) ? PEOPLE[spouseXref] : null;
         if (spouse && spouse.name) label += ' to ' + spouse.name.replace(/\//g, '');
     }
+    // For tags whose distinguishing detail is the inline value (NATI: "English",
+    // RELI: "Catholic", OCCU: "Dragoman"), surface it so multiple rows of the
+    // same tag are distinguishable.
+    const inlineDetail = (tag === 'NATI' || tag === 'RELI' || tag === 'OCCU')
+        ? ((ev && (ev.inline_val || ev.type)) || '').trim()
+        : '';
+    if (inlineDetail) label = `${label} — ${inlineDetail}`;
     const date = (ev && ev.date) || '';
     const place = (ev && ev.place) || '';
     const tail = [date, place].filter(Boolean).join(', ');
@@ -326,20 +337,57 @@ function _applyToEventLabel(ev) {
 }
 
 
-function _buildApplyToEventsRows(person, sourceXref) {
+// Two citations are "the same" iff every content field matches. Matching only
+// on sourceXref would conflate distinct INDI-level citations to the same
+// source — editing one would silently rewire the other's fact-applicability.
+function _citationFingerprintsEqual(a, b) {
+    if (!a || !b) return false;
+    if (a.sourceXref !== b.sourceXref) return false;
+    const norm = v => (v == null ? '' : String(v));
+    return norm(a.page) === norm(b.page) &&
+        norm(a.text) === norm(b.text) &&
+        norm(a.note) === norm(b.note) &&
+        norm(a.url) === norm(b.url) &&
+        norm(a.quay) === norm(b.quay) &&
+        norm(a.date) === norm(b.date);
+}
+
+
+// `refCitation` may be:
+//   - null/undefined: nothing pre-attached (Add mode)
+//   - a string (legacy): match by sourceXref only
+//   - a citation object: match by full content fingerprint
+function _buildApplyToEventsRows(person, refCitation) {
     const events = (person && person.events) || [];
+    const refIsString = typeof refCitation === 'string';
+    const refObj = (refCitation && !refIsString) ? refCitation : null;
+    const refSourceXref = refIsString ? refCitation : (refObj && refObj.sourceXref) || null;
     return events.map(ev => {
         const isFam = (ev.event_idx == null) && !!ev.fam_xref;
-        const occ = isFam ? (ev.tag === 'MARR' ? ev.marr_idx : (ev.tag === 'ANUL' ? ev.anul_idx : ev.div_idx)) : ev.event_idx;
+        const isNameRecord = !!ev._name_record;
+        let factKey, tagForKey;
+        if (isNameRecord) {
+            // Secondary NAMEs are level-1 NAME records. Server addresses them
+            // as NAME:N where N is the 0-based NAME index in the INDI block:
+            // primary NAME is 0, so AKA _name_occurrence K maps to NAME:K+1.
+            factKey = `NAME:${(ev._name_occurrence || 0) + 1}`;
+        } else {
+            const occ = isFam ? (ev.tag === 'MARR' ? ev.marr_idx : (ev.tag === 'ANUL' ? ev.anul_idx : ev.div_idx)) : ev.event_idx;
+            factKey = `${ev.tag}:${occ}`;
+        }
         const cites = ev.citations || [];
         const matchingIndices = [];
-        if (sourceXref) {
+        if (refObj) {
             cites.forEach((c, i) => {
-                if (c && c.sourceXref === sourceXref) matchingIndices.push(i);
+                if (_citationFingerprintsEqual(c, refObj)) matchingIndices.push(i);
+            });
+        } else if (refSourceXref) {
+            cites.forEach((c, i) => {
+                if (c && c.sourceXref === refSourceXref) matchingIndices.push(i);
             });
         }
         return {
-            factKey: `${ev.tag}:${occ}`,
+            factKey,
             apiXref: isFam ? ev.fam_xref : null,
             label: _applyToEventLabel(ev),
             alreadyAttached: matchingIndices.length > 0,
@@ -586,7 +634,7 @@ function showEditCitationModal(xref, factTag, citationIndex, apiXref, eventOcc) 
     const applyList = document.getElementById('edit-citation-apply-to-events-list');
     if (factTag == null && person) {
         _applyToEventsState.mode = 'edit';
-        _applyToEventsState.rows = _buildApplyToEventsRows(person, _editCitationSourceXref);
+        _applyToEventsState.rows = _buildApplyToEventsRows(person, cite || { sourceXref: _editCitationSourceXref });
         _renderApplyToEventsList(applyList, 'edit-citation');
         if (applyRow) applyRow.style.display = '';
     } else {

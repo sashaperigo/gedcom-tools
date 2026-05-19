@@ -2507,6 +2507,76 @@ describe('editEvent — convert-to-baptism row', () => {
     });
 });
 
+// ── addEvent — initial focus target ──────────────────────────────────────
+
+describe('addEvent — initial focus target', () => {
+    function _fakeEl(id) {
+        return {
+            id,
+            innerHTML: '',
+            textContent: '',
+            style: { display: '' },
+            value: '',
+            options: [],
+            checked: false,
+            disabled: false,
+            readOnly: false,
+            focus: vi.fn(),
+            classList: {
+                _classes: new Set(),
+                add(c) { this._classes.add(c); },
+                remove(c) { this._classes.delete(c); },
+                contains(c) { return this._classes.has(c); },
+            },
+        };
+    }
+
+    let els;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        els = {};
+        global.PEOPLE = { '@I1@': { name: 'Test Person' } };
+        global.ALL_PEOPLE = [];
+        global.ADDR_BY_PLACE = {};
+        global.ALL_PLACES = [];
+        global.setState = vi.fn();
+        global.document = {
+            getElementById: (id) => {
+                if (!els[id]) els[id] = _fakeEl(id);
+                return els[id];
+            },
+            addEventListener: () => {},
+        };
+    });
+
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('focuses the Event Type dropdown for a default add (no preset)', () => {
+        const { addEvent } = require('../../js/viz_modals.js');
+        addEvent('@I1@', 'RESI');
+        vi.runAllTimers();
+        expect(els['event-modal-tag'].focus).toHaveBeenCalled();
+        expect(els['event-modal-date'].focus).not.toHaveBeenCalled();
+    });
+
+    it('focuses the inline field for a preset with showInline=true (DSCR)', () => {
+        const { addEvent } = require('../../js/viz_modals.js');
+        addEvent('@I1@', 'DSCR');
+        vi.runAllTimers();
+        expect(els['event-modal-inline'].focus).toHaveBeenCalled();
+        expect(els['event-modal-tag'].focus).not.toHaveBeenCalled();
+    });
+
+    it('focuses the note field for a preset with showInline=false (FACT:Languages)', () => {
+        const { addEvent } = require('../../js/viz_modals.js');
+        addEvent('@I1@', 'FACT:Languages');
+        vi.runAllTimers();
+        expect(els['event-modal-note'].focus).toHaveBeenCalled();
+        expect(els['event-modal-tag'].focus).not.toHaveBeenCalled();
+    });
+});
+
 // ── Multi-event picker for personal-level sources ─────────────────────────
 //
 // When the user adds or edits a *person-level* source, the modal shows a
@@ -2549,6 +2619,20 @@ describe('_buildApplyToEventsRows', () => {
         const rows = _buildApplyToEventsRows(person, null);
         expect(rows[0].factKey).toBe('DIV:0');
         expect(rows[0].apiXref).toBe('@F5@');
+    });
+
+    it('maps AKA name records to NAME:N (server level-1 NAME index, primary=0)', () => {
+        const person = {
+            events: [
+                { tag: 'FACT', type: 'AKA', _name_record: true, _name_occurrence: 0, note: 'Jeremie Missir', event_idx: null, citations: [] },
+                { tag: 'FACT', type: 'AKA', _name_record: true, _name_occurrence: 1, note: 'Gerim Missir', event_idx: null, citations: [] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, null);
+        // First secondary NAME is the 2nd level-1 NAME in the INDI block (primary is 0).
+        expect(rows[0].factKey).toBe('NAME:1');
+        expect(rows[1].factKey).toBe('NAME:2');
+        expect(rows[0].apiXref).toBeNull();
     });
 
     it('apiXref is null for INDI events', () => {
@@ -2598,6 +2682,42 @@ describe('_buildApplyToEventsRows', () => {
         expect(rows[1].checked).toBe(false);
     });
 
+    // Two INDI-level citations to the same source must produce *distinct*
+    // apply-to pickers when their content differs (page, text, etc.).
+    // Otherwise editing one citation's fact-applicability silently rewires
+    // the other one.
+    it('distinguishes two citations with the same sourceXref by full content fingerprint', () => {
+        const person = {
+            events: [
+                {
+                    tag: 'BIRT', event_idx: 0,
+                    citations: [
+                        { sourceXref: '@S1@', page: '5' },
+                        { sourceXref: '@S1@', page: '10' },
+                    ],
+                },
+                { tag: 'DEAT', event_idx: 1, citations: [{ sourceXref: '@S1@', page: '5' }] },
+            ],
+        };
+        const rowsForFirst = _buildApplyToEventsRows(person, { sourceXref: '@S1@', page: '5' });
+        expect(rowsForFirst[0].alreadyAttachedIndices).toEqual([0]);
+        expect(rowsForFirst[1].alreadyAttached).toBe(true);
+
+        const rowsForSecond = _buildApplyToEventsRows(person, { sourceXref: '@S1@', page: '10' });
+        expect(rowsForSecond[0].alreadyAttachedIndices).toEqual([1]);
+        expect(rowsForSecond[1].alreadyAttached).toBe(false);
+    });
+
+    it('treats missing/empty citation fields as equal (normalises undefined to "")', () => {
+        const person = {
+            events: [
+                { tag: 'BIRT', event_idx: 0, citations: [{ sourceXref: '@S1@' }] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, { sourceXref: '@S1@', page: '' });
+        expect(rows[0].alreadyAttached).toBe(true);
+    });
+
     it('produces a human label that includes tag + date', () => {
         const person = {
             events: [{ tag: 'BIRT', event_idx: 0, date: '1900', place: 'Athens', citations: [] }],
@@ -2605,6 +2725,31 @@ describe('_buildApplyToEventsRows', () => {
         const rows = _buildApplyToEventsRows(person, null);
         expect(rows[0].label).toMatch(/Birth/);
         expect(rows[0].label).toContain('1900');
+    });
+
+    it('label includes alias name for AKA rows', () => {
+        const person = {
+            events: [
+                { tag: 'FACT', type: 'AKA', _name_record: true, _name_occurrence: 0, note: 'Jeremie Missir', event_idx: null, citations: [] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, null);
+        expect(rows[0].label).toContain('Jeremie Missir');
+    });
+
+    it('label includes inline value for NATI/RELI/OCCU rows', () => {
+        const person = {
+            events: [
+                { tag: 'NATI', type: 'Sardinian', inline_val: 'Sardinian', event_idx: 0, citations: [] },
+                { tag: 'NATI', type: 'English', inline_val: 'English', event_idx: 1, citations: [] },
+                { tag: 'NATI', type: 'Dutch', inline_val: 'Dutch', date: '1804', event_idx: 2, citations: [] },
+            ],
+        };
+        const rows = _buildApplyToEventsRows(person, null);
+        expect(rows[0].label).toContain('Sardinian');
+        expect(rows[1].label).toContain('English');
+        expect(rows[2].label).toContain('Dutch');
+        expect(rows[2].label).toContain('1804');
     });
 
     it('returns [] for a person with no events', () => {
@@ -2801,7 +2946,7 @@ describe('submitEditCitationModal — multi-event picker (diff)', () => {
                 name: 'P',
                 sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
                 events: [
-                    { tag: 'BIRT', event_idx: 0, date: '1900', citations: [{ sourceXref: '@S1@' }] },
+                    { tag: 'BIRT', event_idx: 0, date: '1900', citations: [{ sourceXref: '@S1@', page: 'p.1' }] },
                 ],
             },
         };
@@ -2856,7 +3001,7 @@ describe('submitEditCitationModal — multi-event picker (diff)', () => {
                 sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
                 events: [
                     { tag: 'BIRT', event_idx: 0, date: '1900',
-                      citations: [{ sourceXref: '@S1@' }, { sourceXref: '@S2@' }, { sourceXref: '@S1@' }] },
+                      citations: [{ sourceXref: '@S1@', page: 'p.1' }, { sourceXref: '@S2@' }, { sourceXref: '@S1@', page: 'p.1' }] },
                 ],
             },
         };
@@ -2884,7 +3029,7 @@ describe('submitEditCitationModal — multi-event picker (diff)', () => {
                 sources: [{ sourceXref: '@S1@', citationKey: 'SOUR:0', page: 'p.1', text: '', note: '', url: '', quay: '', date: '' }],
                 events: [
                     { tag: 'MARR', event_idx: null, fam_xref: '@F5@', marr_idx: 0,
-                      citations: [{ sourceXref: '@S1@' }] },
+                      citations: [{ sourceXref: '@S1@', page: 'p.1' }] },
                 ],
             },
         };
