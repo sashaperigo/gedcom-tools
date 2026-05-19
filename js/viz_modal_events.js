@@ -342,7 +342,7 @@ function addEvent(xref, defaultTag = 'RESI', prefillType) {
         (_dfPreset.showInline ? 'event-modal-inline' : 'event-modal-note') :
         _inlineTypeLocked ? 'event-modal-inline' :
         'event-modal-tag';
-    setTimeout(() => document.getElementById(focusId).focus(), 50);
+    setTimeout(() => document.getElementById(focusId)?.focus?.(), 50);
 }
 
 

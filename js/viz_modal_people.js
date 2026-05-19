@@ -117,7 +117,7 @@ function openAliasModal(xref, nameOccurrence, currentName, currentType, isNameRe
     const opt = [...sel.options].find(o => o.value === (currentType || 'AKA'));
     sel.value = opt ? opt.value : 'AKA';
     document.getElementById('alias-modal-overlay').classList.add('open');
-    setTimeout(() => document.getElementById('alias-modal-given').focus(), 50);
+    setTimeout(() => document.getElementById('alias-modal-given')?.focus?.(), 50);
 }
 
 
@@ -239,7 +239,7 @@ function editName(xref) {
     const suffixEl = document.getElementById('name-modal-suffix');
     if (suffixEl) suffixEl.value = suffix;
     document.getElementById('name-modal-overlay').classList.add('open');
-    setTimeout(() => document.getElementById('name-modal-given')?.focus(), 50);
+    setTimeout(() => document.getElementById('name-modal-given')?.focus?.(), 50);
 }
 
 

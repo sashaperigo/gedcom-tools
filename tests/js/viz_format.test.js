@@ -57,6 +57,14 @@ describe('fmtDate', () => {
         expect(fmtDate('BET SEP 1942 AND DEC 1944')).toBe('September 1942 \u2013 December 1944');
     });
 
+    it('"FROM 2017 TO 2026" → "2017 – 2026"', () => {
+        expect(fmtDate('FROM 2017 TO 2026')).toBe('2017 – 2026');
+    });
+
+    it('"FROM SEP 1942 TO DEC 1944" → "September 1942 – December 1944"', () => {
+        expect(fmtDate('FROM SEP 1942 TO DEC 1944')).toBe('September 1942 – December 1944');
+    });
+
     it('"26 FEB 1785" → "February 26, 1785"', () => {
         expect(fmtDate('26 FEB 1785')).toBe('February 26, 1785');
     });

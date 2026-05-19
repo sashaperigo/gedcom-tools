@@ -63,6 +63,8 @@ function fmtDate(raw) {
         rest = s.slice(4); }
     const bet = rest.match(/^BET\s+(.+?)\s+AND\s+(.+)$/);
     if (bet) return fmtDate(bet[1]) + ' \u2013 ' + fmtDate(bet[2]);
+    const fromTo = rest.match(/^FROM\s+(.+?)\s+TO\s+(.+)$/);
+    if (fromTo) return fmtDate(fromTo[1]) + ' \u2013 ' + fmtDate(fromTo[2]);
     const dmy = rest.match(/^(\d{1,2})\s+([A-Z]{3})\s+(\d{4})$/);
     if (dmy) return prefix + (_MONTH_ABBR[dmy[2]] || dmy[2]) + ' ' + dmy[1] + ', ' + dmy[3];
     const my = rest.match(/^([A-Z]{3})\s+(\d{4})$/);
