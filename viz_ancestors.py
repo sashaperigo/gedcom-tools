@@ -157,7 +157,12 @@ def _parse_fam_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec
         elif tag == 'ADDR':
             current_evt['addr'] = val
         elif tag == 'NOTE':
-            current_evt['note'] = val
+            if val and val.startswith('@'):
+                xref = val.rstrip()
+                entry = state.get('shared_notes', {}).get(xref)
+                current_evt['note'] = entry['text'] if entry else f'(missing: {xref})'
+            else:
+                current_evt['note'] = _ged_val(val)
         elif tag == 'SOUR' and val.startswith('@'):
             current_evt['citations'].append({'sour_xref': val, 'page': None, 'text': None, 'note': None})
             state['current_evt_cite_field'] = None
@@ -228,9 +233,15 @@ def _indi_handle_note(state: dict, val: str, rec: dict) -> None:
     note_idx = len(rec['notes'])
     if val and val.startswith('@'):
         note_xref = val.rstrip()
-        entry = state.get('shared_notes', {}).get(note_xref, {'text': raw, 'citations': []})
-        note_obj = {'text': entry['text'], 'shared': True, 'note_xref': note_xref,
-                    'citations': list(entry['citations']), 'note_idx': note_idx}
+        entry = state.get('shared_notes', {}).get(note_xref)
+        if entry is None:
+            text = f'(missing: {note_xref})'
+            citations: list = []
+        else:
+            text = entry['text']
+            citations = list(entry['citations'])
+        note_obj = {'text': text, 'shared': True, 'note_xref': note_xref,
+                    'citations': citations, 'note_idx': note_idx}
         state['current_note'] = None
     else:
         note_obj = {'text': raw, 'shared': False, 'note_xref': None,
@@ -308,8 +319,14 @@ def _indi_evt_subfield(state: dict, tag: str, val: str, raw_val: str, rec: dict,
     elif tag == 'ADDR':
         evt['addr'] = html_mod.unescape(val)
     elif tag == 'NOTE':
-        evt['note'] = _ged_val(val)
-        state['current_note'] = 'event'
+        if val and val.startswith('@'):
+            xref = val.rstrip()
+            entry = state.get('shared_notes', {}).get(xref)
+            evt['note'] = entry['text'] if entry else f'(missing: {xref})'
+            state['current_note'] = None
+        else:
+            evt['note'] = _ged_val(val)
+            state['current_note'] = 'event'
     elif tag == 'AGE':
         evt['age'] = val
     elif tag == 'SOUR' and val.startswith('@'):
@@ -476,7 +493,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             xref = m.group(1)
             fams[xref] = {'husb': None, 'wife': None, 'chil': []}
             ctx    = ('fam', xref)
-            fam_st = {'current_evt': None, 'current_evt_cite_field': None}
+            fam_st = {'current_evt': None, 'current_evt_cite_field': None,
+                      'shared_notes': shared_notes}
             continue
 
         m = _SOUR_RE.match(line)

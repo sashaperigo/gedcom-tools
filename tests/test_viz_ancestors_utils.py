@@ -403,6 +403,48 @@ class TestNoteCitationParsing:
         indis = _make_indis(tmp_path, ged)
         assert indis['@I1@']['notes'][0]['citations'] == []
 
+    def test_event_level_shared_note_resolves_to_text(self, tmp_path):
+        """A '2 NOTE @xref@' under an event must inline the shared note text,
+        not leak the literal '@xref@' tag through to evt['note']."""
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @N_SENSALI@ NOTE Sensali (brokers) of Smyrna
+0 @I1@ INDI
+1 NAME John /Doe/
+1 OCCU Broker
+2 DATE 1807
+2 NOTE @N_SENSALI@
+0 TRLR"""
+        indis = _make_indis(tmp_path, ged)
+        evt = indis['@I1@']['events'][0]
+        assert evt['note'] == 'Sensali (brokers) of Smyrna'
+
+    def test_fam_event_shared_note_resolves_to_text(self, tmp_path):
+        """A FAM-event '2 NOTE @xref@' must also inline the shared note text."""
+        ged = """\
+0 HEAD
+1 SOUR Test
+0 @N_M@ NOTE Married at the Latin cathedral
+0 @I1@ INDI
+1 NAME John /Doe/
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Jane /Roe/
+1 FAMS @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1850
+2 NOTE @N_M@
+0 TRLR"""
+        ged_path = tmp_path / 'test.ged'
+        ged_path.write_text(ged, encoding='utf-8')
+        _, fams, _ = parse_gedcom(str(ged_path))
+        marr = fams['@F1@']['marrs'][0]
+        assert marr['note'] == 'Married at the Latin cathedral'
+
     def test_inline_and_shared_notes_mixed(self, tmp_path):
         ged = """\
 0 HEAD
