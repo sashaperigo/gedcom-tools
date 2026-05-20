@@ -747,6 +747,59 @@ def _edit_event_fields(
     return lines[:block_start] + new_block + lines[block_end:]
 
 
+def _find_deat_y_block(lines: list[str], xref: str) -> tuple[int | None, int | None]:
+    """Return (start, end) of the first `1 DEAT Y` block in xref, or (None, None).
+
+    `1 DEAT Y` is the GEDCOM sentinel meaning "confirmed deceased, date unknown."
+    end is exclusive (first line that belongs to the next level-1 tag or the
+    record boundary), matching the convention used by _find_event_block.
+    """
+    indi_start, indi_end, err = _find_indi_block(lines, xref)
+    if err:
+        return None, None
+    for i in range(indi_start + 1, indi_end):
+        m = _TAG_RE.match(lines[i])
+        if m and int(m.group(1)) == 1 and m.group(2) == 'DEAT' and (m.group(3) or '').strip() == 'Y':
+            j = i + 1
+            while j < indi_end:
+                sm = _TAG_RE.match(lines[j])
+                if sm and int(sm.group(1)) <= 1:
+                    break
+                j += 1
+            return i, j
+    return None, None
+
+
+def _extract_event_subtag_fields(lines: list[str], block_start: int, block_end: int) -> dict:
+    """Extract level-2 subtag values from an event block into a fields-compatible dict.
+
+    NOTE text is reconstructed from CONT (newline join) and CONC (concatenate)
+    continuation lines so it can be re-encoded by _encode_event_note_lines.
+    """
+    result: dict[str, str] = {}
+    current_tag: str | None = None
+    current_val: str = ''
+    for line in lines[block_start + 1: block_end]:
+        m = _TAG_RE.match(line)
+        if not m:
+            continue
+        lvl, tag = int(m.group(1)), m.group(2)
+        val = (m.group(3) or '')
+        if lvl == 2:
+            if current_tag is not None:
+                result[current_tag] = current_val
+            current_tag = tag
+            current_val = val
+        elif lvl == 3 and current_tag == 'NOTE' and tag in ('CONT', 'CONC'):
+            if tag == 'CONT':
+                current_val = current_val + '\n' + val
+            else:
+                current_val = current_val + val
+    if current_tag is not None:
+        result[current_tag] = current_val
+    return result
+
+
 def _insert_new_event(
     lines: list[str], xref: str, event_tag: str, fields: dict,
 ) -> tuple[list[str], str | None]:
@@ -759,6 +812,17 @@ def _insert_new_event(
         return lines, err
     inline_val = (fields.get('inline_val') or '').strip()
     deat_y = (event_tag == 'DEAT' and (fields.get('DATE') or '').strip() == 'Y')
+    # If adding a real (non-Y) death, remove any existing "1 DEAT Y" placeholder
+    # and fold its subtags into fields (new event data takes precedence).
+    if event_tag == 'DEAT' and not deat_y:
+        dy_start, dy_end = _find_deat_y_block(lines, xref)
+        if dy_start is not None:
+            inherited = _extract_event_subtag_fields(lines, dy_start, dy_end)
+            lines = lines[:dy_start] + lines[dy_end:]
+            _, indi_end, _ = _find_indi_block(lines, xref)
+            for k, v in inherited.items():
+                if not (fields.get(k) or '').strip():
+                    fields[k] = v
     if event_tag in _INLINE_TYPE_TAGS and inline_val:
         header = f'1 {event_tag} {inline_val}'
     elif deat_y:

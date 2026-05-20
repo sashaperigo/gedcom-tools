@@ -680,6 +680,67 @@ class TestAddEventEndpoint:
         deat = next((e for e in events if e['tag'] == 'DEAT'), None)
         assert deat is not None, 'DEAT event missing from refreshed panel data'
 
+    def test_add_deat_removes_bare_deat_y(self, live_server):
+        """Adding a real DEAT event removes a pre-existing bare `1 DEAT Y` placeholder."""
+        ged, post, _, _ = live_server
+        # Plant a bare DEAT Y (no subtags)
+        post('/api/add_event', {'xref': '@I3@', 'tag': 'DEAT', 'fields': {'DATE': 'Y'}})
+        assert '1 DEAT Y' in _ged_text(ged)
+        # Now add a real death
+        resp = post('/api/add_event', {
+            'xref': '@I3@', 'tag': 'DEAT',
+            'fields': {'DATE': '15 MAR 1965', 'PLAC': 'London, England'},
+        })
+        assert resp['ok'] is True
+        # Extract just @I3@'s block to avoid matching @I9@'s pre-existing DEAT Y
+        text = _ged_text(ged)
+        lines = text.splitlines()
+        i3_start = next(i for i, l in enumerate(lines) if '0 @I3@ INDI' in l)
+        i3_end = next(i for i, l in enumerate(lines) if i > i3_start and l.startswith('0 '))
+        i3_block = '\n'.join(lines[i3_start:i3_end])
+        assert '1 DEAT Y' not in i3_block
+        assert '2 DATE 15 MAR 1965' in i3_block
+        assert '2 PLAC London, England' in i3_block
+
+    def test_add_deat_merges_deat_y_subtags(self, live_server):
+        """Adding a real DEAT merges subtags from an existing `1 DEAT Y` block.
+
+        @I9@ already has:
+            1 DEAT Y
+            2 AGE 55y
+            2 NOTE Age approximate; described as being in her mid-50s
+        After adding a real DEAT with date+place, the new event should
+        include the inherited AGE and NOTE.
+        """
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I9@', 'tag': 'DEAT',
+            'fields': {'DATE': '1965', 'PLAC': 'London, England'},
+        })
+        assert resp['ok'] is True
+        text = _ged_text(ged)
+        assert '1 DEAT Y' not in text
+        assert '2 DATE 1965' in text
+        assert '2 PLAC London, England' in text
+        assert '2 AGE 55y' in text
+        assert 'Age approximate' in text
+
+    def test_add_deat_new_field_wins_over_inherited(self, live_server):
+        """When the new DEAT event supplies an AGE, it wins over the inherited one.
+
+        @I9@ has `2 AGE 55y` on its DEAT Y block. Supplying AGE 60y in the
+        new event must keep 60y and discard 55y.
+        """
+        ged, post, _, _ = live_server
+        resp = post('/api/add_event', {
+            'xref': '@I9@', 'tag': 'DEAT',
+            'fields': {'DATE': '1965', 'AGE': '60y'},
+        })
+        assert resp['ok'] is True
+        text = _ged_text(ged)
+        assert '2 AGE 60y' in text
+        assert '2 AGE 55y' not in text
+
 # ===========================================================================
 # /api/edit_name
 # ===========================================================================
