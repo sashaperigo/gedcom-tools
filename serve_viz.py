@@ -820,6 +820,7 @@ def _insert_new_event(
             inherited = _extract_event_subtag_fields(lines, dy_start, dy_end)
             lines = lines[:dy_start] + lines[dy_end:]
             _, indi_end, _ = _find_indi_block(lines, xref)
+            fields = dict(fields)
             for k, v in inherited.items():
                 if not (fields.get(k) or '').strip():
                     fields[k] = v

@@ -719,11 +719,15 @@ class TestAddEventEndpoint:
         })
         assert resp['ok'] is True
         text = _ged_text(ged)
-        assert '1 DEAT Y' not in text
-        assert '2 DATE 1965' in text
-        assert '2 PLAC London, England' in text
-        assert '2 AGE 55y' in text
-        assert 'Age approximate' in text
+        lines = text.splitlines()
+        i9_start = next(i for i, l in enumerate(lines) if '0 @I9@ INDI' in l)
+        i9_end = next(i for i, l in enumerate(lines) if i > i9_start and l.startswith('0 '))
+        i9_block = '\n'.join(lines[i9_start:i9_end])
+        assert '1 DEAT Y' not in i9_block
+        assert '2 DATE 1965' in i9_block
+        assert '2 PLAC London, England' in i9_block
+        assert '2 AGE 55y' in i9_block
+        assert 'Age approximate' in i9_block
 
     def test_add_deat_new_field_wins_over_inherited(self, live_server):
         """When the new DEAT event supplies an AGE, it wins over the inherited one.
