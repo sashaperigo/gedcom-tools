@@ -167,6 +167,63 @@ function pickClosestPath(paths) {
   return best;
 }
 
+// Lazy index of godparent links from PEOPLE[x].events[*].asso on BAPM/CHR.
+// byChild: Map<childXref, Array<{xref: godparentXref, rela}>>
+// byParent: Map<godparentXref, Array<{xref: childXref, rela}>>
+function getGodparentIndex(ctx) {
+  if (ctx._godparentIndex) return ctx._godparentIndex;
+  const byChild = new Map();
+  const byParent = new Map();
+  for (const [xref, info] of Object.entries(ctx.PEOPLE || {})) {
+    for (const ev of (info && info.events) || []) {
+      if (ev.tag !== 'BAPM' && ev.tag !== 'CHR') continue;
+      for (const a of ev.asso || []) {
+        if (!a || !a.xref) continue;
+        const entry = { xref: a.xref, rela: a.rela };
+        if (!byChild.has(xref)) byChild.set(xref, []);
+        byChild.get(xref).push(entry);
+        if (!byParent.has(a.xref)) byParent.set(a.xref, []);
+        byParent.get(a.xref).push({ xref, rela: a.rela });
+      }
+    }
+  }
+  ctx._godparentIndex = { byChild, byParent };
+  return ctx._godparentIndex;
+}
+
+function _godparentLabel(rela, otherSex) {
+  // `rela` is the RELA text on the ASSO record — "Godfather"/"Godmother"/"Godparent".
+  // Prefer it over `otherSex` since it's the most specific signal.
+  if (rela === 'Godfather') return 'Godfather';
+  if (rela === 'Godmother') return 'Godmother';
+  return gendered(otherSex, 'Godfather', 'Godmother', 'Godparent');
+}
+
+function _godchildLabel(otherSex) {
+  return gendered(otherSex, 'Godson', 'Goddaughter', 'Godchild');
+}
+
+// Returns {label, edges: 1} if there's a direct godparent or godchild relation
+// between viewer and other, else null.
+function findGodparentAtomic(viewer, other, ctx) {
+  const idx = getGodparentIndex(ctx);
+  const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
+
+  // other is viewer's godparent
+  for (const entry of idx.byChild.get(viewer) || []) {
+    if (entry.xref === other) {
+      return { label: _godparentLabel(entry.rela, otherSex), edges: 1 };
+    }
+  }
+  // viewer is other's godparent → other is viewer's godchild
+  for (const entry of idx.byChild.get(other) || []) {
+    if (entry.xref === viewer) {
+      return { label: _godchildLabel(otherSex), edges: 1 };
+    }
+  }
+  return null;
+}
+
 function getSpousesOf(xref, ctx) {
   const rel = ctx.RELATIVES[xref];
   if (rel && Array.isArray(rel.spouses)) return rel.spouses;
@@ -178,6 +235,221 @@ function getSpousesOf(xref, ctx) {
   }
   return spouses;
 }
+
+// Returns {label, edges} for an atomic affinity (no "of" composition) between viewer and other.
+// Edges counts graph hops on the kinship graph (parent/child/spouse).
+function findAtomicAffinity(viewer, other, ctx) {
+  const viewerSpouses = getSpousesOf(viewer, ctx);
+  const viewerParents = (ctx.PARENTS[viewer] || [null, null]).filter(Boolean);
+  const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
+
+  // Tier 1: spouse of viewer (1 edge)
+  if (viewerSpouses.includes(other)) {
+    return { label: gendered(otherSex, 'Husband', 'Wife', 'Spouse'), edges: 1 };
+  }
+
+  // Tier 2: step-parent (up + across, 2 edges)
+  for (const par of viewerParents) {
+    if (getSpousesOf(par, ctx).includes(other) && !viewerParents.includes(other)) {
+      return { label: gendered(otherSex, 'Step-Father', 'Step-Mother', 'Step-Parent'), edges: 2 };
+    }
+  }
+
+  // Tier 2: step-child (across + down, 2 edges)
+  const viewerChildren = ctx.CHILDREN[viewer] || [];
+  for (const sp of viewerSpouses) {
+    const spChildren = ctx.CHILDREN[sp] || [];
+    if (spChildren.includes(other) && !viewerChildren.includes(other)) {
+      return { label: gendered(otherSex, 'Step-Son', 'Step-Daughter', 'Step-Child'), edges: 2 };
+    }
+  }
+
+  // Tier 2: step-sibling (up + across + down, 3 edges)
+  for (const par of viewerParents) {
+    for (const stepPar of getSpousesOf(par, ctx)) {
+      if (viewerParents.includes(stepPar)) continue;
+      const stepParChildren = ctx.CHILDREN[stepPar] || [];
+      if (stepParChildren.includes(other)) {
+        const otherParents = (ctx.PARENTS[other] || [null, null]).filter(Boolean);
+        const sharesBioParent = otherParents.some(p => viewerParents.includes(p));
+        if (!sharesBioParent) {
+          return { label: gendered(otherSex, 'Step-Brother', 'Step-Sister', 'Step-Sibling'), edges: 3 };
+        }
+      }
+    }
+  }
+
+  // Tier 3a: parent-in-law (across + up, 2 edges)
+  for (const sp of viewerSpouses) {
+    const spParents = ctx.PARENTS[sp] || [null, null];
+    if (spParents.includes(other)) {
+      return { label: gendered(otherSex, 'Father-in-law', 'Mother-in-law', 'Parent-in-law'), edges: 2 };
+    }
+  }
+
+  // Tier 3b: sibling-in-law via spouse's sibling (across + up + down, 3 edges)
+  for (const sp of viewerSpouses) {
+    const spParents = ctx.PARENTS[sp] || [null, null];
+    for (const p of spParents) {
+      if (!p) continue;
+      const siblings = (ctx.CHILDREN[p] || []).filter(c => c !== sp);
+      if (siblings.includes(other)) {
+        return { label: gendered(otherSex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law'), edges: 3 };
+      }
+    }
+  }
+
+  // Tier 3c: sibling-in-law via sibling's spouse (up + down + across, 3 edges)
+  for (const par of viewerParents) {
+    for (const sib of (ctx.CHILDREN[par] || [])) {
+      if (sib === viewer) continue;
+      if (getSpousesOf(sib, ctx).includes(other)) {
+        return { label: gendered(otherSex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law'), edges: 3 };
+      }
+    }
+  }
+
+  // Tier 3d: child-in-law (down + across, 2 edges)
+  for (const child of viewerChildren) {
+    if (getSpousesOf(child, ctx).includes(other)) {
+      return { label: gendered(otherSex, 'Son-in-law', 'Daughter-in-law', 'Child-in-law'), edges: 2 };
+    }
+  }
+
+  // Tier 5: godparent / godchild (1 edge). Last so that any kinship affinity takes
+  // precedence — the dual-relationship combiner in computeRelationship re-adds
+  // godparent on top of kin when both apply.
+  const gp = findGodparentAtomic(viewer, other, ctx);
+  if (gp) return gp;
+
+  return null;
+}
+
+// All blood relatives of `viewer`, keyed by xref. Value is the closest path (smallest a+b).
+// Lazy-cached on ctx._bloodCache to avoid re-running BFS on every recursive `_bestRel` call.
+function findAllBloodRelatives(viewer, ctx) {
+  if (!ctx._bloodCache) ctx._bloodCache = new Map();
+  const cached = ctx._bloodCache.get(viewer);
+  if (cached) return cached;
+  const result = new Map();
+  const ancestors = bfsUp(viewer, ctx.PARENTS, Infinity);
+  for (const [ancestorXref, viewerPaths] of ancestors) {
+    const descendants = bfsDown(ancestorXref, ctx.CHILDREN, Infinity);
+    for (const [descXref, descPaths] of descendants) {
+      if (descXref === viewer) continue;
+      for (const vp of viewerPaths) {
+        for (const dp of descPaths) {
+          const candidate = {
+            a: vp.depth, b: dp.depth,
+            mrca: ancestorXref,
+            viewerLeg: vp.viaParentXref, otherLeg: dp.viaChildXref,
+          };
+          const existing = result.get(descXref);
+          if (!existing || candidate.a + candidate.b < existing.a + existing.b) {
+            result.set(descXref, candidate);
+          }
+        }
+      }
+    }
+  }
+  ctx._bloodCache.set(viewer, result);
+  return result;
+}
+
+// Cost-comparison: prefer fewer edges; tiebreak prefers fewer "of" connectors (more atomic).
+function _betterCand(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  if (a.edges !== b.edges) return a.edges < b.edges ? a : b;
+  if (a.ofs !== b.ofs) return a.ofs < b.ofs ? a : b;
+  // Tiebreak: prefer splits that push more weight onto the blood-relative on the LEFT
+  // of "of" — i.e., describe via the closest blood relative whose path covers most of
+  // the distance. E.g., "Husband of Cousin" (left=4) beats "Son-in-law of Aunt" (left=3).
+  const aLeft = a.leftEdges || 0;
+  const bLeft = b.leftEdges || 0;
+  if (aLeft !== bLeft) return aLeft > bLeft ? a : b;
+  return a;
+}
+
+// Recursive best-relationship search.
+// Returns { label, edges, ofs } or null.
+// `seen` carries the chain of viewers already used so we don't revisit them.
+// `depthLeft` caps how many "of" compositions we'll build.
+function _bestRel(viewer, other, ctx, seen, depthLeft) {
+  if (seen.has(other)) return null;
+
+  let best = null;
+
+  // Direct blood — use cached findAllBloodRelatives instead of recomputing findBloodPaths.
+  if (viewer !== other) {
+    const bloodRels = findAllBloodRelatives(viewer, ctx);
+    const path = bloodRels.get(other);
+    if (path) {
+      const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
+      const isHalf = !isFullRelationship(path, ctx);
+      const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
+      if (label) best = _betterCand(best, { label, edges: path.a + path.b, ofs: 0 });
+    }
+  }
+
+  // Atomic affinity
+  const atomic = findAtomicAffinity(viewer, other, ctx);
+  if (atomic) best = _betterCand(best, { label: atomic.label, edges: atomic.edges, ofs: 0 });
+
+  if (depthLeft <= 0) return best;
+
+  const newSeen = new Set(seen);
+  newSeen.add(viewer);
+
+  // Split via blood-relative intermediates.
+  // For each Z (blood relative of viewer), check only atomic affinity Z→other.
+  // We deliberately skip the expensive findAllBloodRelatives(Z) BFS that a full
+  // recursive _bestRel(Z, other) would do — iterating that over thousands of Z's
+  // freezes the page on real trees, and any composed "<blood-Z-O> of <kin-V-Z>"
+  // label would be dominated by a direct V→O blood label that the top of
+  // computeRelationship would have already returned.
+  const bloodRels = findAllBloodRelatives(viewer, ctx);
+  for (const [zXref, path] of bloodRels) {
+    if (zXref === other || newSeen.has(zXref)) continue;
+    const leftEdges = path.a + path.b;
+    if (best && leftEdges >= best.edges) continue;
+    const subAtomic = findAtomicAffinity(zXref, other, ctx);
+    if (!subAtomic) continue;
+    const zSex = (ctx.PEOPLE[zXref] || {}).sex || null;
+    const zIsHalf = !isFullRelationship(path, ctx);
+    const leftLabel = formatBloodLabel(path.a, path.b, zSex, zIsHalf);
+    if (!leftLabel) continue;
+    const cand = {
+      label: `${subAtomic.label} of ${leftLabel}`,
+      edges: leftEdges + subAtomic.edges,
+      ofs: 1,
+      leftEdges,
+    };
+    best = _betterCand(best, cand);
+  }
+
+  // Split via spouse of viewer
+  for (const sp of getSpousesOf(viewer, ctx)) {
+    if (sp === other || newSeen.has(sp)) continue;
+    if (best && 1 >= best.edges) continue;
+    const sub = _bestRel(sp, other, ctx, newSeen, depthLeft - 1);
+    if (!sub) continue;
+    const cand = {
+      label: `${sub.label} of Spouse`,
+      edges: 1 + sub.edges,
+      ofs: sub.ofs + 1,
+      leftEdges: 1,
+    };
+    best = _betterCand(best, cand);
+  }
+
+  return best;
+}
+
+// Depth = how many "of" compositions we'll build. 1 covers all current label cases
+// ("Father-in-law of Cousin", "Godmother of Cousin", "Wife of Cousin", etc.). Higher
+// values blow up combinatorially on real trees (O(B^depth) where B = blood relatives).
+const _MAX_REL_DEPTH = 1;
 
 function findAffinityLabel(viewer, other, ctx) {
   const viewerSpouses = getSpousesOf(viewer, ctx);
@@ -317,6 +589,11 @@ function computeRelationship(viewerXref, otherXref, ctx) {
   if (otherXref === viewerXref) {
     return { label: 'Self', debug: { a: 0, b: 0 } };
   }
+
+  // 1. Best kin relationship (blood, then composed affinity via _bestRel).
+  // _bestRel's findAtomicAffinity includes godparent as Tier 5, so the godparent
+  // label may itself surface here when no other kin relationship exists.
+  let kinResult = null;
   const paths = findBloodPaths(viewerXref, otherXref, ctx);
   if (paths.length > 0) {
     const path = pickClosestPath(paths);
@@ -324,14 +601,72 @@ function computeRelationship(viewerXref, otherXref, ctx) {
     const isHalf = !isFullRelationship(path, ctx);
     const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
     if (label !== null) {
-      return { label, debug: { a: path.a, b: path.b, mrca: path.mrca, half: isHalf } };
+      kinResult = { label, ofs: 0, debug: { a: path.a, b: path.b, mrca: path.mrca, half: isHalf } };
     }
   }
-  const affinity = findAffinityLabel(viewerXref, otherXref, ctx);
-  if (affinity) return { label: affinity, debug: { affinity: true } };
-  return null;
+  if (!kinResult) {
+    const aff = _bestRel(viewerXref, otherXref, ctx, new Set(), _MAX_REL_DEPTH);
+    if (aff) kinResult = { label: aff.label, ofs: aff.ofs, debug: { affinity: true, edges: aff.edges, ofs: aff.ofs } };
+  }
+
+  // 2. Direct godparent/godchild link (no recursion).
+  const gpDirect = findGodparentAtomic(viewerXref, otherXref, ctx);
+
+  // 3. Combine.
+  if (!kinResult && !gpDirect) return null;
+  if (!gpDirect) return { label: kinResult.label, debug: kinResult.debug };
+  if (!kinResult) return { label: gpDirect.label, debug: { godparent: true } };
+
+  // Both exist. Avoid duplicate when _bestRel chose godparent via Tier 5
+  // (i.e., kinResult is itself the godparent label).
+  if (kinResult.label === gpDirect.label) {
+    return { label: gpDirect.label, debug: { godparent: true } };
+  }
+  // Atomic kin + atomic godparent → combine.
+  if (kinResult.ofs === 0) {
+    return {
+      label: `${kinResult.label} and ${gpDirect.label}`,
+      debug: { ...kinResult.debug, godparent: true, combined: true },
+    };
+  }
+  // Composed (distant) kin + atomic godparent → just godparent.
+  return { label: gpDirect.label, debug: { godparent: true } };
+}
+
+// Return every distinct relationship between viewer and other, for the
+// click-for-details popover. Each entry: { kind, label, ... }.
+// Kinds: 'self', 'blood', 'affinity', 'godparent'.
+function enumerateRelationships(viewerXref, otherXref, ctx) {
+  if (viewerXref === otherXref) return [{ kind: 'self', label: 'Self' }];
+  const out = [];
+
+  const paths = findBloodPaths(viewerXref, otherXref, ctx);
+  if (paths.length > 0) {
+    const path = pickClosestPath(paths);
+    const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
+    const isHalf = !isFullRelationship(path, ctx);
+    const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
+    if (label) out.push({ kind: 'blood', label, path: { a: path.a, b: path.b, mrca: path.mrca, half: isHalf } });
+  }
+
+  // Atomic affinity excluding godparent (we want the kinship in-law/step term, not Tier 5).
+  // Re-run the in-law/step tiers explicitly. Simplest: temporarily strip godparent from
+  // ctx by checking if findAtomicAffinity's result is the godparent label and, if so,
+  // re-deriving via the kin-only path. To keep code small, just call _bestRel with a
+  // wrapper that pretends godparent doesn't exist.
+  const noGpCtx = Object.create(ctx);
+  noGpCtx._godparentIndex = { byChild: new Map(), byParent: new Map() };
+  const aff = _bestRel(viewerXref, otherXref, noGpCtx, new Set(), _MAX_REL_DEPTH);
+  if (aff && (!out.length || aff.label !== out[0].label)) {
+    out.push({ kind: 'affinity', label: aff.label, edges: aff.edges, ofs: aff.ofs });
+  }
+
+  const gp = findGodparentAtomic(viewerXref, otherXref, ctx);
+  if (gp) out.push({ kind: 'godparent', label: gp.label });
+
+  return out;
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship, getSpousesOf, findAffinityLabel };
+  module.exports = { computeRelationship, enumerateRelationships, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship, getSpousesOf, findAffinityLabel, findGodparentAtomic, getGodparentIndex };
 }

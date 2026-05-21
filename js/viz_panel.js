@@ -681,9 +681,43 @@ function renderPanel() {
         typeof RELATIVES !== 'undefined' && typeof FAMILIES !== 'undefined') {
         const relCtx = { PEOPLE, PARENTS, CHILDREN, RELATIVES, FAMILIES };
         const rel = computeRelationship(VIEWER_XREF, xref, relCtx);
-        relEl.textContent = rel ? rel.label : '';
+        relEl.innerHTML = '';
+        if (rel) {
+            // Cheap pre-check (O(1) index lookup): is there a direct godparent link?
+            // If yes AND the displayed label isn't already godparent-only, offer expand.
+            const hasGodparent = typeof findGodparentAtomic === 'function'
+                && findGodparentAtomic(VIEWER_XREF, xref, relCtx) != null;
+            const expandable = hasGodparent && rel.debug && !rel.debug.godparent;
+            const labelSpan = document.createElement('span');
+            labelSpan.textContent = rel.label;
+            relEl.appendChild(labelSpan);
+            if (expandable && typeof enumerateRelationships === 'function') {
+                labelSpan.style.cursor = 'pointer';
+                labelSpan.style.textDecoration = 'underline dotted';
+                labelSpan.title = 'Click to see all relationships';
+                const detailsDiv = document.createElement('div');
+                detailsDiv.style.cssText = 'display:none;margin-top:4px;font-size:0.9em;opacity:0.85;';
+                relEl.appendChild(detailsDiv);
+                let built = false;
+                labelSpan.addEventListener('click', () => {
+                    if (!built) {
+                        const rels = enumerateRelationships(VIEWER_XREF, xref, relCtx);
+                        const ul = document.createElement('ul');
+                        ul.style.cssText = 'margin:0;padding-left:1.2em;';
+                        for (const r of rels) {
+                            const li = document.createElement('li');
+                            li.textContent = r.label;
+                            ul.appendChild(li);
+                        }
+                        detailsDiv.appendChild(ul);
+                        built = true;
+                    }
+                    detailsDiv.style.display = detailsDiv.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+        }
     } else if (relEl) {
-        relEl.textContent = '';
+        relEl.innerHTML = '';
     }
 
     // ── Notes ─────────────────────────────────────────────────────────────

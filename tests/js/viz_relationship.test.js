@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
-const { computeRelationship } = require('../../js/viz_relationship.js');
+const { computeRelationship, enumerateRelationships } = require('../../js/viz_relationship.js');
 
 function ctx({ people = {}, parents = {}, children = {}, relatives = {}, families = {} } = {}) {
   return { PEOPLE: people, PARENTS: parents, CHILDREN: children, RELATIVES: relatives, FAMILIES: families };
@@ -613,6 +613,325 @@ describe('computeRelationship — affinity: generic templates', () => {
       families: {},
     });
     expect(computeRelationship('@V@', '@SC@', c).label).toBe('1st Cousin of Spouse');
+  });
+});
+
+describe('computeRelationship — affinity: deep chains', () => {
+  // Build a graph where viewer V has a 1st cousin C; C is married to H; H has parents OFIL/OMIL
+  // and a sister OSIS. Used to test "<atomic-in-law> of <blood-relative>" composition.
+  function cousinInLawCtx() {
+    return ctx({
+      people: {
+        '@V@':    { sex: 'M' },
+        '@PV@':   { sex: 'F' },
+        '@PC@':   { sex: 'F' },
+        '@GMA@':  { sex: 'F' },
+        '@GPA@':  { sex: 'M' },
+        '@C@':    { sex: 'F' },
+        '@H@':    { sex: 'M' },
+        '@OFIL@': { sex: 'M' }, // H's father — V's cousin's father-in-law
+        '@OMIL@': { sex: 'F' }, // H's mother — V's cousin's mother-in-law
+        '@OSIS@': { sex: 'F' }, // H's sister — V's cousin's sister-in-law
+      },
+      parents: {
+        '@V@':    [null, '@PV@'],
+        '@C@':    [null, '@PC@'],
+        '@PV@':   ['@GPA@', '@GMA@'],
+        '@PC@':   ['@GPA@', '@GMA@'],
+        '@H@':    ['@OFIL@', '@OMIL@'],
+        '@OSIS@': ['@OFIL@', '@OMIL@'],
+      },
+      children: {
+        '@PV@':   ['@V@'],
+        '@PC@':   ['@C@'],
+        '@GMA@':  ['@PV@', '@PC@'],
+        '@GPA@':  ['@PV@', '@PC@'],
+        '@OFIL@': ['@H@', '@OSIS@'],
+        '@OMIL@': ['@H@', '@OSIS@'],
+      },
+      relatives: { '@C@': { spouses: ['@H@'] }, '@H@': { spouses: ['@C@'] } },
+      families: {},
+    });
+  }
+
+  it('Father-in-law of 1st Cousin (parent of cousin\'s husband)', () => {
+    expect(computeRelationship('@V@', '@OFIL@', cousinInLawCtx()).label).toBe('Father-in-law of 1st Cousin');
+  });
+
+  it('Mother-in-law of 1st Cousin', () => {
+    expect(computeRelationship('@V@', '@OMIL@', cousinInLawCtx()).label).toBe('Mother-in-law of 1st Cousin');
+  });
+
+  it('Sister-in-law of 1st Cousin (sister of cousin\'s husband)', () => {
+    expect(computeRelationship('@V@', '@OSIS@', cousinInLawCtx()).label).toBe('Sister-in-law of 1st Cousin');
+  });
+
+  it('Husband of 1st Cousin still works (regression of existing Tier 4a)', () => {
+    expect(computeRelationship('@V@', '@H@', cousinInLawCtx()).label).toBe('Husband of 1st Cousin');
+  });
+
+  it('Daughter-in-law of Sister (spouse of sister\'s son)', () => {
+    const c = ctx({
+      people: {
+        '@V@': {}, '@SIB@': { sex: 'F' },
+        '@N@': { sex: 'M' }, '@NW@': { sex: 'F' },
+        '@MOM@': { sex: 'F' }, '@DAD@': { sex: 'M' },
+      },
+      parents: { '@V@': ['@DAD@', '@MOM@'], '@SIB@': ['@DAD@', '@MOM@'], '@N@': [null, '@SIB@'] },
+      children: { '@MOM@': ['@V@', '@SIB@'], '@DAD@': ['@V@', '@SIB@'], '@SIB@': ['@N@'] },
+      relatives: { '@N@': { spouses: ['@NW@'] }, '@NW@': { spouses: ['@N@'] } },
+      families: {},
+    });
+    // V's sister's son's wife. SIB→son N (nephew)→wife. atomic from SIB = "Daughter-in-law" cost 2.
+    // Composed: "Daughter-in-law of Sister", edges 2+2=4, ofs 1.
+    // Alt: Z=N (nephew), edges 2, atomic "Wife" cost 1 → "Wife of Nephew" edges 3, ofs 1. Fewer edges → wins.
+    expect(computeRelationship('@V@', '@NW@', c).label).toBe('Wife of Nephew');
+  });
+
+  it('Atomic Brother-in-law beats composed "Husband of Sister" (no regression)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@SIB@': { sex: 'F' }, '@SIBSP@': { sex: 'M' }, '@MOM@': { sex: 'F' } },
+      parents: { '@V@': [null, '@MOM@'], '@SIB@': [null, '@MOM@'], '@SIBSP@': [null, null] },
+      children: { '@MOM@': ['@V@', '@SIB@'] },
+      relatives: { '@SIB@': { spouses: ['@SIBSP@'] }, '@SIBSP@': { spouses: ['@SIB@'] } },
+      families: {},
+    });
+    expect(computeRelationship('@V@', '@SIBSP@', c).label).toBe('Brother-in-law');
+  });
+});
+
+describe('computeRelationship — godparent', () => {
+  function evt(tag, assoXref, rela) {
+    return { tag, asso: [{ xref: assoXref, rela }] };
+  }
+
+  it('Godmother (direct, female godparent on viewer\'s BAPM)', () => {
+    const c = ctx({
+      people: {
+        '@V@':  { sex: 'M', events: [evt('BAPM', '@GM@', 'Godparent')] },
+        '@GM@': { sex: 'F', events: [] },
+      },
+    });
+    expect(computeRelationship('@V@', '@GM@', c).label).toBe('Godmother');
+  });
+
+  it('Godfather (rela="Godfather" overrides missing sex)', () => {
+    const c = ctx({
+      people: {
+        '@V@':  { events: [evt('BAPM', '@GF@', 'Godfather')] },
+        '@GF@': { events: [] }, // no sex; rela disambiguates
+      },
+    });
+    expect(computeRelationship('@V@', '@GF@', c).label).toBe('Godfather');
+  });
+
+  it('Godparent (gender-neutral when sex unknown)', () => {
+    const c = ctx({
+      people: {
+        '@V@':  { events: [evt('BAPM', '@GP@', 'Godparent')] },
+        '@GP@': { events: [] },
+      },
+    });
+    expect(computeRelationship('@V@', '@GP@', c).label).toBe('Godparent');
+  });
+
+  it('Goddaughter (reverse: other is viewer\'s godchild)', () => {
+    const c = ctx({
+      people: {
+        '@V@':  { sex: 'F', events: [] },
+        '@GD@': { sex: 'F', events: [evt('BAPM', '@V@', 'Godmother')] },
+      },
+    });
+    expect(computeRelationship('@V@', '@GD@', c).label).toBe('Goddaughter');
+  });
+
+  it('Godson (reverse, male)', () => {
+    const c = ctx({
+      people: {
+        '@V@':  { sex: 'M', events: [] },
+        '@GS@': { sex: 'M', events: [evt('BAPM', '@V@', 'Godparent')] },
+      },
+    });
+    expect(computeRelationship('@V@', '@GS@', c).label).toBe('Godson');
+  });
+
+  it('CHR event also produces godparent label', () => {
+    const c = ctx({
+      people: {
+        '@V@':  { events: [evt('CHR', '@GM@', 'Godparent')] },
+        '@GM@': { sex: 'F', events: [] },
+      },
+    });
+    expect(computeRelationship('@V@', '@GM@', c).label).toBe('Godmother');
+  });
+
+  it('Godmother of 1st Cousin (composed)', () => {
+    const c = ctx({
+      people: {
+        '@V@':  {},
+        '@C@':  { sex: 'F', events: [evt('BAPM', '@GM@', 'Godmother')] },
+        '@GM@': { sex: 'F' },
+        '@PV@': { sex: 'F' }, '@PC@': { sex: 'F' },
+        '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: {
+        '@V@': [null, '@PV@'], '@C@': [null, '@PC@'],
+        '@PV@': ['@GPA@', '@GMA@'], '@PC@': ['@GPA@', '@GMA@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@PC@': ['@C@'],
+        '@GMA@': ['@PV@', '@PC@'], '@GPA@': ['@PV@', '@PC@'],
+      },
+    });
+    expect(computeRelationship('@V@', '@GM@', c).label).toBe('Godmother of 1st Cousin');
+  });
+
+  it('Goddaughter of Sister (composed reverse)', () => {
+    // V's sister has a goddaughter GD.
+    const c = ctx({
+      people: {
+        '@V@': {},
+        '@SIS@': { sex: 'F' },
+        '@GD@':  { sex: 'F', events: [evt('BAPM', '@SIS@', 'Godmother')] },
+        '@MOM@': { sex: 'F' }, '@DAD@': { sex: 'M' },
+      },
+      parents: { '@V@': ['@DAD@', '@MOM@'], '@SIS@': ['@DAD@', '@MOM@'] },
+      children: { '@MOM@': ['@V@', '@SIS@'], '@DAD@': ['@V@', '@SIS@'] },
+    });
+    expect(computeRelationship('@V@', '@GD@', c).label).toBe('Goddaughter of Sister');
+  });
+
+  it('Godfather of Spouse (composed via spouse)', () => {
+    const c = ctx({
+      people: {
+        '@V@':  {},
+        '@S@':  { sex: 'F', events: [evt('BAPM', '@GF@', 'Godfather')] },
+        '@GF@': { sex: 'M' },
+      },
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+    });
+    expect(computeRelationship('@V@', '@GF@', c).label).toBe('Godfather of Spouse');
+  });
+
+  it('Uncle and Godfather (atomic blood + direct godparent)', () => {
+    const c = ctx({
+      people: {
+        '@V@': { events: [evt('BAPM', '@U@', 'Godfather')] },
+        '@U@': { sex: 'M' },
+        '@PV@': { sex: 'F' }, '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: { '@V@': [null, '@PV@'], '@PV@': ['@GPA@', '@GMA@'], '@U@': ['@GPA@', '@GMA@'] },
+      children: { '@PV@': ['@V@'], '@GMA@': ['@PV@', '@U@'], '@GPA@': ['@PV@', '@U@'] },
+    });
+    expect(computeRelationship('@V@', '@U@', c).label).toBe('Uncle and Godfather');
+  });
+
+  it('1st Cousin and Godmother (atomic blood + direct godparent)', () => {
+    const c = ctx({
+      people: {
+        '@V@': { events: [evt('BAPM', '@C@', 'Godmother')] },
+        '@C@': { sex: 'F' },
+        '@PV@': { sex: 'F' }, '@PC@': { sex: 'F' },
+        '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: {
+        '@V@': [null, '@PV@'], '@C@': [null, '@PC@'],
+        '@PV@': ['@GPA@', '@GMA@'], '@PC@': ['@GPA@', '@GMA@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@PC@': ['@C@'],
+        '@GMA@': ['@PV@', '@PC@'], '@GPA@': ['@PV@', '@PC@'],
+      },
+    });
+    expect(computeRelationship('@V@', '@C@', c).label).toBe('1st Cousin and Godmother');
+  });
+
+  it('Sister-in-law and Godmother (atomic affinity + direct godparent)', () => {
+    const c = ctx({
+      people: {
+        '@V@':   { events: [evt('BAPM', '@SIS@', 'Godmother')] },
+        '@SP@':  { sex: 'F' },
+        '@SIS@': { sex: 'F' },
+        '@SM@':  { sex: 'F' },
+      },
+      parents: { '@SP@': [null, '@SM@'], '@SIS@': [null, '@SM@'] },
+      children: { '@SM@': ['@SP@', '@SIS@'] },
+      relatives: { '@V@': { spouses: ['@SP@'] }, '@SP@': { spouses: ['@V@'] } },
+    });
+    expect(computeRelationship('@V@', '@SIS@', c).label).toBe('Sister-in-law and Godmother');
+  });
+
+  it('Composed (distant) kin + direct godparent → godparent only', () => {
+    // O is V's cousin's wife (composed kin "Wife of 1st Cousin") AND V's godmother.
+    // Rule: composed kin + atomic godparent → just "Godmother".
+    const c = ctx({
+      people: {
+        '@V@': { events: [evt('BAPM', '@O@', 'Godmother')] },
+        '@C@': { sex: 'F' },
+        '@O@': { sex: 'F' },
+        '@PV@': { sex: 'F' }, '@PC@': { sex: 'F' },
+        '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: {
+        '@V@': [null, '@PV@'], '@C@': [null, '@PC@'],
+        '@PV@': ['@GPA@', '@GMA@'], '@PC@': ['@GPA@', '@GMA@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@PC@': ['@C@'],
+        '@GMA@': ['@PV@', '@PC@'], '@GPA@': ['@PV@', '@PC@'],
+      },
+      relatives: { '@C@': { spouses: ['@O@'] }, '@O@': { spouses: ['@C@'] } },
+    });
+    expect(computeRelationship('@V@', '@O@', c).label).toBe('Godmother');
+  });
+
+  it('No godparent: plain Uncle (regression)', () => {
+    const c = ctx({
+      people: {
+        '@V@': {},
+        '@U@': { sex: 'M' },
+        '@PV@': { sex: 'F' }, '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: { '@V@': [null, '@PV@'], '@PV@': ['@GPA@', '@GMA@'], '@U@': ['@GPA@', '@GMA@'] },
+      children: { '@PV@': ['@V@'], '@GMA@': ['@PV@', '@U@'], '@GPA@': ['@PV@', '@U@'] },
+    });
+    expect(computeRelationship('@V@', '@U@', c).label).toBe('Uncle');
+  });
+});
+
+describe('enumerateRelationships', () => {
+  it('returns blood + godparent for an uncle who is also godfather', () => {
+    const c = ctx({
+      people: {
+        '@V@': { events: [{ tag: 'BAPM', asso: [{ xref: '@U@', rela: 'Godfather' }] }] },
+        '@U@': { sex: 'M' },
+        '@PV@': { sex: 'F' }, '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: { '@V@': [null, '@PV@'], '@PV@': ['@GPA@', '@GMA@'], '@U@': ['@GPA@', '@GMA@'] },
+      children: { '@PV@': ['@V@'], '@GMA@': ['@PV@', '@U@'], '@GPA@': ['@PV@', '@U@'] },
+    });
+    const rels = enumerateRelationships('@V@', '@U@', c);
+    const kinds = rels.map(r => r.kind).sort();
+    expect(kinds).toEqual(['blood', 'godparent']);
+    expect(rels.find(r => r.kind === 'blood').label).toBe('Uncle');
+    expect(rels.find(r => r.kind === 'godparent').label).toBe('Godfather');
+  });
+
+  it('returns only godparent when no kin relationship', () => {
+    const c = ctx({
+      people: {
+        '@V@':  { events: [{ tag: 'BAPM', asso: [{ xref: '@GM@', rela: 'Godmother' }] }] },
+        '@GM@': { sex: 'F' },
+      },
+    });
+    const rels = enumerateRelationships('@V@', '@GM@', c);
+    expect(rels.map(r => r.kind)).toEqual(['godparent']);
+    expect(rels[0].label).toBe('Godmother');
+  });
+
+  it('returns empty array for unrelated people', () => {
+    const c = ctx({ people: { '@V@': {}, '@X@': {} } });
+    expect(enumerateRelationships('@V@', '@X@', c)).toEqual([]);
   });
 });
 
