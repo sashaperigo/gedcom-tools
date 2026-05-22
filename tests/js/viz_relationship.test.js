@@ -947,3 +947,24 @@ describe('computeRelationship — unrelated', () => {
     expect(computeRelationship('@V@', '@X@', c)).toBeNull();
   });
 });
+
+describe('computeRelationship — affinity: date-aware step relabeling', () => {
+  it('Wife of Father when father remarried after prior wife (marriage-ordering signal)', () => {
+    // DAD married S1 in F1 (1900). DAD later married BIOMOM in F2 (1910). V is child of F2.
+    // S1 is "Wife of Father", not "Step-Mother".
+    const c = ctx({
+      people: {
+        '@V@': {}, '@DAD@': { sex: 'M' },
+        '@BIOMOM@': { sex: 'F' }, '@S1@': { sex: 'F' },
+      },
+      parents: { '@V@': ['@DAD@', '@BIOMOM@'] },
+      children: { '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'] },
+      relatives: { '@DAD@': { spouses: ['@S1@', '@BIOMOM@'] }, '@S1@': { spouses: ['@DAD@'] } },
+      families: {
+        '@F1@': { husb: '@DAD@', wife: '@S1@',    chil: [],     marr_year: 1900 },
+        '@F2@': { husb: '@DAD@', wife: '@BIOMOM@', chil: ['@V@'], marr_year: 1910 },
+      },
+    });
+    expect(computeRelationship('@V@', '@S1@', c).label).toBe('Wife of Father');
+  });
+});
