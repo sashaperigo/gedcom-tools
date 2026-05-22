@@ -967,4 +967,24 @@ describe('computeRelationship — affinity: date-aware step relabeling', () => {
     });
     expect(computeRelationship('@V@', '@S1@', c).label).toBe('Wife of Father');
   });
+
+  it('Husband of Mother when mother\'s prior husband died before viewer was born', () => {
+    // MOM married S1; S1 died 1890. MOM then had V in 1900 with DAD.
+    const c = ctx({
+      people: {
+        '@V@':   { birth_year: 1900 },
+        '@MOM@': { sex: 'F' },
+        '@DAD@': { sex: 'M' },
+        '@S1@':  { sex: 'M', death_year: 1890 },
+      },
+      parents: { '@V@': ['@DAD@', '@MOM@'] },
+      children: { '@MOM@': ['@V@'], '@DAD@': ['@V@'] },
+      relatives: { '@MOM@': { spouses: ['@S1@', '@DAD@'] }, '@S1@': { spouses: ['@MOM@'] } },
+      families: {
+        '@F1@': { husb: '@S1@',  wife: '@MOM@', chil: [],     marr_year: null },
+        '@F2@': { husb: '@DAD@', wife: '@MOM@', chil: ['@V@'], marr_year: null },
+      },
+    });
+    expect(computeRelationship('@V@', '@S1@', c).label).toBe('Husband of Mother');
+  });
 });
