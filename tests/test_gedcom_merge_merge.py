@@ -1036,6 +1036,127 @@ class TestSortEvents:
         assert len(issues) == 1
         assert '@I1@' in issues[0]
 
+    def test_sort_events_preserves_citation_note_and_quay(self, tmp_path):
+        """fix_sort_events round-trips through parse/write; citation NOTE and
+        QUAY sub-tags must be preserved (regression: previously dropped because
+        _serialize_citation only emitted SOUR/PAGE/DATA from typed fields)."""
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+        from gedcom_linter import fix_sort_events
+        ged_text = (
+            '0 HEAD\n'
+            '1 GEDC\n'
+            '2 VERS 5.5.1\n'
+            '2 FORM LINEAGE-LINKED\n'
+            '1 CHAR UTF-8\n'
+            '1 SUBM @U1@\n'
+            '0 @U1@ SUBM\n'
+            '1 NAME Test\n'
+            '0 @S1@ SOUR\n'
+            '1 TITL A Source\n'
+            '0 @I1@ INDI\n'
+            '1 NAME Test /Person/\n'
+            '1 DEAT\n'
+            '2 DATE 1 JAN 1980\n'
+            '1 BIRT\n'
+            '2 DATE 1 JAN 1900\n'
+            '1 SOUR @S1@\n'
+            '2 PAGE p. 42\n'
+            '2 DATA\n'
+            '3 DATE 1900\n'
+            '3 TEXT verbatim source quote\n'
+            '2 NOTE retrieval method or researcher note\n'
+            '2 QUAY 2\n'
+            '0 TRLR\n'
+        )
+        out = tmp_path / 'test.ged'
+        out.write_text(ged_text, encoding='utf-8')
+        # fix_sort_events will round-trip the file because BIRT/DEAT are out of order
+        changed = fix_sort_events(str(out))
+        assert changed >= 1  # something was reordered
+        result = out.read_text(encoding='utf-8')
+        assert '2 NOTE retrieval method' in result, (
+            'citation NOTE was dropped by parser/writer round-trip')
+        assert '2 QUAY 2' in result, (
+            'citation QUAY was dropped by parser/writer round-trip')
+
+    def test_sort_events_preserves_event_citation_note_and_quay(self, tmp_path):
+        """Same preservation for citations nested under an event (3 NOTE / 3 QUAY)."""
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+        from gedcom_linter import fix_sort_events
+        ged_text = (
+            '0 HEAD\n'
+            '1 GEDC\n'
+            '2 VERS 5.5.1\n'
+            '2 FORM LINEAGE-LINKED\n'
+            '1 CHAR UTF-8\n'
+            '1 SUBM @U1@\n'
+            '0 @U1@ SUBM\n'
+            '1 NAME Test\n'
+            '0 @S1@ SOUR\n'
+            '1 TITL A Source\n'
+            '0 @I1@ INDI\n'
+            '1 NAME Test /Person/\n'
+            '1 DEAT\n'
+            '2 DATE 1 JAN 1980\n'
+            '1 BIRT\n'
+            '2 DATE 1 JAN 1900\n'
+            '2 SOUR @S1@\n'
+            '3 PAGE birth record p. 1\n'
+            '3 DATA\n'
+            '4 DATE 1900\n'
+            '4 TEXT verbatim birth entry\n'
+            '3 NOTE retrieval method\n'
+            '3 QUAY 3\n'
+            '0 TRLR\n'
+        )
+        out = tmp_path / 'test.ged'
+        out.write_text(ged_text, encoding='utf-8')
+        fix_sort_events(str(out))
+        result = out.read_text(encoding='utf-8')
+        assert '3 NOTE retrieval method' in result
+        assert '3 QUAY 3' in result
+
+
+class TestSerializeCitation:
+    """Tests for _serialize_citation in gedcom_merge.writer — ensures citation
+    children other than PAGE/DATA (e.g. NOTE, QUAY, OBJE) are preserved through
+    a parse/write round-trip."""
+
+    def test_citation_note_and_quay_preserved(self, tmp_path):
+        """A parsed citation with a NOTE and QUAY round-trips through write_gedcom."""
+        from gedcom_merge.parser import parse_gedcom
+        from gedcom_merge.writer import write_gedcom
+        ged_text = (
+            '0 HEAD\n'
+            '1 GEDC\n'
+            '2 VERS 5.5.1\n'
+            '2 FORM LINEAGE-LINKED\n'
+            '1 CHAR UTF-8\n'
+            '1 SUBM @U1@\n'
+            '0 @U1@ SUBM\n'
+            '1 NAME Test\n'
+            '0 @S1@ SOUR\n'
+            '1 TITL A Source\n'
+            '0 @I1@ INDI\n'
+            '1 NAME Test /Person/\n'
+            '1 SOUR @S1@\n'
+            '2 PAGE p. 42\n'
+            '2 NOTE retrieval method or researcher note\n'
+            '2 QUAY 2\n'
+            '0 TRLR\n'
+        )
+        src = tmp_path / 'src.ged'
+        src.write_text(ged_text, encoding='utf-8')
+        gf = parse_gedcom(str(src))
+        dst = tmp_path / 'dst.ged'
+        write_gedcom(gf, str(dst))
+        result = dst.read_text(encoding='utf-8')
+        assert '2 PAGE p. 42' in result
+        assert '2 NOTE retrieval method' in result
+        assert '2 QUAY 2' in result
+
 
 class TestDeduplicateDuplicateNames:
     def test_removes_exact_string_duplicate(self):

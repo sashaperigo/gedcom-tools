@@ -167,6 +167,14 @@ def _serialize_citation(cit: CitationRecord, level: int) -> list[str]:
         for tag, val in cit.data.items():
             if val:
                 lines.extend(_line(level + 2, tag, val))
+    # Preserve other citation children (NOTE, QUAY, OBJE, etc.) from raw.
+    # PAGE and DATA are already emitted from typed fields above.
+    handled = {'PAGE', 'DATA'}
+    if cit.raw is not None:
+        for child in cit.raw.children:
+            if child.tag in handled:
+                continue
+            lines.extend(_serialize_node(child, override_level=level + 1))
     return lines
 
 
