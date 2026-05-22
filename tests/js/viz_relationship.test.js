@@ -987,4 +987,18 @@ describe('computeRelationship — affinity: date-aware step relabeling', () => {
     });
     expect(computeRelationship('@V@', '@S1@', c).label).toBe('Husband of Mother');
   });
+
+  it('keeps Step-Mother when no date evidence is available', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@DAD@': { sex: 'M' }, '@BIOMOM@': { sex: 'F' }, '@S1@': { sex: 'F' } },
+      parents: { '@V@': ['@DAD@', '@BIOMOM@'] },
+      children: { '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'] },
+      relatives: { '@DAD@': { spouses: ['@S1@', '@BIOMOM@'] }, '@S1@': { spouses: ['@DAD@'] } },
+      families: {
+        '@F1@': { husb: '@DAD@', wife: '@S1@',    chil: [] },
+        '@F2@': { husb: '@DAD@', wife: '@BIOMOM@', chil: ['@V@'] },
+      },
+    });
+    expect(computeRelationship('@V@', '@S1@', c).label).toBe('Step-Mother');
+  });
 });
