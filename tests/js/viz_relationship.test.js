@@ -1001,4 +1001,25 @@ describe('computeRelationship — affinity: date-aware step relabeling', () => {
     });
     expect(computeRelationship('@V@', '@S1@', c).label).toBe('Step-Mother');
   });
+
+  it('Daughter of Wife when viewer\'s prior wife had a daughter with a later spouse', () => {
+    // V married W1 in F1 (1900). W1 later married SX in F2 (1910), and D is their child.
+    // From V's perspective, D should be "Daughter of Wife", not "Step-Daughter".
+    const c = ctx({
+      people: {
+        '@V@':  { sex: 'M' },
+        '@W1@': { sex: 'F' },
+        '@SX@': { sex: 'M' },
+        '@D@':  { sex: 'F' },
+      },
+      parents: { '@D@': ['@SX@', '@W1@'] },
+      children: { '@W1@': ['@D@'], '@SX@': ['@D@'] },
+      relatives: { '@V@': { spouses: ['@W1@'] }, '@W1@': { spouses: ['@V@', '@SX@'] } },
+      families: {
+        '@F1@': { husb: '@V@',  wife: '@W1@', chil: [],    marr_year: 1900 },
+        '@F2@': { husb: '@SX@', wife: '@W1@', chil: ['@D@'], marr_year: 1910 },
+      },
+    });
+    expect(computeRelationship('@V@', '@D@', c).label).toBe('Daughter of Wife');
+  });
 });

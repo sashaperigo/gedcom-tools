@@ -300,6 +300,12 @@ function findAtomicAffinity(viewer, other, ctx) {
   for (const sp of viewerSpouses) {
     const spChildren = ctx.CHILDREN[sp] || [];
     if (spChildren.includes(other) && !viewerChildren.includes(other)) {
+      if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
+        const spSex      = (ctx.PEOPLE[sp]    || {}).sex || null;
+        const childLabel = gendered(otherSex, 'Son', 'Daughter', 'Child');
+        const spouseVerb = gendered(spSex,    'Husband', 'Wife', 'Spouse');
+        return { label: `${childLabel} of ${spouseVerb}`, edges: 2 };
+      }
       return { label: gendered(otherSex, 'Step-Son', 'Step-Daughter', 'Step-Child'), edges: 2 };
     }
   }
