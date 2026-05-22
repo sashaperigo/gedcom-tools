@@ -65,6 +65,37 @@ function personMatches(parsed, qNorm) {
         dispWords.some(w => w.startsWith(qFirst));
 }
 
+// Lower score = better match. Tiers:
+//   1 exact first-name, 2 exact last/nickname, 3 starts-with first,
+//   4 starts-with last/nickname, 5 substring only.
+// For multi-token queries, score against the first token.
+function matchScore(parsed, qNorm) {
+    const q = qNorm.split(' ').filter(Boolean)[0] || qNorm;
+    if (parsed.normFirst === q) return 1;
+    if (parsed.normLast === q || parsed.normNicks.some(n => n === q)) return 2;
+    if (parsed.normFirst.startsWith(q)) return 3;
+    if (parsed.normLast.startsWith(q) || parsed.normNicks.some(n => n.startsWith(q))) return 4;
+    return 5;
+}
+
+// Estimate DOB for sorting: birth_year, else death_year - 70, else Infinity.
+function estDob(p) {
+    if (p.birth_year) return p.birth_year;
+    if (p.death_year) return p.death_year - 70;
+    return Infinity;
+}
+
+function sortHits(hits, qNorm) {
+    return hits.slice().sort((a, b) => {
+        const pa = getParsed(a), pb = getParsed(b);
+        const sa = matchScore(pa, qNorm), sb = matchScore(pb, qNorm);
+        if (sa !== sb) return sa - sb;
+        if (pa.normLast !== pb.normLast) return pa.normLast < pb.normLast ? -1 : 1;
+        if (pa.normFirst !== pb.normFirst) return pa.normFirst < pb.normFirst ? -1 : 1;
+        return estDob(a) - estDob(b);
+    });
+}
+
 // Build innerHTML with query tokens bolded in displayStr.
 // normDispStr and displayStr must have equal .length (guaranteed by our parsing).
 function highlightName(displayStr, normDispStr, qNorm) {
@@ -142,7 +173,7 @@ if (typeof document !== 'undefined') {
             const qNorm = normSearch(input.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
             if (!qNorm) { list.classList.remove('open');
                 list.innerHTML = ''; return; }
-            const hits = ALL_PEOPLE.filter(p => personMatches(getParsed(p), qNorm)).slice(0, 20);
+            const hits = sortHits(ALL_PEOPLE.filter(p => personMatches(getParsed(p), qNorm)), qNorm);
             renderResults(hits, qNorm);
         });
 
@@ -170,5 +201,5 @@ if (typeof document !== 'undefined') {
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined') {
-    module.exports = { stripAccents, normSearch, getParsed, personMatches, highlightName };
+    module.exports = { stripAccents, normSearch, getParsed, personMatches, highlightName, matchScore, estDob, sortHits };
 }

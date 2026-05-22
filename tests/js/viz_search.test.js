@@ -13,6 +13,9 @@ const {
     getParsed,
     personMatches,
     highlightName,
+    matchScore,
+    estDob,
+    sortHits,
 } = require('../../js/viz_search.js');
 
 // ── stripAccents / normSearch ──────────────────────────────────────────────
@@ -113,6 +116,84 @@ describe('personMatches', () => {
 
     it('no match for unrelated query', () => {
         expect(match('a', 'zzznomatch')).toBe(false);
+    });
+});
+
+// ── matchScore / estDob / sortHits ─────────────────────────────────────────
+
+describe('matchScore', () => {
+    const score = (name, q) => matchScore(getParsed({ id: name, name }), normSearch(q));
+
+    it('tier 1: exact first-name match', () => {
+        expect(score('John Smith', 'john')).toBe(1);
+    });
+
+    it('tier 2: exact last-name or nickname match', () => {
+        expect(score('Mary Johnson', 'johnson')).toBe(2);
+        expect(score('William "Bill" Jones', 'bill')).toBe(2);
+    });
+
+    it('tier 3: starts-with on first name', () => {
+        expect(score('Johnny Aslanidis', 'john')).toBe(3);
+        expect(score('Johnathan Reeves', 'john')).toBe(3);
+    });
+
+    it('tier 4: starts-with on last name or nickname', () => {
+        expect(score('Mary Johnson', 'john')).toBe(4);
+    });
+
+    it('tier 5: substring only', () => {
+        expect(score('Aaron Stjohnson', 'john')).toBe(5);
+    });
+
+    it('multi-token query scores by first token vs first name', () => {
+        expect(score('John Papadopoulos', 'john pap')).toBe(1);
+        expect(score('Johnny Papadakis', 'john pap')).toBe(3);
+    });
+});
+
+describe('estDob', () => {
+    it('returns birth_year when present', () => {
+        expect(estDob({ birth_year: 1900, death_year: 1980 })).toBe(1900);
+    });
+
+    it('estimates as death_year - 70 when only DOD present', () => {
+        expect(estDob({ death_year: 1980 })).toBe(1910);
+    });
+
+    it('returns Infinity when neither present', () => {
+        expect(estDob({})).toBe(Infinity);
+    });
+});
+
+describe('sortHits', () => {
+    it('orders by tier then alphabetical last, first', () => {
+        const people = [
+            { id: '1', name: 'John Smith' },
+            { id: '2', name: 'John Papadopoulos' },
+            { id: '3', name: 'Johnny Aslanidis' },
+            { id: '4', name: 'Mary Johnson' },
+        ];
+        const sorted = sortHits(people, normSearch('john'));
+        expect(sorted.map(p => p.id)).toEqual(['2', '1', '3', '4']);
+    });
+
+    it('uses estimated DOB as final tiebreaker (older first)', () => {
+        const people = [
+            { id: 'young', name: 'John Smith', birth_year: 1950 },
+            { id: 'old', name: 'John Smith', birth_year: 1850 },
+        ];
+        const sorted = sortHits(people, normSearch('john'));
+        expect(sorted.map(p => p.id)).toEqual(['old', 'young']);
+    });
+
+    it('uses DOD-70 estimate when DOB missing', () => {
+        const people = [
+            { id: 'dob1900', name: 'John Smith', birth_year: 1900 },
+            { id: 'dod1960', name: 'John Smith', death_year: 1960 }, // est 1890
+        ];
+        const sorted = sortHits(people, normSearch('john'));
+        expect(sorted.map(p => p.id)).toEqual(['dod1960', 'dob1900']);
     });
 });
 
