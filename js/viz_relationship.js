@@ -236,6 +236,40 @@ function getSpousesOf(xref, ctx) {
   return spouses;
 }
 
+function _findSpouseFamily(a, b, ctx) {
+  for (const fam of Object.values(ctx.FAMILIES || {})) {
+    if ((fam.husb === a && fam.wife === b) || (fam.husb === b && fam.wife === a)) return fam;
+  }
+  return null;
+}
+
+function _findChildFamily(parentXref, childXref, ctx) {
+  for (const fam of Object.values(ctx.FAMILIES || {})) {
+    if ((fam.husb === parentXref || fam.wife === parentXref)
+        && (fam.chil || []).includes(childXref)) return fam;
+  }
+  return null;
+}
+
+// True iff we have positive date evidence that `spouse` and `child` never overlapped
+// as a real step-relation through their shared person `bioParent`. Either:
+//   (1) spouse↔bioParent marriage predates bioParent's marriage that produced child, or
+//   (2) spouse died before child was born.
+// Missing dates ⇒ false (keep the existing "Step-" label).
+function _isFormerOrPredeceasedStep(spouse, bioParent, child, ctx) {
+  const stepFam  = _findSpouseFamily(spouse, bioParent, ctx);
+  const childFam = _findChildFamily(bioParent, child, ctx);
+  if (stepFam && childFam
+      && stepFam.marr_year != null && childFam.marr_year != null
+      && stepFam.marr_year < childFam.marr_year) return true;
+
+  const spouseDeath = (ctx.PEOPLE[spouse] || {}).death_year;
+  const childBirth  = (ctx.PEOPLE[child]  || {}).birth_year;
+  if (spouseDeath != null && childBirth != null && spouseDeath < childBirth) return true;
+
+  return false;
+}
+
 // Returns {label, edges} for an atomic affinity (no "of" composition) between viewer and other.
 // Edges counts graph hops on the kinship graph (parent/child/spouse).
 function findAtomicAffinity(viewer, other, ctx) {
@@ -251,6 +285,12 @@ function findAtomicAffinity(viewer, other, ctx) {
   // Tier 2: step-parent (up + across, 2 edges)
   for (const par of viewerParents) {
     if (getSpousesOf(par, ctx).includes(other) && !viewerParents.includes(other)) {
+      if (_isFormerOrPredeceasedStep(other, par, viewer, ctx)) {
+        const parSex     = (ctx.PEOPLE[par]   || {}).sex || null;
+        const spouseVerb = gendered(otherSex, 'Husband', 'Wife', 'Spouse');
+        const parLabel   = gendered(parSex,   'Father', 'Mother', 'Parent');
+        return { label: `${spouseVerb} of ${parLabel}`, edges: 2 };
+      }
       return { label: gendered(otherSex, 'Step-Father', 'Step-Mother', 'Step-Parent'), edges: 2 };
     }
   }
@@ -260,6 +300,12 @@ function findAtomicAffinity(viewer, other, ctx) {
   for (const sp of viewerSpouses) {
     const spChildren = ctx.CHILDREN[sp] || [];
     if (spChildren.includes(other) && !viewerChildren.includes(other)) {
+      if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
+        const spSex      = (ctx.PEOPLE[sp]    || {}).sex || null;
+        const childLabel = gendered(otherSex, 'Son', 'Daughter', 'Child');
+        const spouseVerb = gendered(spSex,    'Husband', 'Wife', 'Spouse');
+        return { label: `${childLabel} of ${spouseVerb}`, edges: 2 };
+      }
       return { label: gendered(otherSex, 'Step-Son', 'Step-Daughter', 'Step-Child'), edges: 2 };
     }
   }
@@ -467,6 +513,12 @@ function findAffinityLabel(viewer, other, ctx) {
     const parentSpouses = getSpousesOf(par, ctx);
     if (parentSpouses.includes(other) && !viewerParents.includes(other)) {
       const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      if (_isFormerOrPredeceasedStep(other, par, viewer, ctx)) {
+        const parSex     = (ctx.PEOPLE[par] || {}).sex || null;
+        const spouseVerb = gendered(sex,    'Husband', 'Wife', 'Spouse');
+        const parLabel   = gendered(parSex, 'Father', 'Mother', 'Parent');
+        return `${spouseVerb} of ${parLabel}`;
+      }
       return gendered(sex, 'Step-Father', 'Step-Mother', 'Step-Parent');
     }
   }
@@ -477,6 +529,12 @@ function findAffinityLabel(viewer, other, ctx) {
     const spChildren = ctx.CHILDREN[sp] || [];
     if (spChildren.includes(other) && !viewerChildren.includes(other)) {
       const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
+        const spSex      = (ctx.PEOPLE[sp] || {}).sex || null;
+        const childLabel = gendered(sex,   'Son', 'Daughter', 'Child');
+        const spouseVerb = gendered(spSex, 'Husband', 'Wife', 'Spouse');
+        return `${childLabel} of ${spouseVerb}`;
+      }
       return gendered(sex, 'Step-Son', 'Step-Daughter', 'Step-Child');
     }
   }

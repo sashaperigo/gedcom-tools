@@ -947,3 +947,114 @@ describe('computeRelationship — unrelated', () => {
     expect(computeRelationship('@V@', '@X@', c)).toBeNull();
   });
 });
+
+describe('computeRelationship — affinity: date-aware step relabeling', () => {
+  it('Wife of Father when father remarried after prior wife (marriage-ordering signal)', () => {
+    // DAD married S1 in F1 (1900). DAD later married BIOMOM in F2 (1910). V is child of F2.
+    // S1 is "Wife of Father", not "Step-Mother".
+    const c = ctx({
+      people: {
+        '@V@': {}, '@DAD@': { sex: 'M' },
+        '@BIOMOM@': { sex: 'F' }, '@S1@': { sex: 'F' },
+      },
+      parents: { '@V@': ['@DAD@', '@BIOMOM@'] },
+      children: { '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'] },
+      relatives: { '@DAD@': { spouses: ['@S1@', '@BIOMOM@'] }, '@S1@': { spouses: ['@DAD@'] } },
+      families: {
+        '@F1@': { husb: '@DAD@', wife: '@S1@',    chil: [],     marr_year: 1900 },
+        '@F2@': { husb: '@DAD@', wife: '@BIOMOM@', chil: ['@V@'], marr_year: 1910 },
+      },
+    });
+    expect(computeRelationship('@V@', '@S1@', c).label).toBe('Wife of Father');
+  });
+
+  it('Husband of Mother when mother\'s prior husband died before viewer was born', () => {
+    // MOM married S1; S1 died 1890. MOM then had V in 1900 with DAD.
+    const c = ctx({
+      people: {
+        '@V@':   { birth_year: 1900 },
+        '@MOM@': { sex: 'F' },
+        '@DAD@': { sex: 'M' },
+        '@S1@':  { sex: 'M', death_year: 1890 },
+      },
+      parents: { '@V@': ['@DAD@', '@MOM@'] },
+      children: { '@MOM@': ['@V@'], '@DAD@': ['@V@'] },
+      relatives: { '@MOM@': { spouses: ['@S1@', '@DAD@'] }, '@S1@': { spouses: ['@MOM@'] } },
+      families: {
+        '@F1@': { husb: '@S1@',  wife: '@MOM@', chil: [],     marr_year: null },
+        '@F2@': { husb: '@DAD@', wife: '@MOM@', chil: ['@V@'], marr_year: null },
+      },
+    });
+    expect(computeRelationship('@V@', '@S1@', c).label).toBe('Husband of Mother');
+  });
+
+  it('keeps Step-Mother when no date evidence is available', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@DAD@': { sex: 'M' }, '@BIOMOM@': { sex: 'F' }, '@S1@': { sex: 'F' } },
+      parents: { '@V@': ['@DAD@', '@BIOMOM@'] },
+      children: { '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'] },
+      relatives: { '@DAD@': { spouses: ['@S1@', '@BIOMOM@'] }, '@S1@': { spouses: ['@DAD@'] } },
+      families: {
+        '@F1@': { husb: '@DAD@', wife: '@S1@',    chil: [] },
+        '@F2@': { husb: '@DAD@', wife: '@BIOMOM@', chil: ['@V@'] },
+      },
+    });
+    expect(computeRelationship('@V@', '@S1@', c).label).toBe('Step-Mother');
+  });
+
+  it('Daughter of Wife when viewer\'s prior wife had a daughter with a later spouse', () => {
+    // V married W1 in F1 (1900). W1 later married SX in F2 (1910), and D is their child.
+    // From V's perspective, D should be "Daughter of Wife", not "Step-Daughter".
+    const c = ctx({
+      people: {
+        '@V@':  { sex: 'M' },
+        '@W1@': { sex: 'F' },
+        '@SX@': { sex: 'M' },
+        '@D@':  { sex: 'F' },
+      },
+      parents: { '@D@': ['@SX@', '@W1@'] },
+      children: { '@W1@': ['@D@'], '@SX@': ['@D@'] },
+      relatives: { '@V@': { spouses: ['@W1@'] }, '@W1@': { spouses: ['@V@', '@SX@'] } },
+      families: {
+        '@F1@': { husb: '@V@',  wife: '@W1@', chil: [],    marr_year: 1900 },
+        '@F2@': { husb: '@SX@', wife: '@W1@', chil: ['@D@'], marr_year: 1910 },
+      },
+    });
+    expect(computeRelationship('@V@', '@D@', c).label).toBe('Daughter of Wife');
+  });
+
+  it('Son of Husband when viewer died before husband had a later child', () => {
+    // V married H1; V died 1890. H1 later had S2 (born 1900) with PX.
+    // From V's perspective, S2 should be "Son of Husband".
+    const c = ctx({
+      people: {
+        '@V@':  { sex: 'F', death_year: 1890 },
+        '@H1@': { sex: 'M' },
+        '@PX@': { sex: 'F' },
+        '@S2@': { sex: 'M', birth_year: 1900 },
+      },
+      parents: { '@S2@': ['@H1@', '@PX@'] },
+      children: { '@H1@': ['@S2@'], '@PX@': ['@S2@'] },
+      relatives: { '@V@': { spouses: ['@H1@'] }, '@H1@': { spouses: ['@V@', '@PX@'] } },
+      families: {
+        '@F1@': { husb: '@H1@', wife: '@V@',  chil: [] },
+        '@F2@': { husb: '@H1@', wife: '@PX@', chil: ['@S2@'] },
+      },
+    });
+    expect(computeRelationship('@V@', '@S2@', c).label).toBe('Son of Husband');
+  });
+
+  it('keeps Step-Daughter when no date evidence is available', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'M' }, '@SP@': { sex: 'F' }, '@SD@': { sex: 'F' }, '@SDX@': { sex: 'M' } },
+      parents: { '@SD@': ['@SDX@', '@SP@'] },
+      children: { '@SP@': ['@SD@'], '@SDX@': ['@SD@'] },
+      relatives: { '@V@': { spouses: ['@SP@'] }, '@SP@': { spouses: ['@V@', '@SDX@'] } },
+      families: {
+        '@F1@': { husb: '@V@',   wife: '@SP@', chil: [] },
+        '@F2@': { husb: '@SDX@', wife: '@SP@', chil: ['@SD@'] },
+      },
+    });
+    expect(computeRelationship('@V@', '@SD@', c).label).toBe('Step-Daughter');
+  });
+});
