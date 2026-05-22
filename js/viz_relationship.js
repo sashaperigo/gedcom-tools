@@ -513,6 +513,12 @@ function findAffinityLabel(viewer, other, ctx) {
     const parentSpouses = getSpousesOf(par, ctx);
     if (parentSpouses.includes(other) && !viewerParents.includes(other)) {
       const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      if (_isFormerOrPredeceasedStep(other, par, viewer, ctx)) {
+        const parSex     = (ctx.PEOPLE[par] || {}).sex || null;
+        const spouseVerb = gendered(sex,    'Husband', 'Wife', 'Spouse');
+        const parLabel   = gendered(parSex, 'Father', 'Mother', 'Parent');
+        return `${spouseVerb} of ${parLabel}`;
+      }
       return gendered(sex, 'Step-Father', 'Step-Mother', 'Step-Parent');
     }
   }
@@ -523,6 +529,12 @@ function findAffinityLabel(viewer, other, ctx) {
     const spChildren = ctx.CHILDREN[sp] || [];
     if (spChildren.includes(other) && !viewerChildren.includes(other)) {
       const sex = (ctx.PEOPLE[other] || {}).sex || null;
+      if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
+        const spSex      = (ctx.PEOPLE[sp] || {}).sex || null;
+        const childLabel = gendered(sex,   'Son', 'Daughter', 'Child');
+        const spouseVerb = gendered(spSex, 'Husband', 'Wife', 'Spouse');
+        return `${childLabel} of ${spouseVerb}`;
+      }
       return gendered(sex, 'Step-Son', 'Step-Daughter', 'Step-Child');
     }
   }
