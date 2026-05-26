@@ -40,5 +40,5 @@ function buildFilterChipsHTML(criteria) {
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { buildFilterChipsHTML, escapeHtml };
+    module.exports = { buildFilterChipsHTML };
 }
