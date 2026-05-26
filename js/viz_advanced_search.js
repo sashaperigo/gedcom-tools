@@ -378,6 +378,7 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
             evtPills.querySelectorAll('.adv-pill').forEach(p => p.classList.remove('disabled'));
             famPills.querySelectorAll('.adv-pill').forEach(p => p.classList.remove('disabled'));
             updateCount();
+            setMode('form');
         });
 
         // ── Results-mode rendering ─────────────────────────────────────
