@@ -172,6 +172,236 @@ function runAdvancedSearch(query, allPeople, ctx) {
     });
 }
 
+// ───────────────────────────────────────────────────────────────────────
+// DOM controller (browser only) — exercised manually, not via tests.
+// ───────────────────────────────────────────────────────────────────────
+
+if (typeof document !== 'undefined' && document.getElementById('adv-search-pane')) {
+    (function () {
+        const pane    = document.getElementById('adv-search-pane');
+        const toggle  = document.getElementById('advanced-search-toggle');
+        const closeBt = document.getElementById('adv-pane-close');
+        const evtPills   = document.getElementById('adv-event-pills');
+        const evtSects   = document.getElementById('adv-event-sections');
+        const famPills   = document.getElementById('adv-family-pills');
+        const famSects   = document.getElementById('adv-family-sections');
+        const searchBtn  = document.getElementById('adv-search-btn');
+        const clearBtn   = document.getElementById('adv-clear-btn');
+        const resultsEl  = document.getElementById('adv-results');
+        const firstName  = document.getElementById('adv-first-name');
+        const lastName   = document.getElementById('adv-last-name');
+        const sexM       = document.getElementById('adv-sex-m');
+        const sexF       = document.getElementById('adv-sex-f');
+
+        // Build the relationship index once.
+        const relIndex = buildRelIndex(FAMILIES, PARENTS);
+        const ctx = { PARENTS, PEOPLE_BY_ID: PEOPLE, relIndex };
+
+        const eventSections = [];
+        const familySections = [];
+
+        toggle.addEventListener('click', () => { pane.hidden = false; });
+        closeBt.addEventListener('click', () => { pane.hidden = true; });
+
+        evtPills.addEventListener('click', e => {
+            const pill = e.target.closest('.adv-pill');
+            if (!pill || pill.classList.contains('disabled')) return;
+            addEventSection(pill.dataset.kind);
+        });
+        famPills.addEventListener('click', e => {
+            const pill = e.target.closest('.adv-pill');
+            if (!pill || pill.classList.contains('disabled')) return;
+            addFamilySection(pill.dataset.kind);
+        });
+
+        function setPillDisabled(row, kind, disabled) {
+            const pill = row.querySelector(`.adv-pill[data-kind="${kind}"]`);
+            if (pill) pill.classList.toggle('disabled', disabled);
+        }
+
+        function addEventSection(kind) {
+            if (kind !== 'any') setPillDisabled(evtPills, kind, true);
+            const labels = { birth: 'Birth', marriage: 'Marriage', residence: 'Residence', death: 'Death', any: 'Any event' };
+            const wrap = document.createElement('div');
+            wrap.className = 'adv-section';
+            wrap.innerHTML = `
+                <button class="adv-x" type="button" title="Remove">×</button>
+                <h4>${labels[kind]}</h4>
+                <label>Place</label>
+                <input type="text" class="adv-place" placeholder="City, region, country">
+                <label>Year</label>
+                <div class="adv-yearrow">
+                    <input type="text" class="adv-from" placeholder="From" inputmode="numeric">
+                    <span class="adv-sep">–</span>
+                    <input type="text" class="adv-to" placeholder="To" inputmode="numeric">
+                </div>
+                <div class="adv-hint">Leave From blank for "To or earlier." Same year in both = exact match.</div>
+            `;
+            const entry = { kind, node: wrap };
+            wrap.querySelector('.adv-x').addEventListener('click', () => {
+                wrap.remove();
+                const i = eventSections.indexOf(entry);
+                if (i >= 0) eventSections.splice(i, 1);
+                if (kind !== 'any') setPillDisabled(evtPills, kind, false);
+                updateCount();
+            });
+            wrap.addEventListener('input', updateCount);
+            evtSects.appendChild(wrap);
+            eventSections.push(entry);
+            updateCount();
+        }
+
+        function addFamilySection(kind) {
+            if (kind !== 'other') setPillDisabled(famPills, kind, true);
+            const labels = { spouse: 'Spouse', father: 'Father', mother: 'Mother', other: 'Other person' };
+            const wrap = document.createElement('div');
+            wrap.className = 'adv-section';
+            wrap.innerHTML = `
+                <button class="adv-x" type="button" title="Remove">×</button>
+                <h4>${labels[kind]}</h4>
+                <input type="text" class="adv-relname" placeholder="Name">
+            `;
+            const entry = { kind, node: wrap };
+            wrap.querySelector('.adv-x').addEventListener('click', () => {
+                wrap.remove();
+                const i = familySections.indexOf(entry);
+                if (i >= 0) familySections.splice(i, 1);
+                if (kind !== 'other') setPillDisabled(famPills, kind, false);
+                updateCount();
+            });
+            wrap.addEventListener('input', updateCount);
+            famSects.appendChild(wrap);
+            familySections.push(entry);
+            updateCount();
+        }
+
+        function parseIntOrNull(s) {
+            const n = parseInt(s, 10);
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function readQuery() {
+            const sex = new Set();
+            if (sexM.checked) sex.add('M');
+            if (sexF.checked) sex.add('F');
+            const events = eventSections.map(s => ({
+                kind: s.kind,
+                place: s.node.querySelector('.adv-place').value.trim(),
+                yearFrom: parseIntOrNull(s.node.querySelector('.adv-from').value),
+                yearTo:   parseIntOrNull(s.node.querySelector('.adv-to').value),
+            }));
+            const family = familySections.map(s => ({
+                kind: s.kind,
+                name: s.node.querySelector('.adv-relname').value.trim(),
+            }));
+            return {
+                firstName: firstName.value.trim(),
+                lastName:  lastName.value.trim(),
+                sex,
+                events,
+                family,
+            };
+        }
+
+        function isQueryEmpty(q) {
+            if (q.firstName || q.lastName) return false;
+            if (q.sex.size > 0) return false;
+            if (q.events.some(s => s.place || s.yearFrom != null || s.yearTo != null)) return false;
+            if (q.family.some(s => s.name)) return false;
+            return true;
+        }
+
+        let countTimer = null;
+        function updateCount() {
+            clearTimeout(countTimer);
+            countTimer = setTimeout(() => {
+                const q = readQuery();
+                if (isQueryEmpty(q)) {
+                    searchBtn.textContent = 'Search';
+                    return;
+                }
+                const count = runAdvancedSearch(q, ALL_PEOPLE, ctx).length;
+                searchBtn.textContent = `Search · ${count} match${count === 1 ? '' : 'es'}`;
+            }, 150);
+        }
+
+        [firstName, lastName].forEach(el => el.addEventListener('input', updateCount));
+        [sexM, sexF].forEach(el => el.addEventListener('change', updateCount));
+
+        function runAndRender() {
+            const q = readQuery();
+            if (isQueryEmpty(q)) { resultsEl.innerHTML = ''; return; }
+            const hits = runAdvancedSearch(q, ALL_PEOPLE, ctx);
+            renderResults(hits, q);
+        }
+        searchBtn.addEventListener('click', runAndRender);
+
+        pane.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+                e.preventDefault();
+                runAndRender();
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            firstName.value = '';
+            lastName.value = '';
+            sexM.checked = false;
+            sexF.checked = false;
+            evtSects.innerHTML = '';
+            famSects.innerHTML = '';
+            eventSections.length = 0;
+            familySections.length = 0;
+            evtPills.querySelectorAll('.adv-pill').forEach(p => p.classList.remove('disabled'));
+            famPills.querySelectorAll('.adv-pill').forEach(p => p.classList.remove('disabled'));
+            resultsEl.innerHTML = '';
+            updateCount();
+        });
+
+        function renderResults(hits, q) {
+            resultsEl.innerHTML = '';
+            if (hits.length === 0) {
+                resultsEl.innerHTML = '<div class="adv-hint" style="padding:10px">No matches.</div>';
+                return;
+            }
+            for (const p of hits) {
+                const full = PEOPLE[p.id] || p;
+                const div = document.createElement('div');
+                div.className = 'adv-result';
+                div.dataset.id = p.id;
+                const spouseXref = (relIndex.spousesOf[p.id] || [])[0];
+                const spouseName = spouseXref ? (PEOPLE[spouseXref] && PEOPLE[spouseXref].name) : null;
+                const birth = (full.events || []).find(e => e.tag === 'BIRT');
+                const death = (full.events || []).find(e => e.tag === 'DEAT');
+                const lines = [];
+                if (birth) lines.push(['BORN', formatFact(birth)]);
+                if (death) lines.push(['DIED', formatFact(death)]);
+                if (spouseName) lines.push(['SPOUSE', spouseName]);
+                div.innerHTML =
+                    `<div class="adv-name">${escapeHtml(full.name || '?')}</div>` +
+                    lines.map(([k,v]) => `<div class="adv-fact"><span class="adv-fact-label">${k}</span><span>${escapeHtml(v)}</span></div>`).join('');
+                div.addEventListener('click', () => {
+                    setState({ focusXref: p.id, panelOpen: true, panelXref: p.id });
+                });
+                resultsEl.appendChild(div);
+            }
+        }
+
+        function formatFact(evt) {
+            const y = extractYear(evt.date);
+            const place = evt.place || '';
+            if (y && place) return `${y} · ${place}`;
+            if (y) return String(y);
+            return place;
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+    })();
+}
+
 if (typeof module !== 'undefined') {
     module.exports = { extractYear, buildRelIndex, eventSectionMatches, familySectionMatches, personMatchesAdvanced, runAdvancedSearch };
 }
