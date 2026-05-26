@@ -616,6 +616,76 @@ describe('computeRelationship — affinity: generic templates', () => {
   });
 });
 
+describe('computeRelationship — affinity: divorced couples use Ex- prefix', () => {
+  it('Ex-Husband (direct spouse, family has divs)', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'F' }, '@S@': { sex: 'M' } },
+      parents: { '@V@': [null, null], '@S@': [null, null] },
+      children: {},
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@S@', wife: '@V@', chil: [], divorced: true } },
+    });
+    expect(computeRelationship('@V@', '@S@', c).label).toBe('Ex-Husband');
+  });
+
+  it('Ex-Wife (direct spouse, family has divs)', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'M' }, '@S@': { sex: 'F' } },
+      parents: { '@V@': [null, null], '@S@': [null, null] },
+      children: {},
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@V@', wife: '@S@', chil: [], divorced: true } },
+    });
+    expect(computeRelationship('@V@', '@S@', c).label).toBe('Ex-Wife');
+  });
+
+  it('Ex-Spouse (sex unknown, divorced)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@S@': {} },
+      parents: { '@V@': [null, null], '@S@': [null, null] },
+      children: {},
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@V@', wife: '@S@', chil: [], divorced: true } },
+    });
+    expect(computeRelationship('@V@', '@S@', c).label).toBe('Ex-Spouse');
+  });
+
+  it('Husband stays Husband when not divorced', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'F' }, '@S@': { sex: 'M' } },
+      parents: { '@V@': [null, null], '@S@': [null, null] },
+      children: {},
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@S@', wife: '@V@', chil: [], divorced: false } },
+    });
+    expect(computeRelationship('@V@', '@S@', c).label).toBe('Husband');
+  });
+
+  it('Ex-Wife of 1st Cousin (composed spouse-of-relative label)', () => {
+    const c = ctx({
+      people: {
+        '@V@': {}, '@C@': { sex: 'F' }, '@CW@': { sex: 'F' },
+        '@PV@': { sex: 'F' }, '@PC@': { sex: 'F' },
+        '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: {
+        '@V@': [null, '@PV@'], '@C@': [null, '@PC@'],
+        '@PV@': ['@GPA@', '@GMA@'], '@PC@': ['@GPA@', '@GMA@'],
+      },
+      children: {
+        '@PV@': ['@V@'], '@PC@': ['@C@'],
+        '@GMA@': ['@PV@', '@PC@'], '@GPA@': ['@PV@', '@PC@'],
+      },
+      relatives: { '@C@': { spouses: ['@CW@'] }, '@CW@': { spouses: ['@C@'] } },
+      families: { '@F1@': { husb: null, wife: '@C@', chil: [], divorced: true } },
+    });
+    // Note: spouse family between @C@ and @CW@. _findSpouseFamily matches husb/wife exactly,
+    // so we encode the spouse-pair correctly:
+    c.FAMILIES['@F1@'] = { husb: '@CW@', wife: '@C@', chil: [], divorced: true };
+    expect(computeRelationship('@V@', '@CW@', c).label).toBe('Ex-Wife of 1st Cousin');
+  });
+});
+
 describe('computeRelationship — affinity: deep chains', () => {
   // Build a graph where viewer V has a 1st cousin C; C is married to H; H has parents OFIL/OMIL
   // and a sister OSIS. Used to test "<atomic-in-law> of <blood-relative>" composition.
