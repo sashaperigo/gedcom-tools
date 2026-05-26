@@ -396,6 +396,25 @@ describe('_buildSourcesModalContent', () => {
         const html = _buildSourcesModalContent([{ sour_xref: '@S99@', page: null }], SOURCES);
         expect(html).toContain('@S99@');
     });
+
+    it('renders short citation text without collapse markup', () => {
+        const html = _buildSourcesModalContent(
+            [{ sour_xref: '@S1@', text: 'Short note.' }], SOURCES);
+        expect(html).toContain('Short note.');
+        expect(html).not.toContain('citation-text-toggle');
+        expect(html).not.toContain('is-collapsed');
+    });
+
+    it('collapses long citation text behind a toggle button', () => {
+        const longText = 'A'.repeat(400);
+        const html = _buildSourcesModalContent(
+            [{ sour_xref: '@S1@', text: longText }], SOURCES);
+        expect(html).toContain('citation-text-toggle');
+        expect(html).toContain('is-collapsed');
+        // Full text must still be in the DOM so expand has something to show
+        expect(html).toContain(longText);
+        expect(html).toContain('Show more');
+    });
 });
 
 // ── B1: _buildSourcesModalContent with camelCase sourceXref + titl ────────

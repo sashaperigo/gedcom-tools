@@ -1811,6 +1811,38 @@ header h1 .root-name-accent {
     font-style: italic;
 }
 
+.citation-field-value--collapsible {
+    display: block;
+}
+
+.citation-field-value--collapsible .citation-text-body {
+    display: block;
+}
+
+.citation-field-value--collapsible.is-collapsed .citation-text-body {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.citation-text-toggle {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--accent, #60a5fa);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.citation-text-toggle:hover {
+    text-decoration: underline;
+}
+
 .citation-card-actions {
     display: flex;
     gap: 1px;
