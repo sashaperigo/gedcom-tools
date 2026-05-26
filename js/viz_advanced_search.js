@@ -183,7 +183,11 @@ function runAdvancedSearch(query, allPeople, ctx) {
 
 if (typeof document !== 'undefined' && document.getElementById('adv-search-pane')) {
     (function () {
+        const PER_PAGE = 25;
+
+        // Elements
         const pane    = document.getElementById('adv-search-pane');
+        const body    = pane.querySelector('.adv-pane-body');
         const toggle  = document.getElementById('advanced-search-toggle');
         const closeBt = document.getElementById('adv-pane-close');
         const evtPills   = document.getElementById('adv-event-pills');
@@ -192,22 +196,37 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
         const famSects   = document.getElementById('adv-family-sections');
         const searchBtn  = document.getElementById('adv-search-btn');
         const clearBtn   = document.getElementById('adv-clear-btn');
-        const resultsEl  = document.getElementById('adv-results');
         const firstName  = document.getElementById('adv-first-name');
         const lastName   = document.getElementById('adv-last-name');
         const sexM       = document.getElementById('adv-sex-m');
         const sexF       = document.getElementById('adv-sex-f');
+        const filterbar  = document.getElementById('adv-filterbar');
+        const chipsEl    = document.getElementById('adv-chips');
+        const countbarEl = document.getElementById('adv-countbar');
+        const listEl     = document.getElementById('adv-resultlist');
+        const pagerEl    = document.getElementById('adv-pager');
 
-        // Build the relationship index once.
         const relIndex = buildRelIndex(FAMILIES, PARENTS);
         const ctx = { PARENTS, PEOPLE_BY_ID: PEOPLE, relIndex };
 
         const eventSections = [];
         const familySections = [];
 
+        // Results-mode state
+        let currentCriteria = null;
+        let currentResults  = [];
+        let currentPage     = 1;
+        let currentSort     = 'name';
+
+        // ── Mode switching ─────────────────────────────────────────────
+        function setMode(mode) { body.setAttribute('data-mode', mode); }
+
         toggle.addEventListener('click', () => { pane.hidden = false; });
         closeBt.addEventListener('click', () => { pane.hidden = true; });
 
+        filterbar.addEventListener('click', () => { setMode('form'); });
+
+        // ── Form section pills (unchanged from prior implementation) ─
         evtPills.addEventListener('click', e => {
             const pill = e.target.closest('.adv-pill');
             if (!pill || pill.classList.contains('disabled')) return;
@@ -302,9 +321,7 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
             return {
                 firstName: firstName.value.trim(),
                 lastName:  lastName.value.trim(),
-                sex,
-                events,
-                family,
+                sex, events, family,
             };
         }
 
@@ -321,30 +338,31 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
             clearTimeout(countTimer);
             countTimer = setTimeout(() => {
                 const q = readQuery();
-                if (isQueryEmpty(q)) {
-                    searchBtn.textContent = 'Search';
-                    return;
-                }
+                if (isQueryEmpty(q)) { searchBtn.textContent = 'Search'; return; }
                 const count = runAdvancedSearch(q, ALL_PEOPLE, ctx).length;
                 searchBtn.textContent = `Search · ${count} match${count === 1 ? '' : 'es'}`;
             }, 150);
         }
-
         [firstName, lastName].forEach(el => el.addEventListener('input', updateCount));
         [sexM, sexF].forEach(el => el.addEventListener('change', updateCount));
 
-        function runAndRender() {
+        // ── Run search and switch to results mode ──────────────────────
+        function runAndShow() {
             const q = readQuery();
-            if (isQueryEmpty(q)) { resultsEl.innerHTML = ''; return; }
-            const hits = runAdvancedSearch(q, ALL_PEOPLE, ctx);
-            renderResults(hits, q);
+            if (isQueryEmpty(q)) return;
+            currentCriteria = q;
+            currentResults  = runAdvancedSearch(q, ALL_PEOPLE, ctx);
+            currentPage     = 1;
+            currentSort     = 'name';
+            renderResultsMode();
+            setMode('results');
         }
-        searchBtn.addEventListener('click', runAndRender);
+        searchBtn.addEventListener('click', runAndShow);
 
         pane.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT' && body.getAttribute('data-mode') === 'form') {
                 e.preventDefault();
-                runAndRender();
+                runAndShow();
             }
         });
 
@@ -359,47 +377,52 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
             familySections.length = 0;
             evtPills.querySelectorAll('.adv-pill').forEach(p => p.classList.remove('disabled'));
             famPills.querySelectorAll('.adv-pill').forEach(p => p.classList.remove('disabled'));
-            resultsEl.innerHTML = '';
             updateCount();
         });
 
-        function renderResults(hits, q) {
-            resultsEl.innerHTML = '';
-            if (hits.length === 0) {
-                resultsEl.innerHTML = '<div class="adv-hint" style="padding:10px">No matches.</div>';
-                return;
-            }
-            for (const p of hits) {
-                const full = PEOPLE[p.id] || p;
-                const div = document.createElement('div');
-                div.className = 'adv-result';
-                div.dataset.id = p.id;
-                const spouseXref = (relIndex.spousesOf[p.id] || [])[0];
-                const spouseName = spouseXref ? (PEOPLE[spouseXref] && PEOPLE[spouseXref].name) : null;
-                const birth = (full.events || []).find(e => e.tag === 'BIRT');
-                const death = (full.events || []).find(e => e.tag === 'DEAT');
-                const lines = [];
-                if (birth) lines.push(['BORN', formatFact(birth)]);
-                if (death) lines.push(['DIED', formatFact(death)]);
-                if (spouseName) lines.push(['SPOUSE', spouseName]);
-                div.innerHTML =
-                    `<div class="adv-name">${escapeHtml(full.name || '?')}</div>` +
-                    lines.map(([k,v]) => `<div class="adv-fact"><span class="adv-fact-label">${k}</span><span>${escapeHtml(v)}</span></div>`).join('');
-                div.addEventListener('click', () => {
-                    setState({ focusXref: p.id, panelOpen: true, panelXref: p.id });
-                });
-                resultsEl.appendChild(div);
-            }
+        // ── Results-mode rendering ─────────────────────────────────────
+        function renderResultsMode() {
+            chipsEl.innerHTML    = buildFilterChipsHTML(currentCriteria);
+            countbarEl.innerHTML = buildCountBarHTML(currentResults.length, currentSort);
+            const sorted = sortResults(currentResults, currentSort);
+            const slice  = paginate(sorted, currentPage, PER_PAGE);
+            listEl.innerHTML  = buildResultRowsHTML(slice, { peopleById: PEOPLE, spousesOf: relIndex.spousesOf });
+            pagerEl.innerHTML = buildPagerHTML(currentPage, currentResults.length, PER_PAGE);
+            listEl.scrollTop = 0;
         }
 
-        function formatFact(evt) {
-            const y = extractYear(evt.date);
-            const place = evt.place || '';
-            if (y && place) return `${y} · ${place}`;
-            if (y) return String(y);
-            return place;
-        }
+        // Row click: re-root + open person panel.
+        listEl.addEventListener('click', e => {
+            const row = e.target.closest('.adv-row');
+            if (!row) return;
+            const xref = row.dataset.id;
+            if (!xref) return;
+            setState({ focusXref: xref, panelOpen: true, panelXref: xref });
+        });
 
+        // Pager click: prev / next / numbered.
+        pagerEl.addEventListener('click', e => {
+            const btn = e.target.closest('button[data-page]');
+            if (!btn || btn.disabled) return;
+            const p = btn.dataset.page;
+            const pageCount = Math.ceil(currentResults.length / PER_PAGE);
+            let next = currentPage;
+            if (p === 'prev') next = Math.max(1, currentPage - 1);
+            else if (p === 'next') next = Math.min(pageCount, currentPage + 1);
+            else next = parseInt(p, 10);
+            if (next !== currentPage && Number.isFinite(next)) {
+                currentPage = next;
+                renderResultsMode();
+            }
+        });
+
+        // Sort change: re-render from page 1.
+        countbarEl.addEventListener('change', e => {
+            if (!e.target.classList.contains('adv-sort-select')) return;
+            currentSort = e.target.value;
+            currentPage = 1;
+            renderResultsMode();
+        });
     })();
 }
 
