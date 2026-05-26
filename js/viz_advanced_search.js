@@ -44,6 +44,48 @@ function buildRelIndex(FAMILIES, PARENTS) {
     return { spousesOf, childrenOf, siblingsOf };
 }
 
+const _nm = (typeof require !== 'undefined')
+    ? require('./viz_name_match.js')
+    : { normSearch };
+const _normSearch = _nm.normSearch;
+
+const _SECTION_TAGS = {
+    birth: ['BIRT'],
+    death: ['DEAT'],
+    marriage: ['MARR'],
+    residence: ['RESI'],
+    any: null,  // null = any tag
+};
+
+function _placeMatches(eventPlace, query) {
+    if (!query) return true;
+    if (!eventPlace) return false;
+    return _normSearch(eventPlace).includes(_normSearch(query));
+}
+
+function _yearInRange(eventDate, yearFrom, yearTo) {
+    if (yearFrom == null && yearTo == null) return true;
+    const y = extractYear(eventDate);
+    if (y == null) return false;
+    if (yearFrom != null && y < yearFrom) return false;
+    if (yearTo != null && y > yearTo) return false;
+    return true;
+}
+
+function _sectionIsEmpty(section) {
+    return !section.place && section.yearFrom == null && section.yearTo == null;
+}
+
+function eventSectionMatches(person, section) {
+    if (_sectionIsEmpty(section)) return true;
+    const tags = _SECTION_TAGS[section.kind];
+    const events = (person.events || []).filter(e => tags === null || tags.includes(e.tag));
+    if (events.length === 0) return false;
+    return events.some(e =>
+        _placeMatches(e.place, section.place) && _yearInRange(e.date, section.yearFrom, section.yearTo)
+    );
+}
+
 if (typeof module !== 'undefined') {
-    module.exports = { extractYear, buildRelIndex };
+    module.exports = { extractYear, buildRelIndex, eventSectionMatches };
 }

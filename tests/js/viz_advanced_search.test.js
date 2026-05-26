@@ -66,3 +66,107 @@ describe('buildRelIndex', () => {
         expect(idx.spousesOf.I99 || []).toEqual([]);
     });
 });
+
+const { eventSectionMatches } = require('../../js/viz_advanced_search.js');
+
+function mkPerson(events) {
+    return { id: 'I1', name: 'Test Person', events };
+}
+
+describe('eventSectionMatches — birth', () => {
+    const p = mkPerson([{ tag: 'BIRT', date: '15 Mar 1892', place: 'Smyrna' }]);
+
+    it('matches when place + year are in range', () => {
+        const sec = { kind: 'birth', place: 'Smyrna', yearFrom: 1880, yearTo: 1900 };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+    it('matches with only yearFrom (open-ended upper)', () => {
+        const sec = { kind: 'birth', place: '', yearFrom: 1880, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+    it('matches with only yearTo (open-ended lower)', () => {
+        const sec = { kind: 'birth', place: '', yearFrom: null, yearTo: 1900 };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+    it('matches when from === to (exact year)', () => {
+        const sec = { kind: 'birth', place: '', yearFrom: 1892, yearTo: 1892 };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+    it('rejects when place mismatches', () => {
+        const sec = { kind: 'birth', place: 'Athens', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(false);
+    });
+    it('rejects when year out of range', () => {
+        const sec = { kind: 'birth', place: '', yearFrom: 1900, yearTo: 1920 };
+        expect(eventSectionMatches(p, sec)).toBe(false);
+    });
+    it('matches accent-insensitively on place', () => {
+        const px = mkPerson([{ tag: 'BIRT', date: '1892', place: 'Île-de-France' }]);
+        const sec = { kind: 'birth', place: 'ile-de-france', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(px, sec)).toBe(true);
+    });
+    it('rejects person with no BIRT event when filter is set', () => {
+        const px = mkPerson([{ tag: 'DEAT', date: '1900', place: '' }]);
+        const sec = { kind: 'birth', place: 'Smyrna', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(px, sec)).toBe(false);
+    });
+});
+
+describe('eventSectionMatches — death', () => {
+    it('excludes person with no DEAT event when any filter is set', () => {
+        const p = mkPerson([{ tag: 'BIRT', date: '1892', place: 'Smyrna' }]);
+        const sec = { kind: 'death', place: 'Athens', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(false);
+    });
+    it('matches DEAT event', () => {
+        const p = mkPerson([{ tag: 'DEAT', date: '1965', place: 'Athens' }]);
+        expect(eventSectionMatches(p, { kind: 'death', place: 'athens', yearFrom: null, yearTo: null })).toBe(true);
+    });
+});
+
+describe('eventSectionMatches — marriage', () => {
+    it('matches if any MARR event satisfies', () => {
+        const p = mkPerson([
+            { tag: 'MARR', date: '1910', place: 'Smyrna' },
+            { tag: 'MARR', date: '1925', place: 'Athens' },
+        ]);
+        const sec = { kind: 'marriage', place: 'athens', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+    it('rejects when no MARR matches', () => {
+        const p = mkPerson([{ tag: 'MARR', date: '1910', place: 'Smyrna' }]);
+        const sec = { kind: 'marriage', place: 'Athens', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(false);
+    });
+});
+
+describe('eventSectionMatches — residence', () => {
+    it('matches RESI events', () => {
+        const p = mkPerson([{ tag: 'RESI', date: '1950', place: 'Valletta' }]);
+        const sec = { kind: 'residence', place: 'valletta', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+});
+
+describe('eventSectionMatches — any event', () => {
+    it('matches across event types', () => {
+        const p = mkPerson([
+            { tag: 'BIRT', date: '1892', place: 'Smyrna' },
+            { tag: 'BAPM', date: '1893', place: 'Valletta' },
+        ]);
+        const sec = { kind: 'any', place: 'valletta', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+    it('place-only "any" matches if any event has the place', () => {
+        const p = mkPerson([{ tag: 'OCCU', date: '', place: 'Cairo' }]);
+        expect(eventSectionMatches(p, { kind: 'any', place: 'cairo', yearFrom: null, yearTo: null })).toBe(true);
+    });
+});
+
+describe('eventSectionMatches — empty section', () => {
+    it('returns true (no filter active)', () => {
+        const p = mkPerson([{ tag: 'BIRT', date: '1892', place: 'Smyrna' }]);
+        const sec = { kind: 'birth', place: '', yearFrom: null, yearTo: null };
+        expect(eventSectionMatches(p, sec)).toBe(true);
+    });
+});
