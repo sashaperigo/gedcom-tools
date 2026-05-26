@@ -170,3 +170,61 @@ describe('eventSectionMatches — empty section', () => {
         expect(eventSectionMatches(p, sec)).toBe(true);
     });
 });
+
+const { familySectionMatches } = require('../../js/viz_advanced_search.js');
+
+describe('familySectionMatches', () => {
+    const PARENTS = {
+        I1: { father: 'I10', mother: 'I11' },
+    };
+    const ctx = {
+        PARENTS,
+        PEOPLE_BY_ID: {
+            I10: { id: 'I10', name: 'Antonio Vella' },
+            I11: { id: 'I11', name: 'Maria Caruana' },
+            I20: { id: 'I20', name: 'Joseph Mifsud' },
+            I21: { id: 'I21', name: 'Carmela Borg' },
+            I30: { id: 'I30', name: 'Pietro Vella' },
+        },
+        relIndex: {
+            spousesOf: { I1: ['I20'] },
+            childrenOf: { I1: ['I21'] },
+            siblingsOf: { I1: ['I30'] },
+        },
+    };
+    const person = { id: 'I1', name: 'Test' };
+
+    it('spouse matches', () => {
+        expect(familySectionMatches(person, { kind: 'spouse', name: 'mifsud' }, ctx)).toBe(true);
+    });
+    it('spouse rejects when no match', () => {
+        expect(familySectionMatches(person, { kind: 'spouse', name: 'unknown' }, ctx)).toBe(false);
+    });
+    it('father matches FAMC husband', () => {
+        expect(familySectionMatches(person, { kind: 'father', name: 'antonio' }, ctx)).toBe(true);
+    });
+    it('mother matches FAMC wife', () => {
+        expect(familySectionMatches(person, { kind: 'mother', name: 'caruana' }, ctx)).toBe(true);
+    });
+    it('father rejects when matching wife', () => {
+        expect(familySectionMatches(person, { kind: 'father', name: 'caruana' }, ctx)).toBe(false);
+    });
+    it('other person matches sibling', () => {
+        expect(familySectionMatches(person, { kind: 'other', name: 'pietro' }, ctx)).toBe(true);
+    });
+    it('other person matches child', () => {
+        expect(familySectionMatches(person, { kind: 'other', name: 'borg' }, ctx)).toBe(true);
+    });
+    it('other person matches parent', () => {
+        expect(familySectionMatches(person, { kind: 'other', name: 'antonio' }, ctx)).toBe(true);
+    });
+    it('other person matches spouse', () => {
+        expect(familySectionMatches(person, { kind: 'other', name: 'mifsud' }, ctx)).toBe(true);
+    });
+    it('other person rejects unrelated', () => {
+        expect(familySectionMatches(person, { kind: 'other', name: 'stranger' }, ctx)).toBe(false);
+    });
+    it('empty name = no filter', () => {
+        expect(familySectionMatches(person, { kind: 'spouse', name: '' }, ctx)).toBe(true);
+    });
+});

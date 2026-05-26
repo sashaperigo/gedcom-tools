@@ -86,6 +86,44 @@ function eventSectionMatches(person, section) {
     );
 }
 
+const _nm2 = (typeof require !== 'undefined')
+    ? require('./viz_name_match.js')
+    : { nameMatches };
+const _nameMatches = _nm2.nameMatches;
+
+function _lookup(ctx, xref) {
+    if (!xref) return null;
+    return (ctx.PEOPLE_BY_ID || {})[xref] || null;
+}
+
+function familySectionMatches(person, section, ctx) {
+    if (!section.name) return true;
+    const q = section.name;
+    if (section.kind === 'spouse') {
+        const spouses = (ctx.relIndex.spousesOf[person.id] || []);
+        return spouses.some(x => _nameMatches(_lookup(ctx, x), q));
+    }
+    if (section.kind === 'father') {
+        const f = (ctx.PARENTS[person.id] || {}).father;
+        return _nameMatches(_lookup(ctx, f), q);
+    }
+    if (section.kind === 'mother') {
+        const m = (ctx.PARENTS[person.id] || {}).mother;
+        return _nameMatches(_lookup(ctx, m), q);
+    }
+    if (section.kind === 'other') {
+        const all = [];
+        const parents = ctx.PARENTS[person.id] || {};
+        if (parents.father) all.push(parents.father);
+        if (parents.mother) all.push(parents.mother);
+        all.push(...(ctx.relIndex.spousesOf[person.id] || []));
+        all.push(...(ctx.relIndex.childrenOf[person.id] || []));
+        all.push(...(ctx.relIndex.siblingsOf[person.id] || []));
+        return all.some(x => _nameMatches(_lookup(ctx, x), q));
+    }
+    return false;
+}
+
 if (typeof module !== 'undefined') {
-    module.exports = { extractYear, buildRelIndex, eventSectionMatches };
+    module.exports = { extractYear, buildRelIndex, eventSectionMatches, familySectionMatches };
 }
