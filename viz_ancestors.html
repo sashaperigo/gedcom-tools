@@ -19,13 +19,60 @@
         <button id="home-btn" title="Return to root">&#x2302;</button>
         <div id="search-container">
             <input id="search-input" type="text" placeholder="Search people…" autocomplete="off" />
+            <button id="advanced-search-toggle" type="button" title="Advanced search">Advanced ▾</button>
             <ul id="search-results"></ul>
         </div>
     </header>
+    <div id="main-area">
+    <aside id="adv-search-pane" hidden>
+        <div class="adv-pane-head">
+            <h2>Advanced search</h2>
+            <button id="adv-pane-close" type="button" title="Close">×</button>
+        </div>
+        <div class="adv-pane-body">
+            <section class="adv-grp">
+                <h3>Name</h3>
+                <input id="adv-first-name" type="text" placeholder="First name" autocomplete="off">
+                <input id="adv-last-name" type="text" placeholder="Last name" autocomplete="off">
+            </section>
+            <section class="adv-grp">
+                <h3>Sex</h3>
+                <label class="adv-cb"><input type="checkbox" id="adv-sex-m"> Male</label>
+                <label class="adv-cb"><input type="checkbox" id="adv-sex-f"> Female</label>
+            </section>
+            <section class="adv-grp">
+                <h3>Add life event</h3>
+                <div class="adv-pillrow" id="adv-event-pills">
+                    <span class="adv-pill" data-kind="birth">Birth</span>
+                    <span class="adv-pill" data-kind="marriage">Marriage</span>
+                    <span class="adv-pill" data-kind="residence">Residence</span>
+                    <span class="adv-pill" data-kind="death">Death</span>
+                    <span class="adv-pill" data-kind="any">Any event</span>
+                </div>
+                <div id="adv-event-sections"></div>
+            </section>
+            <section class="adv-grp">
+                <h3>Add family member</h3>
+                <div class="adv-pillrow" id="adv-family-pills">
+                    <span class="adv-pill" data-kind="spouse">Spouse</span>
+                    <span class="adv-pill" data-kind="father">Father</span>
+                    <span class="adv-pill" data-kind="mother">Mother</span>
+                    <span class="adv-pill" data-kind="other">Other person</span>
+                </div>
+                <div id="adv-family-sections"></div>
+            </section>
+            <div class="adv-actions">
+                <button id="adv-search-btn" type="button">Search</button>
+                <button id="adv-clear-btn" type="button">Clear</button>
+            </div>
+            <div id="adv-results"></div>
+        </div>
+    </aside>
     <div id="viewport">
 <svg id="tree" xmlns="http://www.w3.org/2000/svg">
             <g id="canvas"></g>
         </svg>
+    </div>
     </div>
     <div id="spouse-menu-modal-overlay" onclick="closeIfFarFromPanel(event,'spouse-menu-modal',closeSpouseMenuModal)">
         <div id="spouse-menu-modal">
