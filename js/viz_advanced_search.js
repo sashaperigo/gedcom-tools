@@ -52,7 +52,7 @@ const _normSearch = _nm.normSearch;
 const _hu = (typeof require !== 'undefined')
     ? require('./viz_html_utils.js')
     : { escapeHtml };
-const escapeHtml = _hu.escapeHtml;
+const _escapeHtml = _hu.escapeHtml;
 
 const _SECTION_TAGS = {
     birth: ['BIRT'],
