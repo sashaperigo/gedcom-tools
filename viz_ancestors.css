@@ -2890,7 +2890,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
 #adv-clear-btn { background: transparent; color: #666; border: 1px solid #ccc; }
 
 /* Two-mode pane body: form vs results. */
-.adv-pane-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.adv-pane-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .adv-pane-body[data-mode="form"]    .adv-results-mode { display: none; }
 .adv-pane-body[data-mode="results"] .adv-form         { display: none; }
 .adv-form { flex: 1; overflow-y: auto; padding: 12px 14px; }
@@ -2921,7 +2921,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
 .adv-sort-select { font-size: 11px; border: 1px solid #d0d0d0; border-radius: 3px; padding: 1px 4px; }
 
 /* Scrollable list of result rows. */
-.adv-resultlist { flex: 1; overflow-y: auto; }
+.adv-resultlist { flex: 1; overflow-y: auto; min-height: 0; }
 .adv-row { padding: 8px 14px; border-bottom: 1px solid #eef2f7; cursor: pointer; }
 .adv-row:hover, .adv-row.active { background: #eaf2fb; }
 .adv-row-name { font-weight: 600; font-size: 13px; color: #222; }
