@@ -39,6 +39,19 @@ function buildFilterChipsHTML(criteria) {
     return chips.map(c => `<span class="adv-chip">${c}</span>`).join('');
 }
 
+function buildCountBarHTML(total, sortKey) {
+    const word = total === 1 ? 'match' : 'matches';
+    const opts = [
+        { v: 'name',  label: 'Name' },
+        { v: 'birth', label: 'Birth year' },
+    ];
+    const optHTML = opts.map(o =>
+        `<option value="${o.v}"${o.v === sortKey ? ' selected' : ''}>${o.label}</option>`
+    ).join('');
+    return `<span class="adv-count"><b>${total} ${word}</b></span>` +
+        `<span class="adv-sort">Sort: <select class="adv-sort-select">${optHTML}</select></span>`;
+}
+
 if (typeof module !== 'undefined') {
-    module.exports = { buildFilterChipsHTML };
+    module.exports = { buildFilterChipsHTML, buildCountBarHTML };
 }

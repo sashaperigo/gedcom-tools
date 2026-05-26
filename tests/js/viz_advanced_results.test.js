@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
-const { buildFilterChipsHTML } = require('../../js/viz_advanced_results.js');
+const { buildFilterChipsHTML, buildCountBarHTML } = require('../../js/viz_advanced_results.js');
 
 describe('buildFilterChipsHTML', () => {
     it('emits chips for name + sex + event + family criteria', () => {
@@ -51,5 +51,31 @@ describe('buildFilterChipsHTML', () => {
         });
         expect(html).not.toContain('<script>');
         expect(html).toContain('&lt;script&gt;');
+    });
+});
+
+describe('buildCountBarHTML', () => {
+    it('shows count with correct pluralization and selected sort', () => {
+        const h0 = buildCountBarHTML(0, 'name');
+        expect(h0).toContain('0 matches');
+        const h1 = buildCountBarHTML(1, 'name');
+        expect(h1).toContain('1 match');
+        expect(h1).not.toContain('1 matches');
+        const h2 = buildCountBarHTML(156, 'birth');
+        expect(h2).toContain('156 matches');
+    });
+
+    it('marks the selected sort option', () => {
+        const html = buildCountBarHTML(10, 'birth');
+        expect(html).toMatch(/<option[^>]*value="birth"[^>]*selected/);
+        expect(html).not.toMatch(/<option[^>]*value="name"[^>]*selected/);
+    });
+
+    it('includes both sort options', () => {
+        const html = buildCountBarHTML(10, 'name');
+        expect(html).toContain('value="name"');
+        expect(html).toContain('value="birth"');
+        expect(html).toContain('Name');
+        expect(html).toContain('Birth year');
     });
 });
