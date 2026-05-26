@@ -49,6 +49,11 @@ const _nm = (typeof require !== 'undefined')
     : { normSearch };
 const _normSearch = _nm.normSearch;
 
+const _hu = (typeof require !== 'undefined')
+    ? require('./viz_html_utils.js')
+    : { escapeHtml };
+const escapeHtml = _hu.escapeHtml;
+
 const _SECTION_TAGS = {
     birth: ['BIRT'],
     death: ['DEAT'],
@@ -395,10 +400,6 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
             return place;
         }
 
-        function escapeHtml(s) {
-            return String(s == null ? '' : s)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
     })();
 }
 

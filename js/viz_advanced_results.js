@@ -1,10 +1,9 @@
 // Pure render-to-HTML helpers for the advanced-search results mode.
 
-function escapeHtml(s) {
-    return String(s == null ? '' : s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
+const _hu = (typeof require !== 'undefined')
+    ? require('./viz_html_utils.js')
+    : { escapeHtml };
+const escapeHtml = _hu.escapeHtml;
 
 const _EVENT_VERB = { birth: 'Born', death: 'Died', marriage: 'Married', residence: 'Lived', any: 'Event' };
 const _FAMILY_LABEL = { spouse: 'Spouse', father: 'Father', mother: 'Mother', other: 'Person' };
@@ -18,7 +17,7 @@ function _yearRange(yf, yt) {
 
 function _eventChipText(evt) {
     const verb = _EVENT_VERB[evt.kind] || 'Event';
-    const place = evt.place ? ` in ${evt.place}` : '';
+    const place = evt.place ? ` in ${escapeHtml(evt.place)}` : '';
     const yr = _yearRange(evt.yearFrom, evt.yearTo);
     return `${verb}${place}${yr ? ' ' + yr : ''}`;
 }
@@ -31,7 +30,7 @@ function buildFilterChipsHTML(criteria) {
     if (criteria.sex && criteria.sex.has('F')) chips.push('Female');
     for (const e of (criteria.events || [])) {
         if (!e.place && e.yearFrom == null && e.yearTo == null) continue;
-        chips.push(escapeHtml(_eventChipText(e)));
+        chips.push(_eventChipText(e));
     }
     for (const f of (criteria.family || [])) {
         if (!f.name) continue;
