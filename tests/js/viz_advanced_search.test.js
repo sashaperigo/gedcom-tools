@@ -228,3 +228,103 @@ describe('familySectionMatches', () => {
         expect(familySectionMatches(person, { kind: 'spouse', name: '' }, ctx)).toBe(true);
     });
 });
+
+const { personMatchesAdvanced, runAdvancedSearch } = require('../../js/viz_advanced_search.js');
+
+describe('personMatchesAdvanced', () => {
+    const PARENTS = { I1: { father: 'I10', mother: 'I11' } };
+    const PEOPLE_BY_ID = {
+        I1: { id: 'I1', name: 'Joseph Vella', sex: 'M',
+              events: [{ tag: 'BIRT', date: '1892', place: 'Smyrna' },
+                       { tag: 'DEAT', date: '1965', place: 'Athens' }] },
+        I10: { id: 'I10', name: 'Antonio Vella' },
+        I11: { id: 'I11', name: 'Maria Caruana' },
+    };
+    const ctx = {
+        PARENTS,
+        PEOPLE_BY_ID,
+        relIndex: { spousesOf: {}, childrenOf: {}, siblingsOf: {} },
+    };
+    const person = PEOPLE_BY_ID.I1;
+
+    it('matches first + last name', () => {
+        const q = { firstName: 'joseph', lastName: 'vella', sex: new Set(), events: [], family: [] };
+        expect(personMatchesAdvanced(person, q, ctx)).toBe(true);
+    });
+    it('rejects name mismatch', () => {
+        const q = { firstName: '', lastName: 'mifsud', sex: new Set(), events: [], family: [] };
+        expect(personMatchesAdvanced(person, q, ctx)).toBe(false);
+    });
+    it('matches sex filter', () => {
+        const q = { firstName: '', lastName: '', sex: new Set(['M']), events: [], family: [] };
+        expect(personMatchesAdvanced(person, q, ctx)).toBe(true);
+    });
+    it('rejects when sex not in set', () => {
+        const q = { firstName: '', lastName: '', sex: new Set(['F']), events: [], family: [] };
+        expect(personMatchesAdvanced(person, q, ctx)).toBe(false);
+    });
+    it('empty sex set = no filter', () => {
+        const q = { firstName: '', lastName: '', sex: new Set(), events: [], family: [] };
+        expect(personMatchesAdvanced(person, q, ctx)).toBe(true);
+    });
+    it('ANDs across all sections — rejects when one fails', () => {
+        const q = {
+            firstName: '', lastName: 'vella', sex: new Set(),
+            events: [
+                { kind: 'birth', place: 'Smyrna', yearFrom: null, yearTo: 1920 },
+                { kind: 'death', place: 'Greece', yearFrom: null, yearTo: null },
+            ],
+            family: [],
+        };
+        expect(personMatchesAdvanced(person, q, ctx)).toBe(false);
+    });
+    it('passes when all filters satisfied', () => {
+        const q = {
+            firstName: '', lastName: 'vella', sex: new Set(['M']),
+            events: [{ kind: 'birth', place: 'smyrna', yearFrom: null, yearTo: 1920 }],
+            family: [{ kind: 'father', name: 'antonio' }],
+        };
+        expect(personMatchesAdvanced(person, q, ctx)).toBe(true);
+    });
+});
+
+describe('runAdvancedSearch', () => {
+    const PARENTS = {};
+    const PEOPLE_BY_ID = {
+        I1: { id: 'I1', name: 'Joseph Vella', sex: 'M', birth_year: 1892,
+              events: [{ tag: 'BIRT', date: '1892', place: 'Smyrna' },
+                       { tag: 'DEAT', date: '1965', place: 'Athens, Greece' }] },
+        I2: { id: 'I2', name: 'Maria Vella', sex: 'F', birth_year: 1895,
+              events: [{ tag: 'BIRT', date: '1895', place: 'Smyrna' },
+                       { tag: 'DEAT', date: '1972', place: 'Valletta, Malta' }] },
+        I3: { id: 'I3', name: 'Antonio Vella', sex: 'M', birth_year: 1901,
+              events: [{ tag: 'BIRT', date: '1901', place: 'Smyrna' },
+                       { tag: 'DEAT', date: '1968', place: 'Piraeus, Greece' }] },
+    };
+    const allPeople = Object.values(PEOPLE_BY_ID).map(p =>
+        ({ id: p.id, name: p.name, sex: p.sex, birth_year: p.birth_year, death_year: null }));
+    const ctx = {
+        PARENTS, PEOPLE_BY_ID,
+        relIndex: { spousesOf: {}, childrenOf: {}, siblingsOf: {} },
+    };
+
+    it('canonical query: Vella born ≤1920 Smyrna, died Greece', () => {
+        const q = {
+            firstName: '', lastName: 'vella', sex: new Set(),
+            events: [
+                { kind: 'birth', place: 'smyrna', yearFrom: null, yearTo: 1920 },
+                { kind: 'death', place: 'Greece', yearFrom: null, yearTo: null },
+            ],
+            family: [],
+        };
+        const results = runAdvancedSearch(q, allPeople, ctx);
+        const ids = results.map(r => r.id).sort();
+        expect(ids).toEqual(['I1', 'I3']);
+    });
+
+    it('sorts by birth year asc within same last name', () => {
+        const q = { firstName: '', lastName: 'vella', sex: new Set(), events: [], family: [] };
+        const results = runAdvancedSearch(q, allPeople, ctx);
+        expect(results.map(r => r.id)).toEqual(['I1', 'I2', 'I3']);
+    });
+});

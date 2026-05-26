@@ -124,6 +124,54 @@ function familySectionMatches(person, section, ctx) {
     return false;
 }
 
+const _nm3 = (typeof require !== 'undefined')
+    ? require('./viz_name_match.js')
+    : { getParsed, normSearch };
+const _getParsed = _nm3.getParsed;
+const _normSearch3 = _nm3.normSearch;
+
+function personMatchesAdvanced(person, query, ctx) {
+    // Name
+    const parsed = _getParsed(person);
+    if (query.firstName) {
+        const q = _normSearch3(query.firstName);
+        if (!parsed.normFirst.startsWith(q) &&
+            !parsed.normNicks.some(n => n.startsWith(q)) &&
+            !parsed.normDisp.includes(q)) return false;
+    }
+    if (query.lastName) {
+        const q = _normSearch3(query.lastName);
+        if (!parsed.normLast.includes(q) && !parsed.normDisp.includes(q)) return false;
+    }
+    // Sex
+    if (query.sex && query.sex.size > 0) {
+        if (!query.sex.has(person.sex)) return false;
+    }
+    // Events: full person record from PEOPLE_BY_ID has the events array
+    const full = (ctx.PEOPLE_BY_ID && ctx.PEOPLE_BY_ID[person.id]) || person;
+    for (const sec of (query.events || [])) {
+        if (!eventSectionMatches(full, sec)) return false;
+    }
+    // Family
+    for (const sec of (query.family || [])) {
+        if (!familySectionMatches(person, sec, ctx)) return false;
+    }
+    return true;
+}
+
+function runAdvancedSearch(query, allPeople, ctx) {
+    const hits = allPeople.filter(p => personMatchesAdvanced(p, query, ctx));
+    // Sort: last name, birth year asc, first name.
+    return hits.sort((a, b) => {
+        const pa = _getParsed(a), pb = _getParsed(b);
+        if (pa.normLast !== pb.normLast) return pa.normLast < pb.normLast ? -1 : 1;
+        const ya = a.birth_year || Infinity, yb = b.birth_year || Infinity;
+        if (ya !== yb) return ya - yb;
+        if (pa.normFirst !== pb.normFirst) return pa.normFirst < pb.normFirst ? -1 : 1;
+        return 0;
+    });
+}
+
 if (typeof module !== 'undefined') {
-    module.exports = { extractYear, buildRelIndex, eventSectionMatches, familySectionMatches };
+    module.exports = { extractYear, buildRelIndex, eventSectionMatches, familySectionMatches, personMatchesAdvanced, runAdvancedSearch };
 }
