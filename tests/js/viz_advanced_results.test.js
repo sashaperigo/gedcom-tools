@@ -79,3 +79,125 @@ describe('buildCountBarHTML', () => {
         expect(html).toContain('Birth year');
     });
 });
+
+const { buildResultRowsHTML, paginate, sortResults } = require('../../js/viz_advanced_results.js');
+
+describe('paginate', () => {
+    it('returns the requested page slice', () => {
+        const arr = Array.from({ length: 60 }, (_, i) => i);
+        expect(paginate(arr, 1, 25)).toEqual(arr.slice(0, 25));
+        expect(paginate(arr, 2, 25)).toEqual(arr.slice(25, 50));
+        expect(paginate(arr, 3, 25)).toEqual(arr.slice(50, 60));
+    });
+    it('returns [] for out-of-range pages', () => {
+        expect(paginate([1, 2, 3], 5, 25)).toEqual([]);
+    });
+});
+
+describe('sortResults', () => {
+    const rows = [
+        { id: 'a', name: 'Zara', birth_year: 1900 },
+        { id: 'b', name: 'Anna', birth_year: 1850 },
+        { id: 'c', name: 'Mia',  birth_year: null },
+    ];
+    it('sorts by name alphabetically', () => {
+        const out = sortResults(rows, 'name');
+        expect(out.map(r => r.id)).toEqual(['b', 'c', 'a']);
+    });
+    it('sorts by birth year ascending, undated last', () => {
+        const out = sortResults(rows, 'birth');
+        expect(out.map(r => r.id)).toEqual(['b', 'a', 'c']);
+    });
+    it('does not mutate the input array', () => {
+        const original = rows.map(r => r.id);
+        sortResults(rows, 'name');
+        expect(rows.map(r => r.id)).toEqual(original);
+    });
+});
+
+describe('buildResultRowsHTML', () => {
+    const peopleById = {
+        I1: { name: 'Anna Aliotti', events: [
+            { tag: 'BIRT', date: '1850', place: 'Smyrna, Izmir, Turkey' },
+            { tag: 'DEAT', date: '1920', place: 'Smyrna' },
+        ]},
+        I2: { name: 'Bob Smith', events: [
+            { tag: 'BIRT', date: '1900', place: '' },
+        ]},
+        I3: { name: 'No Dates', events: [] },
+    };
+    const spousesOf = { I1: ['I2'] };
+
+    it('renders one row per person with name + meta line', () => {
+        const html = buildResultRowsHTML(
+            [{ id: 'I1' }, { id: 'I2' }],
+            { peopleById, spousesOf }
+        );
+        expect(html).toContain('Anna Aliotti');
+        expect(html).toContain('Bob Smith');
+        expect(html.match(/class="adv-row"/g).length).toBe(2);
+    });
+
+    it('formats years as b–d, b–, b only', () => {
+        const h1 = buildResultRowsHTML([{ id: 'I1' }], { peopleById, spousesOf });
+        expect(h1).toMatch(/1850–1920/);
+        const h2 = buildResultRowsHTML([{ id: 'I2' }], { peopleById, spousesOf });
+        expect(h2).toMatch(/b\.\s*1900/);
+        const h3 = buildResultRowsHTML([{ id: 'I3' }], { peopleById, spousesOf });
+        expect(h3).not.toMatch(/\d{4}/);
+    });
+
+    it('shows spouse name when available', () => {
+        const html = buildResultRowsHTML([{ id: 'I1' }], { peopleById, spousesOf });
+        expect(html).toContain('spouse Bob Smith');
+    });
+
+    it('truncates long place names to the last two segments', () => {
+        const html = buildResultRowsHTML([{ id: 'I1' }], { peopleById, spousesOf });
+        expect(html).toContain('Izmir, Turkey');
+        expect(html).not.toContain('Smyrna, Izmir, Turkey');
+    });
+
+    it('embeds the person xref as data-id', () => {
+        const html = buildResultRowsHTML([{ id: 'I1' }], { peopleById, spousesOf });
+        expect(html).toContain('data-id="I1"');
+    });
+});
+
+describe('buildPagerHTML', () => {
+    const { buildPagerHTML } = require('../../js/viz_advanced_results.js');
+
+    it('renders "X–Y of N" range', () => {
+        expect(buildPagerHTML(1, 156, 25)).toContain('1–25 of 156');
+        expect(buildPagerHTML(2, 156, 25)).toContain('26–50 of 156');
+        expect(buildPagerHTML(7, 156, 25)).toContain('151–156 of 156');
+    });
+
+    it('disables prev on page 1 and next on last page', () => {
+        const h1 = buildPagerHTML(1, 60, 25);
+        expect(h1).toMatch(/data-page="prev"[^>]*disabled/);
+        expect(h1).not.toMatch(/data-page="next"[^>]*disabled/);
+        const hLast = buildPagerHTML(3, 60, 25);
+        expect(hLast).toMatch(/data-page="next"[^>]*disabled/);
+    });
+
+    it('marks the current page button as active', () => {
+        const html = buildPagerHTML(2, 100, 25);
+        expect(html).toMatch(/data-page="2"[^>]*class="[^"]*active/);
+    });
+
+    it('renders nothing when total fits in one page', () => {
+        expect(buildPagerHTML(1, 10, 25)).toBe('');
+    });
+
+    it('windows page buttons around the current page for many pages', () => {
+        const html = buildPagerHTML(25, 25 * 50, 25);
+        expect(html).toMatch(/data-page="1"/);
+        expect(html).toMatch(/data-page="24"/);
+        expect(html).toMatch(/data-page="25"[^>]*active/);
+        expect(html).toMatch(/data-page="26"/);
+        expect(html).toMatch(/data-page="50"/);
+        expect(html).toContain('…');
+        expect(html).not.toMatch(/data-page="10"/);
+    });
+});
