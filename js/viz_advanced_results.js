@@ -1,14 +1,14 @@
 // Pure render-to-HTML helpers for the advanced-search results mode.
 
-const _hu = (typeof require !== 'undefined')
+const _huR = (typeof require !== 'undefined')
     ? require('./viz_html_utils.js')
     : { escapeHtml };
-const _escapeHtml = _hu.escapeHtml;
+const _escapeHtmlR = _huR.escapeHtml;
 
-const _as = (typeof require !== 'undefined')
+const _asR = (typeof require !== 'undefined')
     ? require('./viz_advanced_search.js')
     : { extractYear };
-const _extractYear = _as.extractYear;
+const _extractYearR = _asR.extractYear;
 
 const _EVENT_VERB = { birth: 'Born', death: 'Died', marriage: 'Married', residence: 'Lived', any: 'Event' };
 const _FAMILY_LABEL = { spouse: 'Spouse', father: 'Father', mother: 'Mother', other: 'Person' };
@@ -22,15 +22,15 @@ function _yearRange(yf, yt) {
 
 function _eventChipText(evt) {
     const verb = _EVENT_VERB[evt.kind] || 'Event';
-    const place = evt.place ? ` in ${_escapeHtml(evt.place)}` : '';
+    const place = evt.place ? ` in ${_escapeHtmlR(evt.place)}` : '';
     const yr = _yearRange(evt.yearFrom, evt.yearTo);
     return `${verb}${place}${yr ? ' ' + yr : ''}`;
 }
 
 function buildFilterChipsHTML(criteria) {
     const chips = [];
-    if (criteria.firstName) chips.push(`First: ${_escapeHtml(criteria.firstName)}`);
-    if (criteria.lastName)  chips.push(`Last: ${_escapeHtml(criteria.lastName)}`);
+    if (criteria.firstName) chips.push(`First: ${_escapeHtmlR(criteria.firstName)}`);
+    if (criteria.lastName)  chips.push(`Last: ${_escapeHtmlR(criteria.lastName)}`);
     if (criteria.sex && criteria.sex.has('M')) chips.push('Male');
     if (criteria.sex && criteria.sex.has('F')) chips.push('Female');
     for (const e of (criteria.events || [])) {
@@ -39,7 +39,7 @@ function buildFilterChipsHTML(criteria) {
     }
     for (const f of (criteria.family || [])) {
         if (!f.name) continue;
-        chips.push(`${_FAMILY_LABEL[f.kind] || 'Person'}: ${_escapeHtml(f.name)}`);
+        chips.push(`${_FAMILY_LABEL[f.kind] || 'Person'}: ${_escapeHtmlR(f.name)}`);
     }
     return chips.map(c => `<span class="adv-chip">${c}</span>`).join('');
 }
@@ -92,8 +92,8 @@ function _truncatePlace(place) {
 function _formatRowMeta(person, spouseName) {
     const birth = (person.events || []).find(e => e.tag === 'BIRT');
     const death = (person.events || []).find(e => e.tag === 'DEAT');
-    const by = birth ? _extractYear(birth.date) : null;
-    const dy = death ? _extractYear(death.date) : null;
+    const by = birth ? _extractYearR(birth.date) : null;
+    const dy = death ? _extractYearR(death.date) : null;
     const segments = [];
     if (by != null && dy != null) segments.push(`${by}–${dy}`);
     else if (by != null)          segments.push(`b. ${by}`);
@@ -113,9 +113,9 @@ function buildResultRowsHTML(rows, ctx) {
         const spouseName = spouseXref && peopleById[spouseXref] ? peopleById[spouseXref].name : null;
         const meta = _formatRowMeta(full, spouseName);
         out.push(
-            `<div class="adv-row" data-id="${_escapeHtml(r.id)}">` +
-                `<div class="adv-row-name">${_escapeHtml(full.name || '?')}</div>` +
-                (meta ? `<div class="adv-row-meta">${_escapeHtml(meta)}</div>` : '') +
+            `<div class="adv-row" data-id="${_escapeHtmlR(r.id)}">` +
+                `<div class="adv-row-name">${_escapeHtmlR(full.name || '?')}</div>` +
+                (meta ? `<div class="adv-row-meta">${_escapeHtmlR(meta)}</div>` : '') +
             `</div>`
         );
     }
