@@ -5,40 +5,14 @@
 // not tested directly.
 
 // ---------------------------------------------------------------------------
-// Pure helpers
+// Pure helpers \u2014 delegated to shared viz_name_match.js
 // ---------------------------------------------------------------------------
 
-function stripAccents(s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
-
-function normSearch(s) { return stripAccents((s || '').toLowerCase()); }
-
-// Pre-parse each person's name into searchable fields (lazy, cached per session).
-// p = { id, name, birth_year, death_year }
-const _parseCache = new Map();
-
-function getParsed(p) {
-    if (_parseCache.has(p.id)) return _parseCache.get(p.id);
-    const raw = p.name || '';
-    // Collapse slashes, normalize spaces
-    const flat = raw.replace(/\//g, '').replace(/\s+/g, ' ').trim();
-    // Extract nicknames (text in straight or curly double quotes: "Nick" or \u201cNick\u201d)
-    const nicks = [];
-    const noNicks = flat.replace(/[\u201c"]([^\u201c\u201d"]+)[\u201d"]/g, (_, n) => { nicks.push(n.trim()); return ' '; })
-        .replace(/\s+/g, ' ').trim();
-    const tokens = noNicks.split(' ').filter(Boolean);
-    // Display: title-case the flat form (keeps quotes visible)
-    const disp = flat.replace(/(^|[\s\-])(\p{L})/gu, (_, sep, c) => sep + c.toUpperCase());
-    const normDisp = normSearch(flat); // same .length as flat (accent strip is length-preserving for NFC)
-    const result = {
-        disp,
-        normDisp,
-        normFirst: normSearch(tokens[0] || ''),
-        normLast: normSearch(tokens[tokens.length - 1] || ''),
-        normNicks: nicks.map(normSearch),
-    };
-    _parseCache.set(p.id, result);
-    return result;
-}
+// Shared name-match helpers \u2014 for browser, viz_name_match.js loads first via <script> tag.
+const _nameMatch = (typeof require !== 'undefined')
+    ? require('./viz_name_match.js')
+    : { stripAccents, normSearch, getParsed };
+const { stripAccents, normSearch, getParsed } = _nameMatch;
 
 function personMatches(parsed, qNorm) {
     if (!qNorm) return false;
