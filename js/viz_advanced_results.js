@@ -8,7 +8,7 @@ const _escapeHtml = _hu.escapeHtml;
 const _as = (typeof require !== 'undefined')
     ? require('./viz_advanced_search.js')
     : { extractYear };
-const extractYear = _as.extractYear;
+const _extractYear = _as.extractYear;
 
 const _EVENT_VERB = { birth: 'Born', death: 'Died', marriage: 'Married', residence: 'Lived', any: 'Event' };
 const _FAMILY_LABEL = { spouse: 'Spouse', father: 'Father', mother: 'Mother', other: 'Person' };
@@ -92,8 +92,8 @@ function _truncatePlace(place) {
 function _formatRowMeta(person, spouseName) {
     const birth = (person.events || []).find(e => e.tag === 'BIRT');
     const death = (person.events || []).find(e => e.tag === 'DEAT');
-    const by = birth ? extractYear(birth.date) : null;
-    const dy = death ? extractYear(death.date) : null;
+    const by = birth ? _extractYear(birth.date) : null;
+    const dy = death ? _extractYear(death.date) : null;
     const segments = [];
     if (by != null && dy != null) segments.push(`${by}–${dy}`);
     else if (by != null)          segments.push(`b. ${by}`);
