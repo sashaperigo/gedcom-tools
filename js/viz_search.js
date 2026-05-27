@@ -9,10 +9,10 @@
 // ---------------------------------------------------------------------------
 
 // Shared name-match helpers \u2014 for browser, viz_name_match.js loads first via <script> tag.
-const _nameMatch = (typeof require !== 'undefined')
+const _nameMatchS = (typeof require !== 'undefined')
     ? require('./viz_name_match.js')
     : { stripAccents, normSearch, getParsed };
-const { stripAccents, normSearch, getParsed } = _nameMatch;
+const { stripAccents: _stripAccentsS, normSearch: _normSearchS, getParsed: _getParsedS } = _nameMatchS;
 
 function personMatches(parsed, qNorm) {
     if (!qNorm) return false;
@@ -61,7 +61,7 @@ function estDob(p) {
 
 function sortHits(hits, qNorm) {
     return hits.slice().sort((a, b) => {
-        const pa = getParsed(a), pb = getParsed(b);
+        const pa = _getParsedS(a), pb = _getParsedS(b);
         const sa = matchScore(pa, qNorm), sb = matchScore(pb, qNorm);
         if (sa !== sb) return sa - sb;
         if (pa.normLast !== pb.normLast) return pa.normLast < pb.normLast ? -1 : 1;
@@ -110,7 +110,7 @@ function renderResults(hits, qNorm) {
     list.innerHTML = '';
     let activeIdx = -1;
     hits.forEach(p => {
-        const parsed = getParsed(p);
+        const parsed = _getParsedS(p);
         const li = document.createElement('li');
         const dates = [p.birth_year && `b.\u2009${p.birth_year}`,
             p.death_year && `d.\u2009${p.death_year}`
@@ -144,10 +144,10 @@ if (typeof document !== 'undefined') {
         let activeIdx = -1;
 
         input.addEventListener('input', () => {
-            const qNorm = normSearch(input.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
+            const qNorm = _normSearchS(input.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
             if (!qNorm) { list.classList.remove('open');
                 list.innerHTML = ''; return; }
-            const hits = sortHits(ALL_PEOPLE.filter(p => personMatches(getParsed(p), qNorm)), qNorm);
+            const hits = sortHits(ALL_PEOPLE.filter(p => personMatches(_getParsedS(p), qNorm)), qNorm);
             renderResults(hits, qNorm);
         });
 
@@ -175,5 +175,10 @@ if (typeof document !== 'undefined') {
 // ---------------------------------------------------------------------------
 
 if (typeof module !== 'undefined') {
-    module.exports = { stripAccents, normSearch, getParsed, personMatches, highlightName, matchScore, estDob, sortHits };
+    module.exports = {
+        stripAccents: _stripAccentsS,
+        normSearch: _normSearchS,
+        getParsed: _getParsedS,
+        personMatches, highlightName, matchScore, estDob, sortHits,
+    };
 }

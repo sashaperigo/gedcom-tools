@@ -2823,6 +2823,9 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 #advanced-search-toggle:hover { background: #1a3a60; }
 
+/* Explicit height + min-height:0 on every descendant flex column are load-bearing:
+   without them the inner .adv-resultlist won't scroll and the pager renders
+   off-screen. --header-h is set by _updateHeaderH() in viz_ancestors.html. */
 #adv-search-pane {
     flex: 0 0 340px;
     height: calc(100vh - var(--header-h, 60px));
