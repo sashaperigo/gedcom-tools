@@ -2825,6 +2825,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
 
 #adv-search-pane {
     flex: 0 0 340px;
+    height: calc(100vh - var(--header-h, 60px));
     background: #f5f8fb;
     border-right: 1px solid #d8e3f0;
     display: flex; flex-direction: column;
