@@ -24,6 +24,7 @@ FULL_DOCS=(
 POINTER_DOCS=(
     ".claude/ARCHITECTURE_MAP.md|file locations + full js/ & gedcom_merge/ inventory — load when you need to find where code lives"
     ".claude/QUICK_START.md|commands (dev server, tests, merge, lint) — load when you need to run something; canonical GED path is in COMMON_MISTAKES #1"
+    "docs/INDEX.md|full doc map + which learnings/ deep dive to load when — keep its file list in sync when adding a learnings doc"
 )
 
 # Every doc that gets a freshness check (full + pointered).
@@ -62,5 +63,5 @@ doc_age_days() {
     for entry in "${POINTER_DOCS[@]}"; do
         printf '  %s — %s\n' "${entry%%|*}" "${entry#*|}"
     done
-    printf '  docs/INDEX.md — full doc map + token costs; docs/learnings/*.md for deep dives\n'
+    printf '  docs/learnings/*.md — deep dives; see docs/INDEX.md for which to load when\n'
 } | jq -Rs '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: .}}'
