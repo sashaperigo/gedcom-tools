@@ -1055,6 +1055,7 @@ def _build_families_js(fams: dict) -> dict:
             'wife': fam.get('wife'),
             'chil': list(fam.get('chil', [])),
             'marr_year': marr_year,
+            'divorced': bool(fam.get('divs')),
         }
     return families
 

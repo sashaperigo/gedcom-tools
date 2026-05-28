@@ -8,8 +8,9 @@ const { DESIGN } = require('../../js/viz_design.js');
 global.DESIGN = DESIGN;
 
 const { NODE_W, NODE_W_FOCUS, NODE_H, NODE_H_FOCUS, ROW_HEIGHT, H_GAP, MARRIAGE_GAP } = DESIGN;
-// Focus-to-sibling gap: accounts for focus node being wider than NODE_W.
-const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
+// Focus-to-sibling gap: standard sibling slot plus an extra H_GAP of breathing
+// room so the focused pill reads as visually distinct from its siblings.
+const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP * 2 + NODE_W / 2;
 
 const {
     computeLayout,
@@ -4245,5 +4246,113 @@ describe('computeLayout — focus-child with multi-FAM expanded grandkids does n
         expect(leftmostVisibleCenter,
             `leftmostVisCx=${leftmostVisibleCenter} should be >= personCenter=${personCenter}`,
         ).toBeGreaterThanOrEqual(personCenter);
+    });
+});
+
+// ── Regression: a person with multi-FAM expanded kids (visible spouse on
+// row + hidden spouse with other-FAM kids on the opposite side) used to
+// render with the visible cluster's near-edge child drop landing EXACTLY at
+// personCenter — the same x as the other-umbrella anchor drop and the L-
+// segment endpoint. This produced a visible T-junction directly under the
+// parent pill. Fix: clamp visible cluster's near-edge child center to clear
+// personCenter by at least H_GAP.
+// Mirrors the real-world Apollonia (focus) / Philippe (younger sib with
+// Maria visible + Jeannette hidden) scenario.
+describe('computeLayout — younger sib has multi-FAM kids, focus has none', () => {
+    beforeEach(() => {
+        resetGlobals({
+            people: {
+                '@APOLLONIA@': { birth_year: 1771, sex: 'F' },
+                '@PHILIPPE@':  { birth_year: 1773, sex: 'M' },
+                '@MARIA@':     { birth_year: 1782, sex: 'F' }, // visible spouse (right)
+                '@JEAN@':      { birth_year: 1795, sex: 'F' }, // hidden spouse
+                // Philippe's visible-FAM kids with Maria (older births)
+                '@P_M1@': { birth_year: 1807 },
+                '@P_M2@': { birth_year: 1808 },
+                '@P_M3@': { birth_year: 1810 },
+                '@P_M4@': { birth_year: 1812 },
+                '@P_M5@': { birth_year: 1814 },
+                '@P_M6@': { birth_year: 1815 },
+                '@P_M7@': { birth_year: 1817 },
+                '@P_M8@': { birth_year: 1819 },
+                // Philippe's other-FAM kids with Jeannette (younger births)
+                '@P_J1@': { birth_year: 1823 },
+                '@P_J2@': { birth_year: 1826 },
+                '@P_J3@': { birth_year: 1829 },
+                '@P_J4@': { birth_year: 1833 },
+                '@P_J5@': { birth_year: 1836 },
+            },
+            parents: {
+                '@APOLLONIA@': [null, null],
+                '@PHILIPPE@':  [null, null],
+                '@P_M1@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_M2@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_M3@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_M4@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_M5@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_M6@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_M7@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_M8@': ['@PHILIPPE@', '@MARIA@'],
+                '@P_J1@': ['@PHILIPPE@', '@JEAN@'],
+                '@P_J2@': ['@PHILIPPE@', '@JEAN@'],
+                '@P_J3@': ['@PHILIPPE@', '@JEAN@'],
+                '@P_J4@': ['@PHILIPPE@', '@JEAN@'],
+                '@P_J5@': ['@PHILIPPE@', '@JEAN@'],
+            },
+            children: {
+                '@APOLLONIA@': [],
+                '@PHILIPPE@': ['@P_M1@','@P_M2@','@P_M3@','@P_M4@','@P_M5@','@P_M6@','@P_M7@','@P_M8@',
+                               '@P_J1@','@P_J2@','@P_J3@','@P_J4@','@P_J5@'],
+            },
+            relatives: {
+                '@APOLLONIA@': { siblings: ['@PHILIPPE@'], spouses: [] },
+                '@PHILIPPE@':  { siblings: ['@APOLLONIA@'], spouses: ['@MARIA@', '@JEAN@'] },
+                '@MARIA@':     { siblings: [], spouses: ['@PHILIPPE@'] },
+                '@JEAN@':      { siblings: [], spouses: ['@PHILIPPE@'] },
+            },
+            families: {
+                '@F_PHI_M@': { husb: '@PHILIPPE@', wife: '@MARIA@',
+                               chil: ['@P_M1@','@P_M2@','@P_M3@','@P_M4@','@P_M5@','@P_M6@','@P_M7@','@P_M8@'] },
+                '@F_PHI_J@': { husb: '@PHILIPPE@', wife: '@JEAN@',
+                               chil: ['@P_J1@','@P_J2@','@P_J3@','@P_J4@','@P_J5@'] },
+            },
+        });
+    });
+
+    function layout() {
+        return computeLayoutChecked(
+            '@APOLLONIA@',
+            new Set(),
+            new Set(),
+            new Set(['@PHILIPPE@']),
+        );
+    }
+
+    it('Philippe pill remains at standard sibling distance from focus', () => {
+        // Multi-FAM children should NOT push the sibling pill far from focus.
+        // The cluster geometry is handled by the umbrella-clearance fix below,
+        // not by spacing the parent pill away.
+        const { nodes } = layout();
+        const foc = nodes.find(n => n.xref === '@APOLLONIA@');
+        const phi = nodes.find(n => n.xref === '@PHILIPPE@');
+        expect(phi.x).toBe(FOCUS_TO_SIB);
+    });
+
+    it('visible-cluster leftmost child clears personCenter by H_GAP (no umbrella T-junction)', () => {
+        const { nodes } = layout();
+        const phi = nodes.find(n => n.xref === '@PHILIPPE@');
+        const personCenter = phi.x + NODE_W / 2;
+        const mKids = ['@P_M1@','@P_M2@','@P_M3@','@P_M4@','@P_M5@','@P_M6@','@P_M7@','@P_M8@']
+            .map(x => nodes.find(n => n.xref === x));
+        const leftmostMCenter = Math.min(...mKids.map(n => n.x + NODE_W / 2));
+        // The visible cluster's leftmost child drop terminates at this x at
+        // visibleUmbrellaY and continues down to childY. The OTHER cluster's
+        // L-segment terminates at personCenter at otherUmbrellaY. If
+        // leftmostMCenter === personCenter, the visible drop crosses the
+        // L-segment endpoint and produces a T-junction directly under the
+        // parent pill. Require H_GAP separation.
+        expect(leftmostMCenter - personCenter,
+            `leftmost visible child center=${leftmostMCenter} should be >= personCenter+H_GAP=${personCenter + H_GAP}`,
+        ).toBeGreaterThanOrEqual(H_GAP);
     });
 });

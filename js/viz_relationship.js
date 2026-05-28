@@ -243,6 +243,16 @@ function _findSpouseFamily(a, b, ctx) {
   return null;
 }
 
+function _isDivorced(a, b, ctx) {
+  const fam = _findSpouseFamily(a, b, ctx);
+  return !!(fam && fam.divorced);
+}
+
+function _spouseVerb(otherSex, divorced) {
+  const verb = gendered(otherSex, 'Husband', 'Wife', 'Spouse');
+  return divorced ? `Ex-${verb}` : verb;
+}
+
 function _findChildFamily(parentXref, childXref, ctx) {
   for (const fam of Object.values(ctx.FAMILIES || {})) {
     if ((fam.husb === parentXref || fam.wife === parentXref)
@@ -279,7 +289,7 @@ function findAtomicAffinity(viewer, other, ctx) {
 
   // Tier 1: spouse of viewer (1 edge)
   if (viewerSpouses.includes(other)) {
-    return { label: gendered(otherSex, 'Husband', 'Wife', 'Spouse'), edges: 1 };
+    return { label: _spouseVerb(otherSex, _isDivorced(viewer, other, ctx)), edges: 1 };
   }
 
   // Tier 2: step-parent (up + across, 2 edges)
@@ -287,7 +297,7 @@ function findAtomicAffinity(viewer, other, ctx) {
     if (getSpousesOf(par, ctx).includes(other) && !viewerParents.includes(other)) {
       if (_isFormerOrPredeceasedStep(other, par, viewer, ctx)) {
         const parSex     = (ctx.PEOPLE[par]   || {}).sex || null;
-        const spouseVerb = gendered(otherSex, 'Husband', 'Wife', 'Spouse');
+        const spouseVerb = _spouseVerb(otherSex, _isDivorced(other, par, ctx));
         const parLabel   = gendered(parSex,   'Father', 'Mother', 'Parent');
         return { label: `${spouseVerb} of ${parLabel}`, edges: 2 };
       }
@@ -303,7 +313,7 @@ function findAtomicAffinity(viewer, other, ctx) {
       if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
         const spSex      = (ctx.PEOPLE[sp]    || {}).sex || null;
         const childLabel = gendered(otherSex, 'Son', 'Daughter', 'Child');
-        const spouseVerb = gendered(spSex,    'Husband', 'Wife', 'Spouse');
+        const spouseVerb = _spouseVerb(spSex, _isDivorced(viewer, sp, ctx));
         return { label: `${childLabel} of ${spouseVerb}`, edges: 2 };
       }
       return { label: gendered(otherSex, 'Step-Son', 'Step-Daughter', 'Step-Child'), edges: 2 };
@@ -480,8 +490,9 @@ function _bestRel(viewer, other, ctx, seen, depthLeft) {
     if (best && 1 >= best.edges) continue;
     const sub = _bestRel(sp, other, ctx, newSeen, depthLeft - 1);
     if (!sub) continue;
+    const spouseWord = _isDivorced(viewer, sp, ctx) ? 'Ex-Spouse' : 'Spouse';
     const cand = {
-      label: `${sub.label} of Spouse`,
+      label: `${sub.label} of ${spouseWord}`,
       edges: 1 + sub.edges,
       ofs: sub.ofs + 1,
       leftEdges: 1,
@@ -504,7 +515,7 @@ function findAffinityLabel(viewer, other, ctx) {
   // ── Tier 1: spouse of viewer ─────────────────────────────────────
   if (viewerSpouses.includes(other)) {
     const sex = (ctx.PEOPLE[other] || {}).sex || null;
-    return gendered(sex, 'Husband', 'Wife', 'Spouse');
+    return _spouseVerb(sex, _isDivorced(viewer, other, ctx));
   }
 
   // ── Tier 2: step relationships ───────────────────────────────────
@@ -515,7 +526,7 @@ function findAffinityLabel(viewer, other, ctx) {
       const sex = (ctx.PEOPLE[other] || {}).sex || null;
       if (_isFormerOrPredeceasedStep(other, par, viewer, ctx)) {
         const parSex     = (ctx.PEOPLE[par] || {}).sex || null;
-        const spouseVerb = gendered(sex,    'Husband', 'Wife', 'Spouse');
+        const spouseVerb = _spouseVerb(sex, _isDivorced(other, par, ctx));
         const parLabel   = gendered(parSex, 'Father', 'Mother', 'Parent');
         return `${spouseVerb} of ${parLabel}`;
       }
@@ -532,7 +543,7 @@ function findAffinityLabel(viewer, other, ctx) {
       if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
         const spSex      = (ctx.PEOPLE[sp] || {}).sex || null;
         const childLabel = gendered(sex,   'Son', 'Daughter', 'Child');
-        const spouseVerb = gendered(spSex, 'Husband', 'Wife', 'Spouse');
+        const spouseVerb = _spouseVerb(spSex, _isDivorced(viewer, sp, ctx));
         return `${childLabel} of ${spouseVerb}`;
       }
       return gendered(sex, 'Step-Son', 'Step-Daughter', 'Step-Child');
@@ -614,7 +625,7 @@ function findAffinityLabel(viewer, other, ctx) {
     const legLen = path.a + path.b;
     if (legLen < bestSpouseLegLength) {
       const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
-      const verb = gendered(otherSex, 'Husband', 'Wife', 'Spouse');
+      const verb = _spouseVerb(otherSex, _isDivorced(sp, other, ctx));
       bestSpouseTemplate = `${verb} of ${spLabel}`;
       bestSpouseLegLength = legLen;
     }
@@ -634,7 +645,8 @@ function findAffinityLabel(viewer, other, ctx) {
     if (!label) continue;
     const legLen = path.a + path.b;
     if (legLen < bestSpouseSideLeg) {
-      bestSpouseSideTemplate = `${label} of Spouse`;
+      const spouseWord = _isDivorced(viewer, sp, ctx) ? 'Ex-Spouse' : 'Spouse';
+      bestSpouseSideTemplate = `${label} of ${spouseWord}`;
       bestSpouseSideLeg = legLen;
     }
   }

@@ -128,17 +128,19 @@ function _placeChildrenOfPerson(personXref, visibleSpouseFams, focusXref, nodes,
 
     // Multi-FAM disjoint-umbrella invariant: when both clusters exist, the
     // other umbrella's L-segment runs up to x=personCenter on the spouse
-    // side. The visible cluster's child drops must stay on the spouse side
-    // of personCenter, otherwise the leftmost (rightmost when spouse-left)
-    // visible child's vertical drop (visibleUmbrellaY → childY) crosses the
-    // other umbrella's L-segment at y=otherUmbrellaY. Shift visibleIdealStart
-    // so the visible cluster's near-edge child center is clear of personCenter.
+    // side, terminating at the other-umbrella anchor drop (also at x=personCenter).
+    // The visible cluster's near-edge child drop must clear personCenter by at
+    // least H_GAP so it doesn't terminate at the same x as the L-segment
+    // endpoint (which would render as a T-junction directly under the parent pill).
     if (otherGroups.length > 0 && visibleIdealStart !== null && visibleSpouseNode) {
         if (spouseRight) {
-            const minStart = personCenter - NODE_W / 2;
+            // Leftmost visible child CENTER must be > personCenter by ≥ H_GAP.
+            // child.x (left edge) = center − NODE_W/2 = (personCenter + H_GAP) − NODE_W/2
+            const minStart = personCenter + H_GAP - NODE_W / 2;
             if (visibleIdealStart < minStart) visibleIdealStart = minStart;
         } else {
-            const maxStart = personCenter + NODE_W / 2 - visibleWidth;
+            // Mirror: rightmost visible child CENTER must be < personCenter by ≥ H_GAP.
+            const maxStart = personCenter - H_GAP + NODE_W / 2 - visibleWidth;
             if (visibleIdealStart > maxStart) visibleIdealStart = maxStart;
         }
     }

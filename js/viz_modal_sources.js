@@ -120,6 +120,28 @@ function _refreshSourcesModalContent() {
 }
 
 
+const CITATION_TEXT_COLLAPSE_THRESHOLD = 280;
+
+function _renderCitationText(text) {
+    const escaped = escHtml(text);
+    if (text.length <= CITATION_TEXT_COLLAPSE_THRESHOLD) {
+        return `<span class="citation-field-value citation-field-value--quoted">“${escaped}”</span>`;
+    }
+    return (
+        `<span class="citation-field-value citation-field-value--quoted citation-field-value--collapsible is-collapsed">` +
+        `<span class="citation-text-body">“${escaped}”</span>` +
+        `<button type="button" class="citation-text-toggle" onclick="toggleCitationText(this)">Show more</button>` +
+        `</span>`
+    );
+}
+
+function toggleCitationText(btn) {
+    const wrap = btn.closest('.citation-field-value--collapsible');
+    if (!wrap) return;
+    const collapsed = wrap.classList.toggle('is-collapsed');
+    btn.textContent = collapsed ? 'Show more' : 'Show less';
+}
+
 function _buildSourcesModalContent(citations, sources, xref, evt) {
     const tag = (evt && evt.tag) || '';
     // FAM-originated events (MARR/DIV) carry fam_xref + marr_idx/div_idx.
@@ -172,7 +194,7 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
             const fieldRows = [
                 c.page ? `<div class="citation-field"><span class="citation-field-label">Page</span><span class="citation-field-value">${escHtml(/^p\.?\s*/i.test(c.page) ? c.page : 'p. ' + c.page)}</span></div>` : '',
                 c.date ? `<div class="citation-field"><span class="citation-field-label">Date</span><span class="citation-field-value">${escHtml(c.date)}</span></div>` : '',
-                c.text ? `<div class="citation-field"><span class="citation-field-label">Text</span><span class="citation-field-value citation-field-value--quoted">“${escHtml(c.text)}”</span></div>` : '',
+                c.text ? `<div class="citation-field"><span class="citation-field-label">Text</span>${_renderCitationText(c.text)}</div>` : '',
                 c.note ? `<div class="citation-field"><span class="citation-field-label">Note</span><span class="citation-field-value">${escHtml(c.note)}</span></div>` : '',
                 quayDisplay ? `<div class="citation-field"><span class="citation-field-label">Qual</span><span class="citation-field-value">${escHtml(quayDisplay)}</span></div>` : '',
             ].filter(Boolean).join('');
