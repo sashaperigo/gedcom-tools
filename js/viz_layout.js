@@ -105,8 +105,10 @@ function computeLayout(focusXref, expandedAncestors, expandedSiblingsXrefs, expa
         ...(expandedAncestors || []),
         ...(expandedSiblingsXrefs || []),
     ]);
-    // Gap between focus node edge and nearest sibling: account for focus being wider than NODE_W.
-    const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP + NODE_W / 2;
+    // Sibling left edge nearest focus: extra H_GAP of breathing room beyond the
+    // standard sibling-to-sibling spacing, so the focused pill reads as visually
+    // distinct from its siblings on either side.
+    const FOCUS_TO_SIB = NODE_W_FOCUS / 2 + H_GAP * 2 + NODE_W / 2;
 
     const nodes = [];
     const edges = [];

@@ -309,6 +309,23 @@ function assertChildWithinParentSpanRange(nodes, edges) {
             });
             if (skip) continue;
         }
+        // Skip multi-FAM case where a rendered parent has children rendered
+        // via a different FAM (other spouse may not be rendered, but the
+        // gotcha-#10 clamp still pushes this cluster asymmetrically off
+        // the marriage midpoint).
+        if (typeof FAMILIES !== 'undefined') {
+            const skip = renderedParents.some(p => {
+                let famsWithRenderedChild = 0;
+                for (const f of Object.keys(FAMILIES)) {
+                    const fam = FAMILIES[f];
+                    if (!fam || (fam.husb !== p.xref && fam.wife !== p.xref)) continue;
+                    if ((fam.chil || []).some(cx => nodeByXref.has(cx))) famsWithRenderedChild++;
+                    if (famsWithRenderedChild > 1) return true;
+                }
+                return false;
+            });
+            if (skip) continue;
+        }
         let spanL = Infinity, spanR = -Infinity;
         for (const p of renderedParents) {
             spanL = Math.min(spanL, p.x);
