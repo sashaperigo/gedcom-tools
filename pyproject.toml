@@ -20,6 +20,12 @@ dependencies = [
 gedcom-lint = "gedcom_linter:main"
 gedcom-merge = "gedcom_merge.cli:main"
 
+[tool.setuptools]
+py-modules = ["gedcom_linter"]
+
+[tool.setuptools.packages.find]
+include = ["gedcom_merge*"]
+
 [project.optional-dependencies]
 test = ["pytest>=7"]
 
