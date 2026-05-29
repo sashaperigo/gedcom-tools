@@ -11,15 +11,20 @@ function _relpathLifespan(xref) {
     return '';
 }
 
+const _RELPATH_GLYPH = {
+  'descent-up': '↑',
+  'descent-down': '↓',
+  'spouse': '⚭',
+  'ex-spouse': '⚭',
+  'godparent': '✝',
+  'godchild': '✝',
+};
+
 function _renderRelationshipPath(path) {
     const body = document.getElementById('relpath-modal-body');
     if (!body) return;
     body.innerHTML = '';
-    // Arrows point down on the focus person's leg (them → common ancestor) and up
-    // on the viewer's leg (common ancestor → you); the MRCA row begins the up leg.
-    let reachedMrca = false;
     path.forEach((node) => {
-        if (node.isMrca) reachedMrca = true;
         const row = document.createElement('div');
         row.className = 'relpath-row';
 
@@ -64,7 +69,7 @@ function _renderRelationshipPath(path) {
             step.className = 'relpath-step';
             const arrow = document.createElement('span');
             arrow.className = 'relpath-arrow';
-            arrow.textContent = reachedMrca ? '↑' : '↓';
+            arrow.textContent = _RELPATH_GLYPH[node.edgeKind] || '↓';
             const rel = document.createElement('span');
             rel.textContent = node.relToNext;
             step.appendChild(arrow);
@@ -74,18 +79,50 @@ function _renderRelationshipPath(path) {
     });
 }
 
-function showRelationshipPathModal(path, label) {
-    if (!path || !path.length) return;
+let _relpathEntries = [];
+
+function _renderRelationshipTabs(entries, activeIdx) {
+    const existing = document.getElementById('relpath-tabs');
+    if (existing) existing.remove();
+    if (!entries || entries.length < 2) return;
+    const body = document.getElementById('relpath-modal-body');
+    if (!body) return;
+    const bar = document.createElement('div');
+    bar.id = 'relpath-tabs';
+    bar.className = 'relpath-tabs';
+    entries.forEach((e, i) => {
+        const tab = document.createElement('button');
+        tab.className = 'relpath-tab' + (i === activeIdx ? ' active' : '');
+        tab.textContent = e.label;
+        tab.addEventListener('click', () => _selectRelationshipTab(i));
+        bar.appendChild(tab);
+    });
+    body.parentNode.insertBefore(bar, body);
+}
+
+function _selectRelationshipTab(i) {
+    _renderRelationshipTabs(_relpathEntries, i);
+    _renderRelationshipPath(_relpathEntries[i].path);
+}
+
+// entries: [{ kind, label, path }]; title: the displayed (possibly combined) label.
+function showRelationshipPathModal(entries, title) {
+    const renderable = (entries || []).filter(e => e.path && e.path.length);
+    if (!renderable.length) return;
     const overlay = document.getElementById('relpath-modal-overlay');
-    const title = document.getElementById('relpath-modal-title');
-    if (title) title.textContent = label ? `Relationship — ${label}` : 'Relationship';
-    _renderRelationshipPath(path);
+    const titleEl = document.getElementById('relpath-modal-title');
+    if (titleEl) titleEl.textContent = title ? `Relationship — ${title}` : 'Relationship';
+    _relpathEntries = renderable;
+    _renderRelationshipTabs(renderable, 0);
+    _renderRelationshipPath(renderable[0].path);
     if (overlay) overlay.classList.add('open');
 }
 
 function closeRelationshipPathModal() {
     const overlay = document.getElementById('relpath-modal-overlay');
     if (overlay) overlay.classList.remove('open');
+    const bar = document.getElementById('relpath-tabs');
+    if (bar) bar.remove();
 }
 
 // Escape closes the modal when it's open (matches event/note modal behavior).
