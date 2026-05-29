@@ -2953,8 +2953,8 @@ button.sources-section-title:hover .sources-toggle-arrow {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 20px;
-    width: 360px;
+    padding: 22px 24px;
+    width: 380px;
     max-width: 90vw;
     max-height: 80vh;
     overflow-y: auto;
@@ -2964,7 +2964,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 #relpath-modal-header h3 {
@@ -2991,34 +2991,59 @@ button.sources-section-title:hover .sources-toggle-arrow {
     flex-direction: column;
     align-items: center;
     text-align: center;
+    padding: 2px 0;
 }
 
 .relpath-row {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    line-height: 1.4;
 }
 
 .relpath-person {
-    color: var(--accent, #4ea1ff);
+    color: var(--accent-light);
     cursor: pointer;
+    font-weight: 500;
 }
 
-.relpath-person:hover { text-decoration: underline; }
+.relpath-person:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
 
+.relpath-years {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text-disabled);
+}
+
+.relpath-you,
 .relpath-mrca {
     font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-disabled);
-    border: 1px solid var(--border);
+    letter-spacing: 0.05em;
+    font-weight: 600;
     border-radius: 4px;
-    padding: 1px 5px;
+    padding: 1px 6px;
+}
+
+.relpath-you {
+    color: var(--accent-light);
+    background: var(--accent-bg);
+}
+
+.relpath-mrca {
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
 }
 
 .relpath-step {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin: 3px 0;
+    font-size: 11px;
+    color: var(--text-disabled);
+    letter-spacing: 0.02em;
+    margin: 6px 0;
 }
 .adv-pager-gap { color: #999; padding: 0 2px; }

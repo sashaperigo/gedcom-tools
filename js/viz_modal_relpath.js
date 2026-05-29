@@ -25,11 +25,7 @@ function _renderRelationshipPath(path) {
 
         const link = document.createElement('span');
         link.className = 'relpath-person';
-        const nm = (typeof _personName === 'function') ? _personName(node.xref) : node.xref;
-        const span = _relpathLifespan(node.xref);
-        let text = span ? `${nm} ${span}` : nm;
-        if (node.isViewer) text += ' — You';
-        link.textContent = text;
+        link.textContent = (typeof _personName === 'function') ? _personName(node.xref) : node.xref;
         link.addEventListener('click', () => {
             closeRelationshipPathModal();
             if (typeof navigate === 'function') {
@@ -39,6 +35,21 @@ function _renderRelationshipPath(path) {
             }
         });
         row.appendChild(link);
+
+        const years = _relpathLifespan(node.xref);
+        if (years) {
+            const y = document.createElement('span');
+            y.className = 'relpath-years';
+            y.textContent = years;
+            row.appendChild(y);
+        }
+
+        if (node.isViewer) {
+            const you = document.createElement('span');
+            you.className = 'relpath-you';
+            you.textContent = 'You';
+            row.appendChild(you);
+        }
 
         if (node.isMrca) {
             const tag = document.createElement('span');
