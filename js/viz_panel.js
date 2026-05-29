@@ -687,52 +687,16 @@ function renderPanel() {
             labelSpan.textContent = rel.label;
             relEl.appendChild(labelSpan);
 
-            const isBloodPath = rel.debug && rel.debug.a != null && rel.debug.b != null
-                && !rel.debug.affinity && (rel.debug.a + rel.debug.b) > 0;
-
-            if (isBloodPath && typeof buildRelationshipPath === 'function'
+            const isSelf = rel.debug && rel.debug.a === 0 && rel.debug.b === 0;
+            if (!isSelf && typeof enumerateRelationships === 'function'
                 && typeof showRelationshipPathModal === 'function') {
-                // Blood relationship → click opens the full-path modal. Reuse the
-                // {a,b,mrca} the panel already computed so the click does no
-                // expensive findBloodPaths re-run.
                 labelSpan.style.cursor = 'pointer';
                 labelSpan.style.textDecoration = 'underline dotted';
                 labelSpan.title = 'Click to see how you are related';
                 labelSpan.addEventListener('click', () => {
-                    const precomputed = { a: rel.debug.a, b: rel.debug.b, mrca: rel.debug.mrca };
-                    const path = buildRelationshipPath(VIEWER_XREF, xref, relCtx, precomputed);
-                    if (path) showRelationshipPathModal(path, rel.label);
+                    const entries = enumerateRelationships(VIEWER_XREF, xref, relCtx);
+                    showRelationshipPathModal(entries, rel.label);
                 });
-            } else {
-                // Non-blood (affinity / godparent): keep the existing
-                // godparent-only inline expand.
-                const hasGodparent = typeof findGodparentAtomic === 'function'
-                    && findGodparentAtomic(VIEWER_XREF, xref, relCtx) != null;
-                const expandable = hasGodparent && rel.debug && !rel.debug.godparent;
-                if (expandable && typeof enumerateRelationships === 'function') {
-                    labelSpan.style.cursor = 'pointer';
-                    labelSpan.style.textDecoration = 'underline dotted';
-                    labelSpan.title = 'Click to see all relationships';
-                    const detailsDiv = document.createElement('div');
-                    detailsDiv.style.cssText = 'display:none;margin-top:4px;font-size:0.9em;opacity:0.85;';
-                    relEl.appendChild(detailsDiv);
-                    let built = false;
-                    labelSpan.addEventListener('click', () => {
-                        if (!built) {
-                            const rels = enumerateRelationships(VIEWER_XREF, xref, relCtx);
-                            const ul = document.createElement('ul');
-                            ul.style.cssText = 'margin:0;padding-left:1.2em;';
-                            for (const r of rels) {
-                                const li = document.createElement('li');
-                                li.textContent = r.label;
-                                ul.appendChild(li);
-                            }
-                            detailsDiv.appendChild(ul);
-                            built = true;
-                        }
-                        detailsDiv.style.display = detailsDiv.style.display === 'none' ? 'block' : 'none';
-                    });
-                }
             }
         }
     } else if (relEl) {
