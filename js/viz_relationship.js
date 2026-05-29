@@ -737,6 +737,73 @@ function enumerateRelationships(viewerXref, otherXref, ctx) {
   return out;
 }
 
+// ── Relationship-path reconstruction (for the click-to-expand path modal) ──
+
+// Lowercase kinship step terms used between rows of the relationship chain.
+function _childStep(sex)  { return gendered(sex, 'son of',    'daughter of', 'child of'); }
+function _parentStep(sex) { return gendered(sex, 'father of', 'mother of',   'parent of'); }
+
+// Walk bfsUp back-pointers from `mrca` (known to sit at depth `dist` from
+// `endpoint`) down to `endpoint`, returning [mrca, ..., endpoint] (length dist+1).
+// Chains `viaParentXref`, picking at each node the entry whose depth matches the
+// step we're on so pedigree-collapse multi-entries don't derail the walk.
+function _reconstructLeg(endpoint, mrca, dist, parents) {
+  const up = bfsUp(endpoint, parents, dist);
+  const chain = [];
+  let node = mrca;
+  let d = dist;
+  while (true) {
+    chain.push(node);
+    if (d === 0) break;
+    const entries = up.get(node) || [];
+    const entry = entries.find(e => e.depth === d) || entries[0];
+    if (!entry || !entry.viaParentXref) break; // safety: broken back-pointer chain
+    node = entry.viaParentXref;
+    d -= 1;
+  }
+  return chain;
+}
+
+// Build the ordered chain of people connecting `otherXref` (top) to
+// `viewerXref` ("you", bottom): [other, ..., MRCA, ..., you].
+// `precomputedPath` (optional) is the closest {a, b, mrca} the panel already
+// computed — supplying it skips the expensive findBloodPaths re-run; the two
+// bounded bfsUp walks below are O(a) and O(b). Returns null when no blood path.
+function buildRelationshipPath(viewerXref, otherXref, ctx, precomputedPath) {
+  let a, b, mrca;
+  if (precomputedPath && precomputedPath.mrca != null
+      && precomputedPath.a != null && precomputedPath.b != null) {
+    ({ a, b, mrca } = precomputedPath);
+  } else {
+    const paths = findBloodPaths(viewerXref, otherXref, ctx);
+    if (paths.length === 0) return null;
+    const p = pickClosestPath(paths);
+    a = p.a; b = p.b; mrca = p.mrca;
+  }
+
+  const viewerChain = _reconstructLeg(viewerXref, mrca, a, ctx.PARENTS); // [mrca, ..., viewer]
+  const otherChain  = _reconstructLeg(otherXref,  mrca, b, ctx.PARENTS); // [mrca, ..., other]
+
+  // other → MRCA → you. Drop the duplicate MRCA from the viewer leg's front.
+  const ordered = otherChain.slice().reverse().concat(viewerChain.slice(1));
+  const mrcaIndex = b; // other..mrca occupies indices 0..b
+
+  return ordered.map((xref, i) => {
+    const sex = (ctx.PEOPLE[xref] || {}).sex || null;
+    let relToNext = null;
+    if (i < ordered.length - 1) {
+      relToNext = i < mrcaIndex ? _childStep(sex) : _parentStep(sex);
+    }
+    return {
+      xref,
+      isMrca: i === mrcaIndex,
+      isViewer: i === ordered.length - 1,
+      isOther: i === 0,
+      relToNext,
+    };
+  });
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, enumerateRelationships, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship, getSpousesOf, findAffinityLabel, findGodparentAtomic, getGodparentIndex };
+  module.exports = { computeRelationship, enumerateRelationships, buildRelationshipPath, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship, getSpousesOf, findAffinityLabel, findGodparentAtomic, getGodparentIndex };
 }

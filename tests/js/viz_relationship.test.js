@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
-const { computeRelationship, enumerateRelationships } = require('../../js/viz_relationship.js');
+const { computeRelationship, enumerateRelationships, buildRelationshipPath } = require('../../js/viz_relationship.js');
 
 function ctx({ people = {}, parents = {}, children = {}, relatives = {}, families = {} } = {}) {
   return { PEOPLE: people, PARENTS: parents, CHILDREN: children, RELATIVES: relatives, FAMILIES: families };
@@ -1126,5 +1126,123 @@ describe('computeRelationship — affinity: date-aware step relabeling', () => {
       },
     });
     expect(computeRelationship('@V@', '@SD@', c).label).toBe('Step-Daughter');
+  });
+});
+
+describe('buildRelationshipPath — structure', () => {
+  // Helper: assert ordering + flags shared by every blood case.
+  function expectEnds(path, otherXref, viewerXref) {
+    expect(path[0].xref).toBe(otherXref);
+    expect(path[0].isOther).toBe(true);
+    expect(path[path.length - 1].xref).toBe(viewerXref);
+    expect(path[path.length - 1].isViewer).toBe(true);
+    expect(path[path.length - 1].relToNext).toBe(null);
+    expect(path.filter(n => n.isMrca).length).toBe(1);
+  }
+
+  it('Self → single-element path (other === viewer)', () => {
+    const c = ctx({ people: { '@I1@': { sex: 'F' } } });
+    const path = buildRelationshipPath('@I1@', '@I1@', c);
+    expect(path).toHaveLength(1);
+    expect(path[0]).toMatchObject({ xref: '@I1@', isMrca: true, isViewer: true, isOther: true, relToNext: null });
+  });
+
+  it('Sibling (a=1,b=1): other → parent(MRCA) → you, with flipped step terms', () => {
+    // @I1@ viewer (M), @I2@ sibling (F), shared parent @P@ (M)
+    const c = ctx({
+      people: { '@I1@': { sex: 'M' }, '@I2@': { sex: 'F' }, '@P@': { sex: 'M' } },
+      parents: { '@I1@': ['@P@', null], '@I2@': ['@P@', null] },
+      children: { '@P@': ['@I1@', '@I2@'] },
+    });
+    const path = buildRelationshipPath('@I1@', '@I2@', c);
+    expect(path.map(n => n.xref)).toEqual(['@I2@', '@P@', '@I1@']);
+    expectEnds(path, '@I2@', '@I1@');
+    expect(path[1].isMrca).toBe(true);
+    expect(path[0].relToNext).toBe('daughter of'); // other is child of MRCA (above)
+    expect(path[1].relToNext).toBe('father of');   // MRCA is parent of viewer (below)
+  });
+
+  it('Direct ancestor (b=0): MRCA is the other person', () => {
+    // @I3@ grandmother (F) → @I2@ parent (M) → @I1@ viewer
+    const c = ctx({
+      people: { '@I1@': { sex: 'M' }, '@I2@': { sex: 'M' }, '@I3@': { sex: 'F' } },
+      parents: { '@I1@': ['@I2@', null], '@I2@': ['@I3@', null] },
+      children: { '@I2@': ['@I1@'], '@I3@': ['@I2@'] },
+    });
+    const path = buildRelationshipPath('@I1@', '@I3@', c);
+    expect(path.map(n => n.xref)).toEqual(['@I3@', '@I2@', '@I1@']);
+    expect(path[0].isMrca).toBe(true);              // ancestor is the MRCA
+    expect(path[0].relToNext).toBe('mother of');    // below-MRCA: parent term
+    expect(path[1].relToNext).toBe('father of');
+  });
+
+  it('Direct descendant (a=0): MRCA is the viewer', () => {
+    // viewer @I1@ → child @I2@ → grandchild @I3@ (other)
+    const c = ctx({
+      people: { '@I1@': { sex: 'F' }, '@I2@': { sex: 'M' }, '@I3@': { sex: 'F' } },
+      parents: { '@I2@': ['@I1@', null], '@I3@': ['@I2@', null] },
+      children: { '@I1@': ['@I2@'], '@I2@': ['@I3@'] },
+    });
+    const path = buildRelationshipPath('@I1@', '@I3@', c);
+    expect(path.map(n => n.xref)).toEqual(['@I3@', '@I2@', '@I1@']);
+    expect(path[2].isMrca).toBe(true);              // viewer is the MRCA
+    expect(path[0].relToNext).toBe('daughter of');  // above-MRCA: child term
+    expect(path[1].relToNext).toBe('son of');
+  });
+
+  it('First cousins (a=2,b=2): full chain other→…→MRCA→…→you', () => {
+    // GP @GP@ (M) has children @PA@ (viewer-side, F) and @PB@ (other-side, M).
+    // viewer @V@ child of @PA@; other @O@ child of @PB@.
+    const c = ctx({
+      people: {
+        '@V@': { sex: 'M' }, '@O@': { sex: 'F' },
+        '@PA@': { sex: 'F' }, '@PB@': { sex: 'M' }, '@GP@': { sex: 'M' },
+      },
+      parents: { '@V@': ['@PA@', null], '@O@': ['@PB@', null], '@PA@': ['@GP@', null], '@PB@': ['@GP@', null] },
+      children: { '@PA@': ['@V@'], '@PB@': ['@O@'], '@GP@': ['@PA@', '@PB@'] },
+    });
+    const path = buildRelationshipPath('@V@', '@O@', c);
+    expect(path.map(n => n.xref)).toEqual(['@O@', '@PB@', '@GP@', '@PA@', '@V@']);
+    expect(path[2].isMrca).toBe(true);
+    expect(path[0].relToNext).toBe('daughter of'); // @O@ (F) child of @PB@
+    expect(path[1].relToNext).toBe('son of');      // @PB@ (M) child of @GP@
+    expect(path[2].relToNext).toBe('father of');   // @GP@ (M) parent of @PA@
+    expect(path[3].relToNext).toBe('mother of');   // @PA@ (F) parent of @V@
+    expect(path[4].relToNext).toBe(null);
+  });
+
+  it('Aunt (a=2,b=1): unequal legs', () => {
+    // @GP@ (M) → children @P@ (viewer parent, M) and @A@ (aunt, F).
+    // viewer @V@ child of @P@. Other @A@ is sibling of @P@.
+    const c = ctx({
+      people: { '@V@': { sex: 'M' }, '@A@': { sex: 'F' }, '@P@': { sex: 'M' }, '@GP@': { sex: 'M' } },
+      parents: { '@V@': ['@P@', null], '@P@': ['@GP@', null], '@A@': ['@GP@', null] },
+      children: { '@P@': ['@V@'], '@GP@': ['@P@', '@A@'] },
+    });
+    const path = buildRelationshipPath('@V@', '@A@', c);
+    expect(path.map(n => n.xref)).toEqual(['@A@', '@GP@', '@P@', '@V@']);
+    expect(path[1].isMrca).toBe(true);             // @GP@ is MRCA (b=1 → mrcaIndex 1)
+    expect(path[0].relToNext).toBe('daughter of'); // @A@ (F) child of @GP@
+    expect(path[1].relToNext).toBe('father of');   // @GP@ (M) parent of @P@
+    expect(path[2].relToNext).toBe('father of');   // @P@ (M) parent of @V@
+  });
+
+  it('precomputedPath mode produces the same chain as self-contained mode', () => {
+    const c = ctx({
+      people: { '@I1@': { sex: 'M' }, '@I2@': { sex: 'F' }, '@P@': { sex: 'M' } },
+      parents: { '@I1@': ['@P@', null], '@I2@': ['@P@', null] },
+      children: { '@P@': ['@I1@', '@I2@'] },
+    });
+    const selfContained = buildRelationshipPath('@I1@', '@I2@', c);
+    const precomputed = buildRelationshipPath('@I1@', '@I2@', c, { a: 1, b: 1, mrca: '@P@' });
+    expect(precomputed).toEqual(selfContained);
+  });
+
+  it('returns null when there is no blood path', () => {
+    const c = ctx({
+      people: { '@I1@': { sex: 'M' }, '@I2@': { sex: 'F' } },
+      parents: {}, children: {},
+    });
+    expect(buildRelationshipPath('@I1@', '@I2@', c)).toBe(null);
   });
 });
