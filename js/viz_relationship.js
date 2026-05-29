@@ -212,13 +212,15 @@ function findGodparentAtomic(viewer, other, ctx) {
   // other is viewer's godparent
   for (const entry of idx.byChild.get(viewer) || []) {
     if (entry.xref === other) {
-      return { label: _godparentLabel(entry.rela, otherSex), edges: 1 };
+      return { label: _godparentLabel(entry.rela, otherSex), edges: 1,
+               path: { nodes: [other, viewer], edges: ['godparent'], mrcaIndex: null } };
     }
   }
   // viewer is other's godparent → other is viewer's godchild
   for (const entry of idx.byChild.get(other) || []) {
     if (entry.xref === viewer) {
-      return { label: _godchildLabel(otherSex), edges: 1 };
+      return { label: _godchildLabel(otherSex), edges: 1,
+               path: { nodes: [other, viewer], edges: ['godchild'], mrcaIndex: null } };
     }
   }
   return null;
@@ -280,7 +282,7 @@ function _isFormerOrPredeceasedStep(spouse, bioParent, child, ctx) {
   return false;
 }
 
-// Returns {label, edges} for an atomic affinity (no "of" composition) between viewer and other.
+// Returns {label, edges, path} for an atomic affinity (no "of" composition) between viewer and other.
 // Edges counts graph hops on the kinship graph (parent/child/spouse).
 function findAtomicAffinity(viewer, other, ctx) {
   const viewerSpouses = getSpousesOf(viewer, ctx);
@@ -289,19 +291,23 @@ function findAtomicAffinity(viewer, other, ctx) {
 
   // Tier 1: spouse of viewer (1 edge)
   if (viewerSpouses.includes(other)) {
-    return { label: _spouseVerb(otherSex, _isDivorced(viewer, other, ctx)), edges: 1 };
+    const ex = _isDivorced(viewer, other, ctx);
+    return { label: _spouseVerb(otherSex, ex), edges: 1,
+             path: { nodes: [other, viewer], edges: [ex ? 'ex-spouse' : 'spouse'], mrcaIndex: null } };
   }
 
   // Tier 2: step-parent (up + across, 2 edges)
   for (const par of viewerParents) {
     if (getSpousesOf(par, ctx).includes(other) && !viewerParents.includes(other)) {
+      const ex = _isDivorced(other, par, ctx);
+      const path = { nodes: [other, par, viewer], edges: [ex ? 'ex-spouse' : 'spouse', 'descent-up'], mrcaIndex: null };
       if (_isFormerOrPredeceasedStep(other, par, viewer, ctx)) {
         const parSex     = (ctx.PEOPLE[par]   || {}).sex || null;
-        const spouseVerb = _spouseVerb(otherSex, _isDivorced(other, par, ctx));
+        const spouseVerb = _spouseVerb(otherSex, ex);
         const parLabel   = gendered(parSex,   'Father', 'Mother', 'Parent');
-        return { label: `${spouseVerb} of ${parLabel}`, edges: 2 };
+        return { label: `${spouseVerb} of ${parLabel}`, edges: 2, path };
       }
-      return { label: gendered(otherSex, 'Step-Father', 'Step-Mother', 'Step-Parent'), edges: 2 };
+      return { label: gendered(otherSex, 'Step-Father', 'Step-Mother', 'Step-Parent'), edges: 2, path };
     }
   }
 
@@ -310,13 +316,15 @@ function findAtomicAffinity(viewer, other, ctx) {
   for (const sp of viewerSpouses) {
     const spChildren = ctx.CHILDREN[sp] || [];
     if (spChildren.includes(other) && !viewerChildren.includes(other)) {
+      const ex = _isDivorced(viewer, sp, ctx);
+      const path = { nodes: [other, sp, viewer], edges: ['descent-down', ex ? 'ex-spouse' : 'spouse'], mrcaIndex: null };
       if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
         const spSex      = (ctx.PEOPLE[sp]    || {}).sex || null;
         const childLabel = gendered(otherSex, 'Son', 'Daughter', 'Child');
-        const spouseVerb = _spouseVerb(spSex, _isDivorced(viewer, sp, ctx));
-        return { label: `${childLabel} of ${spouseVerb}`, edges: 2 };
+        const spouseVerb = _spouseVerb(spSex, ex);
+        return { label: `${childLabel} of ${spouseVerb}`, edges: 2, path };
       }
-      return { label: gendered(otherSex, 'Step-Son', 'Step-Daughter', 'Step-Child'), edges: 2 };
+      return { label: gendered(otherSex, 'Step-Son', 'Step-Daughter', 'Step-Child'), edges: 2, path };
     }
   }
 
@@ -329,7 +337,10 @@ function findAtomicAffinity(viewer, other, ctx) {
         const otherParents = (ctx.PARENTS[other] || [null, null]).filter(Boolean);
         const sharesBioParent = otherParents.some(p => viewerParents.includes(p));
         if (!sharesBioParent) {
-          return { label: gendered(otherSex, 'Step-Brother', 'Step-Sister', 'Step-Sibling'), edges: 3 };
+          const ex = _isDivorced(stepPar, par, ctx);
+          return { label: gendered(otherSex, 'Step-Brother', 'Step-Sister', 'Step-Sibling'), edges: 3,
+                   path: { nodes: [other, stepPar, par, viewer],
+                           edges: ['descent-down', ex ? 'ex-spouse' : 'spouse', 'descent-up'], mrcaIndex: null } };
         }
       }
     }
@@ -339,7 +350,9 @@ function findAtomicAffinity(viewer, other, ctx) {
   for (const sp of viewerSpouses) {
     const spParents = ctx.PARENTS[sp] || [null, null];
     if (spParents.includes(other)) {
-      return { label: gendered(otherSex, 'Father-in-law', 'Mother-in-law', 'Parent-in-law'), edges: 2 };
+      const ex = _isDivorced(viewer, sp, ctx);
+      return { label: gendered(otherSex, 'Father-in-law', 'Mother-in-law', 'Parent-in-law'), edges: 2,
+               path: { nodes: [other, sp, viewer], edges: ['descent-up', ex ? 'ex-spouse' : 'spouse'], mrcaIndex: null } };
     }
   }
 
@@ -350,7 +363,10 @@ function findAtomicAffinity(viewer, other, ctx) {
       if (!p) continue;
       const siblings = (ctx.CHILDREN[p] || []).filter(c => c !== sp);
       if (siblings.includes(other)) {
-        return { label: gendered(otherSex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law'), edges: 3 };
+        const ex = _isDivorced(viewer, sp, ctx);
+        return { label: gendered(otherSex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law'), edges: 3,
+                 path: { nodes: [other, p, sp, viewer],
+                         edges: ['descent-down', 'descent-up', ex ? 'ex-spouse' : 'spouse'], mrcaIndex: null } };
       }
     }
   }
@@ -360,7 +376,10 @@ function findAtomicAffinity(viewer, other, ctx) {
     for (const sib of (ctx.CHILDREN[par] || [])) {
       if (sib === viewer) continue;
       if (getSpousesOf(sib, ctx).includes(other)) {
-        return { label: gendered(otherSex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law'), edges: 3 };
+        const ex = _isDivorced(sib, other, ctx);
+        return { label: gendered(otherSex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law'), edges: 3,
+                 path: { nodes: [other, sib, par, viewer],
+                         edges: [ex ? 'ex-spouse' : 'spouse', 'descent-down', 'descent-up'], mrcaIndex: null } };
       }
     }
   }
@@ -368,13 +387,13 @@ function findAtomicAffinity(viewer, other, ctx) {
   // Tier 3d: child-in-law (down + across, 2 edges)
   for (const child of viewerChildren) {
     if (getSpousesOf(child, ctx).includes(other)) {
-      return { label: gendered(otherSex, 'Son-in-law', 'Daughter-in-law', 'Child-in-law'), edges: 2 };
+      const ex = _isDivorced(child, other, ctx);
+      return { label: gendered(otherSex, 'Son-in-law', 'Daughter-in-law', 'Child-in-law'), edges: 2,
+               path: { nodes: [other, child, viewer], edges: [ex ? 'ex-spouse' : 'spouse', 'descent-down'], mrcaIndex: null } };
     }
   }
 
-  // Tier 5: godparent / godchild (1 edge). Last so that any kinship affinity takes
-  // precedence — the dual-relationship combiner in computeRelationship re-adds
-  // godparent on top of kin when both apply.
+  // Tier 5: godparent / godchild (already returns {label, edges, path}).
   const gp = findGodparentAtomic(viewer, other, ctx);
   if (gp) return gp;
 
@@ -450,7 +469,7 @@ function _bestRel(viewer, other, ctx, seen, depthLeft) {
 
   // Atomic affinity
   const atomic = findAtomicAffinity(viewer, other, ctx);
-  if (atomic) best = _betterCand(best, { label: atomic.label, edges: atomic.edges, ofs: 0 });
+  if (atomic) best = _betterCand(best, { label: atomic.label, edges: atomic.edges, ofs: 0, path: atomic.path || null });
 
   if (depthLeft <= 0) return best;
 
@@ -508,153 +527,6 @@ function _bestRel(viewer, other, ctx, seen, depthLeft) {
 // values blow up combinatorially on real trees (O(B^depth) where B = blood relatives).
 const _MAX_REL_DEPTH = 1;
 
-function findAffinityLabel(viewer, other, ctx) {
-  const viewerSpouses = getSpousesOf(viewer, ctx);
-  const viewerParents = (ctx.PARENTS[viewer] || [null, null]).filter(Boolean);
-
-  // ── Tier 1: spouse of viewer ─────────────────────────────────────
-  if (viewerSpouses.includes(other)) {
-    const sex = (ctx.PEOPLE[other] || {}).sex || null;
-    return _spouseVerb(sex, _isDivorced(viewer, other, ctx));
-  }
-
-  // ── Tier 2: step relationships ───────────────────────────────────
-  // Step-parent: spouse of viewer's bio parent who is NOT viewer's other bio parent
-  for (const par of viewerParents) {
-    const parentSpouses = getSpousesOf(par, ctx);
-    if (parentSpouses.includes(other) && !viewerParents.includes(other)) {
-      const sex = (ctx.PEOPLE[other] || {}).sex || null;
-      if (_isFormerOrPredeceasedStep(other, par, viewer, ctx)) {
-        const parSex     = (ctx.PEOPLE[par] || {}).sex || null;
-        const spouseVerb = _spouseVerb(sex, _isDivorced(other, par, ctx));
-        const parLabel   = gendered(parSex, 'Father', 'Mother', 'Parent');
-        return `${spouseVerb} of ${parLabel}`;
-      }
-      return gendered(sex, 'Step-Father', 'Step-Mother', 'Step-Parent');
-    }
-  }
-
-  // Step-child: child of viewer's spouse who is NOT viewer's bio child
-  const viewerChildren = ctx.CHILDREN[viewer] || [];
-  for (const sp of viewerSpouses) {
-    const spChildren = ctx.CHILDREN[sp] || [];
-    if (spChildren.includes(other) && !viewerChildren.includes(other)) {
-      const sex = (ctx.PEOPLE[other] || {}).sex || null;
-      if (_isFormerOrPredeceasedStep(viewer, sp, other, ctx)) {
-        const spSex      = (ctx.PEOPLE[sp] || {}).sex || null;
-        const childLabel = gendered(sex,   'Son', 'Daughter', 'Child');
-        const spouseVerb = _spouseVerb(spSex, _isDivorced(viewer, sp, ctx));
-        return `${childLabel} of ${spouseVerb}`;
-      }
-      return gendered(sex, 'Step-Son', 'Step-Daughter', 'Step-Child');
-    }
-  }
-
-  // Step-sibling: child of viewer's step-parent with no shared bio parent
-  for (const par of viewerParents) {
-    for (const stepPar of getSpousesOf(par, ctx)) {
-      if (viewerParents.includes(stepPar)) continue; // bio parent, not step
-      const stepParChildren = ctx.CHILDREN[stepPar] || [];
-      if (stepParChildren.includes(other)) {
-        const otherParents = (ctx.PARENTS[other] || [null, null]).filter(Boolean);
-        const sharesBioParent = otherParents.some(p => viewerParents.includes(p));
-        if (!sharesBioParent) {
-          const sex = (ctx.PEOPLE[other] || {}).sex || null;
-          return gendered(sex, 'Step-Brother', 'Step-Sister', 'Step-Sibling');
-        }
-      }
-    }
-  }
-
-  // ── Tier 3: specific in-laws ─────────────────────────────────────
-  // 3a: parent of viewer's spouse
-  for (const sp of viewerSpouses) {
-    const spParents = ctx.PARENTS[sp] || [null, null];
-    if (spParents.includes(other)) {
-      const sex = (ctx.PEOPLE[other] || {}).sex || null;
-      return gendered(sex, 'Father-in-law', 'Mother-in-law', 'Parent-in-law');
-    }
-  }
-
-  // 3b: sibling of viewer's spouse
-  for (const sp of viewerSpouses) {
-    const spParents = ctx.PARENTS[sp] || [null, null];
-    for (const p of spParents) {
-      if (!p) continue;
-      const siblings = (ctx.CHILDREN[p] || []).filter(c => c !== sp);
-      if (siblings.includes(other)) {
-        const sex = (ctx.PEOPLE[other] || {}).sex || null;
-        return gendered(sex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law');
-      }
-    }
-  }
-
-  // 3c: spouse of viewer's sibling
-  for (const par of viewerParents) {
-    for (const sib of (ctx.CHILDREN[par] || [])) {
-      if (sib === viewer) continue;
-      if (getSpousesOf(sib, ctx).includes(other)) {
-        const sex = (ctx.PEOPLE[other] || {}).sex || null;
-        return gendered(sex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law');
-      }
-    }
-  }
-
-  // 3d: spouse of viewer's child
-  for (const child of viewerChildren) {
-    if (getSpousesOf(child, ctx).includes(other)) {
-      const sex = (ctx.PEOPLE[other] || {}).sex || null;
-      return gendered(sex, 'Son-in-law', 'Daughter-in-law', 'Child-in-law');
-    }
-  }
-
-  // ── Tier 4: generic affinity templates ───────────────────────────
-  // 4a: other is spouse of someone with a blood label
-  const otherSpouses = getSpousesOf(other, ctx);
-  let bestSpouseTemplate = null;
-  let bestSpouseLegLength = Infinity;
-  for (const sp of otherSpouses) {
-    if (sp === viewer) continue; // already handled by tier 1
-    const paths = findBloodPaths(viewer, sp, ctx);
-    if (paths.length === 0) continue;
-    const path = pickClosestPath(paths);
-    const spSex = (ctx.PEOPLE[sp] || {}).sex || null;
-    const spIsHalf = !isFullRelationship(path, ctx);
-    const spLabel = formatBloodLabel(path.a, path.b, spSex, spIsHalf);
-    if (!spLabel) continue;
-    const legLen = path.a + path.b;
-    if (legLen < bestSpouseLegLength) {
-      const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
-      const verb = _spouseVerb(otherSex, _isDivorced(sp, other, ctx));
-      bestSpouseTemplate = `${verb} of ${spLabel}`;
-      bestSpouseLegLength = legLen;
-    }
-  }
-  if (bestSpouseTemplate) return bestSpouseTemplate;
-
-  // 4b: other has a blood label relative to viewer's spouse
-  let bestSpouseSideTemplate = null;
-  let bestSpouseSideLeg = Infinity;
-  for (const sp of viewerSpouses) {
-    const paths = findBloodPaths(sp, other, ctx);
-    if (paths.length === 0) continue;
-    const path = pickClosestPath(paths);
-    const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
-    const isHalf = !isFullRelationship(path, ctx);
-    const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
-    if (!label) continue;
-    const legLen = path.a + path.b;
-    if (legLen < bestSpouseSideLeg) {
-      const spouseWord = _isDivorced(viewer, sp, ctx) ? 'Ex-Spouse' : 'Spouse';
-      bestSpouseSideTemplate = `${label} of ${spouseWord}`;
-      bestSpouseSideLeg = legLen;
-    }
-  }
-  if (bestSpouseSideTemplate) return bestSpouseSideTemplate;
-
-  return null;
-}
-
 function computeRelationship(viewerXref, otherXref, ctx) {
   if (otherXref === viewerXref) {
     return { label: 'Self', debug: { a: 0, b: 0 } };
@@ -704,7 +576,7 @@ function computeRelationship(viewerXref, otherXref, ctx) {
 }
 
 // Return every distinct relationship between viewer and other, for the
-// click-for-details popover. Each entry: { kind, label, ... }.
+// click-for-details popover. Each entry: { kind, label, path }.
 // Kinds: 'self', 'blood', 'affinity', 'godparent'.
 function enumerateRelationships(viewerXref, otherXref, ctx) {
   if (viewerXref === otherXref) return [{ kind: 'self', label: 'Self' }];
@@ -716,23 +588,24 @@ function enumerateRelationships(viewerXref, otherXref, ctx) {
     const otherSex = (ctx.PEOPLE[otherXref] || {}).sex || null;
     const isHalf = !isFullRelationship(path, ctx);
     const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
-    if (label) out.push({ kind: 'blood', label, path: { a: path.a, b: path.b, mrca: path.mrca, half: isHalf } });
+    if (label) {
+      const spec = _bloodPathSpec(viewerXref, otherXref, path, ctx);
+      out.push({ kind: 'blood', label,
+                 path: spec ? _stepsToPath(spec.nodes, spec.edges, spec.mrcaIndex, ctx) : null });
+    }
   }
 
-  // Atomic affinity excluding godparent (we want the kinship in-law/step term, not Tier 5).
-  // Re-run the in-law/step tiers explicitly. Simplest: temporarily strip godparent from
-  // ctx by checking if findAtomicAffinity's result is the godparent label and, if so,
-  // re-deriving via the kin-only path. To keep code small, just call _bestRel with a
-  // wrapper that pretends godparent doesn't exist.
   const noGpCtx = Object.create(ctx);
   noGpCtx._godparentIndex = { byChild: new Map(), byParent: new Map() };
   const aff = _bestRel(viewerXref, otherXref, noGpCtx, new Set(), _MAX_REL_DEPTH);
   if (aff && (!out.length || aff.label !== out[0].label)) {
-    out.push({ kind: 'affinity', label: aff.label, edges: aff.edges, ofs: aff.ofs });
+    out.push({ kind: 'affinity', label: aff.label,
+               path: aff.path ? _stepsToPath(aff.path.nodes, aff.path.edges, aff.path.mrcaIndex, ctx) : null });
   }
 
   const gp = findGodparentAtomic(viewerXref, otherXref, ctx);
-  if (gp) out.push({ kind: 'godparent', label: gp.label });
+  if (gp) out.push({ kind: 'godparent', label: gp.label,
+                     path: gp.path ? _stepsToPath(gp.path.nodes, gp.path.edges, gp.path.mrcaIndex, ctx) : null });
 
   return out;
 }
@@ -833,5 +706,5 @@ function buildRelationshipPath(viewerXref, otherXref, ctx, precomputedPath) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { computeRelationship, enumerateRelationships, buildRelationshipPath, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship, getSpousesOf, findAffinityLabel, findGodparentAtomic, getGodparentIndex };
+  module.exports = { computeRelationship, enumerateRelationships, buildRelationshipPath, findBloodPaths, pickClosestPath, bfsUp, bfsDown, formatBloodLabel, gendered, greatPrefix, ordinal, isFullRelationship, getSpousesOf, findGodparentAtomic, getGodparentIndex };
 }

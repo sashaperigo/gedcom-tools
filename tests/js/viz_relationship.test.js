@@ -1269,3 +1269,172 @@ describe('buildRelationshipPath — structure', () => {
     expect(path.map(n => n.edgeKind)).toEqual(['descent-down', 'descent-down', 'descent-up', 'descent-up', null]);
   });
 });
+
+describe('enumerateRelationships — affinity paths', () => {
+  // Pull the entry of a given kind and return its rendered path array.
+  function pathOf(rels, kind) {
+    const e = rels.find(r => r.kind === kind);
+    return e ? e.path : null;
+  }
+
+  it('spouse: other → you, single spouse edge', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'F' }, '@S@': { sex: 'M' } },
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@S@', wife: '@V@', chil: [] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@S@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@S@', '@V@']);
+    expect(p[0]).toMatchObject({ isOther: true, edgeKind: 'spouse', relToNext: 'husband of', isMrca: false });
+    expect(p[1]).toMatchObject({ isViewer: true, relToNext: null });
+  });
+
+  it('mother-in-law: parent of viewer spouse (descent-up then spouse)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@S@': { sex: 'F' }, '@SM@': { sex: 'F' } },
+      parents: { '@S@': [null, '@SM@'] },
+      children: { '@SM@': ['@S@'] },
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@V@', wife: '@S@', chil: [] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@SM@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@SM@', '@S@', '@V@']);
+    expect(p.map(n => n.edgeKind)).toEqual(['descent-up', 'spouse', null]);
+    expect(p[0].relToNext).toBe('mother of');
+    expect(p[1].relToNext).toBe('wife of');
+    expect(p.some(n => n.isMrca)).toBe(false);
+  });
+
+  it('step-mother: spouse of bio father (spouse then descent-up)', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@DAD@': { sex: 'M' }, '@STEPMOM@': { sex: 'F' }, '@BIOMOM@': { sex: 'F' } },
+      parents: { '@V@': ['@DAD@', '@BIOMOM@'] },
+      children: { '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'] },
+      relatives: { '@DAD@': { spouses: ['@BIOMOM@', '@STEPMOM@'] }, '@STEPMOM@': { spouses: ['@DAD@'] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@STEPMOM@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@STEPMOM@', '@DAD@', '@V@']);
+    expect(p.map(n => n.edgeKind)).toEqual(['spouse', 'descent-up', null]);
+    expect(p[0].relToNext).toBe('wife of');   // step-mom (F) spouse of dad
+    expect(p[1].relToNext).toBe('father of');  // dad (M) parent of you
+  });
+
+  it('godparent: single godparent edge', () => {
+    const c = ctx({
+      people: {
+        '@V@': { events: [{ tag: 'BAPM', asso: [{ xref: '@GM@', rela: 'Godmother' }] }] },
+        '@GM@': { sex: 'F' },
+      },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@GM@', c), 'godparent');
+    expect(p.map(n => n.xref)).toEqual(['@GM@', '@V@']);
+    expect(p[0]).toMatchObject({ edgeKind: 'godparent', relToNext: 'godmother of' });
+  });
+
+  it('ex-spouse: edgeKind ex-spouse with ex- term', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'M' }, '@S@': { sex: 'F' } },
+      relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      families: { '@F1@': { husb: '@V@', wife: '@S@', chil: [], divorced: true } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@S@', c), 'affinity');
+    expect(p[0]).toMatchObject({ edgeKind: 'ex-spouse', relToNext: 'ex-wife of' });
+  });
+
+  it('step-child: descent-down then spouse', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@SP@': { sex: 'F' }, '@SD@': { sex: 'F' }, '@SDX@': { sex: 'M' } },
+      parents: { '@SD@': ['@SDX@', '@SP@'] },
+      children: { '@SP@': ['@SD@'], '@SDX@': ['@SD@'] },
+      relatives: { '@V@': { spouses: ['@SP@'] }, '@SP@': { spouses: ['@V@'] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@SD@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@SD@', '@SP@', '@V@']);
+    expect(p.map(n => n.edgeKind)).toEqual(['descent-down', 'spouse', null]);
+    expect(p[0].relToNext).toBe('daughter of'); // SD (F) child of SP
+  });
+
+  it('step-sibling: descent-down, spouse, descent-up', () => {
+    const c = ctx({
+      people: {
+        '@V@': {}, '@DAD@': { sex: 'M' }, '@BIOMOM@': { sex: 'F' },
+        '@STEPMOM@': { sex: 'F' }, '@SS@': { sex: 'F' }, '@SSX@': { sex: 'M' },
+      },
+      parents: { '@V@': ['@DAD@', '@BIOMOM@'], '@SS@': ['@SSX@', '@STEPMOM@'] },
+      children: { '@DAD@': ['@V@'], '@BIOMOM@': ['@V@'], '@STEPMOM@': ['@SS@'], '@SSX@': ['@SS@'] },
+      relatives: { '@DAD@': { spouses: ['@BIOMOM@', '@STEPMOM@'] }, '@STEPMOM@': { spouses: ['@DAD@'] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@SS@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@SS@', '@STEPMOM@', '@DAD@', '@V@']);
+    expect(p.map(n => n.edgeKind)).toEqual(['descent-down', 'spouse', 'descent-up', null]);
+  });
+
+  it('sibling-in-law via spouse sibling (3b): descent-down, descent-up, spouse', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@SP@': { sex: 'F' }, '@SPSIB@': { sex: 'F' }, '@SM@': { sex: 'F' } },
+      parents: { '@SP@': [null, '@SM@'], '@SPSIB@': [null, '@SM@'] },
+      children: { '@SM@': ['@SP@', '@SPSIB@'] },
+      relatives: { '@V@': { spouses: ['@SP@'] }, '@SP@': { spouses: ['@V@'] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@SPSIB@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@SPSIB@', '@SM@', '@SP@', '@V@']);
+    expect(p.map(n => n.edgeKind)).toEqual(['descent-down', 'descent-up', 'spouse', null]);
+  });
+
+  it('sibling-in-law via sibling spouse (3c): spouse, descent-down, descent-up', () => {
+    const c = ctx({
+      people: { '@V@': {}, '@SIB@': { sex: 'F' }, '@SIBSP@': { sex: 'M' }, '@MOM@': { sex: 'F' } },
+      parents: { '@V@': [null, '@MOM@'], '@SIB@': [null, '@MOM@'] },
+      children: { '@MOM@': ['@V@', '@SIB@'] },
+      relatives: { '@SIB@': { spouses: ['@SIBSP@'] }, '@SIBSP@': { spouses: ['@SIB@'] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@SIBSP@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@SIBSP@', '@SIB@', '@MOM@', '@V@']);
+    expect(p.map(n => n.edgeKind)).toEqual(['spouse', 'descent-down', 'descent-up', null]);
+  });
+
+  it('child-in-law (3d): spouse then descent-down', () => {
+    const c = ctx({
+      people: { '@V@': { sex: 'F' }, '@D@': { sex: 'F' }, '@DH@': { sex: 'M' } },
+      parents: { '@D@': [null, '@V@'] },
+      children: { '@V@': ['@D@'] },
+      relatives: { '@D@': { spouses: ['@DH@'] }, '@DH@': { spouses: ['@D@'] } },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@DH@', c), 'affinity');
+    expect(p.map(n => n.xref)).toEqual(['@DH@', '@D@', '@V@']);
+    expect(p.map(n => n.edgeKind)).toEqual(['spouse', 'descent-down', null]);
+    expect(p[1].relToNext).toBe('daughter of'); // D (F) child of V
+  });
+
+  it('godchild: edgeKind godchild', () => {
+    const c = ctx({
+      people: {
+        '@V@': { sex: 'M' },
+        '@GC@': { sex: 'M', events: [{ tag: 'BAPM', asso: [{ xref: '@V@', rela: 'Godfather' }] }] },
+      },
+    });
+    const p = pathOf(enumerateRelationships('@V@', '@GC@', c), 'godparent');
+    expect(p.map(n => n.xref)).toEqual(['@GC@', '@V@']);
+    expect(p[0]).toMatchObject({ edgeKind: 'godchild', relToNext: 'godson of' });
+  });
+
+  it('multi-relationship (uncle who is also godfather): both entries carry a path, blood first', () => {
+    const c = ctx({
+      people: {
+        '@V@': { events: [{ tag: 'BAPM', asso: [{ xref: '@U@', rela: 'Godfather' }] }] },
+        '@U@': { sex: 'M' },
+        '@PV@': { sex: 'F' }, '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: { '@V@': [null, '@PV@'], '@PV@': ['@GPA@', '@GMA@'], '@U@': ['@GPA@', '@GMA@'] },
+      children: { '@PV@': ['@V@'], '@GMA@': ['@PV@', '@U@'], '@GPA@': ['@PV@', '@U@'] },
+    });
+    const rels = enumerateRelationships('@V@', '@U@', c);
+    expect(rels.map(r => r.kind)).toEqual(['blood', 'godparent']); // blood first (primary)
+    for (const r of rels) {
+      expect(r.path, `${r.kind} should have a path`).toBeTruthy();
+      expect(r.path[0].xref).toBe('@U@');
+      expect(r.path[r.path.length - 1].xref).toBe('@V@');
+    }
+    expect(pathOf(rels, 'godparent').map(n => n.edgeKind)).toEqual(['godparent', null]);
+  });
+});
