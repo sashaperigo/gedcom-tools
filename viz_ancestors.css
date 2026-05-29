@@ -3007,6 +3007,7 @@ button.sources-section-title:hover .sources-toggle-arrow {
     color: var(--accent-light);
     cursor: pointer;
     font-weight: 500;
+    font-size: 13px;
 }
 
 .relpath-person:hover {
