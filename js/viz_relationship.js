@@ -761,7 +761,7 @@ function _reconstructLeg(endpoint, mrca, dist, parents) {
     node = entry.viaParentXref;
     d -= 1;
   }
-  return chain;
+  return chain.length === dist + 1 ? chain : null; // null = broken/incomplete leg
 }
 
 // Build the ordered chain of people connecting `otherXref` (top) to
@@ -783,6 +783,8 @@ function buildRelationshipPath(viewerXref, otherXref, ctx, precomputedPath) {
 
   const viewerChain = _reconstructLeg(viewerXref, mrca, a, ctx.PARENTS); // [mrca, ..., viewer]
   const otherChain  = _reconstructLeg(otherXref,  mrca, b, ctx.PARENTS); // [mrca, ..., other]
+
+  if (!viewerChain || !otherChain) return null;
 
   // other → MRCA → you. Drop the duplicate MRCA from the viewer leg's front.
   const ordered = otherChain.slice().reverse().concat(viewerChain.slice(1));

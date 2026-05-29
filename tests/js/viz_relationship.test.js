@@ -1245,4 +1245,13 @@ describe('buildRelationshipPath — structure', () => {
     });
     expect(buildRelationshipPath('@I1@', '@I2@', c)).toBe(null);
   });
+
+  it('returns null when precomputedPath references an unreachable MRCA', () => {
+    // @I1@ and @I2@ are unrelated; precomputedPath claims a bogus common ancestor.
+    const c = ctx({
+      people: { '@I1@': { sex: 'M' }, '@I2@': { sex: 'F' }, '@X@': { sex: 'M' } },
+      parents: {}, children: {},
+    });
+    expect(buildRelationshipPath('@I1@', '@I2@', c, { a: 2, b: 2, mrca: '@X@' })).toBe(null);
+  });
 });
