@@ -1437,4 +1437,75 @@ describe('enumerateRelationships — affinity paths', () => {
     }
     expect(pathOf(rels, 'godparent').map(n => n.edgeKind)).toEqual(['godparent', null]);
   });
+
+  it('Wife of 1st Cousin: spouse edge then blood leg with tagged MRCA', () => {
+    // @V@'s 1st cousin @C@; @C@'s wife @CW@ is the "other".
+    // Cousin tree: @GMA@(MRCA) → @PV@ → @V@  and  @GMA@ → @PC@ → @C@.
+    // @GPA@ is the shared second parent of @PV@ and @PC@ so they are full cousins.
+    const c = ctx({
+      people: {
+        '@V@': { sex: 'M' }, '@C@': { sex: 'F' }, '@CW@': { sex: 'F' },
+        '@PV@': { sex: 'F' }, '@PC@': { sex: 'F' }, '@GMA@': { sex: 'F' }, '@GPA@': { sex: 'M' },
+      },
+      parents: { '@V@': [null, '@PV@'], '@C@': [null, '@PC@'], '@PV@': ['@GMA@', '@GPA@'], '@PC@': ['@GMA@', '@GPA@'] },
+      children: { '@PV@': ['@V@'], '@PC@': ['@C@'], '@GMA@': ['@PV@', '@PC@'], '@GPA@': ['@PV@', '@PC@'] },
+      relatives: { '@C@': { spouses: ['@CW@'] }, '@CW@': { spouses: ['@C@'] } },
+    });
+    const rels = enumerateRelationships('@V@', '@CW@', c);
+    const aff = rels.find(r => r.kind === 'affinity');
+    expect(aff.label).toBe('Wife of 1st Cousin');
+    expect(aff.path.map(n => n.xref)).toEqual(['@CW@', '@C@', '@PC@', '@GMA@', '@PV@', '@V@']);
+    expect(aff.path.map(n => n.edgeKind)).toEqual(['spouse', 'descent-down', 'descent-down', 'descent-up', 'descent-up', null]);
+    expect(aff.path.findIndex(n => n.isMrca)).toBe(3); // @GMA@
+    expect(aff.path[0].relToNext).toBe('wife of');
+  });
+
+  it('Niece of Spouse: spouse split appends spouse hop, keeps sub-path order', () => {
+    // viewer @V@ married @W@; @W@'s niece @N@ (W's sibling @SIB@'s daughter).
+    // NOTE: the spouse split uses the generic word "Spouse" in the LABEL, while
+    // the chain TERM stays gendered ("wife of"). This is the live _bestRel
+    // behavior — there is no gendered-spouse composition in the engine.
+    const c = ctx({
+      people: {
+        '@V@': { sex: 'M' }, '@W@': { sex: 'F' }, '@SIB@': { sex: 'F' },
+        '@N@': { sex: 'F' }, '@WP@': { sex: 'F' }, '@WF@': { sex: 'M' },
+      },
+      parents: { '@W@': ['@WP@', '@WF@'], '@SIB@': ['@WP@', '@WF@'], '@N@': [null, '@SIB@'] },
+      children: { '@WP@': ['@W@', '@SIB@'], '@WF@': ['@W@', '@SIB@'], '@SIB@': ['@N@'] },
+      relatives: { '@V@': { spouses: ['@W@'] }, '@W@': { spouses: ['@V@'] } },
+    });
+    const rels = enumerateRelationships('@V@', '@N@', c);
+    const aff = rels.find(r => r.kind === 'affinity');
+    expect(aff.label).toBe('Niece of Spouse');
+    // other → … → spouse → you ; the spouse hop W→V is the last edge.
+    expect(aff.path[aff.path.length - 1].xref).toBe('@V@');
+    expect(aff.path[aff.path.length - 2].xref).toBe('@W@');
+    expect(aff.path[aff.path.length - 2].edgeKind).toBe('spouse');
+    expect(aff.path[aff.path.length - 2].relToNext).toBe('wife of');
+  });
+
+  it('label-parity: each entry path is non-null and consistent with its label for representative fixtures', () => {
+    const fixtures = [
+      ['spouse', {
+        people: { '@V@': { sex: 'F' }, '@S@': { sex: 'M' } },
+        relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      }, '@V@', '@S@'],
+      ['mother-in-law', {
+        people: { '@V@': {}, '@S@': { sex: 'F' }, '@SM@': { sex: 'F' } },
+        parents: { '@S@': [null, '@SM@'] }, children: { '@SM@': ['@S@'] },
+        relatives: { '@V@': { spouses: ['@S@'] }, '@S@': { spouses: ['@V@'] } },
+      }, '@V@', '@SM@'],
+    ];
+    for (const [, args, v, o] of fixtures) {
+      const c = ctx(args);
+      const rels = enumerateRelationships(v, o, c);
+      for (const r of rels) {
+        expect(r.path, `${r.kind} entry should have a path`).toBeTruthy();
+        expect(r.path[0].isOther).toBe(true);
+        expect(r.path[r.path.length - 1].isViewer).toBe(true);
+        expect(r.path[r.path.length - 1].xref).toBe(v);
+        expect(r.path[0].xref).toBe(o);
+      }
+    }
+  });
 });

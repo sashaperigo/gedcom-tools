@@ -463,7 +463,8 @@ function _bestRel(viewer, other, ctx, seen, depthLeft) {
       const otherSex = (ctx.PEOPLE[other] || {}).sex || null;
       const isHalf = !isFullRelationship(path, ctx);
       const label = formatBloodLabel(path.a, path.b, otherSex, isHalf);
-      if (label) best = _betterCand(best, { label, edges: path.a + path.b, ofs: 0 });
+      const spec = _bloodPathSpec(viewer, other, path, ctx);
+      if (label && spec) best = _betterCand(best, { label, edges: path.a + path.b, ofs: 0, path: spec });
     }
   }
 
@@ -494,11 +495,21 @@ function _bestRel(viewer, other, ctx, seen, depthLeft) {
     const zIsHalf = !isFullRelationship(path, ctx);
     const leftLabel = formatBloodLabel(path.a, path.b, zSex, zIsHalf);
     if (!leftLabel) continue;
+    const leftSpec = _bloodPathSpec(viewer, zXref, path, ctx); // [Z, …, viewer]
+    let composedPath = null;
+    if (leftSpec && subAtomic.path) {
+      composedPath = {
+        nodes: subAtomic.path.nodes.concat(leftSpec.nodes.slice(1)),   // other … Z … viewer (Z shared, dropped once)
+        edges: subAtomic.path.edges.concat(leftSpec.edges),
+        mrcaIndex: (subAtomic.path.nodes.length - 1) + leftSpec.mrcaIndex,
+      };
+    }
     const cand = {
       label: `${subAtomic.label} of ${leftLabel}`,
       edges: leftEdges + subAtomic.edges,
       ofs: 1,
       leftEdges,
+      path: composedPath,
     };
     best = _betterCand(best, cand);
   }
@@ -509,12 +520,18 @@ function _bestRel(viewer, other, ctx, seen, depthLeft) {
     if (best && 1 >= best.edges) continue;
     const sub = _bestRel(sp, other, ctx, newSeen, depthLeft - 1);
     if (!sub) continue;
-    const spouseWord = _isDivorced(viewer, sp, ctx) ? 'Ex-Spouse' : 'Spouse';
+    const ex = _isDivorced(viewer, sp, ctx);
+    const spouseWord = ex ? 'Ex-Spouse' : 'Spouse';
     const cand = {
       label: `${sub.label} of ${spouseWord}`,
       edges: 1 + sub.edges,
       ofs: sub.ofs + 1,
       leftEdges: 1,
+      path: sub.path ? {
+        nodes: sub.path.nodes.concat([viewer]),               // other … sp → you
+        edges: sub.path.edges.concat([ex ? 'ex-spouse' : 'spouse']),
+        mrcaIndex: sub.path.mrcaIndex,
+      } : null,
     };
     best = _betterCand(best, cand);
   }
