@@ -742,6 +742,40 @@ function enumerateRelationships(viewerXref, otherXref, ctx) {
 // Lowercase kinship step terms used between rows of the relationship chain.
 function _childStep(sex)  { return gendered(sex, 'son of',    'daughter of', 'child of'); }
 function _parentStep(sex) { return gendered(sex, 'father of', 'mother of',   'parent of'); }
+function _spouseStep(sex, ex) { return (ex ? 'ex-' : '') + gendered(sex, 'husband of', 'wife of', 'spouse of'); }
+function _godparentStep(sex)  { return gendered(sex, 'godfather of', 'godmother of', 'godparent of'); }
+function _godchildStep(sex)   { return gendered(sex, 'godson of', 'goddaughter of', 'godchild of'); }
+
+// Map an edgeKind + the UPPER node's sex to the lowercase chain term.
+function _stepTerm(edgeKind, upperSex) {
+  switch (edgeKind) {
+    case 'descent-down': return _childStep(upperSex);
+    case 'descent-up':   return _parentStep(upperSex);
+    case 'spouse':       return _spouseStep(upperSex, false);
+    case 'ex-spouse':    return _spouseStep(upperSex, true);
+    case 'godparent':    return _godparentStep(upperSex);
+    case 'godchild':     return _godchildStep(upperSex);
+    default:             return null;
+  }
+}
+
+// Convert a display-order path spec into the render array (other → … → you).
+// `nodes` are xrefs top→bottom; `edges[i]` is the edgeKind from nodes[i] (upper)
+// to nodes[i+1] (lower); `mrcaIndex` flags a blood apex (or null for none).
+function _stepsToPath(nodes, edges, mrcaIndex, ctx) {
+  return nodes.map((xref, i) => {
+    const sex = (ctx.PEOPLE[xref] || {}).sex || null;
+    const edgeKind = i < nodes.length - 1 ? edges[i] : null;
+    return {
+      xref,
+      isOther: i === 0,
+      isViewer: i === nodes.length - 1,
+      isMrca: i === mrcaIndex,
+      relToNext: edgeKind ? _stepTerm(edgeKind, sex) : null,
+      edgeKind,
+    };
+  });
+}
 
 // Walk bfsUp back-pointers from `mrca` (known to sit at depth `dist` from
 // `endpoint`) down to `endpoint`, returning [mrca, ..., endpoint] (length dist+1).
@@ -764,6 +798,19 @@ function _reconstructLeg(endpoint, mrca, dist, parents) {
   return chain.length === dist + 1 ? chain : null; // null = broken/incomplete leg
 }
 
+// Build a display-order blood spec {nodes, edges, mrcaIndex} for viewer↔other,
+// given the closest path's {a, b, mrca}. Returns null on a broken back-pointer leg.
+function _bloodPathSpec(viewer, other, pathInfo, ctx) {
+  const { a, b, mrca } = pathInfo;
+  const viewerChain = _reconstructLeg(viewer, mrca, a, ctx.PARENTS); // [mrca, ..., viewer]
+  const otherChain  = _reconstructLeg(other,  mrca, b, ctx.PARENTS); // [mrca, ..., other]
+  if (!viewerChain || !otherChain) return null;
+  const nodes = otherChain.slice().reverse().concat(viewerChain.slice(1)); // other → … → you
+  const mrcaIndex = b;
+  const edges = nodes.slice(0, -1).map((_, i) => (i < mrcaIndex ? 'descent-down' : 'descent-up'));
+  return { nodes, edges, mrcaIndex };
+}
+
 // Build the ordered chain of people connecting `otherXref` (top) to
 // `viewerXref` ("you", bottom): [other, ..., MRCA, ..., you].
 // `precomputedPath` (optional) is the closest {a, b, mrca} the panel already
@@ -780,30 +827,9 @@ function buildRelationshipPath(viewerXref, otherXref, ctx, precomputedPath) {
     const p = pickClosestPath(paths);
     a = p.a; b = p.b; mrca = p.mrca;
   }
-
-  const viewerChain = _reconstructLeg(viewerXref, mrca, a, ctx.PARENTS); // [mrca, ..., viewer]
-  const otherChain  = _reconstructLeg(otherXref,  mrca, b, ctx.PARENTS); // [mrca, ..., other]
-
-  if (!viewerChain || !otherChain) return null;
-
-  // other → MRCA → you. Drop the duplicate MRCA from the viewer leg's front.
-  const ordered = otherChain.slice().reverse().concat(viewerChain.slice(1));
-  const mrcaIndex = b; // other..mrca occupies indices 0..b
-
-  return ordered.map((xref, i) => {
-    const sex = (ctx.PEOPLE[xref] || {}).sex || null;
-    let relToNext = null;
-    if (i < ordered.length - 1) {
-      relToNext = i < mrcaIndex ? _childStep(sex) : _parentStep(sex);
-    }
-    return {
-      xref,
-      isMrca: i === mrcaIndex,
-      isViewer: i === ordered.length - 1,
-      isOther: i === 0,
-      relToNext,
-    };
-  });
+  const spec = _bloodPathSpec(viewerXref, otherXref, { a, b, mrca }, ctx);
+  if (!spec) return null;
+  return _stepsToPath(spec.nodes, spec.edges, spec.mrcaIndex, ctx);
 }
 
 if (typeof module !== 'undefined') {

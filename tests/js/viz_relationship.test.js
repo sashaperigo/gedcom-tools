@@ -1254,4 +1254,18 @@ describe('buildRelationshipPath — structure', () => {
     });
     expect(buildRelationshipPath('@I1@', '@I2@', c, { a: 2, b: 2, mrca: '@X@' })).toBe(null);
   });
+
+  it('blood chain carries edgeKind per node (descent-down before MRCA, descent-up after)', () => {
+    // First cousins: @O@ → @PB@ → @GP@(MRCA) → @PA@ → @V@
+    const c = ctx({
+      people: {
+        '@V@': { sex: 'M' }, '@O@': { sex: 'F' },
+        '@PA@': { sex: 'F' }, '@PB@': { sex: 'M' }, '@GP@': { sex: 'M' },
+      },
+      parents: { '@V@': ['@PA@', null], '@O@': ['@PB@', null], '@PA@': ['@GP@', null], '@PB@': ['@GP@', null] },
+      children: { '@PA@': ['@V@'], '@PB@': ['@O@'], '@GP@': ['@PA@', '@PB@'] },
+    });
+    const path = buildRelationshipPath('@V@', '@O@', c);
+    expect(path.map(n => n.edgeKind)).toEqual(['descent-down', 'descent-down', 'descent-up', 'descent-up', null]);
+  });
 });
