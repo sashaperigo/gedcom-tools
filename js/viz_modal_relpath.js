@@ -15,8 +15,8 @@ function _renderRelationshipPath(path) {
     const body = document.getElementById('relpath-modal-body');
     if (!body) return;
     body.innerHTML = '';
-    // Arrows point down on the viewer's leg (you → common ancestor) and up on the
-    // other person's leg (common ancestor → them); the MRCA row begins the down leg.
+    // Arrows point down on the focus person's leg (them → common ancestor) and up
+    // on the viewer's leg (common ancestor → you); the MRCA row begins the up leg.
     let reachedMrca = false;
     path.forEach((node) => {
         if (node.isMrca) reachedMrca = true;
@@ -51,7 +51,7 @@ function _renderRelationshipPath(path) {
         if (node.relToNext) {
             const step = document.createElement('div');
             step.className = 'relpath-step';
-            step.textContent = `${reachedMrca ? '↓' : '↑'} ${node.relToNext}`;
+            step.textContent = `${reachedMrca ? '↑' : '↓'} ${node.relToNext}`;
             body.appendChild(step);
         }
     });
