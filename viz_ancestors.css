@@ -825,7 +825,8 @@ header h1 .root-name-accent {
 #add-citation-modal-overlay,
 #edit-citation-modal-overlay,
 #edit-source-modal-overlay,
-#spouse-menu-modal-overlay {
+#spouse-menu-modal-overlay,
+#relpath-modal-overlay {
     display: none;
     position: fixed;
     inset: 0;
@@ -855,7 +856,8 @@ header h1 .root-name-accent {
 #add-citation-modal-overlay.open,
 #edit-citation-modal-overlay.open,
 #edit-source-modal-overlay.open,
-#spouse-menu-modal-overlay.open {
+#spouse-menu-modal-overlay.open,
+#relpath-modal-overlay.open {
     display: flex;
 }
 
@@ -2945,4 +2947,78 @@ button.sources-section-title:hover .sources-toggle-arrow {
 }
 .adv-pager button.active { background: #2a4d7a; color: #fff; border-color: #2a4d7a; }
 .adv-pager button:disabled { color: #bbb; cursor: default; }
+
+/* ── Relationship-path modal ─────────────────────────────────────────── */
+#relpath-modal {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    width: 360px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#relpath-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+#relpath-modal-header h3 {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+#relpath-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+#relpath-modal-close:hover { color: var(--text-primary); }
+
+#relpath-modal-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.relpath-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.relpath-person {
+    color: var(--accent, #4ea1ff);
+    cursor: pointer;
+}
+
+.relpath-person:hover { text-decoration: underline; }
+
+.relpath-mrca {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-disabled);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+}
+
+.relpath-step {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 3px 0;
+}
 .adv-pager-gap { color: #999; padding: 0 2px; }

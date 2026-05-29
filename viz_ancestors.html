@@ -229,6 +229,15 @@
             </div>
         </div>
     </div>
+    <div id="relpath-modal-overlay" onclick="closeIfFarFromPanel(event,'relpath-modal',closeRelationshipPathModal)">
+        <div id="relpath-modal">
+            <div id="relpath-modal-header">
+                <h3 id="relpath-modal-title">Relationship</h3>
+                <button id="relpath-modal-close" onclick="closeRelationshipPathModal()" title="Close">&times;</button>
+            </div>
+            <div id="relpath-modal-body"></div>
+        </div>
+    </div>
     <div id="alias-modal-overlay" onclick="closeIfFarFromPanel(event,'alias-modal',closeAliasModal)">
         <div id="alias-modal">
             <h3 id="alias-modal-title">Add Secondary Name</h3>
@@ -588,6 +597,7 @@
     <script src="/js/viz_modal_events.js"></script>
     <script src="/js/viz_modal_sources.js"></script>
     <script src="/js/viz_modal_people.js"></script>
+    <script src="/js/viz_modal_relpath.js"></script>
     <script>
     function _updateHeaderH() {
         const hdr = document.querySelector('header');
