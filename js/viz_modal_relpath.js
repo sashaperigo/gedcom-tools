@@ -24,7 +24,7 @@ function _renderRelationshipPath(path) {
         row.className = 'relpath-row';
 
         const link = document.createElement('span');
-        link.className = 'relpath-person';
+        link.className = node.isMrca ? 'relpath-person relpath-person-mrca' : 'relpath-person';
         link.textContent = (typeof _personName === 'function') ? _personName(node.xref) : node.xref;
         link.addEventListener('click', () => {
             closeRelationshipPathModal();
@@ -62,7 +62,13 @@ function _renderRelationshipPath(path) {
         if (node.relToNext) {
             const step = document.createElement('div');
             step.className = 'relpath-step';
-            step.textContent = `${reachedMrca ? '↑' : '↓'} ${node.relToNext}`;
+            const arrow = document.createElement('span');
+            arrow.className = 'relpath-arrow';
+            arrow.textContent = reachedMrca ? '↑' : '↓';
+            const rel = document.createElement('span');
+            rel.textContent = node.relToNext;
+            step.appendChild(arrow);
+            step.appendChild(rel);
             body.appendChild(step);
         }
     });

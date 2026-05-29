@@ -3021,30 +3021,48 @@ button.sources-section-title:hover .sources-toggle-arrow {
     color: var(--text-disabled);
 }
 
-.relpath-you,
-.relpath-mrca {
+.relpath-you {
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-weight: 600;
     border-radius: 4px;
     padding: 1px 6px;
-}
-
-.relpath-you {
     color: var(--accent-light);
     background: var(--accent-bg);
 }
 
+/* Common ancestor: emphasize the name, demote the label to a clean caption */
+.relpath-person-mrca {
+    font-weight: 700;
+    font-size: 14px;
+}
+
 .relpath-mrca {
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
+    flex-basis: 100%;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--text-disabled);
 }
 
 .relpath-step {
-    font-size: 11px;
-    color: var(--text-disabled);
-    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 140px;
     margin: 6px 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+}
+
+.relpath-arrow {
+    flex: 0 0 1.1em;
+    text-align: center;
+    font-weight: 700;
+    color: var(--text-secondary);
 }
 .adv-pager-gap { color: #999; padding: 0 2px; }
