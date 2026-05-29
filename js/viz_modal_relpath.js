@@ -11,6 +11,9 @@ function _relpathLifespan(xref) {
     return '';
 }
 
+// Glyph per edge kind. Intentionally direction-agnostic within a pair
+// (spouse/ex-spouse share ⚭; godparent/godchild share ✝) — the adjacent
+// gendered term ("ex-wife of", "godson of") carries direction/divorce.
 const _RELPATH_GLYPH = {
   'descent-up': '↑',
   'descent-down': '↓',
