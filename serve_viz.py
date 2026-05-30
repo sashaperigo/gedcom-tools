@@ -304,11 +304,19 @@ def _find_event_note_block(
         m = _TAG_RE.match(lines[i])
         if not m:
             continue
-        if int(m.group(1)) == 2 and m.group(2) == 'NOTE':
+        lvl, tag = int(m.group(1)), m.group(2)
+        if lvl == 2 and tag == 'NOTE':
             if count == note_within_n:
                 j = i + 1
                 while j < ev_end:
                     sm = _TAG_RE.match(lines[j])
+                    # Accept CONT/CONC at any level, not just level 3.
+                    # Valid files always have them at exactly parent_level+1,
+                    # but files exported by some tools arrive with wrong levels
+                    # (e.g. 4 CONC under a 2 NOTE). We absorb them here so
+                    # edits replace the entire block rather than orphaning the
+                    # stray lines. The linter (scan_conc_cont) still flags
+                    # wrong-level lines as errors in the output file.
                     if sm and sm.group(2) in ('CONT', 'CONC'):
                         j += 1
                     else:
