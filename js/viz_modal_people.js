@@ -458,10 +458,16 @@ const _ADD_PERSON_REL_LABELS = {
 function _renderAddPersonTreeResults(query) {
     const q = (query || '').trim().toLowerCase();
     if (!q) return [];
-    return (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
-        .filter(p => p.name && p.name.toLowerCase().includes(q))
-        .slice(0, 12)
-        .map(p => ({ id: p.id, name: p.name, label: p.name + (p.birth_year ? ' (' + p.birth_year + ')' : '') }));
+    const qNorm = (typeof _normSearchS !== 'undefined') ? _normSearchS(q) : q;
+    const all = (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
+        .filter(p => p.name && p.name.toLowerCase().includes(q));
+    const sorted = (typeof sortHits !== 'undefined') ? sortHits(all, qNorm) : all;
+    return sorted.map(p => {
+        const dates = [p.birth_year && `b. ${p.birth_year}`,
+            p.death_year && `d. ${p.death_year}`
+        ].filter(Boolean).join(' – ');
+        return { id: p.id, name: p.name, label: p.name + (dates ? ` (${dates})` : '') };
+    });
 }
 
 
