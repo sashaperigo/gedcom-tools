@@ -3,18 +3,37 @@
 
 
 let _noteEditXref = null,
-    _noteEditIdx = null;
+    _noteEditIdx = null,
+    _noteEditEventCtx = null;
 
 // Citation clipboard — persists across modal opens within the same page session.
 
 
-async function deleteNote(xref, noteIdx) {
+async function deleteNote(xref, noteIdx, eventCtx = null) {
     if (!confirm('Delete this note? The GEDCOM file will be updated immediately (a backup will be saved).')) return;
     try {
-        const resp = await fetch('/api/delete_note', {
+        let url, body;
+        if (eventCtx) {
+            const evt = PEOPLE[xref] && PEOPLE[xref].events &&
+                PEOPLE[xref].events.find(e => e.tag === eventCtx.tag && e.event_idx === eventCtx.eventIdx);
+            const note = evt && evt.event_notes && evt.event_notes[noteIdx];
+            url = '/api/delete_event_note';
+            body = {
+                xref,
+                tag: eventCtx.tag,
+                event_idx: eventCtx.eventIdx,
+                note_idx: noteIdx,
+                note_xref: (note && note.shared) ? note.note_xref : null,
+                current_person: window._currentPerson || null,
+            };
+        } else {
+            url = '/api/delete_note';
+            body = { xref, note_idx: noteIdx, current_person: window._currentPerson || null };
+        }
+        const resp = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ xref, note_idx: noteIdx, current_person: window._currentPerson || null }),
+            body: JSON.stringify(body),
         });
         const data = await resp.json();
         if (data.ok) {
@@ -51,11 +70,29 @@ function editNote(xref, noteIdx) {
 }
 
 
+function editEventNote(xref, tag, eventIdx, noteIdx) {
+    const evt = PEOPLE[xref] && PEOPLE[xref].events &&
+        PEOPLE[xref].events.find(e => e.tag === tag && e.event_idx === eventIdx);
+    const note = evt && evt.event_notes && evt.event_notes[noteIdx];
+    if (!note) return;
+    _noteEditXref = xref;
+    _noteEditIdx = noteIdx;
+    _noteEditEventCtx = { tag, eventIdx };
+    document.getElementById('note-modal-title').textContent = 'Edit Note';
+    document.getElementById('note-modal-textarea').value = note.text;
+    const warning = document.getElementById('note-modal-shared-warning');
+    if (warning) warning.style.display = note.shared ? 'block' : 'none';
+    document.getElementById('note-modal-overlay').classList.add('open');
+    setTimeout(() => { const el = document.getElementById('note-modal-textarea'); if (el) el.focus && el.focus(); }, 50);
+}
+
+
 function closeNoteModal() {
     document.getElementById('note-modal-overlay').classList.remove('open');
     const warning = document.getElementById('note-modal-shared-warning');
     if (warning) warning.style.display = 'none';
     _noteEditXref = _noteEditIdx = null;
+    _noteEditEventCtx = null;
 }
 
 
@@ -63,7 +100,36 @@ async function submitNoteEdit() {
     const newText = document.getElementById('note-modal-textarea').value;
     const xref = _noteEditXref;
     const noteIdx = _noteEditIdx;
+    const eventCtx = _noteEditEventCtx;  // capture BEFORE closeNoteModal clears it
     closeNoteModal();
+
+    if (eventCtx) {
+        const evt = PEOPLE[xref] && PEOPLE[xref].events &&
+            PEOPLE[xref].events.find(e => e.tag === eventCtx.tag && e.event_idx === eventCtx.eventIdx);
+        const note = evt && evt.event_notes && evt.event_notes[noteIdx];
+        const noteXref = (note && note.shared) ? note.note_xref : null;
+        const url = noteXref ? '/api/edit_note' : '/api/edit_event_note';
+        const body = noteXref
+            ? { xref, note_xref: noteXref, note_idx: noteIdx, new_text: newText, current_person: window._currentPerson || null }
+            : { xref, tag: eventCtx.tag, event_idx: eventCtx.eventIdx, note_idx: noteIdx, new_text: newText, current_person: window._currentPerson || null };
+        try {
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                if (data.people && data.people[xref]) PEOPLE[xref] = data.people[xref];
+                setState({ panelXref: xref, panelOpen: true });
+            } else {
+                alert('Edit failed: ' + (data.error || 'unknown error'));
+            }
+        } catch (e) { alert('Request failed: ' + e); }
+        return;
+    }
+
+    // existing top-level note path (unchanged)
     const isAdd = noteIdx === null;
     const url = isAdd ? '/api/add_note' : '/api/edit_note';
     const existingNote = !isAdd && PEOPLE[xref] && PEOPLE[xref].notes[noteIdx];
@@ -1036,6 +1102,7 @@ if (typeof module !== 'undefined' && module.exports) {
         deleteNote,
         submitNoteEdit,
         editNote,
+        editEventNote,
         deleteFact,
         openSpouseMenuModal,
         closeSpouseMenuModal,

@@ -3128,3 +3128,128 @@ describe('_renderAddPersonTreeResults', () => {
         expect(_renderAddPersonTreeResults('zzznomatch')).toEqual([]);
     });
 });
+describe('deleteNote with eventCtx', () => {
+    beforeEach(() => {
+        global.fetch = vi.fn(() => Promise.resolve({
+            json: () => Promise.resolve({ ok: true, people: {} }),
+        }));
+        global.PEOPLE = {
+            '@I1@': {
+                notes: [],
+                events: [
+                    {
+                        tag: 'OCCU', event_idx: 0,
+                        event_notes: [
+                            { text: 'Inline note', shared: false, note_xref: null },
+                        ],
+                    },
+                ],
+            },
+        };
+        global.setState = vi.fn();
+        global.confirm = vi.fn(() => true);
+        global._currentPerson = null;
+    });
+
+    it('POSTs to /api/delete_event_note when eventCtx provided', async () => {
+        const { deleteNote } = require('../../js/viz_modal_people.js');
+        await deleteNote('@I1@', 0, { tag: 'OCCU', eventIdx: 0 });
+        expect(fetch).toHaveBeenCalledWith(
+            '/api/delete_event_note',
+            expect.objectContaining({ method: 'POST' })
+        );
+        const body = JSON.parse(fetch.mock.calls[0][1].body);
+        expect(body.tag).toBe('OCCU');
+        expect(body.event_idx).toBe(0);
+        expect(body.note_idx).toBe(0);
+    });
+
+    it('POSTs to /api/delete_note when no eventCtx', async () => {
+        global.PEOPLE['@I1@'].notes = [{ text: 'Top note', shared: false, note_xref: null }];
+        const { deleteNote } = require('../../js/viz_modal_people.js');
+        await deleteNote('@I1@', 0, null);
+        expect(fetch).toHaveBeenCalledWith(
+            '/api/delete_note',
+            expect.anything()
+        );
+    });
+
+    it('includes note_xref for shared event note delete', async () => {
+        global.PEOPLE['@I1@'].events[0].event_notes = [
+            { text: 'Shared', shared: true, note_xref: '@N1@' },
+        ];
+        const { deleteNote } = require('../../js/viz_modal_people.js');
+        await deleteNote('@I1@', 0, { tag: 'OCCU', eventIdx: 0 });
+        const body = JSON.parse(fetch.mock.calls[0][1].body);
+        expect(body.note_xref).toBe('@N1@');
+    });
+});
+
+describe('editEventNote', () => {
+    let modalOverlay, titleEl, textareaEl, warningEl;
+
+    beforeEach(() => {
+        global.PEOPLE = {
+            '@I1@': {
+                events: [
+                    {
+                        tag: 'OCCU', event_idx: 0,
+                        event_notes: [
+                            { text: 'Shared note text', shared: true, note_xref: '@N1@' },
+                        ],
+                    },
+                ],
+            },
+        };
+        titleEl    = { textContent: '' };
+        textareaEl = { value: '', focus: vi.fn() };
+        warningEl  = { style: { display: '' } };
+        modalOverlay = {
+            classList: {
+                _c: new Set(),
+                add(c) { this._c.add(c); },
+                remove(c) { this._c.delete(c); },
+                contains(c) { return this._c.has(c); },
+            },
+        };
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'note-modal-title')    return titleEl;
+                if (id === 'note-modal-textarea') return textareaEl;
+                if (id === 'note-modal-shared-warning') return warningEl;
+                if (id === 'note-modal-overlay')  return modalOverlay;
+                return null;
+            },
+            createElement: () => ({}),
+            createTextNode: () => ({}),
+            addEventListener: () => {},
+        };
+    });
+
+    it('sets textarea value to note text', () => {
+        const { editEventNote } = require('../../js/viz_modal_people.js');
+        editEventNote('@I1@', 'OCCU', 0, 0);
+        expect(textareaEl.value).toBe('Shared note text');
+    });
+
+    it('shows shared warning for shared note', () => {
+        const { editEventNote } = require('../../js/viz_modal_people.js');
+        editEventNote('@I1@', 'OCCU', 0, 0);
+        expect(warningEl.style.display).toBe('block');
+    });
+
+    it('hides shared warning for inline note', () => {
+        global.PEOPLE['@I1@'].events[0].event_notes = [
+            { text: 'Inline', shared: false, note_xref: null },
+        ];
+        const { editEventNote } = require('../../js/viz_modal_people.js');
+        editEventNote('@I1@', 'OCCU', 0, 0);
+        expect(warningEl.style.display).toBe('none');
+    });
+
+    it('opens the note modal overlay', () => {
+        const { editEventNote } = require('../../js/viz_modal_people.js');
+        editEventNote('@I1@', 'OCCU', 0, 0);
+        expect(modalOverlay.classList.contains('open')).toBe(true);
+    });
+});
