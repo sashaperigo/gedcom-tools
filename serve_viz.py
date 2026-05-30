@@ -1680,6 +1680,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
+        elif parsed.path == '/api/delete_event_note':
+            xref      = body['xref']
+            tag       = body['tag']
+            event_idx = int(body['event_idx'])
+            note_idx  = int(body['note_idx'])
+            lines     = GED.read_text(encoding='utf-8').splitlines()
+            start, end, err = _find_event_note_block(lines, xref, tag, event_idx, note_idx)
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                new_lines = lines[:start] + lines[end:]
+                _write_gedcom_atomic(new_lines)
+                print(f"[event-note-delete] {xref} {tag}[{event_idx}] note[{note_idx}] deleted")
+                regenerate(body.get('current_person'))
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
         elif parsed.path == '/api/edit_event':
             xref      = body['xref']
             tag       = body['tag']

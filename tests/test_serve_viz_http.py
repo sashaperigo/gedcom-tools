@@ -3387,3 +3387,52 @@ class TestEditEventNoteEndpoint:
         })
         text = ged.read_text(encoding='utf-8')
         assert '3 CONT Line two' in text
+
+
+class TestDeleteEventNoteEndpoint:
+    def _ged_with_two_notes(self, tmp_path):
+        ged = tmp_path / 'del.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n'
+            '0 @I1@ INDI\n1 NAME Test /Person/\n'
+            '1 OCCU Merchant\n2 NOTE First note\n2 NOTE Second note\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        return ged
+
+    def _post(self, ged, body):
+        with patch.object(serve_viz, 'GED', ged), \
+             patch.object(serve_viz, 'regenerate', return_value=None):
+            server = HTTPServer(('127.0.0.1', 0), serve_viz.Handler)
+            port = server.server_address[1]
+            base = f'http://127.0.0.1:{port}'
+            threading.Thread(target=server.handle_request, daemon=True).start()
+            data = json.dumps(body).encode()
+            req = urllib.request.Request(
+                base + '/api/delete_event_note', data=data,
+                headers={'Content-Type': 'application/json',
+                         'Content-Length': str(len(data))},
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result = json.loads(resp.read())
+            server.server_close()
+        return result
+
+    def test_delete_returns_ok(self, tmp_path):
+        ged = self._ged_with_two_notes(tmp_path)
+        result = self._post(ged, {'xref': '@I1@', 'tag': 'OCCU', 'event_idx': 0, 'note_idx': 0})
+        assert result['ok'] is True
+
+    def test_delete_removes_note_from_ged(self, tmp_path):
+        ged = self._ged_with_two_notes(tmp_path)
+        self._post(ged, {'xref': '@I1@', 'tag': 'OCCU', 'event_idx': 0, 'note_idx': 0})
+        text = ged.read_text(encoding='utf-8')
+        assert 'First note' not in text
+        assert 'Second note' in text
+
+    def test_delete_bad_idx_returns_error(self, tmp_path):
+        ged = self._ged_with_two_notes(tmp_path)
+        result = self._post(ged, {'xref': '@I1@', 'tag': 'OCCU', 'event_idx': 0, 'note_idx': 99})
+        assert result['ok'] is False
