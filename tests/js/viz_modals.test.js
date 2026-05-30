@@ -2045,7 +2045,7 @@ describe('_buildSourcesModalContent — SOUR tag (person-level citations)', () =
     it('add button uses null as factKey for person-level', () => {
         const html = _buildSourcesModalContent([], SOURCES, '@I1@', sourEvt);
         expect(html).toContain('showAddCitationModal');
-        expect(html).toMatch(/showAddCitationModal\([^,]+,\s*&quot;null&quot;/);
+        expect(html).toMatch(/showAddCitationModal\([^,]+,\s*null\b/);
     });
 
     it('renders source title', () => {

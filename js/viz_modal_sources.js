@@ -162,7 +162,7 @@ function _buildSourcesModalContent(citations, sources, xref, evt) {
     let factKey;
     if (tag === 'NOTE') factKey = `NOTE:${evt && evt.note_idx}`;
     else if (tag === 'SNOTE') factKey = `SNOTE:${evt && evt.note_xref}`;
-    else if (isIndiSour) factKey = 'null';
+    else if (isIndiSour) factKey = null;
     else factKey = tag ? `${tag}:${eventOcc}` : '';
     const factKeyQ = JSON.stringify(factKey).replace(/"/g, '&quot;');
 
@@ -346,9 +346,9 @@ function _applyToEventLabel(ev) {
         if (spouse && spouse.name) label += ' to ' + spouse.name.replace(/\//g, '');
     }
     // For tags whose distinguishing detail is the inline value (NATI: "English",
-    // RELI: "Catholic", OCCU: "Dragoman"), surface it so multiple rows of the
-    // same tag are distinguishable.
-    const inlineDetail = (tag === 'NATI' || tag === 'RELI' || tag === 'OCCU')
+    // RELI: "Catholic", OCCU: "Dragoman", TITL: "Captain"), surface it so
+    // multiple rows of the same tag are distinguishable.
+    const inlineDetail = (tag === 'NATI' || tag === 'RELI' || tag === 'OCCU' || tag === 'TITL')
         ? ((ev && (ev.inline_val || ev.type)) || '').trim()
         : '';
     if (inlineDetail) label = `${label} — ${inlineDetail}`;
