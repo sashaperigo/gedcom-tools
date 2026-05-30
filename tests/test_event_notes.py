@@ -149,6 +149,18 @@ class TestFamEventNotes:
         assert len(marr['event_notes']) == 2
         assert marr['note'] == 'Inline'
 
+    def test_marr_inline_cont_appended(self, tmp_path):
+        ged = _write_ged(tmp_path, 'f.ged',
+            '0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n'
+            '1 MARR\n2 NOTE First line\n3 CONT Second line\n'
+            '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
+            '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
+        )
+        _, fams, _ = parse_gedcom(str(ged))
+        marr = fams['@F1@']['marrs'][0]
+        assert marr['event_notes'][0]['text'] == 'First line\nSecond line'
+        assert marr['note'] == 'First line\nSecond line'
+
 
 class TestEventNoteContinuation:
     def test_cont_appended_to_event_notes_text(self, tmp_path):

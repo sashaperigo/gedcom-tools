@@ -162,11 +162,13 @@ def _parse_fam_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec
                 entry = state.get('shared_notes', {}).get(xref)
                 text = entry['text'] if entry else f'(missing: {xref})'
                 current_evt['event_notes'].append({'text': text, 'shared': True, 'note_xref': xref})
+                state['current_note'] = None
             else:
                 text = _ged_val(val)
                 current_evt['event_notes'].append({'text': text, 'shared': False, 'note_xref': None})
                 if current_evt['note'] is None:
                     current_evt['note'] = text
+                state['current_note'] = 'event'
         elif tag == 'SOUR' and val.startswith('@'):
             current_evt['citations'].append({'sour_xref': val, 'page': None, 'text': None, 'note': None})
             state['current_evt_cite_field'] = None
@@ -183,7 +185,15 @@ def _parse_fam_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec
     elif tag == 'DATE' and lvl == 4 and current_evt is not None and current_evt.get('citations'):
         current_evt['citations'][-1]['date'] = val.strip()
     elif tag in ('CONT', 'CONC') and current_evt is not None:
-        _fam_cont_conc(state, lvl, tag, val, raw_val, current_evt)
+        if state.get('current_note') == 'event':
+            sep = '\n' if tag == 'CONT' else ''
+            appended = _ged_val(raw_val if tag == 'CONC' else val)
+            current_evt['note'] = (current_evt['note'] or '') + sep + appended
+            if current_evt.get('event_notes'):
+                last = current_evt['event_notes'][-1]
+                last['text'] = (last['text'] or '') + sep + appended
+        else:
+            _fam_cont_conc(state, lvl, tag, val, raw_val, current_evt)
     elif tag == 'WWW' and lvl in (3, 4) and current_evt is not None and current_evt.get('citations'):
         if not current_evt['citations'][-1].get('url'):
             current_evt['citations'][-1]['url'] = val

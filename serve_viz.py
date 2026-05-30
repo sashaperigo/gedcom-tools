@@ -304,8 +304,8 @@ def _find_event_note_block(
         m = _TAG_RE.match(lines[i])
         if not m:
             continue
-        lvl, tag = int(m.group(1)), m.group(2)
-        if lvl == 2 and tag == 'NOTE':
+        lvl, ltag = int(m.group(1)), m.group(2)
+        if lvl == 2 and ltag == 'NOTE':
             if count == note_within_n:
                 j = i + 1
                 while j < ev_end:
