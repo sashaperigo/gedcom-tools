@@ -49,6 +49,7 @@ async function deleteNote(xref, noteIdx, eventCtx = null) {
 function addNote(xref) {
     _noteEditXref = xref;
     _noteEditIdx = null; // null = add mode
+    _noteEditEventCtx = null;
     document.getElementById('note-modal-title').textContent = 'Add Note';
     document.getElementById('note-modal-textarea').value = '';
     document.getElementById('note-modal-overlay').classList.add('open');
@@ -59,6 +60,7 @@ function addNote(xref) {
 function editNote(xref, noteIdx) {
     _noteEditXref = xref;
     _noteEditIdx = noteIdx;
+    _noteEditEventCtx = null;
     const note = PEOPLE[xref] && PEOPLE[xref].notes[noteIdx];
     const noteObj = (note && typeof note === 'object') ? note : { text: note || '', shared: false, note_xref: null };
     document.getElementById('note-modal-title').textContent = 'Edit Note';

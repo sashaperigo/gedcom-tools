@@ -3253,3 +3253,61 @@ describe('editEventNote', () => {
         expect(modalOverlay.classList.contains('open')).toBe(true);
     });
 });
+
+describe('submitNoteEdit with event context', () => {
+    beforeEach(() => {
+        global.fetch = vi.fn(() => Promise.resolve({
+            json: () => Promise.resolve({ ok: true, people: {} }),
+        }));
+        global.PEOPLE = {
+            '@I1@': {
+                events: [
+                    {
+                        tag: 'OCCU', event_idx: 0,
+                        event_notes: [
+                            { text: 'Inline note', shared: false, note_xref: null },
+                        ],
+                    },
+                ],
+            },
+        };
+        global.setState = vi.fn();
+        // Set up the note modal DOM
+        global.document = {
+            getElementById: (id) => {
+                if (id === 'note-modal-textarea') return { value: 'Updated text' };
+                if (id === 'note-modal-overlay') return { classList: { remove: () => {}, add: () => {} } };
+                if (id === 'note-modal-shared-warning') return { style: { display: '' } };
+                if (id === 'note-modal-title') return { textContent: '' };
+                return null;
+            },
+            createElement: () => ({}),
+            createTextNode: () => ({}),
+            addEventListener: () => {},
+        };
+    });
+
+    it('routes inline event note to /api/edit_event_note', async () => {
+        const { editEventNote, submitNoteEdit } = require('../../js/viz_modal_people.js');
+        editEventNote('@I1@', 'OCCU', 0, 0);
+        await submitNoteEdit();
+        expect(fetch).toHaveBeenCalledWith('/api/edit_event_note', expect.anything());
+        const body = JSON.parse(fetch.mock.calls[0][1].body);
+        expect(body.tag).toBe('OCCU');
+        expect(body.event_idx).toBe(0);
+        expect(body.new_text).toBe('Updated text');
+    });
+
+    it('routes shared event note to /api/edit_note with note_xref', async () => {
+        global.PEOPLE['@I1@'].events[0].event_notes = [
+            { text: 'Shared', shared: true, note_xref: '@N1@' },
+        ];
+        const { editEventNote, submitNoteEdit } = require('../../js/viz_modal_people.js');
+        editEventNote('@I1@', 'OCCU', 0, 0);
+        await submitNoteEdit();
+        expect(fetch).toHaveBeenCalledWith('/api/edit_note', expect.anything());
+        const body = JSON.parse(fetch.mock.calls[0][1].body);
+        expect(body.note_xref).toBe('@N1@');
+        expect(body.new_text).toBe('Updated text');
+    });
+});
