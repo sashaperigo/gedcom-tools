@@ -1652,6 +1652,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
+        elif parsed.path == '/api/edit_event_note':
+            xref      = body['xref']
+            tag       = body['tag']
+            event_idx = int(body['event_idx'])
+            note_idx  = int(body['note_idx'])
+            note_xref = body.get('note_xref')
+            new_text  = body.get('new_text', '')
+            lines     = GED.read_text(encoding='utf-8').splitlines()
+            if note_xref:
+                start, end, err = _find_shared_note_block(lines, note_xref)
+                new_note_lines = _encode_shared_note_lines(note_xref, new_text)
+                log_msg = f"[event-note-edit] shared {note_xref} updated"
+            else:
+                start, end, err = _find_event_note_block(lines, xref, tag, event_idx, note_idx)
+                new_note_lines = _encode_event_note_lines(new_text)
+                log_msg = f"[event-note-edit] {xref} {tag}[{event_idx}] note[{note_idx}] updated"
+            if err:
+                resp = json.dumps({'ok': False, 'error': err}).encode()
+            else:
+                new_lines = lines[:start] + new_note_lines + lines[end:]
+                _write_gedcom_atomic(new_lines)
+                print(log_msg)
+                regenerate(body.get('current_person'))
+                viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
+                indis, fams, sources = parse_gedcom(str(GED))
+                updated = build_people_json({xref}, indis, fams=fams, sources=sources)
+                resp = json.dumps({'ok': True, 'people': updated}).encode()
+
         elif parsed.path == '/api/edit_event':
             xref      = body['xref']
             tag       = body['tag']

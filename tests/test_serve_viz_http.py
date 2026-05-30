@@ -3319,3 +3319,62 @@ class TestFindEventNoteBlock:
         lines = self._make_lines()
         _, _, err = serve_viz._find_event_note_block(lines, '@NOBODY@', 'OCCU', 0, 0)
         assert err is not None
+
+
+class TestEditEventNoteEndpoint:
+    def _ged_with_occu_note(self, tmp_path):
+        """Write a minimal GED with @I1@ having OCCU with one inline note."""
+        ged = tmp_path / 'evtnote.ged'
+        ged.write_text(
+            '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n'
+            '0 @I1@ INDI\n1 NAME Test /Person/\n'
+            '1 OCCU Merchant\n2 NOTE Original inline note\n'
+            '0 TRLR\n',
+            encoding='utf-8',
+        )
+        return ged
+
+    def _post(self, ged, path, body):
+        with patch.object(serve_viz, 'GED', ged), \
+             patch.object(serve_viz, 'regenerate', return_value=None):
+            server = HTTPServer(('127.0.0.1', 0), serve_viz.Handler)
+            port = server.server_address[1]
+            base = f'http://127.0.0.1:{port}'
+            threading.Thread(target=server.handle_request, daemon=True).start()
+            data = json.dumps(body).encode()
+            req = urllib.request.Request(
+                base + path, data=data,
+                headers={'Content-Type': 'application/json',
+                         'Content-Length': str(len(data))},
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result = json.loads(resp.read())
+            server.server_close()
+        return result
+
+    def test_edit_inline_event_note_returns_ok(self, tmp_path):
+        ged = self._ged_with_occu_note(tmp_path)
+        result = self._post(ged, '/api/edit_event_note', {
+            'xref': '@I1@', 'tag': 'OCCU', 'event_idx': 0,
+            'note_idx': 0, 'new_text': 'Updated note text',
+        })
+        assert result['ok'] is True
+
+    def test_edit_inline_event_note_updates_ged(self, tmp_path):
+        ged = self._ged_with_occu_note(tmp_path)
+        self._post(ged, '/api/edit_event_note', {
+            'xref': '@I1@', 'tag': 'OCCU', 'event_idx': 0,
+            'note_idx': 0, 'new_text': 'Updated note text',
+        })
+        text = ged.read_text(encoding='utf-8')
+        assert 'Updated note text' in text
+        assert 'Original inline note' not in text
+
+    def test_edit_event_note_bad_idx_returns_error(self, tmp_path):
+        ged = self._ged_with_occu_note(tmp_path)
+        result = self._post(ged, '/api/edit_event_note', {
+            'xref': '@I1@', 'tag': 'OCCU', 'event_idx': 0,
+            'note_idx': 99, 'new_text': 'x',
+        })
+        assert result['ok'] is False
