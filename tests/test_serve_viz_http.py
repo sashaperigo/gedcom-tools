@@ -3278,3 +3278,44 @@ class TestLinkPersonEndpoint:
             assert False, 'Expected HTTPError'
         except urllib.error.HTTPError as e:
             assert e.code == 400
+
+
+class TestFindEventNoteBlock:
+    """Unit tests for the _find_event_note_block helper (no HTTP)."""
+
+    def _make_lines(self):
+        return (
+            '0 HEAD\n'
+            '0 @I1@ INDI\n'
+            '1 NAME Test /Person/\n'
+            '1 OCCU Merchant\n'
+            '2 NOTE Inline note one\n'
+            '3 CONT continued\n'
+            '2 NOTE Inline note two\n'
+            '0 TRLR'
+        ).splitlines()
+
+    def test_finds_first_note(self):
+        lines = self._make_lines()
+        start, end, err = serve_viz._find_event_note_block(lines, '@I1@', 'OCCU', 0, 0)
+        assert err is None
+        assert lines[start] == '2 NOTE Inline note one'
+        assert lines[end - 1] == '3 CONT continued'
+
+    def test_finds_second_note(self):
+        lines = self._make_lines()
+        start, end, err = serve_viz._find_event_note_block(lines, '@I1@', 'OCCU', 0, 1)
+        assert err is None
+        assert lines[start] == '2 NOTE Inline note two'
+        assert end == start + 1
+
+    def test_bad_note_idx_returns_error(self):
+        lines = self._make_lines()
+        _, _, err = serve_viz._find_event_note_block(lines, '@I1@', 'OCCU', 0, 99)
+        assert err is not None
+        assert 'not found' in err
+
+    def test_bad_xref_returns_error(self):
+        lines = self._make_lines()
+        _, _, err = serve_viz._find_event_note_block(lines, '@NOBODY@', 'OCCU', 0, 0)
+        assert err is not None

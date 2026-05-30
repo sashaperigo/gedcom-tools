@@ -292,6 +292,32 @@ def _find_note_block_full(
     return None, None, f'Note index {note_idx} not found in {xref}'
 
 
+def _find_event_note_block(
+    lines: list[str], xref: str, tag: str, occurrence_n: int, note_within_n: int
+) -> tuple[int | None, int | None, str | None]:
+    """Return (start, end, err) for the Nth 2 NOTE block within event tag[occurrence_n] in xref."""
+    ev_start, ev_end, err = _find_event_block(lines, xref, tag, occurrence_n)
+    if err:
+        return None, None, err
+    count = 0
+    for i in range(ev_start + 1, ev_end):
+        m = _TAG_RE.match(lines[i])
+        if not m:
+            continue
+        if int(m.group(1)) == 2 and m.group(2) == 'NOTE':
+            if count == note_within_n:
+                j = i + 1
+                while j < ev_end:
+                    sm = _TAG_RE.match(lines[j])
+                    if sm and sm.group(2) in ('CONT', 'CONC'):
+                        j += 1
+                    else:
+                        break
+                return i, j, None
+            count += 1
+    return None, None, f'Event note {note_within_n} not found in {xref} {tag}[{occurrence_n}]'
+
+
 def _find_shared_note_block(lines: list[str], note_xref: str) -> tuple[int | None, int | None, str | None]:
     """Return (start, end, err) — line range [start, end) for top-level '0 @xref@ NOTE' record."""
     target = f'0 {note_xref} NOTE'
