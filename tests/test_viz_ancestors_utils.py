@@ -404,8 +404,8 @@ class TestNoteCitationParsing:
         assert indis['@I1@']['notes'][0]['citations'] == []
 
     def test_event_level_shared_note_resolves_to_text(self, tmp_path):
-        """A '2 NOTE @xref@' under an event must inline the shared note text,
-        not leak the literal '@xref@' tag through to evt['note']."""
+        """A '2 NOTE @xref@' under an event must resolve to its text in event_notes,
+        not leak the literal '@xref@' tag. Shared notes do NOT set evt['note']."""
         ged = """\
 0 HEAD
 1 SOUR Test
@@ -418,7 +418,10 @@ class TestNoteCitationParsing:
 0 TRLR"""
         indis = _make_indis(tmp_path, ged)
         evt = indis['@I1@']['events'][0]
-        assert evt['note'] == 'Sensali (brokers) of Smyrna'
+        assert evt['note'] is None
+        assert len(evt['event_notes']) == 1
+        assert evt['event_notes'][0]['text'] == 'Sensali (brokers) of Smyrna'
+        assert evt['event_notes'][0]['shared'] is True
 
     def test_fam_event_shared_note_resolves_to_text(self, tmp_path):
         """A FAM-event '2 NOTE @xref@' must also inline the shared note text."""

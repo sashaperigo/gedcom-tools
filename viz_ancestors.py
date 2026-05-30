@@ -218,6 +218,7 @@ def _indi_open_event(state: dict, tag: str, val: str, rec: dict) -> None:
     initial_note = None if (tag in _INLINE_TYPE_TAGS or is_deat_y) else (html_mod.unescape(val) if val else None)
     evt = {'tag': tag, 'type': inline_type, 'date': None, 'place': None,
            'cause': None, 'addr': None, 'note': initial_note,
+           'event_notes': [],
            'inline_val': None if is_deat_y else (val if val else None),
            'age': None, 'citations': []}
     if tag == 'DEAT':
@@ -322,10 +323,14 @@ def _indi_evt_subfield(state: dict, tag: str, val: str, raw_val: str, rec: dict,
         if val and val.startswith('@'):
             xref = val.rstrip()
             entry = state.get('shared_notes', {}).get(xref)
-            evt['note'] = entry['text'] if entry else f'(missing: {xref})'
+            text = entry['text'] if entry else f'(missing: {xref})'
+            evt['event_notes'].append({'text': text, 'shared': True, 'note_xref': xref})
             state['current_note'] = None
         else:
-            evt['note'] = _ged_val(val)
+            text = _ged_val(val)
+            evt['event_notes'].append({'text': text, 'shared': False, 'note_xref': None})
+            if evt['note'] is None:
+                evt['note'] = text
             state['current_note'] = 'event'
     elif tag == 'AGE':
         evt['age'] = val
