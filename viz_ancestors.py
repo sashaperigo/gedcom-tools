@@ -392,7 +392,11 @@ def _indi_handle_lvl3(state: dict, tag: str, val: str, raw_val: str, rec: dict) 
         current_evt['citations'][-1]['quay'] = val.strip()
     elif tag in ('CONT', 'CONC') and current_note == 'event':
         sep = '\n' if tag == 'CONT' else ''
-        current_evt['note'] += sep + _ged_val(raw_val if tag == 'CONC' else val)
+        appended = _ged_val(raw_val if tag == 'CONC' else val)
+        current_evt['note'] = (current_evt['note'] or '') + sep + appended
+        if current_evt.get('event_notes'):
+            last = current_evt['event_notes'][-1]
+            last['text'] = (last['text'] or '') + sep + appended
     elif tag == 'PAGE' and isinstance(current_note, int):
         cites = rec['notes'][current_note].get('citations')
         if cites:

@@ -148,3 +148,23 @@ class TestFamEventNotes:
         marr = fams['@F1@']['marrs'][0]
         assert len(marr['event_notes']) == 2
         assert marr['note'] == 'Inline'
+
+
+class TestEventNoteContinuation:
+    def test_cont_appended_to_event_notes_text(self, tmp_path):
+        ged = _write_ged(tmp_path, 'c.ged',
+            '0 @I1@ INDI\n1 NAME Test /Person/\n'
+            '1 OCCU Merchant\n2 NOTE First line\n3 CONT Second line\n'
+        )
+        indis, _, _ = parse_gedcom(str(ged))
+        occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
+        assert occu['event_notes'][0]['text'] == 'First line\nSecond line'
+
+    def test_cont_also_updates_evt_note_field(self, tmp_path):
+        ged = _write_ged(tmp_path, 'c.ged',
+            '0 @I1@ INDI\n1 NAME Test /Person/\n'
+            '1 OCCU Merchant\n2 NOTE First line\n3 CONT Second line\n'
+        )
+        indis, _, _ = parse_gedcom(str(ged))
+        occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
+        assert occu['note'] == 'First line\nSecond line'
