@@ -446,7 +446,10 @@ class TestNoteCitationParsing:
         ged_path.write_text(ged, encoding='utf-8')
         _, fams, _ = parse_gedcom(str(ged_path))
         marr = fams['@F1@']['marrs'][0]
-        assert marr['note'] == 'Married at the Latin cathedral'
+        assert len(marr['event_notes']) == 1
+        assert marr['event_notes'][0]['shared'] is True
+        assert marr['event_notes'][0]['text'] == 'Married at the Latin cathedral'
+        assert marr['note'] is None
 
     def test_inline_and_shared_notes_mixed(self, tmp_path):
         ged = """\

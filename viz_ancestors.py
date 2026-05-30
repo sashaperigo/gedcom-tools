@@ -121,7 +121,7 @@ def _fam_handle_lvl1(state: dict, tag: str, val: str, rec: dict) -> None:
         state['current_evt'] = None
     elif tag in ('MARR', 'DIV', 'ANUL'):
         evt = {'tag': tag, 'type': None, 'date': None, 'place': None,
-               'note': None, 'age': None, 'addr': None, 'citations': []}
+               'note': None, 'age': None, 'addr': None, 'citations': [], 'event_notes': []}
         key = 'marrs' if tag == 'MARR' else ('divs' if tag == 'DIV' else 'anuls')
         rec.setdefault(key, []).append(evt)
         state['current_evt'] = evt
@@ -160,9 +160,13 @@ def _parse_fam_line(state: dict, lvl: int, tag: str, val: str, raw_val: str, rec
             if val and val.startswith('@'):
                 xref = val.rstrip()
                 entry = state.get('shared_notes', {}).get(xref)
-                current_evt['note'] = entry['text'] if entry else f'(missing: {xref})'
+                text = entry['text'] if entry else f'(missing: {xref})'
+                current_evt['event_notes'].append({'text': text, 'shared': True, 'note_xref': xref})
             else:
-                current_evt['note'] = _ged_val(val)
+                text = _ged_val(val)
+                current_evt['event_notes'].append({'text': text, 'shared': False, 'note_xref': None})
+                if current_evt['note'] is None:
+                    current_evt['note'] = text
         elif tag == 'SOUR' and val.startswith('@'):
             current_evt['citations'].append({'sour_xref': val, 'page': None, 'text': None, 'note': None})
             state['current_evt_cite_field'] = None

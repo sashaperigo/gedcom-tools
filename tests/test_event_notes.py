@@ -107,3 +107,44 @@ class TestIndiEventNotes:
         indis, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert occu['event_notes'] == []
+
+
+class TestFamEventNotes:
+    def test_marr_event_has_event_notes_field(self, tmp_path):
+        ged = _write_ged(tmp_path, 'f.ged',
+            '0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n'
+            '1 MARR\n2 NOTE Inline marriage note\n'
+            '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
+            '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
+        )
+        _, fams, _ = parse_gedcom(str(ged))
+        marr = fams['@F1@']['marrs'][0]
+        assert 'event_notes' in marr
+
+    def test_marr_shared_note_in_event_notes(self, tmp_path):
+        ged = _write_ged(tmp_path, 'f.ged',
+            '0 @N1@ NOTE Shared marriage note.\n'
+            '0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n'
+            '1 MARR\n2 NOTE @N1@\n'
+            '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
+            '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
+        )
+        _, fams, _ = parse_gedcom(str(ged))
+        marr = fams['@F1@']['marrs'][0]
+        assert len(marr['event_notes']) == 1
+        assert marr['event_notes'][0]['shared'] is True
+        assert marr['event_notes'][0]['note_xref'] == '@N1@'
+        assert marr['note'] is None
+
+    def test_marr_inline_then_shared_preserves_both(self, tmp_path):
+        ged = _write_ged(tmp_path, 'f.ged',
+            '0 @N1@ NOTE Shared marriage note.\n'
+            '0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n'
+            '1 MARR\n2 NOTE Inline\n2 NOTE @N1@\n'
+            '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
+            '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
+        )
+        _, fams, _ = parse_gedcom(str(ged))
+        marr = fams['@F1@']['marrs'][0]
+        assert len(marr['event_notes']) == 2
+        assert marr['note'] == 'Inline'
