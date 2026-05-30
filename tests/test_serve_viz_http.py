@@ -3378,3 +3378,12 @@ class TestEditEventNoteEndpoint:
             'note_idx': 99, 'new_text': 'x',
         })
         assert result['ok'] is False
+
+    def test_edit_event_note_multiline_uses_cont(self, tmp_path):
+        ged = self._ged_with_occu_note(tmp_path)
+        self._post(ged, '/api/edit_event_note', {
+            'xref': '@I1@', 'tag': 'OCCU', 'event_idx': 0,
+            'note_idx': 0, 'new_text': 'Line one\nLine two',
+        })
+        text = ged.read_text(encoding='utf-8')
+        assert '3 CONT Line two' in text
