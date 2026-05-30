@@ -6,22 +6,22 @@
 
 :root {
     /* Backgrounds — navy tree palette */
-    --bg-app: #0a0f1c;
-    --bg-surface: #0d1526;
-    --bg-hover: #1e293b;
+    --bg-app: #070b16;       /* deeper canvas so surfaces sit clearly above it */
+    --bg-surface: #18233f;   /* lifted well clear of the canvas for card/panel separation */
+    --bg-hover: #28385a;
 
     /* Borders — navy-blue (matches tree node border hue, no purple cast) */
-    --border: #1e2d48;
-    --border-subtle: #162038;
-    --border-deep: #1e2a42;
+    --border: #35496f;
+    --border-subtle: #283a5c;
+    --border-deep: #324563;
 
     /* Text */
-    --text-primary: #e2e8f0;
-    --text-label: #e2e8f0;
-    --text-light: #b8c8e0;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --text-disabled: #475569;
+    --text-primary: #e8edf5;
+    --text-label: #e8edf5;
+    --text-light: #c4d2e6;
+    --text-secondary: #aeb9cc;
+    --text-muted: #8593a8;
+    --text-disabled: #5d6b82;
 
     /* Accent — indigo/slate (interactive elements only) */
     --accent: #818cf8;
@@ -758,6 +758,51 @@ header h1 .root-name-accent {
 }
 
 .note-card.shared a {
+    color: #a5b4fc;
+}
+
+/* ── Event-level note cards (inline shared notes inside event rows) ── */
+.evt-note-card-wrap {
+    position: relative;
+    margin-top: 4px;
+}
+
+.evt-note-card-actions {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    display: none;
+    gap: 4px;
+}
+
+.evt-note-card-wrap:hover .evt-note-card-actions {
+    display: flex;
+}
+
+.evt-note-card {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    padding: 7px 32px 7px 10px;
+    border-radius: 5px;
+    border-left: 2px solid rgba(254, 235, 138, 0.35);
+    background: rgba(254, 235, 138, 0.07);
+}
+
+.evt-note-card a {
+    color: #fde68a;
+    text-underline-offset: 2px;
+}
+
+.evt-note-card.shared {
+    background: rgba(147, 160, 253, 0.07);
+    border-left-color: rgba(147, 160, 253, 0.35);
+}
+
+.evt-note-card.shared a {
     color: #a5b4fc;
 }
 
@@ -2765,12 +2810,12 @@ button.sources-section-title:hover .sources-toggle-arrow {
 .edge-ancestor,
 .edge-descendant,
 .edge-marriage {
-    stroke-width: 1.2;
+    stroke-width: 1.4;
 }
 
-.edge-ancestor { stroke: rgba(148, 163, 184, 0.3); }
-.edge-descendant { stroke: rgba(148, 163, 184, 0.2); }
-.edge-marriage { stroke: rgba(148, 163, 184, 0.25); }
+.edge-ancestor { stroke: rgba(170, 185, 204, 0.55); }
+.edge-descendant { stroke: rgba(170, 185, 204, 0.45); }
+.edge-marriage { stroke: rgba(170, 185, 204, 0.5); }
 
 .btn-expand,
 .btn-collapse {
