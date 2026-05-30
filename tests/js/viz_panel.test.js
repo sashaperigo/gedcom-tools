@@ -958,7 +958,7 @@ describe('renderPanel — event note in italics', () => {
             death_year: null,
             sex: 'M',
             events: [
-                { tag: 'BIRT', date: '1900', place: 'Smyrna', note: 'Born at dawn', citations: [], event_idx: 0 },
+                { tag: 'BIRT', date: '1900', place: 'Smyrna', note: 'Born at dawn', event_notes: [{ text: 'Born at dawn', shared: false, note_xref: null }], citations: [], event_idx: 0 },
             ],
             notes: [],
             sources: [],
@@ -2462,5 +2462,80 @@ describe('renderPanel — event card kebab menu', () => {
         expect(html).not.toContain('class="evt-actions"');
         // Two events → two kebabs
         expect(html.match(/class="evt-kebab-btn"/g)).toHaveLength(2);
+    });
+});
+
+describe('buildEventNotesHtml', () => {
+    beforeEach(() => {
+        global.editEventNote = () => {};
+        global.deleteNote = () => {};
+    });
+
+    it('returns empty string for null event_notes', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        expect(buildEventNotesHtml(null, '"@I1@"', 'OCCU', 0)).toBe('');
+    });
+
+    it('returns empty string for empty array', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        expect(buildEventNotesHtml([], '"@I1@"', 'OCCU', 0)).toBe('');
+    });
+
+    it('renders inline note as evt-note-inline div', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        const notes = [{ text: 'Hello note', shared: false, note_xref: null }];
+        const html = buildEventNotesHtml(notes, '"@I1@"', 'OCCU', 0);
+        expect(html).toContain('evt-note-inline');
+        expect(html).toContain('Hello note');
+        expect(html).not.toContain('evt-note-card');
+    });
+
+    it('renders shared note as evt-note-card shared', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        const notes = [{ text: 'Shared note text', shared: true, note_xref: '@N1@' }];
+        const html = buildEventNotesHtml(notes, '"@I1@"', 'OCCU', 0);
+        expect(html).toContain('evt-note-card');
+        expect(html).toContain('shared');
+        expect(html).toContain('Shared note text');
+        expect(html).not.toContain('evt-note-inline');
+    });
+
+    it('shared note card has edit and delete buttons', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        const notes = [{ text: 'Shared', shared: true, note_xref: '@N1@' }];
+        const html = buildEventNotesHtml(notes, '"@I1@"', 'OCCU', 0);
+        expect(html).toContain('editEventNote');
+        expect(html).toContain('deleteNote');
+    });
+
+    it('renders mixed inline then shared in order', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        const notes = [
+            { text: 'Inline', shared: false, note_xref: null },
+            { text: 'Shared', shared: true, note_xref: '@N1@' },
+        ];
+        const html = buildEventNotesHtml(notes, '"@I1@"', 'OCCU', 0);
+        const inlinePos = html.indexOf('evt-note-inline');
+        const cardPos = html.indexOf('evt-note-card');
+        expect(inlinePos).toBeGreaterThan(-1);
+        expect(cardPos).toBeGreaterThan(-1);
+        expect(inlinePos).toBeLessThan(cardPos);
+    });
+
+    it('uses fact-row-note class when inlineClass override provided', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        const notes = [{ text: 'Note', shared: false, note_xref: null }];
+        const html = buildEventNotesHtml(notes, '"@I1@"', 'OCCU', 0, 'fact-row-note');
+        expect(html).toContain('fact-row-note');
+        expect(html).not.toContain('evt-note-inline');
+    });
+
+    it('does not render action buttons when eventIdx is null (FAM events)', () => {
+        const { buildEventNotesHtml } = require('../../js/viz_panel.js');
+        const notes = [{ text: 'Shared', shared: true, note_xref: '@N1@' }];
+        const html = buildEventNotesHtml(notes, '"@F1@"', 'MARR', null);
+        expect(html).toContain('evt-note-card');
+        expect(html).not.toContain('editEventNote');
+        expect(html).not.toContain('deleteNote');
     });
 });

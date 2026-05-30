@@ -383,6 +383,29 @@ function buildNoteSourceBadgeHtml(citations, xref, noteDisplayIdx) {
     return `<span class="${cls}" title="${label}" onclick="event.stopPropagation();openNoteSourcesModal(${xrefQ},${noteDisplayIdx})">${text}</span>`;
 }
 
+function buildEventNotesHtml(evtNotes, xrefQ, tag, eventIdx, inlineClass = 'evt-note-inline') {
+    if (!evtNotes || !evtNotes.length) return '';
+    return evtNotes.map((n, ni) => {
+        if (!n.shared) {
+            return n.text.split('\n').map(l => `<div class="${inlineClass}">${escHtml(l)}</div>`).join('');
+        }
+        if (eventIdx === null || eventIdx === undefined) {
+            // FAM events (MARR, DIV) have no event_idx — render card without action buttons
+            return `<div class="evt-note-card-wrap">` +
+                `<div class="evt-note-card shared">${linkify(n.text)}</div>` +
+                `</div>`;
+        }
+        const tagQ = JSON.stringify(tag).replace(/"/g, '&quot;');
+        const evtCtxQ = JSON.stringify({ tag, eventIdx }).replace(/"/g, '&quot;');
+        return `<div class="evt-note-card-wrap">` +
+            `<div class="evt-note-card shared">${linkify(n.text)}</div>` +
+            `<div class="evt-note-card-actions">` +
+            `<button class="note-action-btn" title="Edit note" onclick="editEventNote(${xrefQ},${tagQ},${eventIdx},${ni})">✏</button>` +
+            `<button class="note-action-btn" title="Delete note" onclick="deleteNote(${xrefQ},${ni},${evtCtxQ})">✕</button>` +
+            `</div></div>`;
+    }).join('');
+}
+
 // ── Event card kebab menu ─────────────────────────────────────────────────
 // Items: [{ icon, label, onclick, danger? }, ...]
 // `onclick` is the inline JS string to run (already has stopPropagation handling
@@ -862,8 +885,9 @@ function renderPanel() {
 
                 const { prose, meta } = buildProse(evt);
                 const color = dotColor(evt);
-                const noteInl = (evt.note && evt.tag !== 'FACT') ?
-                    evt.note.split('\n').map(l => `<div class="evt-note-inline">${escHtml(l)}</div>`).join('') : '';
+                const noteInl = evt.tag !== 'FACT'
+                    ? buildEventNotesHtml(evt.event_notes, xrefQ, evt.tag, evt.event_idx)
+                    : '';
 
                 if (evt.tag === 'MARR') {
                     const spXref = evt.spouse_xref;
@@ -1056,7 +1080,9 @@ function renderPanel() {
             return evts.map(evt => {
                 const { prose, meta } = buildProse(evt);
                 const color = dotColor(evt);
-                const noteInl = (evt.note && evt.tag !== 'FACT') ? evt.note.split('\n').map(l => `<div class="fact-row-note">${escHtml(l)}</div>`).join('') : '';
+                const noteInl = evt.tag !== 'FACT'
+                    ? buildEventNotesHtml(evt.event_notes, xrefQ, evt.tag, evt.event_idx, 'fact-row-note')
+                    : '';
                 const subMeta = [fmtPlace(evt.place || ''), fmtDate(evt.date)].filter(Boolean).join(' \u00b7 ');
                 const subMetaInl = subMeta ? `<div class="fact-row-meta">${escHtml(subMeta)}</div>` : '';
                 const undatedKebabItems = [];
@@ -1384,6 +1410,7 @@ if (typeof module !== 'undefined') {
         toggleResiExpand,
         buildSourceBadgeHtml,
         buildNoteSourceBadgeHtml,
+        buildEventNotesHtml,
         _handleGodparentClick,
         _buildGodparentPillsHtml,
         _ageAt,
