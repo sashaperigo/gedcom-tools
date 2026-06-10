@@ -216,7 +216,7 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
         let currentCriteria = null;
         let currentResults  = [];
         let currentPage     = 1;
-        let currentSort     = 'name';
+        let currentSort     = 'surname';
 
         // ── Mode switching ─────────────────────────────────────────────
         function setMode(mode) { body.setAttribute('data-mode', mode); }
