@@ -144,6 +144,12 @@ if (typeof document !== 'undefined') {
         let activeIdx = -1;
 
         input.addEventListener('input', () => {
+            const raw = input.value.trim();
+            if (/^@[^@]+@$/i.test(raw)) {
+                const rawUp = raw.toUpperCase();
+                const match = ALL_PEOPLE.find(p => p.id.toUpperCase() === rawUp);
+                if (match) { navigate(match.id); input.value = ''; return; }
+            }
             const qNorm = _normSearchS(input.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
             if (!qNorm) { list.classList.remove('open');
                 list.innerHTML = ''; return; }
