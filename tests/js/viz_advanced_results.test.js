@@ -97,33 +97,42 @@ describe('paginate', () => {
 });
 
 describe('sortResults', () => {
-    const rows = [
-        { id: 'a', name: 'Zara Bloom',  birth_year: 1900 },
-        { id: 'b', name: 'Anna Aliotti', birth_year: 1850 },
-        { id: 'c', name: 'Mia Bloom',   birth_year: null },
-        { id: 'd', name: 'Anna Bloom',  birth_year: 1870 },
-    ];
-
     it('sorts by surname then birth year then given name', () => {
-        const out = sortResults(rows, 'surname');
-        // Aliotti < Bloom (x3). Within Bloom: Anna 1870 < Mia null < Zara 1900
-        // null birth_year sorts last within group
-        expect(out.map(r => r.id)).toEqual(['b', 'd', 'c', 'a']);
+        const rows = [
+            { id: 's1', name: 'Anna Bloom',   birth_year: null  },
+            { id: 's2', name: 'Anna Bloom',   birth_year: 1870  },
+            { id: 's3', name: 'Zara Bloom',   birth_year: 1900  },
+            { id: 's4', name: 'Anna Aliotti', birth_year: 1850  },
+        ];
+        // Aliotti first, then Bloom group: Anna-1870 < Anna-null < Zara-1900
+        expect(sortResults(rows, 'surname').map(r => r.id)).toEqual(['s4', 's2', 's1', 's3']);
     });
 
     it('sorts by given name then surname', () => {
-        const out = sortResults(rows, 'given');
-        // Anna (Aliotti, Bloom), Mia Bloom, Zara Bloom
-        expect(out.map(r => r.id)).toEqual(['b', 'd', 'c', 'a']);
+        const rows = [
+            { id: 'g1', name: 'Zara Aliotti', birth_year: 1880 },
+            { id: 'g2', name: 'Anna Bloom',   birth_year: 1870 },
+            { id: 'g3', name: 'Zara Bloom',   birth_year: 1900 },
+            { id: 'g4', name: 'Anna Aliotti', birth_year: 1850 },
+        ];
+        // Anna (Aliotti, Bloom) before Zara (Aliotti, Bloom)
+        expect(sortResults(rows, 'given').map(r => r.id)).toEqual(['g4', 'g2', 'g1', 'g3']);
     });
 
     it('sorts by birth year ascending, undated last', () => {
-        const out = sortResults(rows, 'birth');
-        // 1850, 1870, 1900, null
-        expect(out.map(r => r.id)).toEqual(['b', 'd', 'a', 'c']);
+        const rows = [
+            { id: 'b1', name: 'Zara',  birth_year: 1900 },
+            { id: 'b2', name: 'Anna',  birth_year: 1850 },
+            { id: 'b3', name: 'Mia',   birth_year: null  },
+        ];
+        expect(sortResults(rows, 'birth').map(r => r.id)).toEqual(['b2', 'b1', 'b3']);
     });
 
     it('does not mutate the input array', () => {
+        const rows = [
+            { id: 'm1', name: 'Zara', birth_year: 1900 },
+            { id: 'm2', name: 'Anna', birth_year: 1850 },
+        ];
         const original = rows.map(r => r.id);
         sortResults(rows, 'surname');
         expect(rows.map(r => r.id)).toEqual(original);
