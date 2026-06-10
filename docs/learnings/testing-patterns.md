@@ -48,6 +48,14 @@ Small `.ged` snippets live in `tests/fixtures/`. Use these for testing specific 
 
 ---
 
+## JavaScript tests (vitest) — caching gotchas
+
+⚠️ **getParsed caching**: The `viz_name_match.getParsed` function caches parsed name data using `id` as the key. If you reuse test IDs across multiple tests in the same suite (e.g., id='a' appears in both the surname-sort test and the given-name-sort test with different names), **the second test will receive stale cached data from the first test**. This can mask bugs — e.g., a wrong implementation that always applies surname sort would still pass both tests if they use identical IDs.
+
+**Fix**: Use unique ID prefixes per test — e.g., `s1, s2, s3, s4` for the surname test, `g1, g2, g3, g4` for the given-name test. This ensures cache keys never collide. See `2026-06-10-fix-sortresults-test-gaps.md` for a concrete example.
+
+---
+
 ## JavaScript tests (vitest)
 
 JS modules in `js/` are tested in `tests/js/*.test.js`. Tests run with `npm test` (vitest, node environment). Modules use globals (`PEOPLE`, `PARENTS`, `CHILDREN`, `DESIGN`, `FAMILIES`) rather than imports — inject these as test setup:

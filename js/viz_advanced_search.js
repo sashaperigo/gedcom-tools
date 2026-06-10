@@ -353,7 +353,7 @@ if (typeof document !== 'undefined' && document.getElementById('adv-search-pane'
             currentCriteria = q;
             currentResults  = runAdvancedSearch(q, ALL_PEOPLE, ctx);
             currentPage     = 1;
-            currentSort     = 'name';
+            currentSort     = 'surname';
             renderResultsMode();
             setMode('results');
         }
