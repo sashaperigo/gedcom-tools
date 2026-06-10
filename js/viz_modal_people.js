@@ -582,7 +582,6 @@ function openAddPersonModal(xref, relType) {
     const label = _ADD_PERSON_REL_LABELS[relType] || 'Person';
     if (titleEl) titleEl.textContent = 'Add ' + label;
     if (givenEl) givenEl.value = '';
-    if (surnEl) surnEl.value = '';
     if (suffixEl) suffixEl.value = '';
     if (sexEl) sexEl.value = 'U';
     if (bdEl) bdEl.value = '';
@@ -613,6 +612,8 @@ function openAddPersonModal(xref, relType) {
     } else if (otherRowEl) {
         otherRowEl.style.display = 'none';
     }
+
+    if (surnEl) surnEl.value = _inferSurname(xref, relType, otherSelEl);
 
     if (overlayEl) overlayEl.classList.add('open');
     const defaultMode = (relType === 'godparent_of') ? 'existing' : 'new';

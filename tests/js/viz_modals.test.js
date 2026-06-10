@@ -1510,6 +1510,46 @@ describe('openAddPersonModal + submitAddPersonModal for godparent_of', () => {
         });
     });
 
+    describe('open: surname autocomplete', () => {
+        it('child_of with male anchor → surname pre-filled from anchor', () => {
+            global.PEOPLE['@F1@'] = { name: 'Yorgos /Manolakis/', sex: 'M', name_surname: 'Manolakis', events: [] };
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@F1@', 'child_of');
+            expect(elements['add-person-modal-surname'].value).toBe('Manolakis');
+        });
+
+        it('child_of with female anchor + spouse in dropdown → surname from spouse', () => {
+            global.PEOPLE['@M1@'] = { name: 'Maria /Stavros/', sex: 'F', name_surname: 'Stavros', events: [
+                { tag: 'MARR', spouse_xref: '@SP@', spouse: 'Kostas Papadopoulos' },
+            ]};
+            global.PEOPLE['@SP@'] = { name: 'Kostas /Papadopoulos/', sex: 'M', name_surname: 'Papadopoulos', events: [] };
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@M1@', 'child_of');
+            expect(elements['add-person-modal-surname'].value).toBe('Papadopoulos');
+        });
+
+        it('child_of with female anchor + no spouse → surname blank', () => {
+            global.PEOPLE['@M2@'] = { name: 'Maria /Alone/', sex: 'F', name_surname: 'Alone', events: [] };
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@M2@', 'child_of');
+            expect(elements['add-person-modal-surname'].value).toBe('');
+        });
+
+        it('sibling_of → surname pre-filled from sibling', () => {
+            global.PEOPLE['@S1@'] = { name: 'Petros /Manolakis/', sex: 'M', name_surname: 'Manolakis', events: [] };
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@S1@', 'sibling_of');
+            expect(elements['add-person-modal-surname'].value).toBe('Manolakis');
+        });
+
+        it('spouse_of → surname blank', () => {
+            global.PEOPLE['@F1@'] = { name: 'Yorgos /Manolakis/', sex: 'M', name_surname: 'Manolakis', events: [] };
+            const { openAddPersonModal } = _loadModule();
+            openAddPersonModal('@F1@', 'spouse_of');
+            expect(elements['add-person-modal-surname'].value).toBe('');
+        });
+    });
+
     describe('existing mode: rela derived from picked person sex', () => {
         async function _runExisting(childXref, godparentXref, sex) {
             const calls = [];
