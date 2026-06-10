@@ -10,6 +10,11 @@ const _asR = (typeof require !== 'undefined')
     : { extractYear };
 const _extractYearR = _asR.extractYear;
 
+const _nmR = (typeof require !== 'undefined')
+    ? require('./viz_name_match.js')
+    : { getParsed };
+const _getParsedR = _nmR.getParsed;
+
 const _EVENT_VERB = { birth: 'Born', death: 'Died', marriage: 'Married', residence: 'Lived', any: 'Event' };
 const _FAMILY_LABEL = { spouse: 'Spouse', father: 'Father', mother: 'Mother', other: 'Person' };
 
@@ -47,8 +52,9 @@ function buildFilterChipsHTML(criteria) {
 function buildCountBarHTML(total, sortKey) {
     const word = total === 1 ? 'match' : 'matches';
     const opts = [
-        { v: 'name',  label: 'Name' },
-        { v: 'birth', label: 'Birth year' },
+        { v: 'surname', label: 'Surname' },
+        { v: 'given',   label: 'Given name' },
+        { v: 'birth',   label: 'Birth year' },
     ];
     const optHTML = opts.map(o =>
         `<option value="${o.v}"${o.v === sortKey ? ' selected' : ''}>${o.label}</option>`
@@ -72,11 +78,23 @@ function sortResults(rows, sortKey) {
             if (yb == null) return -1;
             return ya - yb;
         });
-    } else {
+    } else if (sortKey === 'given') {
         copy.sort((a, b) => {
-            const na = (a.name || '').toLowerCase();
-            const nb = (b.name || '').toLowerCase();
-            return na < nb ? -1 : na > nb ? 1 : 0;
+            const pa = _getParsedR(a), pb = _getParsedR(b);
+            if (pa.normFirst !== pb.normFirst) return pa.normFirst < pb.normFirst ? -1 : 1;
+            return pa.normLast < pb.normLast ? -1 : pa.normLast > pb.normLast ? 1 : 0;
+        });
+    } else {
+        // surname (default)
+        copy.sort((a, b) => {
+            const pa = _getParsedR(a), pb = _getParsedR(b);
+            if (pa.normLast !== pb.normLast) return pa.normLast < pb.normLast ? -1 : 1;
+            if (pa.normFirst !== pb.normFirst) return pa.normFirst < pb.normFirst ? -1 : 1;
+            const ya = a.birth_year, yb = b.birth_year;
+            if (ya == null && yb == null) return 0;
+            if (ya == null) return 1;
+            if (yb == null) return -1;
+            return ya - yb;
         });
     }
     return copy;

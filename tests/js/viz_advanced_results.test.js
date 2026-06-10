@@ -56,9 +56,9 @@ describe('buildFilterChipsHTML', () => {
 
 describe('buildCountBarHTML', () => {
     it('shows count with correct pluralization and selected sort', () => {
-        const h0 = buildCountBarHTML(0, 'name');
+        const h0 = buildCountBarHTML(0, 'surname');
         expect(h0).toContain('0 matches');
-        const h1 = buildCountBarHTML(1, 'name');
+        const h1 = buildCountBarHTML(1, 'surname');
         expect(h1).toContain('1 match');
         expect(h1).not.toContain('1 matches');
         const h2 = buildCountBarHTML(156, 'birth');
@@ -68,14 +68,16 @@ describe('buildCountBarHTML', () => {
     it('marks the selected sort option', () => {
         const html = buildCountBarHTML(10, 'birth');
         expect(html).toMatch(/<option[^>]*value="birth"[^>]*selected/);
-        expect(html).not.toMatch(/<option[^>]*value="name"[^>]*selected/);
+        expect(html).not.toMatch(/<option[^>]*value="surname"[^>]*selected/);
     });
 
-    it('includes both sort options', () => {
-        const html = buildCountBarHTML(10, 'name');
-        expect(html).toContain('value="name"');
+    it('includes all sort options', () => {
+        const html = buildCountBarHTML(10, 'surname');
+        expect(html).toContain('value="surname"');
+        expect(html).toContain('value="given"');
         expect(html).toContain('value="birth"');
-        expect(html).toContain('Name');
+        expect(html).toContain('Surname');
+        expect(html).toContain('Given name');
         expect(html).toContain('Birth year');
     });
 });
@@ -96,21 +98,34 @@ describe('paginate', () => {
 
 describe('sortResults', () => {
     const rows = [
-        { id: 'a', name: 'Zara', birth_year: 1900 },
-        { id: 'b', name: 'Anna', birth_year: 1850 },
-        { id: 'c', name: 'Mia',  birth_year: null },
+        { id: 'a', name: 'Zara Bloom',  birth_year: 1900 },
+        { id: 'b', name: 'Anna Aliotti', birth_year: 1850 },
+        { id: 'c', name: 'Mia Bloom',   birth_year: null },
+        { id: 'd', name: 'Anna Bloom',  birth_year: 1870 },
     ];
-    it('sorts by name alphabetically', () => {
-        const out = sortResults(rows, 'name');
-        expect(out.map(r => r.id)).toEqual(['b', 'c', 'a']);
+
+    it('sorts by surname then birth year then given name', () => {
+        const out = sortResults(rows, 'surname');
+        // Aliotti < Bloom (x3). Within Bloom: Anna 1870 < Mia null < Zara 1900
+        // null birth_year sorts last within group
+        expect(out.map(r => r.id)).toEqual(['b', 'd', 'c', 'a']);
     });
+
+    it('sorts by given name then surname', () => {
+        const out = sortResults(rows, 'given');
+        // Anna (Aliotti, Bloom), Mia Bloom, Zara Bloom
+        expect(out.map(r => r.id)).toEqual(['b', 'd', 'c', 'a']);
+    });
+
     it('sorts by birth year ascending, undated last', () => {
         const out = sortResults(rows, 'birth');
-        expect(out.map(r => r.id)).toEqual(['b', 'a', 'c']);
+        // 1850, 1870, 1900, null
+        expect(out.map(r => r.id)).toEqual(['b', 'd', 'a', 'c']);
     });
+
     it('does not mutate the input array', () => {
         const original = rows.map(r => r.id);
-        sortResults(rows, 'name');
+        sortResults(rows, 'surname');
         expect(rows.map(r => r.id)).toEqual(original);
     });
 });
