@@ -1324,6 +1324,91 @@ describe('showEditSourceModal', () => {
     });
 });
 
+// ── _surnameOf ────────────────────────────────────────────────────────────
+
+describe('_surnameOf', () => {
+    let _surnameOf;
+    beforeEach(() => {
+        for (const key of Object.keys(require.cache)) {
+            if (key.includes('viz_modal_') || key.endsWith('/viz_modals.js')) delete require.cache[key];
+        }
+        ({ _surnameOf } = require('../../js/viz_modals.js'));
+    });
+
+    it('returns name_surname when present', () => {
+        expect(_surnameOf({ name_surname: 'Papadopoulos', name: 'Yorgos /Papadopoulos/' })).toBe('Papadopoulos');
+    });
+
+    it('parses surname from GEDCOM slash notation', () => {
+        expect(_surnameOf({ name: 'Yorgos /Manolakis/' })).toBe('Manolakis');
+    });
+
+    it('falls back to last word of name', () => {
+        expect(_surnameOf({ name: 'Maria Stavros' })).toBe('Stavros');
+    });
+
+    it('returns empty string for single-word name', () => {
+        expect(_surnameOf({ name: 'Konstantinos' })).toBe('');
+    });
+
+    it('returns empty string for null/undefined', () => {
+        expect(_surnameOf(null)).toBe('');
+        expect(_surnameOf(undefined)).toBe('');
+    });
+});
+
+// ── _inferSurname ─────────────────────────────────────────────────────────
+
+describe('_inferSurname', () => {
+    let _inferSurname;
+    beforeEach(() => {
+        for (const key of Object.keys(require.cache)) {
+            if (key.includes('viz_modal_') || key.endsWith('/viz_modals.js')) delete require.cache[key];
+        }
+        ({ _inferSurname } = require('../../js/viz_modals.js'));
+        global.PEOPLE = {
+            '@F1@': { name: 'Yorgos /Manolakis/', sex: 'M', name_surname: 'Manolakis' },
+            '@M1@': { name: 'Maria /Stavros/', sex: 'F', name_surname: 'Stavros' },
+            '@S1@': { name: 'Petros /Manolakis/', sex: 'M', name_surname: 'Manolakis' },
+            '@SP@': { name: 'Despina /Kosta/', sex: 'F', name_surname: 'Kosta' },
+        };
+    });
+
+    it('child_of male anchor → anchor surname', () => {
+        expect(_inferSurname('@F1@', 'child_of', null)).toBe('Manolakis');
+    });
+
+    it('child_of female anchor + spouse in dropdown → spouse surname', () => {
+        const fakeDropdown = { value: '@SP@' };
+        expect(_inferSurname('@M1@', 'child_of', fakeDropdown)).toBe('Kosta');
+    });
+
+    it('child_of female anchor + __none__ dropdown → blank', () => {
+        const fakeDropdown = { value: '__none__' };
+        expect(_inferSurname('@M1@', 'child_of', fakeDropdown)).toBe('');
+    });
+
+    it('child_of female anchor + null dropdown → blank', () => {
+        expect(_inferSurname('@M1@', 'child_of', null)).toBe('');
+    });
+
+    it('sibling_of → sibling surname', () => {
+        expect(_inferSurname('@S1@', 'sibling_of', null)).toBe('Manolakis');
+    });
+
+    it('spouse_of → blank', () => {
+        expect(_inferSurname('@F1@', 'spouse_of', null)).toBe('');
+    });
+
+    it('parent_of → blank', () => {
+        expect(_inferSurname('@F1@', 'parent_of', null)).toBe('');
+    });
+
+    it('unknown xref → blank without throwing', () => {
+        expect(_inferSurname('@UNKNOWN@', 'sibling_of', null)).toBe('');
+    });
+});
+
 // ── godparent flow through the shared Add Person modal ──────────────────
 
 describe('openAddPersonModal + submitAddPersonModal for godparent_of', () => {

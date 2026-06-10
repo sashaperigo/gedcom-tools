@@ -643,6 +643,28 @@ function _onAddPersonStatusChange() {
     if (row) row.style.display = (val === 'deceased') ? 'grid' : 'none';
 }
 
+
+function _surnameOf(person) {
+    if (!person) return '';
+    if (person.name_surname) return person.name_surname;
+    const m = (person.name || '').match(/\/([^/]*)\//);
+    if (m) return m[1].trim();
+    const parts = (person.name || '').trim().split(/\s+/);
+    return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
+
+function _inferSurname(xref, relType, otherSelEl) {
+    if (relType === 'sibling_of') return _surnameOf(PEOPLE[xref]);
+    if (relType === 'child_of') {
+        const person = PEOPLE[xref] || {};
+        if (person.sex === 'M') return _surnameOf(person);
+        const otherId = otherSelEl && otherSelEl.value !== '__none__' ? otherSelEl.value : null;
+        return otherId ? _surnameOf(PEOPLE[otherId]) : '';
+    }
+    return '';
+}
+
 // ── changeParent (pencil + X next to a parent row) ────────────────────────
 
 
@@ -1117,5 +1139,7 @@ if (typeof module !== 'undefined' && module.exports) {
         _selectAddPersonFromTree,
         _onAddPersonModeChange,
         _renderAddPersonTreeResults,
+        _surnameOf,
+        _inferSurname,
     };
 }
