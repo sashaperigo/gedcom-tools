@@ -1407,6 +1407,19 @@ describe('_inferSurname', () => {
     it('unknown xref → blank without throwing', () => {
         expect(_inferSurname('@UNKNOWN@', 'sibling_of', null)).toBe('');
     });
+
+    it('child_of unknown-sex anchor + spouse in dropdown → spouse surname (treats U as non-male)', () => {
+        // '@M1@' has sex: 'F', and we verify it returns spouse surname when spouse in dropdown
+        expect(_inferSurname('@M1@', 'child_of', { value: '@SP@' })).toBe('Kosta');
+        // sex 'U' (unknown) should follow the same path as 'F' (not-male)
+        global.PEOPLE['@U1@'] = { name: 'Unknown /Person/', sex: 'U', name_surname: 'Person' };
+        expect(_inferSurname('@U1@', 'child_of', { value: '@SP@' })).toBe('Kosta');
+    });
+
+    it('child_of unknown-sex anchor + no spouse → blank', () => {
+        global.PEOPLE['@U1@'] = { name: 'Unknown /Person/', sex: 'U', name_surname: 'Person' };
+        expect(_inferSurname('@U1@', 'child_of', null)).toBe('');
+    });
 });
 
 // ── godparent flow through the shared Add Person modal ──────────────────
