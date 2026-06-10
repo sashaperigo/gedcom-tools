@@ -3032,7 +3032,7 @@ class TestCitationSerialisationContract:
             str(ged),
         )
         self._setup_ged_with_citation(ged)
-        indis, fams, sources = viz_ancestors.parse_gedcom(str(ged))
+        indis, fams, sources, _ = viz_ancestors.parse_gedcom(str(ged))
         people = viz_ancestors.build_people_json(set(indis.keys()), indis, fams, sources)
         birt_events = [e for e in people['@I2@']['events'] if e['tag'] == 'BIRT']
         assert birt_events, 'Expected a BIRT event for @I2@'
@@ -3057,7 +3057,7 @@ class TestCitationSerialisationContract:
             str(ged),
         )
         expected_title = self._setup_ged_with_citation(ged)
-        indis, fams, sources = viz_ancestors.parse_gedcom(str(ged))
+        indis, fams, sources, _ = viz_ancestors.parse_gedcom(str(ged))
         people = viz_ancestors.build_people_json(set(indis.keys()), indis, fams, sources)
         birt_events = [e for e in people['@I2@']['events'] if e['tag'] == 'BIRT']
         cite = birt_events[0]['citations'][0]

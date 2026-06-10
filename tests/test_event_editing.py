@@ -426,7 +426,7 @@ class TestInsertNewEvent:
         assert err is None
         ged = tmp_path / 'test.ged'
         ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         resi_events = [e for e in indis['@I1@']['events'] if e['tag'] == 'RESI']
         assert any(e['place'] and 'Rome' in e['place'] for e in resi_events)
 
@@ -507,7 +507,7 @@ class TestEventIdxInBuildPeopleJson:
 
     @pytest.fixture(scope='class')
     def people(self, indis, fams, parsed):
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         return build_people_json({'@I2@'}, indis, fams=fams, sources=sources)
 
     def test_events_have_event_idx(self, people):
@@ -521,7 +521,7 @@ class TestEventIdxInBuildPeopleJson:
 
     def test_marr_events_have_event_idx_none(self, indis, fams, parsed):
         """MARR events appended from FAM records must have event_idx=None."""
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         marr_events = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
         assert len(marr_events) > 0, 'Rose should have a MARR event from @F5@'
@@ -532,7 +532,7 @@ class TestEventIdxInBuildPeopleJson:
         """Two RESI events on the same individual get event_idx 0 and 1."""
         ged = tmp_path / 'multi_resi.ged'
         ged.write_text('\n'.join(MULTI_EVENT_GED) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         resi_events = [e for e in people['@I1@']['events'] if e['tag'] == 'RESI']
         assert len(resi_events) == 2
@@ -547,7 +547,7 @@ class TestEventIdxInBuildPeopleJson:
         """
         ged = tmp_path / 'multi_resi2.ged'
         ged.write_text('\n'.join(MULTI_EVENT_GED) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         # Exclude the first RESI (Paris, 1925) — the second should still be idx=1
         exclude = [{'xref': '@I1@', 'tag': 'RESI', 'date': '1925',
                     'place': 'Paris, France', 'type': None, 'inline_val': None}]
@@ -581,7 +581,7 @@ class TestEventIdxInBuildPeopleJson:
         ]
         ged = tmp_path / 'name_plus_fact.ged'
         ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         events = people['@I1@']['events']
 
@@ -917,7 +917,7 @@ class TestFamBlock:
         assert e is None
         new_lines = _edit_event_fields(FAM_GED, start, end, {'ADDR': 'St. Paul Cathedral'})
         ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         assert fams['@F1@']['marrs'][0]['addr'] == 'St. Paul Cathedral'
 
     def test_build_people_json_includes_marr_addr(self, tmp_path):
@@ -927,7 +927,7 @@ class TestFamBlock:
         assert e is None
         new_lines = _edit_event_fields(FAM_GED, start, end, {'ADDR': 'St. Paul Cathedral'})
         ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         marr_evts = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
         assert marr_evts, 'Expected a MARR event'
@@ -938,7 +938,7 @@ class TestBuildPeopleJsonFamXref:
     """fam_xref must be present on MARR events in build_people_json output."""
 
     def test_marr_has_fam_xref(self, parsed):
-        indis, fams, sources = parsed
+        indis, fams, sources, _ = parsed
         # Find someone with a FAMS link
         xref = next(
             x for x, info in indis.items()
@@ -1020,7 +1020,7 @@ class TestMultipleMarrEvents:
         ]
         ged = tmp_path / 'two_marr.ged'
         ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
 
         assert len(fams['@F1@']['marrs']) == 2
         assert fams['@F1@']['marrs'][0]['date'] == '31 AUG 1918'
@@ -1062,7 +1062,7 @@ class TestMultipleMarrEvents:
         ]
         ged = tmp_path / 'bare_dup.ged'
         ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
 
         assert len(fams['@F1@']['marrs']) == 2  # parser keeps both
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
@@ -1082,7 +1082,7 @@ class TestDuplicateMarrBlock:
         """
         ged = tmp_path / 'dup_marr.ged'
         ged.write_text('\n'.join(DUPLICATE_MARR_GED) + '\n', encoding='utf-8')
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         marr = fams['@F1@']['marrs'][0]
         assert marr['addr'] == 'St. Paul Cathedral', \
             'ADDR from first MARR block must be in marrs[0]'
@@ -1091,7 +1091,7 @@ class TestDuplicateMarrBlock:
         """DATE and PLAC from the first block must be in marrs[0]."""
         ged = tmp_path / 'dup_marr2.ged'
         ged.write_text('\n'.join(DUPLICATE_MARR_GED) + '\n', encoding='utf-8')
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         marr = fams['@F1@']['marrs'][0]
         assert marr['date'] == '1 JAN 1925'
         assert marr['place'] == 'London, England'
@@ -1161,7 +1161,7 @@ class TestMarrAddrRoundTrip:
         ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
 
         # Re-parse from disk (same as serve_viz does after _write_gedcom_atomic)
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         assert fams['@F1@']['marrs'][0]['addr'] == 'St. Paul Cathedral', \
             'ADDR must survive write → disk → re-parse'
 
@@ -1179,7 +1179,7 @@ class TestMarrAddrRoundTrip:
         new_lines = _edit_event_fields(lines, start, end, {'ADDR': 'St. Paul Cathedral'})
         ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
 
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
 
         for xref in ('@I1@', '@I2@'):
@@ -1206,7 +1206,7 @@ class TestMarrAddrRoundTrip:
         ged = tmp_path / 'initial_load.ged'
         ged.write_text('\n'.join(ged_with_addr) + '\n', encoding='utf-8')
 
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         assert fams['@F1@']['marrs'][0]['addr'] == 'St. Paul Cathedral'
 
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
@@ -1247,7 +1247,7 @@ class TestMarrAddrRoundTrip:
         ged = tmp_path / 'sour_after_addr.ged'
         ged.write_text('\n'.join(ged_lines) + '\n', encoding='utf-8')
 
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         assert fams['@F1@']['marrs'][0]['addr'] == 'Notre Dame Cathedral', \
             'ADDR must be preserved even when SOUR/DATA/WWW sub-records follow it'
 
@@ -1292,7 +1292,7 @@ class TestIndiEventAddrParsing:
     def test_birt_addr_parsed(self, tmp_path):
         ged = tmp_path / 'indi_addr.ged'
         ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
         assert birt['addr'] == "St. Bart's Hospital"
 
@@ -1300,14 +1300,14 @@ class TestIndiEventAddrParsing:
         """ADDR must survive when SOUR/DATA sub-records follow it on a DEAT event."""
         ged = tmp_path / 'indi_addr.ged'
         ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         deat = next(e for e in indis['@I1@']['events'] if e['tag'] == 'DEAT')
         assert deat['addr'] == 'Hôpital Lariboisière'
 
     def test_resi_addr_parsed(self, tmp_path):
         ged = tmp_path / 'indi_addr.ged'
         ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         resi = next(e for e in indis['@I1@']['events'] if e['tag'] == 'RESI')
         assert resi['addr'] == '123 Main Street'
 
@@ -1315,7 +1315,7 @@ class TestIndiEventAddrParsing:
         """addr must flow through build_people_json into the events list."""
         ged = tmp_path / 'indi_addr.ged'
         ged.write_text('\n'.join(INDI_ADDR_GED) + '\n', encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         events = {e['tag']: e for e in people['@I1@']['events']}
         assert events['BIRT']['addr'] == "St. Bart's Hospital"
@@ -1333,7 +1333,7 @@ class TestIndiEventAddrParsing:
         new_lines = _edit_event_fields(lines, start, end, {'ADDR': 'Père Lachaise Cemetery'})
         ged.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
 
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         deat = next(e for e in people['@I1@']['events'] if e['tag'] == 'DEAT')
         assert deat['addr'] == 'Père Lachaise Cemetery'
@@ -1397,7 +1397,7 @@ class TestEditNameSuffix:
                 '0 TRLR\n',
                 encoding='utf-8',
             )
-            indis, fams, sources = parse_gedcom(str(ged))
+            indis, fams, sources, _repos = parse_gedcom(str(ged))
             people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         assert people['@I1@']['name_surname'] == 'Capponi'
         assert people['@I1@']['name_suffix'] == 'I'

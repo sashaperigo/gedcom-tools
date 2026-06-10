@@ -62,7 +62,7 @@ def fams(parsed):
 
 @pytest.fixture(scope='module')
 def people(indis, fams, parsed):
-    _, _, sources = parsed
+    _, _, sources, _ = parsed
     return build_people_json(set(indis.keys()), indis, fams, sources)
 
 
@@ -261,7 +261,7 @@ class TestNatiDisplay:
         """
         tree = build_tree_json('@I1@', indis, fams)
         relatives = build_relatives_json(tree, indis, fams)
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         html = render_html(tree, 'Rose Smith', people, relatives, indis,
                            fams=fams, root_xref='@I1@')
         people_match = re.search(r'const PEOPLE = (.*?);[ \t]*$', html, re.MULTILINE)

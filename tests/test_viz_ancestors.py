@@ -156,7 +156,7 @@ class TestParsing:
             '0 TRLR\n',
             encoding='utf-8',
         )
-        indis, _fams, _sources = parse_gedcom(str(ged))
+        indis, _fams, _sources, _repos = parse_gedcom(str(ged))
         nchi = next((e for e in indis['@I1@']['events'] if e['tag'] == 'NCHI'), None)
         assert nchi is not None, 'NCHI event was dropped by the parser'
         assert nchi['inline_val'] == '5'
@@ -172,7 +172,7 @@ class TestParsing:
             '0 TRLR\n',
             encoding='utf-8',
         )
-        indis, _fams, _sources = parse_gedcom(str(ged))
+        indis, _fams, _sources, _repos = parse_gedcom(str(ged))
         dscr = next((e for e in indis['@I1@']['events'] if e['tag'] == 'DSCR'), None)
         assert dscr is not None, 'DSCR event was dropped by the parser'
         assert dscr['inline_val'] == 'Tall, red hair'
@@ -319,7 +319,7 @@ class TestPeople:
 
     @pytest.fixture(scope='class')
     def people(self, tree, indis, parsed):
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         return build_people_json(set(tree.values()), indis, sources)
 
     def test_root_in_people(self, people):
@@ -351,14 +351,14 @@ class TestPeople:
 
     def test_relative_xref_included(self, tree, indis, parsed):
         """build_people_json also works for relative xrefs (siblings/spouses)."""
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         people = build_people_json({'@I11@', '@I12@'}, indis, sources)
         assert people['@I11@']['name'] == 'Alice Smith'
         assert people['@I12@']['name'] == 'Mark Davis'
 
     def test_has_death_propagated_to_people(self, indis, parsed):
         """has_death=True on DEAT-without-date individual propagates through build_people_json."""
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         # @I9@ has 'DEAT Y' with no DATE — has_death True, death_year None
         people = build_people_json({'@I9@'}, indis, sources)
         assert people['@I9@']['has_death'] is True
@@ -366,14 +366,14 @@ class TestPeople:
 
     def test_has_death_false_propagated_to_people(self, indis, parsed):
         """Individual with no DEAT record has has_death=False in people output."""
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         # @I3@ has no DEAT record
         people = build_people_json({'@I3@'}, indis, sources)
         assert people['@I3@']['has_death'] is False
 
     def test_unknown_xref_excluded(self, indis, parsed):
         """An xref not in indis is silently skipped."""
-        _, _, sources = parsed
+        _, _, sources, _ = parsed
         people = build_people_json({'@NOBODY@'}, indis, sources)
         assert '@NOBODY@' not in people
 
@@ -723,7 +723,7 @@ class TestGodparentAsso:
             '1 BAPM\n2 DATE 1900\n'
             '1 ASSO @I1@\n2 RELA Godparent\n'
             '0 TRLR\n')
-        indis, _, _ = parse_gedcom(ged)
+        indis, _, _, _ = parse_gedcom(ged)
         assert indis['@I2@'].get('asso') == [{'xref': '@I1@', 'rela': 'Godparent'}]
 
     def test_build_people_attaches_asso_to_bapm(self, tmp_path):
@@ -734,7 +734,7 @@ class TestGodparentAsso:
             '1 BAPM\n2 DATE 1900\n'
             '1 ASSO @I1@\n2 RELA Godparent\n'
             '0 TRLR\n')
-        indis, fams, sources = parse_gedcom(ged)
+        indis, fams, sources, _repos = parse_gedcom(ged)
         out = build_people_json({'@I2@'}, indis, fams=fams, sources=sources)
         evts = out['@I2@']['events']
         bapm = next(e for e in evts if e['tag'] == 'BAPM')
@@ -748,7 +748,7 @@ class TestGodparentAsso:
             '1 CHR\n2 DATE 1900\n'
             '1 ASSO @I1@\n2 RELA Godparent\n'
             '0 TRLR\n')
-        indis, fams, sources = parse_gedcom(ged)
+        indis, fams, sources, _repos = parse_gedcom(ged)
         out = build_people_json({'@I2@'}, indis, fams=fams, sources=sources)
         evts = out['@I2@']['events']
         chr_evt = next(e for e in evts if e['tag'] == 'CHR')
@@ -764,7 +764,7 @@ class TestGodparentAsso:
             '1 BAPM\n2 DATE 1900\n'
             '1 ASSO @I1@\n2 RELA Witness\n'
             '0 TRLR\n')
-        indis, fams, sources = parse_gedcom(ged)
+        indis, fams, sources, _repos = parse_gedcom(ged)
         out = build_people_json({'@I2@'}, indis, fams=fams, sources=sources)
         bapm = next(e for e in out['@I2@']['events'] if e['tag'] == 'BAPM')
         # panel filters by rela, so an empty list here is also acceptable —
@@ -782,7 +782,7 @@ class TestGodparentAsso:
             '1 ASSO @I1@\n2 RELA Godparent\n'
             '1 ASSO @I2@\n2 RELA Godparent\n'
             '0 TRLR\n')
-        indis, fams, sources = parse_gedcom(ged)
+        indis, fams, sources, _repos = parse_gedcom(ged)
         out = build_people_json({'@I3@'}, indis, fams=fams, sources=sources)
         bapm = next(e for e in out['@I3@']['events'] if e['tag'] == 'BAPM')
         xrefs = [a['xref'] for a in bapm.get('asso') or []]
@@ -847,7 +847,7 @@ class TestConcLeadingSpace:
         ged_path = str(tmp_path / 'test.ged')
         with open(ged_path, 'w') as f:
             f.write(ged_lines)
-        indis, _, _ = parse_gedcom(ged_path)
+        indis, _, _, _ = parse_gedcom(ged_path)
         note_text = indis['@I1@']['notes'][0]['text']
         assert 'outskirts of the city' in note_text, (
             f'Space missing between "of" and "the": {note_text!r}'
@@ -870,7 +870,7 @@ class TestConcLeadingSpace:
         ged_path = str(tmp_path / 'test.ged')
         with open(ged_path, 'w') as f:
             f.write(ged_lines)
-        indis, _, _ = parse_gedcom(ged_path)
+        indis, _, _, _ = parse_gedcom(ged_path)
         birt = next(e for e in indis['@I1@']['events'] if e['tag'] == 'BIRT')
         assert birt.get('note') is not None
         assert 'north side of the valley' in birt['note'], (
@@ -893,7 +893,7 @@ class TestNameSubTags:
             '0 TRLR\n',
             encoding='utf-8',
         )
-        indis, _fams, _sources = parse_gedcom(str(ged))
+        indis, _fams, _sources, _repos = parse_gedcom(str(ged))
         assert indis['@I1@']['name_suffix'] == 'I'
 
     def test_givn_parsed_as_name_given(self, tmp_path):
@@ -906,7 +906,7 @@ class TestNameSubTags:
             '0 TRLR\n',
             encoding='utf-8',
         )
-        indis, _fams, _sources = parse_gedcom(str(ged))
+        indis, _fams, _sources, _repos = parse_gedcom(str(ged))
         assert indis['@I1@']['name_given'] == 'Pietro'
 
     def test_surn_parsed_as_name_surname(self, tmp_path):
@@ -919,7 +919,7 @@ class TestNameSubTags:
             '0 TRLR\n',
             encoding='utf-8',
         )
-        indis, _fams, _sources = parse_gedcom(str(ged))
+        indis, _fams, _sources, _repos = parse_gedcom(str(ged))
         assert indis['@I1@']['name_surname'] == 'Capponi'
 
     def test_name_subtags_absent_gives_none(self, tmp_path):
@@ -932,7 +932,7 @@ class TestNameSubTags:
             '0 TRLR\n',
             encoding='utf-8',
         )
-        indis, _fams, _sources = parse_gedcom(str(ged))
+        indis, _fams, _sources, _repos = parse_gedcom(str(ged))
         assert indis['@I1@']['name_suffix'] is None
 
     def test_build_people_json_includes_name_suffix(self, tmp_path):
@@ -945,7 +945,7 @@ class TestNameSubTags:
             '0 TRLR\n',
             encoding='utf-8',
         )
-        indis, fams, sources = parse_gedcom(str(ged))
+        indis, fams, sources, _repos = parse_gedcom(str(ged))
         people = build_people_json({'@I1@'}, indis, fams=fams, sources=sources)
         assert people['@I1@']['name_suffix'] == 'I'
         assert people['@I1@']['name_given'] == 'Pietro'
@@ -968,7 +968,7 @@ class TestEmigAndIndiMarr:
 
     def test_emig_event_parsed_from_indi(self, tmp_path):
         """EMIG tag on an INDI record must appear in parsed events."""
-        indis, _, _ = self._parse(tmp_path,
+        indis, _, _, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n'
             '1 EMIG\n2 DATE 1912\n2 PLAC Smyrna, Izmir, Turkey\n'
         )
@@ -979,7 +979,7 @@ class TestEmigAndIndiMarr:
 
     def test_emig_appears_in_build_people_json(self, tmp_path):
         """EMIG event must propagate through build_people_json."""
-        indis, fams, sources = self._parse(tmp_path,
+        indis, fams, sources, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n'
             '1 EMIG\n2 DATE 1912\n2 PLAC Smyrna, Izmir, Turkey\n'
         )
@@ -991,7 +991,7 @@ class TestEmigAndIndiMarr:
 
     def test_marr_on_indi_with_no_fams(self, tmp_path):
         """MARR on an INDI with no FAMS link must appear in build_people_json events."""
-        indis, fams, sources = self._parse(tmp_path,
+        indis, fams, sources, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n1 SEX F\n'
             '1 MARR\n2 DATE 1897\n2 NOTE Married Augusto Braggiotti.\n'
         )
@@ -1003,7 +1003,7 @@ class TestEmigAndIndiMarr:
 
     def test_marr_on_indi_with_fam_marr_no_duplicate(self, tmp_path):
         """MARR on an INDI that also has a FAMS with a real MARR event must not duplicate."""
-        indis, fams, sources = self._parse(tmp_path,
+        indis, fams, sources, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME Jeanne /D\'Andria/\n1 SEX F\n'
             '1 FAMS @F1@\n'
             '1 MARR\n2 DATE 1897\n'
@@ -1025,7 +1025,7 @@ class TestCremAndAnul:
         return parse_gedcom(str(ged))
 
     def test_crem_event_parsed_from_indi(self, tmp_path):
-        indis, _, _ = self._parse(tmp_path,
+        indis, _, _, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME John /Doe/\n'
             '1 CREM\n2 DATE 1 JAN 2000\n2 PLAC Rome, Italy\n'
         )
@@ -1035,7 +1035,7 @@ class TestCremAndAnul:
         assert 'Rome' in crem['place']
 
     def test_crem_appears_in_build_people_json(self, tmp_path):
-        indis, fams, sources = self._parse(tmp_path,
+        indis, fams, sources, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME John /Doe/\n'
             '1 CREM\n2 DATE 2000\n2 PLAC Rome, Italy\n'
         )
@@ -1044,7 +1044,7 @@ class TestCremAndAnul:
         assert any(e['tag'] == 'CREM' for e in events)
 
     def test_anul_parsed_from_fam(self, tmp_path):
-        indis, fams, _ = self._parse(tmp_path,
+        indis, fams, _, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME Jane /Smith/\n1 SEX F\n1 FAMS @F1@\n'
             '0 @I2@ INDI\n1 NAME Bob /Jones/\n1 SEX M\n1 FAMS @F1@\n'
             '0 @F1@ FAM\n1 HUSB @I2@\n1 WIFE @I1@\n'
@@ -1058,7 +1058,7 @@ class TestCremAndAnul:
         assert 'Rome' in fam['anuls'][0]['place']
 
     def test_anul_appears_in_build_people_json(self, tmp_path):
-        indis, fams, sources = self._parse(tmp_path,
+        indis, fams, sources, _ = self._parse(tmp_path,
             '0 @I1@ INDI\n1 NAME Jane /Smith/\n1 SEX F\n1 FAMS @F1@\n'
             '0 @I2@ INDI\n1 NAME Bob /Jones/\n1 SEX M\n1 FAMS @F1@\n'
             '0 @F1@ FAM\n1 HUSB @I2@\n1 WIFE @I1@\n'
@@ -1072,3 +1072,67 @@ class TestCremAndAnul:
         assert anul['date'] == '1985'
         assert anul.get('fam_xref') == '@F1@'
         assert anul.get('anul_idx') == 0
+
+
+# ---------------------------------------------------------------------------
+# TestReposParsed
+# ---------------------------------------------------------------------------
+
+_REPO_GED_HEADER = (
+    '0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n'
+    '0 @U1@ SUBM\n1 NAME Test\n'
+)
+
+
+class TestReposParsed:
+    def test_repo_name_is_extracted(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'repo.ged'
+        ged.write_text(
+            _REPO_GED_HEADER
+            + '0 @R1@ REPO\n1 NAME Ancestry.com Repository\n'
+            + '0 TRLR\n',
+            encoding='utf-8',
+        )
+        _, _, _, repos = parse_gedcom(str(ged))
+        assert '@R1@' in repos
+        assert repos['@R1@']['name'] == 'Ancestry.com Repository'
+
+    def test_multiple_repos_all_collected(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'repos.ged'
+        ged.write_text(
+            _REPO_GED_HEADER
+            + '0 @R1@ REPO\n1 NAME Archive One\n'
+            + '0 @R2@ REPO\n1 NAME Archive Two\n'
+            + '0 TRLR\n',
+            encoding='utf-8',
+        )
+        _, _, _, repos = parse_gedcom(str(ged))
+        assert repos['@R1@']['name'] == 'Archive One'
+        assert repos['@R2@']['name'] == 'Archive Two'
+
+    def test_repo_without_name_has_none(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'repo_noname.ged'
+        ged.write_text(
+            _REPO_GED_HEADER
+            + '0 @R1@ REPO\n1 ADDR Somewhere\n'
+            + '0 TRLR\n',
+            encoding='utf-8',
+        )
+        _, _, _, repos = parse_gedcom(str(ged))
+        assert '@R1@' in repos
+        assert repos['@R1@']['name'] is None
+
+    def test_no_repos_gives_empty_dict(self, tmp_path):
+        from viz_ancestors import parse_gedcom
+        ged = tmp_path / 'norepo.ged'
+        ged.write_text(
+            _REPO_GED_HEADER
+            + '0 @I1@ INDI\n1 NAME John /Smith/\n'
+            + '0 TRLR\n',
+            encoding='utf-8',
+        )
+        _, _, _, repos = parse_gedcom(str(ged))
+        assert repos == {}

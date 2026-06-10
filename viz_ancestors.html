@@ -482,7 +482,9 @@
             </div>
             <div class="event-modal-field">
                 <label for="edit-source-modal-repo">Repository (optional)</label>
-                <input type="text" id="edit-source-modal-repo" autocomplete="off">
+                <select id="edit-source-modal-repo">
+                    <option value="">— Select Repository —</option>
+                </select>
             </div>
             <div class="event-modal-field">
                 <label for="edit-source-modal-note">Note (optional)</label>
@@ -553,6 +555,7 @@
     const PEOPLE = __PEOPLE_JSON__;
     const ALL_PEOPLE = __ALL_PEOPLE_JSON__;
     const SOURCES = __SOURCES_JSON__;
+    const REPOS = __REPOS_JSON__;
     let RELATIVES = __RELATIVES_JSON__;
     let PARENTS = __PARENTS_JSON__;
     let FAMILIES = __FAMILIES_JSON__;

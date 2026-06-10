@@ -90,7 +90,7 @@ def tree(indis, fams):
 
 @pytest.fixture(scope='module')
 def people(tree, indis, parsed):
-    _, fams, sources = parsed
+    _, fams, sources, _ = parsed
     return build_people_json(set(indis.keys()), indis, fams, sources)
 
 
@@ -253,7 +253,7 @@ class TestHtmlAttributeSafety:
         closes the script element early, producing "Unexpected end of input".
         """
         from viz_ancestors import render_html, build_people_json
-        _, fams2, sources = parsed
+        _, fams2, sources, _ = parsed
         # Inject a hostile substring into the first person's name.
         hostile_indis = {k: dict(v) for k, v in indis.items()}
         first = next(iter(hostile_indis))
@@ -824,7 +824,7 @@ class TestMarriageAddr:
 
     def test_marr_addr_field_initialised(self, parsed_with_addr):
         """MARR event dict must always have an `addr` key (even when absent from GEDCOM)."""
-        _, fams, _ = parsed_with_addr
+        _, fams, _, _ = parsed_with_addr
         marr = fams['@F1@']['marrs'][0]
         assert 'addr' in marr, (
             "MARR event dict has no 'addr' key — the key is not initialised "
@@ -833,7 +833,7 @@ class TestMarriageAddr:
 
     def test_marr_addr_parsed_from_fam_block(self, parsed_with_addr):
         """ADDR sub-tag under MARR must be read into the event dict."""
-        _, fams, _ = parsed_with_addr
+        _, fams, _, _ = parsed_with_addr
         marr = fams['@F1@']['marrs'][0]
         assert marr.get('addr') == "St Mary's Church", (
             f"MARR addr={marr.get('addr')!r}; expected \"St Mary's Church\". "
@@ -842,7 +842,7 @@ class TestMarriageAddr:
 
     def test_marr_addr_in_people_json(self, parsed_with_addr):
         """build_people_json must propagate ADDR from the MARR event to PEOPLE."""
-        indis, fams, sources = parsed_with_addr
+        indis, fams, sources, _ = parsed_with_addr
         people = build_people_json({'@I1@', '@I2@'}, indis, fams=fams, sources=sources)
         rose_marr = [e for e in people['@I1@']['events'] if e['tag'] == 'MARR']
         assert rose_marr, '@I1@ has no MARR events'
@@ -853,7 +853,7 @@ class TestMarriageAddr:
 
     def test_marr_addr_absent_when_not_in_gedcom(self):
         """When MARR has no ADDR sub-tag the field must exist but be None/falsy."""
-        _, fams, _ = parse_gedcom(str(FIXTURE))
+        _, fams, _, _ = parse_gedcom(str(FIXTURE))
         marrs = fams.get('@F5@', {}).get('marrs', [])
         if not marrs:
             return  # fixture has no @F5@ MARR — skip

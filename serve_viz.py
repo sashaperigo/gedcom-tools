@@ -1585,7 +1585,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[fact-delete] {xref} {body['tag']} deleted")
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1602,7 +1602,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[note-delete] {xref} note[{note_idx}] deleted")
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1622,7 +1622,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     print(f"[note-add] {xref} note added")
                     regenerate(body.get('current_person'))
                     viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                    indis, fams, sources = parse_gedcom(str(GED))
+                    indis, fams, sources, repos = parse_gedcom(str(GED))
                     updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                     resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1648,7 +1648,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(log_msg)
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1676,7 +1676,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(log_msg)
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1695,7 +1695,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[event-note-delete] {xref} {tag}[{event_idx}] note[{note_idx}] deleted")
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1732,7 +1732,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     print(f"[event-edit] {fam_xref or xref} {tag} updated")
                     regenerate(body.get('current_person'))
                     viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                    indis, fams, sources = parse_gedcom(str(GED))
+                    indis, fams, sources, repos = parse_gedcom(str(GED))
                     # For FAM edits return data for both spouses so both panels refresh
                     if fam_xref and fam_xref in fams:
                         fam = fams[fam_xref]
@@ -1779,7 +1779,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             _write_gedcom_atomic(lines)
             print(f"[event-convert] {xref} {from_tag}[{event_idx}] → {to_tag}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             updated = build_people_json({xref}, indis, fams=fams, sources=sources)
             resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1796,7 +1796,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[alias-add] {xref} NAME {name!r} TYPE {name_type}")
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1814,7 +1814,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[alias-edit] {xref} NAME[{name_occurrence}] → {name!r}")
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1831,7 +1831,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[alias-delete] {xref} NAME[{name_occurrence}]")
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1849,7 +1849,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[name-edit] {xref} → {given_name} /{surname}/ {suffix}".rstrip())
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                 resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1876,7 +1876,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     print(f"[event-add] {xref} {tag} added")
                     regenerate(body.get('current_person'))
                     viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                    indis, fams, sources = parse_gedcom(str(GED))
+                    indis, fams, sources, repos = parse_gedcom(str(GED))
                     updated = build_people_json({xref}, indis, fams=fams, sources=sources)
                     resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -1895,7 +1895,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[marriage-delete] {fam_xref} {event_tag}[{marr_occ}] deleted")
                 regenerate(body.get('current_person'))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 fam = fams.get(fam_xref, {})
                 xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife'), xref) if x}
                 updated = build_people_json(xrefs_to_refresh, indis, fams=fams, sources=sources)
@@ -1937,7 +1937,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     print(f"[marriage-add] {xref} + {spouse_xref} {tag}")
                     regenerate(body.get('current_person'))
                     viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                    indis, fams, sources = parse_gedcom(str(GED))
+                    indis, fams, sources, repos = parse_gedcom(str(GED))
                     updated = build_people_json({xref, spouse_xref}, indis, fams=fams, sources=sources)
                     resp = json.dumps({'ok': True, 'people': updated}).encode()
 
@@ -2105,7 +2105,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_gedcom_atomic(new_lines)
             print(f"[citation-add] {xref} {fact_key} → {sour_xref}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             if is_fam and xref in fams:
                 fam = fams[xref]
                 xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife')) if x}
@@ -2147,7 +2147,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             _write_gedcom_atomic(new_lines)
             print(f"[citation-edit] {xref} {citation_key}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             if xref.startswith('@F') and xref in fams:
                 fam = fams[xref]
                 xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife')) if x}
@@ -2174,7 +2174,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             _write_gedcom_atomic(new_lines)
             print(f"[citation-delete] {xref} {citation_key}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             if xref.startswith('@F') and xref in fams:
                 fam = fams[xref]
                 xrefs_to_refresh = {x for x in (fam.get('husb'), fam.get('wife')) if x}
@@ -2227,7 +2227,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             print(f"[person-add] {new_xref} {given} {surn} ({rel_type} {rel_xref})")
             regenerate(body.get('current_person'))
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             updated = build_people_json({rel_xref, new_xref}, indis, fams=fams, sources=sources)
             family_maps = viz.build_family_maps(indis, fams)
             resp = json.dumps({'ok': True, 'xref': new_xref, 'people': updated,
@@ -2278,7 +2278,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             print(f"[person-link] {existing_xref} ({rel_type} {rel_xref})")
             regenerate(body.get('current_person'))
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             updated = build_people_json({rel_xref, existing_xref}, indis, fams=fams, sources=sources)
             family_maps = viz.build_family_maps(indis, fams)
             resp = json.dumps({'ok': True, 'xref': existing_xref, 'people': updated,
@@ -2370,7 +2370,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             print(f"[parent-change] {xref} {current_parent_xref} -> {new_parent_xref or '(none)'} (fam {old_fam_xref} -> {target_fam or '(none)'})")
             regenerate(body.get('current_person'))
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             refresh = {xref, current_parent_xref}
             if new_parent_xref:
                 refresh.add(new_parent_xref)
@@ -2438,7 +2438,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 print(f"[godparent-add] {xref} ← {godparent_xref} ({rela})"
                       + (' [new]' if created_xref else ''))
                 viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-                indis, fams, sources = parse_gedcom(str(GED))
+                indis, fams, sources, repos = parse_gedcom(str(GED))
                 touched = {xref, godparent_xref} if created_xref else {xref}
                 updated = build_people_json(touched, indis, fams=fams, sources=sources)
                 payload = {'ok': True, 'people': updated}
@@ -2527,7 +2527,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             _write_gedcom_atomic(new_lines)
             print(f"[godparent-delete] {xref} ← {godparent_xref}")
             viz = _viz(); parse_gedcom = viz.parse_gedcom; build_people_json = viz.build_people_json
-            indis, fams, sources = parse_gedcom(str(GED))
+            indis, fams, sources, repos = parse_gedcom(str(GED))
             updated = build_people_json({xref}, indis, fams=fams, sources=sources)
             resp = json.dumps({'ok': True, 'people': updated}).encode()
 

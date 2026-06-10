@@ -53,7 +53,7 @@ class TestEventCitationParsing:
 
     def test_event_with_single_citation_and_page(self, tmp_path):
         """2 SOUR @S1@ + 3 PAGE captured on the event's citations list."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Ellis Island Records
 0 @I1@ INDI
@@ -69,7 +69,7 @@ class TestEventCitationParsing:
 
     def test_event_with_citation_no_page(self, tmp_path):
         """2 SOUR @S1@ without a 3 PAGE line stores page as None."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Some Source
 0 @I1@ INDI
@@ -83,7 +83,7 @@ class TestEventCitationParsing:
 
     def test_event_with_no_citations(self, tmp_path):
         """Events without any SOUR sub-records get an empty citations list."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @I1@ INDI
 1 NAME Bob /Brown/
 1 BIRT
@@ -94,7 +94,7 @@ class TestEventCitationParsing:
 
     def test_event_with_multiple_citations(self, tmp_path):
         """Multiple 2 SOUR sub-records each become a separate citation entry."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Source One
 0 @S2@ SOUR
@@ -115,7 +115,7 @@ class TestEventCitationParsing:
 
     def test_person_level_source_not_captured_as_event_citation(self, tmp_path):
         """1 SOUR @xref@ at person level must not appear in any event's citations."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Person Source
 0 @I1@ INDI
@@ -132,7 +132,7 @@ class TestEventCitationParsing:
 
     def test_citations_isolated_to_their_event(self, tmp_path):
         """A citation under one event does not bleed into the next event."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Some Source
 0 @I1@ INDI
@@ -151,7 +151,7 @@ class TestEventCitationParsing:
 
     def test_event_note_still_parsed_alongside_citation(self, tmp_path):
         """A 2 NOTE under the same event as a 2 SOUR must still be captured."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Some Source
 0 @I1@ INDI
@@ -168,7 +168,7 @@ class TestEventCitationParsing:
 
     def test_event_citation_quoted_text_parsed(self, tmp_path):
         """4 TEXT under 3 DATA under 2 SOUR on an event citation is parsed into the text field."""
-        indis, _, sources = _parse(tmp_path, _ged("""\
+        indis, _, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -185,7 +185,7 @@ class TestEventCitationParsing:
 
     def test_event_citation_note_parsed(self, tmp_path):
         """3 NOTE under 2 SOUR on an event citation is stored in the note field."""
-        indis, _, sources = _parse(tmp_path, _ged("""\
+        indis, _, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -201,7 +201,7 @@ class TestEventCitationParsing:
 
     def test_event_citation_text_and_note_in_build_people_json(self, tmp_path):
         """text and note from event citations must survive build_people_json normalisation."""
-        indis, _, sources = _parse(tmp_path, _ged("""\
+        indis, _, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -222,7 +222,7 @@ class TestEventCitationParsing:
 
     def test_fam_event_citation_quoted_text_parsed(self, tmp_path):
         """4 TEXT under 3 DATA under 2 SOUR on a FAM event citation is parsed."""
-        _, fams, _ = _parse(tmp_path, _ged("""\
+        _, fams, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Marriage Register
 0 @I1@ INDI
@@ -250,7 +250,7 @@ class TestEventCitationParsing:
 
     def test_event_citation_url_from_direct_www(self, tmp_path):
         """3 WWW directly under 2 SOUR (not inside DATA) should populate url field."""
-        indis, _, sources = _parse(tmp_path, _ged("""\
+        indis, _, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Some Source
 0 @I1@ INDI
@@ -272,7 +272,7 @@ class TestEventCitationParsing:
 
     def test_all_event_types_get_citations_field(self, tmp_path):
         """Every event tag in _EVENT_TAGS must have a citations list after parsing."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @I1@ INDI
 1 NAME Test /Person/
 1 BIRT
@@ -297,7 +297,7 @@ class TestBuildPeopleJsonCitations:
 
     def test_citations_in_event_output(self, tmp_path):
         """build_people_json must pass event citations through to the output dict."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Birth Register
 0 @I1@ INDI
@@ -313,7 +313,7 @@ class TestBuildPeopleJsonCitations:
 
     def test_empty_citations_in_event_output(self, tmp_path):
         """Events with no citations export an empty list, not None."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @I1@ INDI
 1 NAME Sam /Green/
 1 BIRT
@@ -334,7 +334,7 @@ class TestSourcesJsInjection:
         """render_html must embed a SOURCES constant with all source xrefs."""
         from viz_ancestors import build_tree_json, build_relatives_json
 
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Ellis Island Records
 0 @S2@ SOUR
@@ -360,7 +360,7 @@ class TestSourcesJsInjection:
         """SOURCES dict in HTML must use the source xref as key."""
         from viz_ancestors import build_tree_json, build_relatives_json
 
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S42@ SOUR
 1 TITL Vital Records
 0 @I1@ INDI
@@ -384,7 +384,7 @@ class TestSourcesJsInjection:
         import json, re
         from viz_ancestors import build_tree_json, build_relatives_json
 
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL My Source
 1 NOTE First line
@@ -408,7 +408,7 @@ class TestSourcesJsInjection:
         import json, re
         from viz_ancestors import build_tree_json, build_relatives_json
 
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL User@@Handle Records
 0 @I1@ INDI
@@ -434,7 +434,7 @@ class TestFamEventCitations:
 
     def test_marr_event_has_citations_field(self, tmp_path):
         """Every MARR event dict must carry a citations list."""
-        _, fams, _ = _parse(tmp_path, _ged("""\
+        _, fams, _, _ = _parse(tmp_path, _ged("""\
 0 @I1@ INDI
 1 NAME Anna /Smith/
 1 SEX F
@@ -456,7 +456,7 @@ class TestFamEventCitations:
 
     def test_marr_with_single_citation_and_page(self, tmp_path):
         """2 SOUR @S1@ + 3 PAGE under a MARR is captured on the event."""
-        _, fams, _ = _parse(tmp_path, _ged("""\
+        _, fams, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Marriage Register
 0 @I1@ INDI
@@ -480,7 +480,7 @@ class TestFamEventCitations:
 
     def test_marr_with_multiple_citations(self, tmp_path):
         """Multiple 2 SOUR sub-records under one MARR each become a separate citation."""
-        _, fams, _ = _parse(tmp_path, _ged("""\
+        _, fams, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Civil Registry
 0 @S2@ SOUR
@@ -510,7 +510,7 @@ class TestFamEventCitations:
 
     def test_div_event_has_citations(self, tmp_path):
         """1 DIV events under FAM get parsed with citations list."""
-        _, fams, _ = _parse(tmp_path, _ged("""\
+        _, fams, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Divorce Decree
 0 @I1@ INDI
@@ -540,7 +540,7 @@ class TestFamEventCitations:
 
     def test_marr_citation_isolated_from_div(self, tmp_path):
         """Citations under MARR do not bleed into a following DIV event, and vice versa."""
-        _, fams, _ = _parse(tmp_path, _ged("""\
+        _, fams, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Marriage Src
 0 @S2@ SOUR
@@ -571,7 +571,7 @@ class TestFamEventCitations:
 
     def test_fam_event_citation_url_from_direct_www(self, tmp_path):
         """3 WWW directly under 2 SOUR in FAM event should populate url field."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Test Source
 0 @I1@ INDI
@@ -600,7 +600,7 @@ class TestFamEventCitations:
 
     def test_build_people_json_carries_marr_citations(self, tmp_path):
         """build_people_json must include citations on the MARR events it merges into each spouse's event list."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Marriage Register
 0 @I1@ INDI
@@ -626,7 +626,7 @@ class TestFamEventCitations:
 
     def test_marr_with_only_citation_not_skipped_by_build_people_json(self, tmp_path):
         """A MARR with only a SOUR citation (no date/place/note/type) must not be dropped."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Marriage Register
 0 @I1@ INDI
@@ -659,7 +659,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_captured_in_source_citations(self, tmp_path):
         """1 SOUR @xref@ at person level is stored in source_citations list."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -671,7 +671,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_captures_page(self, tmp_path):
         """2 PAGE under 1 SOUR is stored on the citation entry."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -683,7 +683,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_captures_note(self, tmp_path):
         """2 NOTE under 1 SOUR is stored on the citation entry."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -695,7 +695,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_captures_text(self, tmp_path):
         """3 TEXT under 2 DATA under 1 SOUR is stored on the citation entry."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -708,7 +708,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_captures_url(self, tmp_path):
         """3 WWW under 1 SOUR is stored as url on the citation entry."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -720,7 +720,7 @@ class TestIndiSourceCitationParsing:
 
     def test_multiple_person_level_sour_entries_preserved(self, tmp_path):
         """Multiple 1 SOUR entries (even same xref) each get their own entry in source_citations."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Source One
 0 @S2@ SOUR
@@ -739,7 +739,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_sour_does_not_bleed_into_event(self, tmp_path):
         """A person-level SOUR after a BIRT event doesn't affect the event's citations."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Some Source
 0 @I1@ INDI
@@ -754,7 +754,7 @@ class TestIndiSourceCitationParsing:
 
     def test_event_sour_does_not_bleed_into_person_citations(self, tmp_path):
         """A 2 SOUR under a BIRT event doesn't appear in source_citations."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Some Source
 0 @I1@ INDI
@@ -768,7 +768,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_text_multiline_cont(self, tmp_path):
         """4 CONT lines after 3 TEXT are joined with newlines into cite['text']."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Death Record
 0 @I1@ INDI
@@ -784,7 +784,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_text_conc_no_newline(self, tmp_path):
         """4 CONC lines are concatenated without a newline (long-line wrapping)."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Register
 0 @I1@ INDI
@@ -799,7 +799,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_level_sour_note_multiline_cont(self, tmp_path):
         """3 CONT lines after 2 NOTE are joined with newlines into cite['note']."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -814,7 +814,7 @@ class TestIndiSourceCitationParsing:
 
     def test_person_citation_url_from_direct_www(self, tmp_path):
         """2 WWW directly under 1 SOUR (not inside DATA) should populate url field."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Some Source
 0 @I1@ INDI
@@ -837,7 +837,7 @@ class TestBuildPeopleJsonIndiCitations:
 
     def test_sources_includes_citation_key(self, tmp_path):
         """build_people_json returns citationKey='SOUR:0' on first person source."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -850,7 +850,7 @@ class TestBuildPeopleJsonIndiCitations:
 
     def test_sources_includes_source_xref(self, tmp_path):
         """build_people_json returns sourceXref on each person source entry."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -862,7 +862,7 @@ class TestBuildPeopleJsonIndiCitations:
 
     def test_sources_includes_page(self, tmp_path):
         """build_people_json includes page from the person-level citation."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Parish Register
 0 @I1@ INDI
@@ -875,7 +875,7 @@ class TestBuildPeopleJsonIndiCitations:
 
     def test_sources_sequential_citation_keys(self, tmp_path):
         """Multiple person-level sources get SOUR:0, SOUR:1, etc. in file order."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Source One
 0 @S2@ SOUR
@@ -892,7 +892,7 @@ class TestBuildPeopleJsonIndiCitations:
 
     def test_sources_empty_when_no_person_level_sour(self, tmp_path):
         """Person with no 1 SOUR lines gets an empty sources list."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @I1@ INDI
 1 NAME Nobody /Known/
 1 BIRT
@@ -911,7 +911,7 @@ class TestCitationQuayDateParsing:
 
     def test_quay_under_indi_event_citation(self, tmp_path):
         """3 QUAY n on an INDI-event citation surfaces as cite['quay']."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Source
 0 @I1@ INDI
@@ -927,7 +927,7 @@ class TestCitationQuayDateParsing:
 
     def test_date_under_indi_event_citation_data_block(self, tmp_path):
         """4 DATE inside the citation's 3 DATA block surfaces as cite['date']."""
-        indis, _, _ = _parse(tmp_path, _ged("""\
+        indis, _, _, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Source
 0 @I1@ INDI
@@ -945,7 +945,7 @@ class TestCitationQuayDateParsing:
 
     def test_quay_under_fam_marr_citation(self, tmp_path):
         """3 QUAY on a FAM MARR citation surfaces in build_people_json output for both spouses."""
-        indis, fams, sources = _parse(tmp_path, _ged("""\
+        indis, fams, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL Marriage Reg
 0 @I1@ INDI
@@ -970,7 +970,7 @@ class TestCitationQuayDateParsing:
 
     def test_quay_at_person_level_source(self, tmp_path):
         """2 QUAY on a person-level (1 SOUR) citation surfaces in the sources list."""
-        indis, _, sources = _parse(tmp_path, _ged("""\
+        indis, _, sources, _ = _parse(tmp_path, _ged("""\
 0 @S1@ SOUR
 1 TITL P
 0 @I1@ INDI
@@ -1136,5 +1136,5 @@ class TestEditSourceRecordNote:
         ged = tmp_path / 'roundtrip.ged'
         ged.write_text('\n'.join(ged_lines), encoding='utf-8')
 
-        _, _, sources = parse_gedcom(str(ged))
+        _, _, sources, _ = parse_gedcom(str(ged))
         assert sources['@S1@']['note'] == 'First line\nSecond line'

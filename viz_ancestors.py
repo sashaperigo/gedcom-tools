@@ -23,6 +23,7 @@ from pathlib import Path
 _INDI_RE = re.compile(r'^0 (@[^@]+@) INDI\b')
 _FAM_RE  = re.compile(r'^0 (@[^@]+@) FAM\b')
 _SOUR_RE = re.compile(r'^0 (@[^@]+@) SOUR\b')
+_REPO_RE = re.compile(r'^0 (@[^@]+@) REPO\b')
 _NOTE_RE = re.compile(r'^0 (@[^@]+@) NOTE\b(?: (.*))?$')
 _TAG_RE  = re.compile(r'^(\d+) (\w+)(?: (.*))?$')
 _YEAR_RE = re.compile(r'\b(\d{4})\b')
@@ -486,7 +487,8 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
     indis: dict   = {}
     fams: dict    = {}
     sources: dict = {}
-    ctx       = None   # ('indi', xref) or ('fam', xref) or ('sour', xref)
+    repos: dict   = {}
+    ctx       = None   # ('indi', xref) or ('fam', xref) or ('sour', xref) or ('repo', xref)
     indi_st   = {}     # state dict passed to _parse_indi_line
     fam_st    = {}     # state dict passed to _parse_fam_line
 
@@ -528,6 +530,13 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             sour_st: dict = {'current_field': None}
             continue
 
+        m = _REPO_RE.match(line)
+        if m:
+            xref = m.group(1)
+            repos[xref] = {'name': None}
+            ctx = ('repo', xref)
+            continue
+
         if line.startswith('0 '):
             ctx = None
             continue
@@ -549,8 +558,11 @@ def parse_gedcom(path: str) -> tuple[dict, dict, dict]:
             _parse_fam_line(fam_st, lvl, tag, val, raw_val, fams[ctx[1]])
         elif ctx[0] == 'sour':
             _parse_sour_line(sour_st, lvl, tag, val, raw_val, sources[ctx[1]])
+        elif ctx[0] == 'repo':
+            if lvl == 1 and tag == 'NAME':
+                repos[ctx[1]]['name'] = _ged_val(val)
 
-    return indis, fams, sources
+    return indis, fams, sources, repos
 
 
 def get_parents(xref: str, indis: dict, fams: dict) -> tuple[str | None, str | None]:
@@ -1121,7 +1133,7 @@ def _build_sources_js(sources: dict, source_urls: dict) -> dict:
 
 def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis: dict,
                 fams: dict | None = None, root_xref: str | None = None,
-                sources: dict | None = None) -> str:
+                sources: dict | None = None, repos: dict | None = None) -> str:
     """Return a complete self-contained HTML string."""
     all_people = sorted(
         [{"id": xref, "name": info["name"] or "",
@@ -1137,6 +1149,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
     families_js = _build_families_js(fams) if fams else {}
     source_urls = _aggregate_source_urls(indis)
     sources_js  = _build_sources_js(sources or {}, source_urls)
+    repos_js    = {xref: repo.get('name') or xref for xref, repo in (repos or {}).items()}
 
     return (
         _HTML_TEMPLATE
@@ -1152,6 +1165,7 @@ def render_html(tree: dict, root_name: str, people: dict, relatives: dict, indis
         .replace('__ADDR_BY_PLACE_JSON__', _json_for_script(build_addr_by_place(indis)))
         .replace('__ALL_PLACES_JSON__',    _json_for_script(build_all_places(indis, fams)))
         .replace('__SOURCES_JSON__',       _json_for_script(sources_js))
+        .replace('__REPOS_JSON__',         _json_for_script(repos_js))
     )
 
 
@@ -1180,7 +1194,7 @@ def viz_ancestors(path_in: str, person: str, path_out: str,
       'ancestor_count' : total number of individuals in the chart
       'generations'    : depth of the deepest known ancestor (gen 0 = root)
     """
-    indis, fams, sources = parse_gedcom(path_in)
+    indis, fams, sources, repos = parse_gedcom(path_in)
     root_xref   = _find_person(person, indis)
     if not root_xref:
         raise ValueError(f'Person not found: {person!r}')
@@ -1193,7 +1207,7 @@ def viz_ancestors(path_in: str, person: str, path_out: str,
 
     root_name = people.get(root_xref, {}).get('name', '?')
     html = render_html(tree, root_name, people, relatives, indis, fams=fams, root_xref=root_xref,
-                       sources=sources)
+                       sources=sources, repos=repos)
     with open(path_out, 'w', encoding='utf-8') as f:
         f.write(html)
 

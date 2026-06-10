@@ -23,7 +23,7 @@ def _make_indis(tmp_path, gedcom_text: str) -> dict:
     """Write gedcom_text to a temp file, parse it, and return the indis dict."""
     ged = tmp_path / 'test.ged'
     ged.write_text(gedcom_text, encoding='utf-8')
-    indis, _, _ = parse_gedcom(str(ged))
+    indis, _, _, _ = parse_gedcom(str(ged))
     return indis
 
 
@@ -444,7 +444,7 @@ class TestNoteCitationParsing:
 0 TRLR"""
         ged_path = tmp_path / 'test.ged'
         ged_path.write_text(ged, encoding='utf-8')
-        _, fams, _ = parse_gedcom(str(ged_path))
+        _, fams, _, _ = parse_gedcom(str(ged_path))
         marr = fams['@F1@']['marrs'][0]
         assert len(marr['event_notes']) == 1
         assert marr['event_notes'][0]['shared'] is True
@@ -503,7 +503,7 @@ class TestAgeAtDeathFromNumericAge:
 """
         ged_path = tmp_path / 'a.ged'
         ged_path.write_text(ged, encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged_path))
+        indis, fams, sources, _ = parse_gedcom(str(ged_path))
         people = build_people_json({'@I1@'}, indis, fams, sources)
         return people['@I1@']['age_at_death']
 
@@ -560,7 +560,7 @@ class TestAgeAtDeathInferredFromDates:
 """
         ged_path = tmp_path / 'a.ged'
         ged_path.write_text(ged, encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged_path))
+        indis, fams, sources, _ = parse_gedcom(str(ged_path))
         people = build_people_json({'@I1@'}, indis, fams, sources)
         return people['@I1@']['age_at_death']
 
@@ -597,7 +597,7 @@ class TestAgeAtDeathInferredFromDates:
 """
         ged_path = tmp_path / 'a.ged'
         ged_path.write_text(ged, encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged_path))
+        indis, fams, sources, _ = parse_gedcom(str(ged_path))
         people = build_people_json({'@I1@'}, indis, fams, sources)
         assert people['@I1@']['age_at_death'] is None
 
@@ -620,7 +620,7 @@ class TestAgeAtDeathInferredFromDates:
 """
         ged_path = tmp_path / 'a.ged'
         ged_path.write_text(ged, encoding='utf-8')
-        indis, fams, sources = parse_gedcom(str(ged_path))
+        indis, fams, sources, _ = parse_gedcom(str(ged_path))
         people = build_people_json({'@I1@'}, indis, fams, sources)
         assert people['@I1@']['age_at_death'] == 'STILLBORN'
 

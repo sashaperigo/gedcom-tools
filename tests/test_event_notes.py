@@ -21,7 +21,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE Inline note\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert 'event_notes' in occu
 
@@ -30,7 +30,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE Co-founder firm\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert len(occu['event_notes']) == 1
         assert occu['event_notes'][0] == {'text': 'Co-founder firm', 'shared': False, 'note_xref': None}
@@ -40,7 +40,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE Co-founder firm\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert occu['note'] == 'Co-founder firm'
 
@@ -49,7 +49,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE First note\n2 NOTE Second note\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert len(occu['event_notes']) == 2
         assert occu['event_notes'][1]['text'] == 'Second note'
@@ -59,7 +59,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE First note\n2 NOTE Second note\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert occu['note'] == 'First note'
 
@@ -69,7 +69,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE @N1@\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert len(occu['event_notes']) == 1
         n = occu['event_notes'][0]
@@ -83,7 +83,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE Inline text\n2 NOTE @N1@\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert len(occu['event_notes']) == 2
         assert occu['event_notes'][0] == {'text': 'Inline text', 'shared': False, 'note_xref': None}
@@ -96,7 +96,7 @@ class TestIndiEventNotes:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE @N1@\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert occu['note'] is None
 
@@ -104,7 +104,7 @@ class TestIndiEventNotes:
         ged = _write_ged(tmp_path, 'e.ged',
             '0 @I1@ INDI\n1 NAME Test /Person/\n1 OCCU Merchant\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert occu['event_notes'] == []
 
@@ -117,7 +117,7 @@ class TestFamEventNotes:
             '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
             '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
         )
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         marr = fams['@F1@']['marrs'][0]
         assert 'event_notes' in marr
 
@@ -129,7 +129,7 @@ class TestFamEventNotes:
             '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
             '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
         )
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         marr = fams['@F1@']['marrs'][0]
         assert len(marr['event_notes']) == 1
         assert marr['event_notes'][0]['shared'] is True
@@ -144,7 +144,7 @@ class TestFamEventNotes:
             '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
             '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
         )
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         marr = fams['@F1@']['marrs'][0]
         assert len(marr['event_notes']) == 2
         assert marr['note'] == 'Inline'
@@ -156,7 +156,7 @@ class TestFamEventNotes:
             '0 @I1@ INDI\n1 NAME Husb /Test/\n1 FAMS @F1@\n'
             '0 @I2@ INDI\n1 NAME Wife /Test/\n1 FAMS @F1@\n'
         )
-        _, fams, _ = parse_gedcom(str(ged))
+        _, fams, _, _ = parse_gedcom(str(ged))
         marr = fams['@F1@']['marrs'][0]
         assert marr['event_notes'][0]['text'] == 'First line\nSecond line'
         assert marr['note'] == 'First line\nSecond line'
@@ -168,7 +168,7 @@ class TestEventNoteContinuation:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE First line\n3 CONT Second line\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert occu['event_notes'][0]['text'] == 'First line\nSecond line'
 
@@ -177,6 +177,6 @@ class TestEventNoteContinuation:
             '0 @I1@ INDI\n1 NAME Test /Person/\n'
             '1 OCCU Merchant\n2 NOTE First line\n3 CONT Second line\n'
         )
-        indis, _, _ = parse_gedcom(str(ged))
+        indis, _, _, _ = parse_gedcom(str(ged))
         occu = next(e for e in indis['@I1@']['events'] if e['tag'] == 'OCCU')
         assert occu['note'] == 'First line\nSecond line'

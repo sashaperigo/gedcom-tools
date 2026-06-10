@@ -746,6 +746,19 @@ async function submitEditCitationModal() {
 
 // ── showEditSourceModal ───────────────────────────────────────────────────
 
+function _populateRepoSelect(selectEl, currentXref) {
+    const repos = (typeof REPOS !== 'undefined') ? REPOS : {};
+    selectEl.innerHTML = '<option value="">— Select Repository —</option>';
+    const sorted = Object.entries(repos).sort((a, b) => (a[1] || a[0]).localeCompare(b[1] || b[0]));
+    for (const [xref, name] of sorted) {
+        const opt = document.createElement('option');
+        opt.value = xref;
+        opt.textContent = name || xref;
+        if (xref === currentXref) opt.selected = true;
+        selectEl.appendChild(opt);
+    }
+}
+
 
 let _editSourceXref = null;
 
@@ -768,7 +781,7 @@ function showEditSourceModal(sourceXref) {
     if (titlEl) titlEl.value = src.titl || '';
     if (authEl) authEl.value = src.auth || '';
     if (publEl) publEl.value = src.publ || '';
-    if (repoEl) repoEl.value = src.repo || '';
+    if (repoEl) _populateRepoSelect(repoEl, src.repo || '');
     if (noteEl) noteEl.value = src.note || '';
 
     if (overlayEl) overlayEl.classList.add('open');
