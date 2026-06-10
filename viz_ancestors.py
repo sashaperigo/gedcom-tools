@@ -875,6 +875,19 @@ def build_people_json(xrefs: set, indis: dict, fams: dict | None = None,
              and (cls := _classify_death_age(e['age']))),
             None
         )
+        has_age_tag = any(e['tag'] == 'DEAT' and e.get('age') for e in events)
+        if age_at_death is None and not has_age_tag:
+            bk = _date_sort_key(info.get('birth_date'))
+            dk = _date_sort_key(info.get('death_date'))
+            if bk[0] and dk[0]:
+                # Apply BEF(-1)/AFT(+1) adjustments for a tighter age estimate
+                b_yr = bk[0] + (1 if bk[3] > 0 else 0)
+                d_yr = dk[0] + (-1 if dk[3] < 0 else 0)
+                est = d_yr - b_yr
+                if est == 0:
+                    age_at_death = 'INFANT'
+                elif 1 <= est <= 12:
+                    age_at_death = 'CHILD'
         normalised_notes = []
         for n in info.get('notes', []):
             norm_cites = [_normalize_citation(c) for c in n.get('citations', [])]

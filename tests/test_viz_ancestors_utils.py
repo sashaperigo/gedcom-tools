@@ -533,6 +533,99 @@ class TestAgeAtDeathFromNumericAge:
 
 
 # ---------------------------------------------------------------------------
+# age_at_death — inferred from birth/death dates when no AGE tag present
+# ---------------------------------------------------------------------------
+
+class TestAgeAtDeathInferredFromDates:
+    """
+    When a DEAT event has no AGE sub-tag, build_people_json should fall back
+    to computing age from birth_year and death_year and apply _classify_death_age.
+    Covers I382766896753 (born ABT 1747, died BEF 1748 — no AGE tag).
+    """
+
+    def _build(self, tmp_path, birt_date: str, deat_date: str):
+        from viz_ancestors import build_people_json
+        ged = f"""0 HEAD
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+0 @I1@ INDI
+1 NAME Test /Person/
+1 SEX F
+1 BIRT
+2 DATE {birt_date}
+1 DEAT
+2 DATE {deat_date}
+0 TRLR
+"""
+        ged_path = tmp_path / 'a.ged'
+        ged_path.write_text(ged, encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged_path))
+        people = build_people_json({'@I1@'}, indis, fams, sources)
+        return people['@I1@']['age_at_death']
+
+    def test_born_and_died_same_year_is_infant(self, tmp_path):
+        # born ABT 1747, died BEF 1748 → died same year → INFANT
+        assert self._build(tmp_path, 'ABT 1747', 'BEF 1748') == 'INFANT'
+
+    def test_died_one_year_after_birth_is_infant(self, tmp_path):
+        # born 1900, died 1900 → same year → INFANT
+        assert self._build(tmp_path, '1900', '1900') == 'INFANT'
+
+    def test_died_five_years_after_birth_is_child(self, tmp_path):
+        assert self._build(tmp_path, '1900', '1905') == 'CHILD'
+
+    def test_died_twelve_years_after_birth_is_child(self, tmp_path):
+        assert self._build(tmp_path, '1900', '1912') == 'CHILD'
+
+    def test_died_thirteen_years_after_birth_is_none(self, tmp_path):
+        assert self._build(tmp_path, '1900', '1913') is None
+
+    def test_no_birth_year_stays_none(self, tmp_path):
+        # No birth date — can't infer
+        from viz_ancestors import build_people_json
+        ged = """0 HEAD
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+0 @I1@ INDI
+1 NAME Test /Person/
+1 SEX F
+1 DEAT
+2 DATE 1900
+0 TRLR
+"""
+        ged_path = tmp_path / 'a.ged'
+        ged_path.write_text(ged, encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged_path))
+        people = build_people_json({'@I1@'}, indis, fams, sources)
+        assert people['@I1@']['age_at_death'] is None
+
+    def test_explicit_age_tag_takes_precedence(self, tmp_path):
+        # If AGE tag exists, it should still win even if dates would give same result
+        from viz_ancestors import build_people_json
+        ged = """0 HEAD
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+0 @I1@ INDI
+1 NAME Test /Person/
+1 SEX F
+1 BIRT
+2 DATE 1900
+1 DEAT
+2 DATE 1905
+2 AGE STILLBORN
+0 TRLR
+"""
+        ged_path = tmp_path / 'a.ged'
+        ged_path.write_text(ged, encoding='utf-8')
+        indis, fams, sources = parse_gedcom(str(ged_path))
+        people = build_people_json({'@I1@'}, indis, fams, sources)
+        assert people['@I1@']['age_at_death'] == 'STILLBORN'
+
+
+# ---------------------------------------------------------------------------
 # _normalize_citation
 # ---------------------------------------------------------------------------
 
