@@ -105,23 +105,85 @@ function highlightName(displayStr, normDispStr, qNorm) {
 // DOM-dependent functions (not exported for tests)
 // ---------------------------------------------------------------------------
 
-function renderResults(hits, qNorm) {
-    const list = document.getElementById('search-results');
-    list.innerHTML = '';
+// Shared person-picker autocomplete component.
+// inputEl: text input; resultsEl: result-item container
+// opts.onSelect(xref, name) \u2014 called when user confirms a pick
+// opts.onTyping()           \u2014 called on each keystroke (caller clears stale selection)
+// Returns { reset() } for programmatic clear.
+function createPersonPicker(inputEl, resultsEl, opts) {
+    const { onSelect = () => {}, onTyping = () => {} } = opts || {};
     let activeIdx = -1;
-    hits.forEach(p => {
-        const parsed = _getParsedS(p);
-        const li = document.createElement('li');
-        const dates = [p.birth_year && `b.\u2009${p.birth_year}`,
-            p.death_year && `d.\u2009${p.death_year}`
-        ].filter(Boolean).join(' \u2013 ');
-        const nameHtml = highlightName(parsed.disp, parsed.normDisp, qNorm);
-        li.innerHTML = nameHtml + (dates ? `<span class="srch-dates">(${escHtml(dates)})</span>` : '');
-        li.dataset.id = p.id;
-        li.addEventListener('click', () => navigate(p.id));
-        list.appendChild(li);
+
+    function _render(hits, qNorm) {
+        resultsEl.innerHTML = '';
+        activeIdx = -1;
+        hits.forEach(p => {
+            const parsed = _getParsedS(p);
+            const item = document.createElement('div');
+            item.className = 'person-picker-result';
+            const dates = [
+                p.birth_year && `b.\u2009${p.birth_year}`,
+                p.death_year && `d.\u2009${p.death_year}`,
+            ].filter(Boolean).join(' \u2013 ');
+            const nameHtml = highlightName(parsed.disp, parsed.normDisp, qNorm);
+            item.innerHTML = nameHtml + (dates ? `<span class="srch-dates">(${escHtml(dates)})</span>` : '');
+            item.dataset.id = p.id;
+            item.dataset.name = parsed.disp;
+            item.addEventListener('click', () => _pick(p.id, parsed.disp));
+            resultsEl.appendChild(item);
+        });
+        resultsEl.classList.toggle('open', hits.length > 0);
+    }
+
+    function _pick(xref, name) {
+        resultsEl.innerHTML = '';
+        resultsEl.classList.remove('open');
+        inputEl.value = name;
+        activeIdx = -1;
+        onSelect(xref, name);
+    }
+
+    inputEl.addEventListener('input', () => {
+        onTyping();
+        const qNorm = _normSearchS(inputEl.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
+        if (!qNorm) { resultsEl.innerHTML = ''; resultsEl.classList.remove('open'); return; }
+        const hits = sortHits(
+            (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : []).filter(p => personMatches(_getParsedS(p), qNorm)),
+            qNorm
+        );
+        _render(hits, qNorm);
     });
-    list.classList.toggle('open', hits.length > 0);
+
+    inputEl.addEventListener('keydown', e => {
+        const items = resultsEl.querySelectorAll('.person-picker-result');
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIdx = Math.min(activeIdx + 1, items.length - 1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIdx = Math.max(activeIdx - 1, 0);
+        } else if (e.key === 'Enter') {
+            if (activeIdx >= 0) _pick(items[activeIdx].dataset.id, items[activeIdx].dataset.name);
+            return;
+        } else if (e.key === 'Escape') {
+            resultsEl.innerHTML = '';
+            resultsEl.classList.remove('open');
+            activeIdx = -1;
+            return;
+        }
+        items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+        if (activeIdx >= 0) items[activeIdx].scrollIntoView({ block: 'nearest' });
+    });
+
+    return {
+        reset() {
+            inputEl.value = '';
+            resultsEl.innerHTML = '';
+            resultsEl.classList.remove('open');
+            activeIdx = -1;
+        },
+    };
 }
 
 function navigate(personId) {
@@ -138,40 +200,30 @@ function navigate(personId) {
 // ---------------------------------------------------------------------------
 
 if (typeof document !== 'undefined') {
-    (function() {
+    (function () {
         const input = document.getElementById('search-input');
         const list = document.getElementById('search-results');
-        let activeIdx = -1;
+        if (!input || !list) return;
 
+        createPersonPicker(input, list, { onSelect: xref => navigate(xref) });
+
+        // @XREF@ direct navigation \u2014 main search bar only
         input.addEventListener('input', () => {
             const raw = input.value.trim();
             if (/^@[^@]+@$/i.test(raw)) {
                 const rawUp = raw.toUpperCase();
-                const match = ALL_PEOPLE.find(p => p.id.toUpperCase() === rawUp);
-                if (match) { navigate(match.id); input.value = ''; return; }
+                const match = (typeof ALL_PEOPLE !== 'undefined' ? ALL_PEOPLE : [])
+                    .find(p => p.id.toUpperCase() === rawUp);
+                if (match) { navigate(match.id); input.value = ''; }
             }
-            const qNorm = _normSearchS(input.value.replace(/\//g, '').replace(/\s+/g, ' ').trim());
-            if (!qNorm) { list.classList.remove('open');
-                list.innerHTML = ''; return; }
-            const hits = sortHits(ALL_PEOPLE.filter(p => personMatches(_getParsedS(p), qNorm)), qNorm);
-            renderResults(hits, qNorm);
         });
 
-        input.addEventListener('keydown', e => {
-            const items = list.querySelectorAll('li');
-            if (!items.length) return;
-            if (e.key === 'ArrowDown') { e.preventDefault();
-                activeIdx = Math.min(activeIdx + 1, items.length - 1); } else if (e.key === 'ArrowUp') { e.preventDefault();
-                activeIdx = Math.max(activeIdx - 1, 0); } else if (e.key === 'Enter') { if (activeIdx >= 0) navigate(items[activeIdx].dataset.id); return; } else if (e.key === 'Escape') { list.classList.remove('open');
-                list.innerHTML = '';
-                input.blur(); return; }
-            items.forEach((li, i) => li.classList.toggle('active', i === activeIdx));
-            if (activeIdx >= 0) items[activeIdx].scrollIntoView({ block: 'nearest' });
-        });
-
+        // Click outside to dismiss
         document.addEventListener('click', e => {
-            if (!e.target.closest('#search-container')) { list.classList.remove('open');
-                list.innerHTML = ''; }
+            if (!e.target.closest('#search-container')) {
+                list.classList.remove('open');
+                list.innerHTML = '';
+            }
         });
     })();
 }
