@@ -127,7 +127,6 @@ header h1 .root-name-accent {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    list-style: none;
     min-width: 280px;
     max-height: 320px;
     overflow-y: auto;
@@ -140,36 +139,48 @@ header h1 .root-name-accent {
     display: block;
 }
 
-#search-results li {
+/* ── Shared person-picker result item ─────────────────────── */
+.person-picker-result {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-light);
+}
+
+.person-picker-result:hover,
+.person-picker-result.active {
+    background: var(--accent-bg);
+}
+
+.person-picker-result b {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.person-picker-result .srch-dates {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-left: 4px;
+}
+
+/* Header search bar overrides — larger padding/font than modal pickers */
+#search-results .person-picker-result {
     padding: 8px 14px;
     font-size: 13px;
-    color: var(--text-light);
-    cursor: pointer;
     border-bottom: 1px solid var(--border-subtle);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-#search-results li:last-child {
+#search-results .person-picker-result:last-child {
     border-bottom: none;
 }
 
-#search-results li:hover,
-#search-results li.active {
+#search-results .person-picker-result:hover,
+#search-results .person-picker-result.active {
     background: var(--bg-hover);
     color: var(--text-primary);
-}
-
-#search-results li b {
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-#search-results li .srch-dates {
-    color: var(--text-muted);
-    font-size: 12px;
-    margin-left: 4px;
 }
 
 /* --header-h is set by JS via document.documentElement.style.setProperty */
@@ -966,8 +977,14 @@ header h1 .root-name-accent {
     margin: 0;
     accent-color: var(--accent);
 }
-#add-person-tree-results:empty {
+#add-person-tree-results,
+#change-parent-modal-results {
     display: none;
+}
+
+#add-person-tree-results.open,
+#change-parent-modal-results.open {
+    display: block;
 }
 
 .add-person-radio-row {
@@ -1648,7 +1665,6 @@ header h1 .root-name-accent {
 #event-modal-place-results,
 #add-person-modal-birth-place-results,
 #add-person-modal-death-place-results,
-#add-godparent-modal-results,
 #change-parent-modal-results,
 #add-person-tree-results {
     max-height: 160px;
@@ -1660,10 +1676,7 @@ header h1 .root-name-accent {
 }
 
 .spouse-result-item,
-.place-result-item,
-.godparent-result-item,
-.change-parent-result-item,
-.add-person-tree-result-item {
+.place-result-item {
     padding: 6px 10px;
     cursor: pointer;
     font-size: 12px;
@@ -1671,10 +1684,7 @@ header h1 .root-name-accent {
 }
 
 .spouse-result-item:hover,
-.place-result-item:hover,
-.godparent-result-item:hover,
-.change-parent-result-item:hover,
-.add-person-tree-result-item:hover {
+.place-result-item:hover {
     background: var(--accent-bg);
 }
 
