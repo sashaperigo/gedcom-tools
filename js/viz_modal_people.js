@@ -689,12 +689,8 @@ function closeChangeParentModal() {
 
 
 
-function _selectAddPersonFromTree(xref, name) {
+function _selectAddPersonFromTree(xref) {
     _addPersonFromTreeXref = xref;
-    const inp = document.getElementById('add-person-tree-search');
-    const res = document.getElementById('add-person-tree-results');
-    if (inp) inp.value = name;
-    if (res) res.innerHTML = '';
 }
 
 
