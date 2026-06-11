@@ -4368,7 +4368,7 @@ def scan_citation_data_children(path: str) -> list[tuple[int, str, str]]:
     Any other tag (e.g. WWW, NOTE, SOUR, PLAC) at that level is flagged.
     Level-0 SOUR records with their own DATA blocks are excluded.
     """
-    _VALID = frozenset({'DATE', 'TEXT', 'CONC', 'CONT'})
+    _VALID = frozenset({'DATE', 'TEXT', 'CONC', 'CONT', 'WWW'})
     violations: list[tuple[int, str, str]] = []
 
     with open(path, encoding='utf-8') as f:

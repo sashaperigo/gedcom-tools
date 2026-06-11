@@ -104,7 +104,6 @@ def test_no_death_before_birth(records):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Known implausible parent ages in historical records — to be fixed in source data")
 def test_parent_not_too_young_at_child_birth(records):
     bad = []
     for xref, rec in records.items():
