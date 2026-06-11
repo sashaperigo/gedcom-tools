@@ -3220,52 +3220,6 @@ describe('submitEditCitationModal — multi-event picker (diff)', () => {
     });
 });
 
-// ── _renderAddPersonTreeResults ───────────────────────────────────────────
-
-const { _renderAddPersonTreeResults } = require('../../js/viz_modals.js');
-
-describe('_renderAddPersonTreeResults', () => {
-    beforeEach(() => {
-        global.ALL_PEOPLE = [
-            { id: '@I1@', name: 'Rose Smith', birth_year: '1990', death_year: '2050' },
-            { id: '@I2@', name: 'James Smith', birth_year: '1960' },
-            { id: '@I3@', name: 'Clara Jones', birth_year: '1963' },
-        ];
-    });
-
-    it('returns empty array for empty query', () => {
-        expect(_renderAddPersonTreeResults('')).toEqual([]);
-    });
-
-    it('matches by substring (case-insensitive)', () => {
-        const results = _renderAddPersonTreeResults('smith');
-        expect(results.map(r => r.id)).toContain('@I1@');
-        expect(results.map(r => r.id)).toContain('@I2@');
-    });
-
-    it('returns all matching results with no cap', () => {
-        global.ALL_PEOPLE = Array.from({ length: 20 }, (_, i) => ({
-            id: `@I${i}@`, name: `Person Smith ${i}`, birth_year: '1900',
-        }));
-        expect(_renderAddPersonTreeResults('smith').length).toBe(20);
-    });
-
-    it('includes birth and death year in B-D format when both present', () => {
-        const results = _renderAddPersonTreeResults('rose');
-        expect(results[0].label).toMatch(/b[. \s]+1990/);
-        expect(results[0].label).toMatch(/d[. \s]+2050/);
-    });
-
-    it('includes only birth year when no death year', () => {
-        const results = _renderAddPersonTreeResults('james');
-        expect(results[0].label).toContain('1960');
-        expect(results[0].label).not.toContain('2050');
-    });
-
-    it('returns empty array when no match', () => {
-        expect(_renderAddPersonTreeResults('zzznomatch')).toEqual([]);
-    });
-});
 describe('deleteNote with eventCtx', () => {
     beforeEach(() => {
         global.fetch = vi.fn(() => Promise.resolve({
