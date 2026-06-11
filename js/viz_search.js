@@ -1,7 +1,7 @@
 // Search / autocomplete functions.
 //
 // stripAccents, normSearch, getParsed, personMatches, highlightName are pure
-// and exported for testing.  renderResults and navigate touch the DOM and are
+// and exported for testing.  createPersonPicker and navigate touch the DOM and are
 // not tested directly.
 
 // ---------------------------------------------------------------------------
