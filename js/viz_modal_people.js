@@ -1055,6 +1055,28 @@ function deletePerson(xref) {
 // Exports (for Vitest unit tests via CommonJS require)
 // ---------------------------------------------------------------------------
 
+// ── Person-picker wiring (browser only) ─────────────────────────────────
+
+if (typeof document !== 'undefined' && typeof createPersonPicker !== 'undefined') {
+    const cpInput = document.getElementById('change-parent-modal-search');
+    const cpResults = document.getElementById('change-parent-modal-results');
+    if (cpInput && cpResults) {
+        createPersonPicker(cpInput, cpResults, {
+            onSelect: xref => { _changeParentNewXref = xref; },
+            onTyping: () => { _changeParentNewXref = null; },
+        });
+    }
+
+    const apInput = document.getElementById('add-person-tree-search');
+    const apResults = document.getElementById('add-person-tree-results');
+    if (apInput && apResults) {
+        createPersonPicker(apInput, apResults, {
+            onSelect: xref => { _addPersonFromTreeXref = xref; },
+            onTyping: () => { _addPersonFromTreeXref = null; },
+        });
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Exports (for Vitest unit tests via CommonJS require)
 // ---------------------------------------------------------------------------
